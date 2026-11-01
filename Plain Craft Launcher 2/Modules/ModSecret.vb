@@ -134,18 +134,25 @@ Friend Module ModSecret
             Brush.GradientStops.Add(New GradientStop With {.Offset = 1, .Color = New MyColor().FromHSL2(ColorHue + Deltas(2), ColorSat, 48 + ColorLightAdjust)})
             FrmMain.PanTitle.Background = Brush
             FrmMain.PanTitle.Background.Freeze()
-            '主页面背景
-            If Settings.Get(Of Boolean)("UiBackgroundColorful") Then
-                Brush = New LinearGradientBrush With {.EndPoint = New Point(0.1, 1), .StartPoint = New Point(0.9, 0)}
-                Brush.GradientStops.Add(New GradientStop With {.Offset = -0.1, .Color = New MyColor().FromHSL2(ColorHue - 15, ColorSat * 0.8, 91)})
-                Brush.GradientStops.Add(New GradientStop With {.Offset = 0.4, .Color = New MyColor().FromHSL2(ColorHue, ColorSat * 0.8, 91)})
-                Brush.GradientStops.Add(New GradientStop With {.Offset = 1.1, .Color = New MyColor().FromHSL2(ColorHue + 15, ColorSat * 0.8, 91)})
-                FrmMain.PanForm.Background = Brush
-            Else
-                FrmMain.PanForm.Background = New MyColor(245, 245, 245)
-            End If
-            FrmMain.PanForm.Background.Freeze()
+            ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
         End Sub)
+    End Sub
+
+    Friend Sub ApplyMainBackground(Panel As Panel, Image As UIElement)
+        Dim Plain = Settings.Get(Of Integer)("UiBackgroundMode") = 1
+        Image.Visibility = If(Plain, Visibility.Collapsed, Visibility.Visible)
+        If Plain Then
+            Panel.Background = Brushes.White
+        ElseIf Settings.Get(Of Boolean)("UiBackgroundColorful") Then
+            Dim Brush As New LinearGradientBrush With {.EndPoint = New Point(0.1, 1), .StartPoint = New Point(0.9, 0)}
+            Brush.GradientStops.Add(New GradientStop With {.Offset = -0.1, .Color = New MyColor().FromHSL2(ColorHue - 15, ColorSat * 0.8, 91)})
+            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.4, .Color = New MyColor().FromHSL2(ColorHue, ColorSat * 0.8, 91)})
+            Brush.GradientStops.Add(New GradientStop With {.Offset = 1.1, .Color = New MyColor().FromHSL2(ColorHue + 15, ColorSat * 0.8, 91)})
+            Panel.Background = Brush
+        Else
+            Panel.Background = New MyColor(245, 245, 245)
+        End If
+        Panel.Background.Freeze()
     End Sub
 
 #End Region

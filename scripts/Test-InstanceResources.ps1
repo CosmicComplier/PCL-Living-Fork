@@ -126,7 +126,7 @@ try{
  $pageType.GetMethod('ShowResources',$flags).Invoke($packPage,@([string]$packs,[string]$packs,$items.PSObject.BaseObject))|Out-Null
  if($packPage.FindName('CardSelected') -or $packPage.FindName('LabFolder')){throw 'Old separate details/path card remains'}
  foreach($name in @('BtnImportFolder','BtnCheckUpdates','BtnRefresh')){if($packPage.FindName($name)){throw 'Extra toolbar icons remain'}}
- if(@($packPage.FindName('BtnOpenFolder').Parent.Children|Where-Object {$_.Visibility -ne 'Collapsed'}).Count -ne 4){throw 'Resource toolbar differs from the native four-button layout'}
+ if(@($packPage.FindName('BtnOpenFolder').Parent.Children|Where-Object {$_.Visibility -ne 'Collapsed'}).Count -ne 5 -or $packPage.FindName('BtnRestore').Text -ne '回收站'){throw 'Resource toolbar lost its native actions or top recycle-bin entry'}
  if($packPage.FindName('BtnFilterAll').Text -notmatch '3' -or $packPage.FindName('BtnDownload').Visibility -ne 'Visible'){throw 'Native count filter or resource download action missing'}
  $rowType=$asm.GetType('PCL.MyLocalModItem')
  foreach($row in $packPage.FindName('PanList').Children){if($row.GetType() -ne $rowType -or $row.Height -ne 44 -or @($row.Buttons).Count -ne 4){throw 'Resource rows do not reuse the native mod item and hover actions'}}
@@ -175,7 +175,7 @@ try{
  $emptyPage=$left.PageGet([Enum]::ToObject($subType,7))
  $emptyItems=[Activator]::CreateInstance([Collections.Generic.List``1].MakeGenericType($asm.GetType('PCL.InstanceResourceEntry')))
  $pageType.GetMethod('ShowResources',$flags).Invoke($emptyPage,@([string]$shots,[string]$shots,$emptyItems.PSObject.BaseObject))|Out-Null
- if($emptyPage.FindName('PanEmpty').Visibility -ne 'Visible' -or $emptyPage.FindName('PanBack').Visibility -ne 'Collapsed'){throw 'Empty resources do not use the native centered empty state'}
+ if($emptyPage.FindName('PanEmpty').Visibility -ne 'Collapsed' -or $emptyPage.FindName('PanBack').Visibility -ne 'Visible' -or $emptyPage.FindName('BtnRestore').Visibility -ne 'Visible'){throw 'Empty resources lost the toolbar and recycle-bin entry'}
  if($PreviewDirectory){
   $nav=$left.GetType().GetMethod('NavigationItem',$flags).Invoke($left,@([Enum]::ToObject($subType,8)))
   $savedTag=$nav.Tag;$nav.Tag=$null;$nav.SetChecked($true,$false,$false);$nav.Tag=$savedTag

@@ -105,6 +105,13 @@ jobs:
     - name: Verify native game resource management
       run: powershell -NoProfile -STA -File scripts/Test-InstanceResources.ps1 -ExecutablePath "Plain Craft Launcher 2\bin\PCL Living Fork.exe"
 
+    - name: Verify map installation, resource recycle bin and global backgrounds
+      run: |
+        powershell -NoProfile -STA -File scripts/Test-MapInstallAndRecycle.ps1 -ExecutablePath "Plain Craft Launcher 2\bin\PCL Living Fork.exe"
+        if ($LASTEXITCODE -ne 0) { throw 'Map installation and recycle bin checks failed' }
+        powershell -NoProfile -STA -File scripts/Test-BackgroundModes.ps1 -ExecutablePath "Plain Craft Launcher 2\bin\PCL Living Fork.exe"
+        if ($LASTEXITCODE -ne 0) { throw 'Global background checks failed' }
+
     - name: Verify resource update compatibility and replacement
       run: powershell -NoProfile -STA -File scripts/Test-ResourceUpdates.ps1 -ExecutablePath "Plain Craft Launcher 2\bin\PCL Living Fork.exe"
 

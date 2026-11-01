@@ -36,6 +36,8 @@ Public Class PageInstanceResources
         Public Root As String
         Public Folder As String
         Public GameFolder As String
+        Public RecycleMode As Boolean
+        Public RecycleFolder As String
     End Class
     Private Class ResourceResult
         Public Request As ResourceRequest
@@ -109,6 +111,7 @@ Public Class PageInstanceResources
         Dim GameFolder = Instance.PathIndie
         Dim Root = InstanceResourceStore.Root(GameFolder, Kind)
         If Owner IsNot Instance OrElse Not PathUtils.IsSame(CurrentRoot, Root) Then
+            IsRecycleMode = False
             CurrentFolder = Root
             SelectedPaths.Clear()
             Online.Clear()
@@ -122,14 +125,16 @@ Public Class PageInstanceResources
         If CurrentFolder Is Nothing OrElse Not Directory.Exists(CurrentFolder) Then CurrentFolder = Root
         Dim MinecraftRoot = Path.GetDirectoryName(Path.GetDirectoryName(Instance.PathVersion.TrimEnd("\"c)))
         RecycleRoot = Path.Combine(MinecraftRoot, "PCL", "ResourceRecycle", Kind.ToString())
-        ResourceLoader.Start(New ResourceRequest With {.Instance = Instance, .Root = Root, .Folder = CurrentFolder, .GameFolder = GameFolder}, IsForceRestart:=True)
+        ResourceLoader.Start(New ResourceRequest With {.Instance = Instance, .Root = Root, .Folder = CurrentFolder, .GameFolder = GameFolder,
+            .RecycleMode = IsRecycleMode, .RecycleFolder = RecycleRoot}, IsForceRestart:=True)
     End Sub
     Private Sub ReadResources(Loader As LoaderTask(Of ResourceRequest, ResourceResult))
         Dim Request = Loader.Input
-        Dim Items = InstanceResourceStore.Scan(Request.Root, Request.Folder, Kind, Loader.CreateCancellationToken())
+        Dim Items = If(Request.RecycleMode, ResourceRecycleStore.List(Request.Root, Request.RecycleFolder, Kind),
+            InstanceResourceStore.Scan(Request.Root, Request.Folder, Kind, Loader.CreateCancellationToken()))
         If Loader.IsCanceled Then Return
         Dim Result As New ResourceResult With {.Request = Request, .Entries = Items}
-        If Kind = InstanceResourceKind.Saves Then
+        If Kind = InstanceResourceKind.Saves AndAlso Not Request.RecycleMode Then
             Try
                 Result.Backups = WorldBackups.Points(Request.GameFolder)
             Catch ex As Exception
@@ -141,6 +146,7 @@ Public Class PageInstanceResources
     End Sub
     Private Sub ResourcesLoaded(Loader As LoaderTask(Of ResourceRequest, ResourceResult))
         Dim Result = Loader.Output
+        If Result IsNot Nothing AndAlso Result.Request.RecycleMode <> IsRecycleMode Then Return
         If Result Is Nothing OrElse Owner IsNot Result.Request.Instance OrElse PageInstanceLeft.Instance IsNot Owner OrElse Not PathUtils.IsSame(CurrentFolder, Result.Request.Folder) Then Return
         If Kind = InstanceResourceKind.Saves AndAlso Not PathUtils.IsSame(Owner.PathIndie, Result.Request.GameFolder) Then Return
         WorldBackupPoints = If(Result.Backups, New List(Of JObject))
@@ -181,6 +187,7 @@ Public Class PageInstanceResources
                 If(NeedsLoader, "当前版本还没有 Mod 加载器，请先前往修改页面安装加载器。", "可以前往 Mod 下载页面获取投影 Mod，再安装或拖入原理图文件。")
         End If
         BtnUp.Visibility = If(Kind = InstanceResourceKind.Schematics AndAlso Not PathUtils.IsSame(Root, Folder), Visibility.Visible, Visibility.Collapsed)
+        ApplyRecycleMode()
         RenderList()
     End Sub
     Private Sub SearchChanged() Handles SearchBox.TextChanged
@@ -207,15 +214,15 @@ Public Class PageInstanceResources
         LabEmpty.Visibility = If(Visible.Any(), Visibility.Collapsed, Visibility.Visible)
         LabEmpty.Text = If(Query = "" AndAlso Filter = 0, "暂无" & InstanceResourceStore.Title(Kind) & "，可以从本地文件安装" & If(Kind = InstanceResourceKind.Screenshots, "或拖入图片。", "或拖入文件夹。"), If(Filter = 1, "未发现可更新的资源，可刷新列表重新检查。", "没有找到匹配的资源。"))
         SelectedPaths.IntersectWith(Visible.Select(Function(Item) Item.FullPath))
-        PanList.Visibility = If(Kind = InstanceResourceKind.Screenshots OrElse Kind = InstanceResourceKind.Saves, Visibility.Collapsed, Visibility.Visible)
-        PanWorlds.Visibility = If(Kind = InstanceResourceKind.Saves, Visibility.Visible, Visibility.Collapsed)
-        PanScreenshots.Visibility = If(Kind = InstanceResourceKind.Screenshots, Visibility.Visible, Visibility.Collapsed)
-        If Kind = InstanceResourceKind.Screenshots Then
+        PanList.Visibility = If(Not IsRecycleMode AndAlso (Kind = InstanceResourceKind.Screenshots OrElse Kind = InstanceResourceKind.Saves), Visibility.Collapsed, Visibility.Visible)
+        PanWorlds.Visibility = If(Kind = InstanceResourceKind.Saves AndAlso Not IsRecycleMode, Visibility.Visible, Visibility.Collapsed)
+        PanScreenshots.Visibility = If(Kind = InstanceResourceKind.Screenshots AndAlso Not IsRecycleMode, Visibility.Visible, Visibility.Collapsed)
+        If Kind = InstanceResourceKind.Screenshots AndAlso Not IsRecycleMode Then
             RenderScreenshots(Visible)
             SelectResource(Selection().FirstOrDefault())
             Return
         End If
-        If Kind = InstanceResourceKind.Saves Then
+        If Kind = InstanceResourceKind.Saves AndAlso Not IsRecycleMode Then
             RenderWorldGroups(Visible, Query)
             SelectResource(Selection().FirstOrDefault())
             Return
@@ -332,7 +339,7 @@ Public Class PageInstanceResources
         Row.ResourceDetailsRequested = Sub() ShowDetails(Row.ResourceEntry)
         Row.Buttons = ResourceButtons(Row)
         AddHandler Row.MouseLeftButtonDown, Sub(Sender, e)
-                                               If e.ClickCount <> 2 OrElse Busy OrElse Kind <> InstanceResourceKind.Schematics OrElse Not Row.ResourceEntry.IsDirectory Then Return
+                                               If IsRecycleMode OrElse e.ClickCount <> 2 OrElse Busy OrElse Kind <> InstanceResourceKind.Schematics OrElse Not Row.ResourceEntry.IsDirectory Then Return
                                                CurrentFolder = Row.ResourceEntry.FullPath
                                                SelectedPaths.Clear()
                                                Filter = 0
@@ -381,7 +388,7 @@ Public Class PageInstanceResources
         SelectResource(Selection().FirstOrDefault())
     End Sub
     Private Sub SelectAllClick() Handles BtnSelectAll.Click
-        ChangeAllSelected(SelectedPaths.Count < If(Kind = InstanceResourceKind.Screenshots, PanScreenshots.Children.Count, VisibleResourceRows().Count()))
+        ChangeAllSelected(SelectedPaths.Count < If(Kind = InstanceResourceKind.Screenshots AndAlso Not IsRecycleMode, PanScreenshots.Children.Count, VisibleResourceRows().Count()))
     End Sub
     Private Sub DeselectClick() Handles BtnDeselect.Click
         ChangeAllSelected(False)
@@ -403,6 +410,7 @@ Public Class PageInstanceResources
     End Sub
 
     Private Function ResourceButtons(Row As MyLocalModItem) As List(Of MyIconButton)
+        If IsRecycleMode Then Return RecycleButtons(Row)
         Dim Buttons As New List(Of MyIconButton)
         If Kind = InstanceResourceKind.Saves AndAlso QuickPlayWorlds.Supported(Owner) Then
             Dim Play As New MyIconButton With {.Logo = LocalResourceUi.PlayLogo, .LogoScale = 0.9, .ToolTip = "启动此版本并直接进入存档"}
@@ -426,6 +434,10 @@ Public Class PageInstanceResources
         Return Buttons
     End Function
     Private Sub ShowDetails(Entry As InstanceResourceEntry)
+        If IsRecycleMode Then
+            MyMsgBox(Entry.Name & vbCrLf & Entry.Description, "回收站资源详情")
+            Return
+        End If
         If Kind = InstanceResourceKind.Saves Then
             Dim Root = CurrentRoot
             RunInNewThread(Sub()
@@ -455,28 +467,26 @@ Public Class PageInstanceResources
         BtnImportFile.IsEnabled = Not Busy
         BtnUp.IsEnabled = Not Busy
         BtnDownload.IsEnabled = Not Busy
-        BtnSelectAll.IsEnabled = Not Busy AndAlso If(Kind = InstanceResourceKind.Screenshots, PanScreenshots.Children.Count, VisibleResourceRows().Count()) > 0
+        BtnSelectAll.IsEnabled = Not Busy AndAlso If(Kind = InstanceResourceKind.Screenshots AndAlso Not IsRecycleMode, PanScreenshots.Children.Count, VisibleResourceRows().Count()) > 0
         BtnExport.IsEnabled = Not Busy AndAlso SelectedPaths.Count > 0
         BtnDelete.IsEnabled = BtnExport.IsEnabled
         BtnDeselect.IsEnabled = Not Busy
         BtnUpdate.IsEnabled = Not Busy AndAlso Selection().Any(Function(Item) HasUpdate(Item))
         BtnRestore.IsEnabled = Not Busy AndAlso CurrentRoot IsNot Nothing
         BtnHintRestore.IsEnabled = BtnRestore.IsEnabled
-        Try
-            BtnRestore.Visibility = If(RecycleRoot IsNot Nothing AndAlso Directory.Exists(RecycleRoot) AndAlso Directory.EnumerateDirectories(RecycleRoot).Any(), Visibility.Visible, Visibility.Collapsed)
-        Catch
-            BtnRestore.Visibility = Visibility.Collapsed
-        End Try
-        BtnHintRestore.Visibility = BtnRestore.Visibility
+        BtnRestore.Visibility = If(IsRecycleMode, Visibility.Collapsed, Visibility.Visible)
+        BtnRecycleBack.IsEnabled = BtnRestore.IsEnabled
+        BtnHintRestore.Visibility = Visibility.Collapsed
         '后台检查不改变工具栏和列表的位置；取消检查仍可通过切页或刷新执行。
         BtnCancel.Visibility = If(Busy, Visibility.Visible, Visibility.Collapsed)
-        PanOperations.Visibility = If(BtnUp.Visibility = Visibility.Visible OrElse LabOperation.Visibility = Visibility.Visible OrElse BtnRestore.Visibility = Visibility.Visible OrElse Busy, Visibility.Visible, Visibility.Collapsed)
-        PanEmpty.Visibility = If(Entries.Count = 0 AndAlso Not Busy AndAlso Kind <> InstanceResourceKind.Saves, Visibility.Visible, Visibility.Collapsed)
+        PanOperations.Visibility = If(BtnUp.Visibility = Visibility.Visible OrElse LabOperation.Visibility = Visibility.Visible OrElse Busy, Visibility.Visible, Visibility.Collapsed)
+        PanEmpty.Visibility = Visibility.Collapsed
         PanBack.Visibility = If(PanEmpty.Visibility = Visibility.Visible, Visibility.Collapsed, Visibility.Visible)
         PanList.IsHitTestVisible = Not Busy
         PanWorlds.IsHitTestVisible = Not Busy
         PanScreenshots.IsHitTestVisible = Not Busy
         RefreshBackupActions()
+        If IsRecycleMode Then ApplyRecycleMode()
     End Sub
 
     Private Sub CancelOnline()
@@ -486,7 +496,7 @@ Public Class PageInstanceResources
         Checking = False
     End Sub
     Private Sub CheckUpdates()
-        If Not InstanceResourceUpdates.Supported(Kind) OrElse Owner Is Nothing OrElse Busy OrElse Checking Then Return
+        If IsRecycleMode OrElse Not InstanceResourceUpdates.Supported(Kind) OrElse Owner Is Nothing OrElse Busy OrElse Checking Then Return
         If Not Entries.Any(Function(Item) Not Item.IsDirectory) Then Return
         CancelOnline()
         Dim Cancellation As New CancellationTokenSource()
@@ -601,7 +611,12 @@ Public Class PageInstanceResources
                             Operation = Nothing
                             UpdateButtons()
                             If Failure Is Nothing Then
-                                SetStatus(Name & "完成。")
+                                If Name = "删除资源" OrElse Name = "还原资源" OrElse Name = "彻底删除资源" Then
+                                    SetStatus(Nothing)
+                                    Hint(If(Name = "删除资源", "已将资源移入回收站", If(Name = "还原资源", "已还原资源", "已彻底删除资源")), HintType.Green)
+                                Else
+                                    SetStatus(Name & "完成。")
+                                End If
                             ElseIf TypeOf Failure Is OperationCanceledException Then
                                 SetStatus("操作已取消，已完成的内容会保留。")
                             Else
@@ -615,11 +630,15 @@ Public Class PageInstanceResources
     End Sub
 
     Private Sub OpenFolder() Handles BtnOpenFolder.Click, BtnHintOpen.Click
+        If IsRecycleMode Then
+            If RecycleRoot IsNot Nothing AndAlso Directory.Exists(RecycleRoot) Then OpenExplorer(RecycleRoot.TrimEnd("\"c, "/"c) & "\")
+            Return
+        End If
         If CurrentRoot Is Nothing Then Return
         Try
             InstanceResourceStore.EnsureWithin(CurrentRoot, CurrentFolder, True)
             DirectoryUtils.Create(CurrentFolder)
-            OpenExplorer(CurrentFolder)
+            OpenExplorer(CurrentFolder.TrimEnd("\"c, "/"c) & "\")
         Catch ex As Exception
             Logger.Error(ex, "打开资源文件夹失败", LogBehavior.Toast)
         End Try
@@ -643,6 +662,10 @@ Public Class PageInstanceResources
         RefreshResources()
     End Sub
     Private Sub ImportFiles() Handles BtnImportFile.Click, BtnHintInstall.Click
+        If IsRecycleMode Then
+            RestoreRecycleSelection()
+            Return
+        End If
         If Not CanChange() OrElse Not ConfirmImport() Then Return
         Dim Extensions As String()
         Select Case Kind
@@ -675,6 +698,7 @@ Public Class PageInstanceResources
     Private Sub ResourceDrop(Sender As Object, e As DragEventArgs) Handles Me.PreviewDrop
         If Not e.Data.GetDataPresent(DataFormats.FileDrop) Then Return
         e.Handled = True
+        If IsRecycleMode Then Return
         If Not CanChange() OrElse Not ConfirmImport() Then Return
         Dim Sources = TryCast(e.Data.GetData(DataFormats.FileDrop), String())
         If Sources Is Nothing OrElse Sources.Length = 0 Then Return
@@ -693,6 +717,10 @@ Public Class PageInstanceResources
                               End Sub)
     End Sub
     Private Sub ExportSelected() Handles BtnExport.Click
+        If IsRecycleMode Then
+            RestoreRecycleSelection()
+            Return
+        End If
         Dim Items = Selection(), Root = CurrentRoot
         If Items.Count = 0 OrElse Not CanChange(True) Then Return
         If Items.Count = 1 Then
@@ -724,17 +752,19 @@ Public Class PageInstanceResources
         DeleteResources(Selection())
     End Sub
     Private Sub DeleteResources(Resources As IEnumerable(Of InstanceResourceEntry))
+        If IsRecycleMode Then
+            PurgeRecycleSelection(Resources)
+            Return
+        End If
         If Not CanChange() Then Return
         Dim Items = Resources.ToList(), Root = CurrentRoot, Recycle = RecycleRoot
         If Items.Count = 0 Then Return
         Dim Names = String.Join(vbCrLf, Items.Take(6).Select(Function(Item) " · " & Item.Name))
-        If MyMsgBox($"确定删除以下 {Items.Count} 个资源吗？{vbCrLf}{Names}{If(Items.Count > 6, vbCrLf & "……", "")}{vbCrLf}文件夹内的内容也会被移走。资源会移入 PCL Living Fork 本地回收区，可通过上方恢复按钮找回。", "删除资源", "删除", "取消", IsWarn:=True) <> 1 Then Return
+        If MyMsgBox($"确定删除以下 {Items.Count} 个资源吗？{vbCrLf}{Names}{If(Items.Count > 6, vbCrLf & "……", "")}{vbCrLf}资源会移入回收站，可从上方的回收站按钮还原。", "删除资源", "移入回收站", "取消", IsWarn:=True) <> 1 Then Return
         RunOperation("删除资源", Sub(Token) InstanceResourceStore.RecycleMany(Root, Items, Recycle, Token))
     End Sub
     Private Sub RestoreDeleted() Handles BtnRestore.Click, BtnHintRestore.Click
-        If Not CanChange() Then Return
-        Dim Root = CurrentRoot, Recycle = RecycleRoot
-        RunOperation("恢复删除", Sub(Token) InstanceResourceStore.RestoreLast(Root, Recycle))
+        SetRecycleMode(Not IsRecycleMode)
     End Sub
     Private Sub CancelClick() Handles BtnCancel.Click
         Operation?.Cancel()

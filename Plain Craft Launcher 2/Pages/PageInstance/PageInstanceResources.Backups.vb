@@ -9,13 +9,13 @@ Partial Public Class PageInstanceResources
     Private OrphanBackupPanel As StackPanel
 
     Private Function VisibleResourceRows() As IEnumerable(Of MyLocalModItem)
-        If Kind = InstanceResourceKind.Saves Then
+        If Kind = InstanceResourceKind.Saves AndAlso Not IsRecycleMode Then
             Return PanWorlds.Children.OfType(Of StackPanel)().SelectMany(Function(Host) Host.Children.OfType(Of MyLocalModItem)())
         End If
         Return PanList.Children.OfType(Of MyLocalModItem)()
     End Function
     Private Function SelectedBackupIds() As List(Of String)
-        If Kind <> InstanceResourceKind.Saves Then Return New List(Of String)
+        If Kind <> InstanceResourceKind.Saves OrElse IsRecycleMode Then Return New List(Of String)
         Return BackupGroups.Values.SelectMany(Function(Group) Group.SelectedIds).Distinct(StringComparer.Ordinal).ToList()
     End Function
     Private Sub ClearBackupSelection()
@@ -147,6 +147,10 @@ Partial Public Class PageInstanceResources
         LocalResourceUi.RefreshSelectionBar(CardSelect, TransSelect, Count, BottomBarShownCount, "Resource Sidebar " & PageUuid, IsLoaded AndAlso AniControlEnabled = 0)
     End Sub
     Private Sub BackupAll() Handles BtnBackupAll.Click
+        If IsRecycleMode Then
+            PurgeRecycleSelection(Entries.ToList())
+            Return
+        End If
         If Owner IsNot Nothing AndAlso BackupSettings.CommitPending() Then WorldBackupsUi.Start(Owner)
     End Sub
     Private Sub RestoreWorldBackup() Handles BtnBackupRestore.Click

@@ -13,6 +13,7 @@ Friend Enum InstanceResourceKind
 End Enum
 
 Friend NotInheritable Class InstanceResourceEntry
+    Public RecycleId As String
     Public Name As String
     Public FullPath As String
     Public Description As String
@@ -101,6 +102,7 @@ Friend NotInheritable Class InstanceResourceStore
                 If Child.Name.StartsWith(".pcl-", StringComparison.OrdinalIgnoreCase) OrElse (Child.Attributes And FileAttributes.ReparsePoint) <> 0 Then Continue For
                 Dim IsDirectory = (Child.Attributes And FileAttributes.Directory) <> 0
                 If IsDirectory Then
+                    If Kind = InstanceResourceKind.Saves AndAlso Child.Name.Equals(MapDownloadInstaller.DownloadFolderName, StringComparison.OrdinalIgnoreCase) AndAlso Not File.Exists(Path.Combine(Child.FullName, "level.dat")) Then Continue For
                     If Kind = InstanceResourceKind.Screenshots Then Continue For
                 ElseIf Not AcceptFile(Kind, Child.Name) Then
                     Continue For
@@ -294,12 +296,8 @@ Friend NotInheritable Class InstanceResourceStore
                 Next
             End Using
             Dim World As String = Nothing
-            If File.Exists(Path.Combine(Stage, "level.dat")) Then
-                World = Stage
-            Else
-                Dim Candidates = Directory.GetDirectories(Stage).Where(Function(Folder) File.Exists(Path.Combine(Folder, "level.dat"))).ToArray()
-                If Candidates.Length = 1 Then World = Candidates(0)
-            End If
+            Dim Candidates = Directory.EnumerateFiles(Stage, "level.dat", SearchOption.AllDirectories).Select(Function(FileName) Path.GetDirectoryName(FileName)).ToArray()
+            If Candidates.Length = 1 Then World = Candidates(0)
             If World Is Nothing Then Throw New IOException("压缩包中没有找到单个 Minecraft 存档（level.dat）。")
             Token.ThrowIfCancellationRequested()
             Directory.Move(World, Destination)

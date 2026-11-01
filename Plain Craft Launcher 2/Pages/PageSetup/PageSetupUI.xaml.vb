@@ -58,6 +58,7 @@ Public Class PageSetupUI
     End Sub
     Public Sub BackgroundRefreshUI(Show As Boolean, Count As Integer)
         If IsNothing(PanBackgroundOpacity) Then Return
+        CheckBackgroundColorful.Visibility = If(Show, Visibility.Visible, Visibility.Collapsed)
         If Show Then
             PanBackgroundOpacity.Visibility = Visibility.Visible
             PanBackgroundBlur.Visibility = Visibility.Visible
@@ -69,7 +70,7 @@ Public Class PageSetupUI
             PanBackgroundBlur.Visibility = Visibility.Collapsed
             PanBackgroundSuit.Visibility = Visibility.Collapsed
             BtnBackgroundClear.Visibility = Visibility.Collapsed
-            CardBackground.Title = "背景图片"
+            CardBackground.Title = "背景图片（原生白底）"
         End If
         CardBackground.TriggerForceResize()
     End Sub
@@ -77,7 +78,7 @@ Public Class PageSetupUI
         If MyMsgBox("即将删除背景图片文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
             DirectoryUtils.Delete(Paths.Base & "PCL\Pictures")
             BackgroundRefresh(False, True)
-            Hint("自定义背景已清空，已恢复默认角色背景！", HintType.Green)
+            Hint(If(Settings.Get(Of Integer)("UiBackgroundMode") = 1, "自定义背景已清空！", "自定义背景已清空，已恢复默认角色背景！"), HintType.Green)
         End If
     End Sub
     ''' <summary>
@@ -87,7 +88,11 @@ Public Class PageSetupUI
     ''' <param name="Refresh">是否刷新图片显示。</param>
     Public Shared Sub BackgroundRefresh(IsHint As Boolean, Refresh As Boolean)
         Try
-
+            If Settings.Get(Of Integer)("UiBackgroundMode") = 1 Then
+                If FrmMain IsNot Nothing Then ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
+                If FrmSetupUI IsNot Nothing Then FrmSetupUI.BackgroundRefreshUI(False, 0)
+                Return
+            End If
             '获取可用的图片文件
             DirectoryUtils.Create(Paths.Base & "PCL\Pictures\")
             Dim Pic As New List(Of String)
@@ -99,7 +104,7 @@ Public Class PageSetupUI
             If Not Pic.Any() Then
                 If Refresh Then
                     FrmMain.ImgBack.Background = New MyBitmap(PathImage & "Branding/DefaultBackground.png")
-                    FrmMain.ImgBack.Visibility = Visibility.Visible
+                    ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
                     FrmMain.UpdateBackgroundAndTitleBar()
                     If IsHint Then Hint("已恢复默认角色背景！", HintType.Green)
                 End If
@@ -110,7 +115,7 @@ Public Class PageSetupUI
                     Try
                         Logger.Info($"加载背景图片：{Address}")
                         FrmMain.ImgBack.Background = New MyBitmap(Address)
-                        FrmMain.ImgBack.Visibility = Visibility.Visible
+                        ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
                         FrmMain.UpdateBackgroundAndTitleBar()
                         If IsHint Then Hint("背景图片已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
                     Catch ex As Exception
