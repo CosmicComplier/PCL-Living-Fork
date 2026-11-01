@@ -2,11 +2,11 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.2](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.2) · [更新说明](RELEASE_NOTES_v1.3.2.md) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.3.3](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.3) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.3) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
-- **游戏资源管理**：在启动器内管理存档、截图、模组、资源包、光影包和投影/原理图，使用 PCL 原生列表、多选与动效。资源包和光影包支持在线更新，下载页提供 CurseForge 地图下载。
+- **游戏资源管理**：在启动器内管理存档、截图、模组、资源包、光影包和投影/原理图，使用 PCL 原生列表、多选与动效。资源回收站支持还原和彻底删除；资源包和光影包支持在线更新，CurseForge 地图下载后自动解压安装。
 - **个人游戏习惯**：按类别同步按键、鼠标、视野、字幕等设置，每个版本可单独例外；按键管理支持搜索、同键占用检查和重新绑定。
 - **继续上次的世界**：首页和存档管理可直接进入支持 Quick Play 的 Java 版存档，首页卡片可在“个性化 → 主页”关闭。
 - **整合包更新**：从本地文件或 CurseForge / Modrinth 更新已识别的整合包，先预览变化与冲突，保留个人修改并下载变化文件。取消后会等待文件处理和必要的回滚结束，再解除版本占用。
@@ -22,7 +22,9 @@
 
 升级时保留原有 `PCL`、`.minecraft` 和游戏目录。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 
-可与官方 PCL 共用兼容的账号和设置；同目录运行时共用 `PCL\Setup.ini`，修改共享配置也会影响另一边。保留固定默认配色，背景图片可自行更换；自定义及其他颜色主题请[赞助原作者](https://meloong.com/afd/a/LTCat)，获取官方快照版。
+可与官方 PCL 共用兼容的账号和设置；同目录运行时共用 `PCL\Setup.ini`，修改共享配置也会影响另一边。保留固定默认配色，可在“设置 → 个性化 → 背景图片”切换原生白底与现有背景；自定义及其他颜色主题请[赞助原作者](https://meloong.com/afd/a/LTCat)，获取官方快照版。
+
+地图 ZIP 默认保存到当前版本的 `saves\PCLLFWorldDownload`，文件夹不存在时自动创建；存档解压到 `saves`，保留原压缩包并避免覆盖同名存档。
 
 **Minecraft API 与 CurseForge 第三方 API 均已获批，发行版使用本项目自有 Client ID 和正式 API Key。** 接口可用性以后续平台授权及服务政策为准。
 

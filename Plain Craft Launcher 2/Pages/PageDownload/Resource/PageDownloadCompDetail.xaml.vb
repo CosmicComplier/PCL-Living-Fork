@@ -394,6 +394,7 @@ GroupDone:
                 End Select
                 '确认默认保存位置
                 Dim DefaultFolder As String = Nothing
+                Dim MapSavesFolder As String = Nothing
                 If File.ResourceType <> ResourceTypes.ModPack Then
                     Dim SubFolder As String = Nothing
                     Select Case File.ResourceType
@@ -455,7 +456,7 @@ GroupDone:
                         Return AllowedLoaders = ModLoaders.None OrElse AllowedLoaders.Flags.Intersect(Instance.Version.ModLoaders.Flags).Any
                     End Function
                     '获取常规资源默认下载位置
-                    If CachedFolder.ContainsKey(File.ResourceType) Then
+                    If File.ResourceType <> ResourceTypes.Map AndAlso CachedFolder.ContainsKey(File.ResourceType) Then
                         DefaultFolder = CachedFolder(File.ResourceType)
                         Logger.Info($"使用上次下载时的文件夹作为默认下载位置：{DefaultFolder}")
                     ElseIf McInstanceSelected IsNot Nothing AndAlso IsInstanceSuitable(McInstanceSelected) Then
@@ -481,6 +482,7 @@ GroupDone:
                             Logger.Info($"使用适合的游戏版本作为默认下载位置：{DefaultFolder}")
                         Else
                             DefaultFolder = McFolderSelected
+                            If File.ResourceType = ResourceTypes.Map Then DefaultFolder = IO.Path.Combine(DefaultFolder, "saves")
                             If NeedLoad Then
                                 Hint($"当前 MC 文件夹中没有找到合适的版本！")
                             Else
@@ -488,6 +490,10 @@ GroupDone:
                             End If
                         End If
                     End If
+                End If
+                If File.ResourceType = ResourceTypes.Map Then
+                    MapSavesFolder = DefaultFolder
+                    DefaultFolder = MapDownloadInstaller.GetDownloadFolder(MapSavesFolder)
                 End If
                 '获取基本信息
                 Dim FileName As String
@@ -521,11 +527,12 @@ GroupDone:
                     If Target Is Nothing Then Return
                     '构造步骤加载器
                     Dim LoaderName As String = Desc & "下载：" & PathUtils.GetFileNameWithoutExtension(Target) & " "
-                    If Not PathUtils.IsSame(PathUtils.RemoveLastPart(Target), DefaultFolder) Then CachedFolder(File.ResourceType) = PathUtils.RemoveLastPart(Target)
+                    If File.ResourceType <> ResourceTypes.Map AndAlso Not PathUtils.IsSame(PathUtils.RemoveLastPart(Target), DefaultFolder) Then CachedFolder(File.ResourceType) = PathUtils.RemoveLastPart(Target)
                     Dim Loaders As New List(Of LoaderBase)
                     Loaders.Add(New LoaderDownload("下载文件", {
                         File.ToNetFile(Target, If(TargetResourceType = ResourceTypes.Any, ResourceVersion.DownloadReason.Dependency, ResourceVersion.DownloadReason.Standalone))
                     }) With {.ProgressWeight = 6, .Block = True})
+                    If File.ResourceType = ResourceTypes.Map Then Loaders.Add(CreateMapInstallLoader(Target, MapSavesFolder))
                     '启动
                     Dim Loader As New LoaderCombo(Of Integer)(LoaderName, Loaders) With {.OnStateChanged =
                     Sub(MyLoader)
@@ -542,6 +549,25 @@ GroupDone:
             End Try
         End Sub, "Download Resource Detail Save")
     End Sub
+
+    Friend Shared Function CreateMapInstallLoader(Target As String, SavesFolder As String) As LoaderTask(Of Integer, String)
+        Dim StepLoader As New LoaderTask(Of Integer, String)("解压安装地图存档",
+            Sub(Task)
+                Try
+                    Task.Output = MapDownloadInstaller.Install(Target, SavesFolder, Task.CreateCancellationToken())
+                Catch ex As OperationCanceledException
+                    Throw
+                Catch ex As Exception
+                    Throw New IO.IOException("地图已下载，但自动解压安装失败，原 ZIP 已保留：" & Target & vbCrLf & ex.Message, ex)
+                End Try
+            End Sub) With {.ProgressWeight = 2, .InterruptOnCancel = False}
+        StepLoader.OnStateChanged = Sub(Task)
+                                        If Task.State <> LoadState.Finished Then Return
+                                        Hint("地图已解压安装：" & IO.Path.GetFileName(StepLoader.Output), HintType.Green)
+                                        If TypeOf FrmMain?.PageRight Is PageInstanceResources Then DirectCast(FrmMain.PageRight, PageInstanceResources).RefreshResources()
+                                    End Sub
+        Return StepLoader
+    End Function
 
     Private Sub BtnIntroWeb_Click(sender As Object, e As EventArgs) Handles BtnIntroWeb.Click
         OpenWebsite(Project.Website)

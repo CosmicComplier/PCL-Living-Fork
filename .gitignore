@@ -346,3 +346,6 @@ MaskFiles/
 
 # Local release packaging output
 /dist/
+
+# Local agent instructions
+/AGENTS.md

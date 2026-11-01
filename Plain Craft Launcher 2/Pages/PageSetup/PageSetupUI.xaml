@@ -35,6 +35,17 @@
             </local:MyCard>
             <local:MyCard x:Name="CardBackground" Margin="0,0,0,15" Title="背景图片">
                 <StackPanel Margin="25,40,25,20">
+                    <Grid Height="28" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="背景样式" Margin="0,0,25,0" />
+                        <local:MyComboBox x:Name="ComboBackgroundMode" local:SettingService.Key="UiBackgroundMode" Grid.Column="1">
+                            <local:MyComboBoxItem local:SettingService.Value="0" Content="现有背景" />
+                            <local:MyComboBoxItem local:SettingService.Value="1" Content="原生白底" />
+                        </local:MyComboBox>
+                    </Grid>
                     <Grid x:Name="PanBackgroundSuit" Height="28" Margin="0,0,0,10" Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Name" />
@@ -74,7 +85,7 @@
                         <local:MySlider local:SettingService.Key="UiBackgroundBlur" x:Name="SliderBackgroundBlur" MaxValue="40" Grid.Column="1" 
                                         ToolTip="高度的模糊会严重掉帧，请谨慎。&#13;不建议在制作整合包时开启模糊，以确保 PCL 在低性能电脑上可以流畅运行。" />
                     </Grid>
-                    <local:MyCheckBox local:SettingService.Key="UiBackgroundColorful" Text="叠加彩色背景" Margin="-1,0,0,8" Height="22" />
+                    <local:MyCheckBox x:Name="CheckBackgroundColorful" local:SettingService.Key="UiBackgroundColorful" Text="叠加彩色背景" Margin="-1,0,0,8" Height="22" />
                     <Grid Height="35" Margin="0,2,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" SharedSizeGroup="Button" />

@@ -12,6 +12,8 @@ $app=[Activator]::CreateInstance($asm.GetType('PCL.Application'),$true)
 $app.InitializeComponent()
 # Pumping the Dispatcher must never enter the actual launcher's startup handler.
 $eventFlags=[Reflection.BindingFlags]'NonPublic,Instance'
+[Windows.Application].GetField('_startupUri',$eventFlags).SetValue($app,$null)
+$app.ShutdownMode=[Windows.ShutdownMode]::OnExplicitShutdown
 $startup=$asm.GetType('PCL.Application').GetMethod('Application_Startup',$eventFlags)
 $app.remove_Startup([Delegate]::CreateDelegate([Windows.StartupEventHandler],$app,$startup))
 $unhandled=$asm.GetType('PCL.Application').GetMethod('Application_DispatcherUnhandledException',$eventFlags)
