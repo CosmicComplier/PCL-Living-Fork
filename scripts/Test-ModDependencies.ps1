@@ -81,6 +81,12 @@ End Class
  $inspector=$asm.GetType('PCL.ModDependencyInspector',$true)
  $contextType=$asm.GetType('PCL.ModDependencyInspector+InspectionContext',$true)
  $inspect=$inspector.GetMethod('Inspect',$flags);$match=$inspector.GetMethod('MatchVersion',$flags)
+ $samePath=$inspector.GetMethod('SameFilePath',$flags)
+ Assert ([bool]$samePath.Invoke($null,@('\\?\UNC\server\share\mods\example.jar','\\server\share\mods\example.jar'))) 'Extended UNC spelling did not match the same file.'
+ Assert (-not [bool]$samePath.Invoke($null,@('\\?\UNC\server\share\mods\example.jar','\\server\other-share\mods\example.jar'))) 'UNC normalization confused different shares.'
+ $longPath='C:\'+(('long-folder-'*24))+'\example.jar'
+ $key=$inspector.GetMethod('FilePathKey',$flags).Invoke($null,@('\\?\'+$longPath))
+ Assert ($key -ceq $longPath) 'Comparing an extended long path lost support beyond MAX_PATH.'
  $getImpacts=$inspector.GetMethod('GetImpacts',$flags);$describeImpacts=$inspector.GetMethod('DescribeImpacts',$flags)
  function Context([string]$loader='fabricloader',[string]$version='0.16.0'){
   $context=[Activator]::CreateInstance($contextType)
@@ -129,6 +135,18 @@ End Class
  Assert (-not $report.HasErrors) 'Required Fabric dependencies should be satisfied.'
  Assert ((Issues $report 'Recommendation').Count -eq 1) 'Recommendations must be warnings.'
  Assert ((Issues $report 'MissingRequired').Count -eq 0) 'Wrong-side and disabled dependencies were checked as active.'
+ # The real mod-list UI uses FileUtils.GetInfo, whose FullName has the Windows extended prefix.
+ $uiCore='\\?\'+[IO.Path]::GetFullPath($core)
+ $uiAddon='\\?\'+[IO.Path]::GetFullPath($addon)
+ Assert ($report.DescribeFile($uiAddon) -ceq $report.DescribeFile($addon)) 'UI FileInfo path lost successfully parsed local dependencies.'
+ Assert ($report.DescribeFile('\\?\'+[IO.Path]::GetFullPath($disabled)) -ceq $report.DescribeFile($disabled)) 'Extended disabled-file path lost its metadata.'
+ $uiImpacts=$getImpacts.Invoke($null,@($report,[string[]]@($uiCore)))
+ Assert (@($uiImpacts|Where-Object {$_.Mod.Id -eq 'addon' -and $_.IsDefinite}).Count -eq 1) 'UI FileInfo path bypassed the dependency warning before removing a provider.'
+ $extendedReport=Scan ('\\?\'+[IO.Path]::GetFullPath($folder))
+ Assert ($extendedReport.DescribeFile($addon) -ceq $report.DescribeFile($addon)) 'An extended scan root could not match an ordinary detail path.'
+ $mixedImpacts=$getImpacts.Invoke($null,@($extendedReport,[string[]]@($core,$uiAddon)))
+ Assert (@($mixedImpacts|Where-Object {$_.Mod.Id -eq 'consumer'}).Count -eq 1) 'Mixed path forms lost the remaining consumer impact.'
+ Assert (@($mixedImpacts|Where-Object {$_.Mod.Id -eq 'addon'}).Count -eq 0) 'A selected owner was incorrectly warned about itself.'
  Assert ($report.Edges.Count -ge 6 -and $report.ReverseDependencies.Count -ge 3) 'Dependency graph or reverse map is empty.'
  $caption=$report.DescribeFile($core)
  Assert ($caption.Contains('addon') -and $caption.Contains('被这些模组依赖')) 'Reverse dependencies are absent from file detail.'

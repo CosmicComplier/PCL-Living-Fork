@@ -126,10 +126,12 @@
         End If
         RunInNewThread(Sub()
                            Dim Caption As String = Nothing, Stamp As String = Nothing, Failure As Exception = Nothing
+                           Dim ImpactItems As List(Of ModDependencyImpactView.Item) = Nothing
                            Try
                                Stamp = DependencyStamp(Target)
                                Dim Report = ModDependencyOnline.InspectWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target))
                                Caption = ModDependencyInspector.DescribeImpacts(Report, Candidates)
+                               ImpactItems = ModDependencyImpactView.Collect(Report, Candidates)
                            Catch ex As Exception
                                Failure = ex
                            End Try
@@ -140,7 +142,8 @@
                                                Return
                                            End If
                                            If PageInstanceLeft.Instance IsNot Target OrElse McInstanceLock.IsLocked(Target) Then Return
-                                           If Not String.IsNullOrEmpty(Caption) AndAlso MyMsgBox(Caption & vbCrLf & vbCrLf & "仍然" & ActionName & "这些模组吗？", "模组依赖影响", "继续" & ActionName, "取消", IsWarn:=True) <> 1 Then Return
+                                           If Not String.IsNullOrEmpty(Caption) AndAlso MyMsgBoxConfirmContent(Caption, "模组依赖影响", "继续" & ActionName,
+                                               Function() New ModDependencyImpactView(ImpactItems, ActionName)) <> 1 Then Return
                                            If DependencyStamp(Target) <> Stamp Then
                                                Hint("Mod 列表已变化，请重新执行操作以检查依赖。", HintType.Red)
                                                Return
@@ -155,12 +158,19 @@
     Private Sub ShowDependencyDetails(Entry As LocalResourceFile)
         Dim Target = PageInstanceLeft.Instance
         If Target Is Nothing OrElse Entry Is Nothing Then Return
+        Hint("正在获取模组依赖声明……")
         RunInNewThread(Sub()
                            Try
                                Dim Report = ModDependencyOnline.InspectWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target),
-                                   Options:=New ModDependencyOnline.LookupOptions With {.TargetFile = Entry.File.FullName})
+                                   Options:=New ModDependencyOnline.LookupOptions With {.TargetFile = Entry.File.FullName, .ComparePlatformDependencies = True, .MaxSearchFiles = 0})
                                Dim Caption = Report.DescribeFile(Entry.File.FullName)
-                               RunInUi(Sub() MyMsgBox(Caption, "模组依赖关系", "确定"))
+                               RunInUi(Sub()
+                                           If Report.Mods.Any(Function(Item) ModDependencyInspector.SameFilePath(Item.RootPath, Entry.File.FullName)) Then
+                                               MyMsgBoxContent(Caption, "模组依赖关系", Function() New ModDependencyGraphView(Report, Entry.File.FullName))
+                                           Else
+                                               MyMsgBox(Caption, "模组依赖关系", "确定")
+                                           End If
+                                       End Sub)
                            Catch ex As Exception
                                Logger.Error(ex, "读取模组依赖关系失败", LogBehavior.Toast)
                            End Try

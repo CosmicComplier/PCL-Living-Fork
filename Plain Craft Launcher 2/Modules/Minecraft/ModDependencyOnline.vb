@@ -12,7 +12,7 @@ Imports System.Threading
 Imports Newtonsoft.Json
 Imports Newtonsoft.Json.Linq
 
-'Only supplements unread/incomplete local metadata. Platform project IDs never enter the local loader graph.
+'Startup supplements incomplete metadata; manual details may compare exact platform versions. Project IDs never enter the local loader graph.
 Friend NotInheritable Class ModDependencyOnline
     Private Sub New()
     End Sub
@@ -22,8 +22,9 @@ Friend NotInheritable Class ModDependencyOnline
         Public Fingerprint As Func(Of String, UInteger)
         Public Clock As Func(Of DateTime) = Function() DateTime.UtcNow
         Public Cache As LookupCache
-        'A detail view may explicitly request an unread disabled file; startup leaves this unset.
+        'A detail view may request a specific file; startup leaves this unset.
         Public TargetFile As String
+        Public ComparePlatformDependencies As Boolean
         Public TimeBudgetMs As Integer = 6000
         Public RequestTimeoutMs As Integer = 2000
         Public MaxRequests As Integer = 12
@@ -178,7 +179,7 @@ Friend NotInheritable Class ModDependencyOnline
                                  Optional Token As CancellationToken = Nothing, Optional Options As LookupOptions = Nothing) As ModDependencyInspector.InspectionReport
         If Report Is Nothing Then Throw New ArgumentNullException(NameOf(Report))
         Dim Settings = If(Options, New LookupOptions())
-        Dim TargetFile = ExplicitTarget(Settings.TargetFile, ModsFolder, Report)
+        Dim TargetFile = ExplicitTarget(Settings.TargetFile, ModsFolder, Report, Settings.ComparePlatformDependencies)
         If Not Report.MetadataIncomplete AndAlso TargetFile Is Nothing Then Return Report
         Report.OnlineAttempted = True
         Report.OnlineCancelled = False
@@ -227,7 +228,7 @@ Friend NotInheritable Class ModDependencyOnline
             If Directory.Exists(Folder) AndAlso (File.GetAttributes(Folder) And FileAttributes.ReparsePoint) = 0 Then Paths.AddRange(Directory.EnumerateFiles(Folder, "*", SearchOption.TopDirectoryOnly).Where(AddressOf IsModFile))
         End If
         Dim Targets = Paths.ToDictionary(Function(Value) Value,
-            Function(Value) If(Work.TargetFile IsNot Nothing, String.Equals(Value, Work.TargetFile, StringComparison.OrdinalIgnoreCase),
+            Function(Value) If(Work.TargetFile IsNot Nothing, ModDependencyInspector.SameFilePath(Value, Work.TargetFile),
                 IsEnabledFile(Value) AndAlso NeedsSupplement(Value, Work.Report)), StringComparer.OrdinalIgnoreCase)
         If Not Targets.Values.Any(Function(Value) Value) Then Return Result
         Dim Total As Long
@@ -258,27 +259,27 @@ Friend NotInheritable Class ModDependencyOnline
     Private Shared Function IsEnabledFile(Value As String) As Boolean
         Return Not Value.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) AndAlso Not Value.EndsWith(".old", StringComparison.OrdinalIgnoreCase)
     End Function
-    Private Shared Function ExplicitTarget(Value As String, ModsFolder As String, Report As ModDependencyInspector.InspectionReport) As String
+    Private Shared Function ExplicitTarget(Value As String, ModsFolder As String, Report As ModDependencyInspector.InspectionReport, ComparePlatformDependencies As Boolean) As String
         If String.IsNullOrWhiteSpace(Value) Then Return Nothing
         Try
             Dim FullPath = Path.GetFullPath(Value), Root = Path.GetFullPath(ModsFolder), Parent = Path.GetDirectoryName(FullPath)
             If Not File.Exists(FullPath) OrElse Not Directory.Exists(Root) OrElse Not IsModFile(FullPath) Then Return Nothing
-            Dim Allowed = String.Equals(Parent.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+            Dim Allowed = ModDependencyInspector.SameFilePath(Parent.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             Dim Legacy = Report.Context?.LegacyForgeVersionFolder
             If Not Allowed AndAlso Not String.IsNullOrEmpty(Legacy) AndAlso Regex.IsMatch(Legacy, "^[0-9.]+$") Then
-                Allowed = String.Equals(Parent, Path.GetFullPath(Path.Combine(Root, Legacy)), StringComparison.OrdinalIgnoreCase)
+                Allowed = ModDependencyInspector.SameFilePath(Parent, Path.Combine(Root, Legacy))
             End If
             If Not Allowed OrElse (File.GetAttributes(Root) And FileAttributes.ReparsePoint) <> 0 OrElse
                 (File.GetAttributes(Parent) And FileAttributes.ReparsePoint) <> 0 OrElse (File.GetAttributes(FullPath) And FileAttributes.ReparsePoint) <> 0 Then Return Nothing
-            Return If(NeedsSupplement(FullPath, Report), FullPath, Nothing)
+            Return If(ComparePlatformDependencies OrElse NeedsSupplement(FullPath, Report), FullPath, Nothing)
         Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse
             TypeOf ex Is ArgumentException OrElse TypeOf ex Is NotSupportedException OrElse TypeOf ex Is Security.SecurityException
             Return Nothing
         End Try
     End Function
     Private Shared Function NeedsSupplement(FullPath As String, Report As ModDependencyInspector.InspectionReport) As Boolean
-        Dim Mods = Report.Mods.Where(Function(Item) String.Equals(Item.RootPath, FullPath, StringComparison.OrdinalIgnoreCase)).ToList()
+        Dim Mods = Report.Mods.Where(Function(Item) ModDependencyInspector.SameFilePath(Item.RootPath, FullPath)).ToList()
         If Mods.Count = 0 OrElse Mods.Any(Function(Item) Item.Format = "LiteLoader" OrElse Item.Format = "Forge (旧版)") Then Return True
         Dim Name = Path.GetFileName(FullPath)
         Return Report.Notices.Any(Function(Value) Value.StartsWith(Name & "：", StringComparison.OrdinalIgnoreCase) OrElse Value.StartsWith(Name & "!", StringComparison.OrdinalIgnoreCase))

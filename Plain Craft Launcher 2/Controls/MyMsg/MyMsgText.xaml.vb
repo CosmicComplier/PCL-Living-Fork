@@ -13,6 +13,13 @@ Public Class MyMsgText
             MyConverter = Converter
             LabTitle.Text = Converter.Title
             LabCaption.Text = Converter.Text
+            If Converter.ContentFactory IsNot Nothing Then
+                PanCaption.Content = Converter.ContentFactory()
+                PanCaption.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
+                PanCaption.Padding = New Thickness(0)
+                MinWidth = 0
+                RefreshContentBounds()
+            End If
             Btn1.Text = Converter.Button1
             If Converter.IsWarn Then
                 Btn1.ColorType = MyButton.ColorState.Red
@@ -27,6 +34,29 @@ Public Class MyMsgText
         Catch ex As Exception
             Logger.Error(ex, "普通弹窗初始化失败", LogBehavior.Toast)
         End Try
+    End Sub
+
+    Private Sub RefreshContentBounds() Handles Me.SizeChanged
+        If MyConverter Is Nothing OrElse MyConverter.ContentFactory Is Nothing Then Return
+        Dim Host = FrmMain?.PanMsg
+        Dim Body = TryCast(PanCaption.Content, FrameworkElement)
+        Dim Graph = TryCast(Body, ModDependencyGraphView)
+        Dim Impacts = TryCast(Body, ModDependencyImpactView)
+        Width = Math.Min(If(Graph IsNot Nothing, Graph.PreferredWidth, If(Impacts IsNot Nothing, Impacts.PreferredWidth, 980)), Math.Max(0, If(Host Is Nothing, 1000, Host.ActualWidth) - 50))
+        MaxHeight = Math.Max(0, If(Host Is Nothing, 740, Host.ActualHeight) - 50)
+        If Body IsNot Nothing Then Body.MaxHeight = Math.Max(0, MaxHeight - 156)
+    End Sub
+
+    Private Sub ContentHostLoaded() Handles Me.Loaded
+        If MyConverter Is Nothing OrElse MyConverter.ContentFactory Is Nothing Then Return
+        If FrmMain?.PanMsg IsNot Nothing Then AddHandler FrmMain.PanMsg.SizeChanged, AddressOf ContentHostResized
+        RefreshContentBounds()
+    End Sub
+    Private Sub ContentHostResized(Sender As Object, e As SizeChangedEventArgs)
+        RefreshContentBounds()
+    End Sub
+    Private Sub ContentHostUnloaded() Handles Me.Unloaded
+        If MyConverter IsNot Nothing AndAlso MyConverter.ContentFactory IsNot Nothing AndAlso FrmMain?.PanMsg IsNot Nothing Then RemoveHandler FrmMain.PanMsg.SizeChanged, AddressOf ContentHostResized
     End Sub
 
     Private Sub Load(sender As Object, e As EventArgs) Handles MyBase.Loaded

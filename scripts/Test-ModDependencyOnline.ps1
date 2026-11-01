@@ -167,6 +167,8 @@ End Module
  Assert ($report.DescribeFile($owner).Contains('Modrinth') -and $report.DescribeFile($owner).Contains('Owner project')) 'Online source details were not included in file description.'
  Assert ($report.DescribeFile($peer).Contains('owner.jar')) 'Reverse platform relationship was not displayed.'
  Assert ($report.DescribeOnlineImpacts([string[]]@($peer)).Contains('owner.jar')) 'Platform-declared removal impact is missing.'
+ Assert ($report.DescribeFile('\\?\'+[IO.Path]::GetFullPath($owner)) -ceq $report.DescribeFile($owner)) 'UI extended path lost the exact online dependency details.'
+ Assert ($report.DescribeOnlineImpacts([string[]]@('\\?\'+[IO.Path]::GetFullPath($peer))).Contains('owner.jar')) 'UI extended path lost the platform removal warning.'
  Assert ((Invoke-Static $inspector 'DescribeImpacts' @($report,[string[]]@($peer))).Contains('下载源')) 'Existing removal text did not include the platform supplement.'
  Assert ($report.DescribeOnlineImpacts([string[]]@($owner,$peer)) -eq '') 'A selected owner must not be warned about its own batch.'
  Assert ($report.DescribeOnlineImpacts([string[]]@($owner)) -eq '') 'Reliable local declarations must take priority over contradictory platform-only removal requirements.'
@@ -267,8 +269,19 @@ End Module
  Assert (-not $report.MetadataIncomplete -and -not $report.HasErrors -and $report.Issues.Count -eq 0) 'Explicit disabled-file lookup changed startup metadata or local errors.'
  $combined=Invoke-Static $online 'InspectWithOnline' @($folder,$report.Context,$none,$options)
  Assert ($combined.OnlineAttempted -and (FileInfo $combined $disabled).Matches.Count -eq 1) 'InspectWithOnline did not forward the explicit detail target.'
+ $options.TargetFile='\\?\'+[IO.Path]::GetFullPath($disabled)
+ $extended=Enrich (Scan $folder) $folder $options
+ Assert ($extended.OnlineAttempted -and (FileInfo $extended $disabled).Matches.Count -eq 1) 'UI extended target was rejected before disabled-file supplementation.'
+ Assert ($extended.DescribeFile($options.TargetFile).Contains('Disabled project')) 'Extended target detail lost its online match.'
+ $extended=Enrich (Scan ('\\?\'+[IO.Path]::GetFullPath($folder))) ('\\?\'+[IO.Path]::GetFullPath($folder)) $options
+ Assert (@($extended.OnlineFiles|Where-Object {$_.IsSupplementTarget -and $_.Matches.Count -eq 1}).Count -eq 1) 'Extended scan root lost the requested supplement target.'
  $network=[ModDependencyOnlineFixtureNetwork]::new();$options=Options $network;$options.TargetFile=$path;$report=Enrich (Scan $folder) $folder $options
  Assert (-not $report.OnlineAttempted -and $network.Calls.Count -eq 0) 'A reliable explicit detail target caused unnecessary lookup for another disabled file.'
+ $compareOptions=Options $network;$compareOptions.TargetFile=$path;$compareOptions.ComparePlatformDependencies=$true;$compareOptions.MaxSearchFiles=0
+ $compare=Enrich (Scan $folder) $folder $compareOptions
+ Assert ($compare.OnlineAttempted -and $network.Calls.Count -gt 0 -and (FileInfo $compare $path).IsSupplementTarget) 'Manual platform comparison skipped a complete local declaration.'
+ Assert (-not $compare.HasErrors -and -not $compare.MetadataIncomplete -and -not (FileInfo $compare $disabled).IsSupplementTarget) 'Manual platform comparison changed startup checks or promoted a disabled peer.'
+ $network=[ModDependencyOnlineFixtureNetwork]::new()
  $outside=Jar (Folder 'outside-target') 'outside.jar.disabled';$options=Options $network;$options.TargetFile=$outside;$report=Enrich (Scan $folder) $folder $options
  Assert (-not $report.OnlineAttempted -and $network.Calls.Count -eq 0) 'Explicit lookup accepted a file outside the mod folder.'
  $network=[ModDependencyOnlineFixtureNetwork]::new();$network.Search=Json @{hits=@(@{project_id='DisabledCandidate';title='Disabled search candidate';project_type='mod'})}

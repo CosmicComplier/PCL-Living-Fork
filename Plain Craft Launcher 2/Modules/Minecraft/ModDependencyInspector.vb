@@ -22,6 +22,12 @@ Friend NotInheritable Class ModDependencyInspector
         Unsatisfied
     End Enum
 
+    Friend Enum FileProviderKind
+        None
+        Required
+        Possible
+    End Enum
+
     Friend Enum DependencyKind
         Required
         [Optional]
@@ -58,6 +64,7 @@ Friend NotInheritable Class ModDependencyInspector
         Public Version As String
         Public RootPath As String
         Public MetadataPath As String
+        Public IconPath As String
         Public Format As String
         Public Side As String = "*"
         Public Enabled As Boolean
@@ -106,6 +113,7 @@ Friend NotInheritable Class ModDependencyInspector
         Public Providers As New List(Of ModInfo)
         Public State As MatchState
         Public Evaluated As Boolean
+        Public ConditionBypassed As Boolean
     End Class
 
     Friend Class InspectionIssue
@@ -211,8 +219,8 @@ Friend NotInheritable Class ModDependencyInspector
         End Function
         Public Function DescribeOnlineFile(FullPath As String) As String
             If Not OnlineAttempted Then Return ""
-            Dim Target = Path.GetFullPath(FullPath), Lines As New List(Of String)
-            Dim Info = OnlineFiles.FirstOrDefault(Function(Item) String.Equals(Item.FullPath, Target, StringComparison.OrdinalIgnoreCase))
+            Dim Target = FilePathKey(FullPath), Lines As New List(Of String)
+            Dim Info = OnlineFiles.FirstOrDefault(Function(Item) SameFilePath(Item.FullPath, Target))
             If Info IsNot Nothing Then
                 Lines.Add("下载源补充（本地可靠声明优先；" & OnlineCheckedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm") & "）：")
                 For Each Match In Info.Matches
@@ -234,9 +242,9 @@ Friend NotInheritable Class ModDependencyInspector
                 End If
             End If
             Dim Reverse As New HashSet(Of String)(StringComparer.Ordinal)
-            For Each Owner In OnlineFiles.Where(Function(Item) Not String.Equals(Item.FullPath, Target, StringComparison.OrdinalIgnoreCase))
+            For Each Owner In OnlineFiles.Where(Function(Item) Not SameFilePath(Item.FullPath, Target))
                 For Each Match In Owner.Matches
-                    For Each Requirement In Match.Dependencies.Where(Function(Item) Item.MatchedPaths.Contains(Target, StringComparer.OrdinalIgnoreCase))
+                    For Each Requirement In Match.Dependencies.Where(Function(Item) Item.MatchedPaths.Any(Function(Value) SameFilePath(Value, Target)))
                         Reverse.Add("  • " & Path.GetFileName(Owner.FullPath) & " · " & Match.Platform & " [" & OnlineKind(Requirement.Kind) & "]")
                     Next
                 Next
@@ -251,12 +259,12 @@ Friend NotInheritable Class ModDependencyInspector
         End Function
         Public Function DescribeOnlineImpacts(RemovedPaths As IEnumerable(Of String)) As String
             If Not OnlineAttempted Then Return ""
-            Dim Removed As New HashSet(Of String)(RemovedPaths.Select(Function(Value) Path.GetFullPath(Value)), StringComparer.OrdinalIgnoreCase)
+            Dim Removed As New HashSet(Of String)(RemovedPaths.Select(Function(Value) FilePathKey(Value)), StringComparer.OrdinalIgnoreCase)
             Dim Lines As New HashSet(Of String)(StringComparer.Ordinal)
-            For Each Owner In OnlineFiles.Where(Function(Item) Item.Enabled AndAlso Item.IsSupplementTarget AndAlso Not Removed.Contains(Item.FullPath))
+            For Each Owner In OnlineFiles.Where(Function(Item) Item.Enabled AndAlso Item.IsSupplementTarget AndAlso Not Removed.Contains(FilePathKey(Item.FullPath)))
                 For Each Match In Owner.Matches.Where(Function(Item) Item.IsExact)
                     For Each Requirement In Match.Dependencies.Where(Function(Item) Item.Kind = "required" AndAlso Item.EnabledPaths.Count > 0)
-                        If Not Requirement.EnabledPaths.All(Function(Value) Removed.Contains(Value)) Then Continue For
+                        If Not Requirement.EnabledPaths.All(Function(Value) Removed.Contains(FilePathKey(Value))) Then Continue For
                         Lines.Add("• " & Path.GetFileName(Owner.FullPath) & "：按 " & Match.Platform & " 版本声明，可能失去项目依赖 " &
                                   If(Requirement.ProjectName, Requirement.ProjectId) & "（平台补充，需核对）。")
                     Next
@@ -308,6 +316,22 @@ Friend NotInheritable Class ModDependencyInspector
         End If
         If Instance.Version.HasOptiFine AndAlso Not Instance.Version.OptiFineAsMod Then Result.AdditionalBuiltins("optifine") = Instance.Version.OptiFine
         Return Result
+    End Function
+
+    '仅统一比较键；实际读取仍使用原始路径，保留 Windows 长路径支持。
+    Friend Shared Function FilePathKey(FullPath As String) As String
+        Dim Value = Path.GetFullPath(FullPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar))
+        If Value.StartsWith("\\?\UNC\", StringComparison.OrdinalIgnoreCase) Then
+            Value = "\\" & Value.Substring(8)
+        ElseIf Value.StartsWith("\\?\", StringComparison.OrdinalIgnoreCase) AndAlso Value.Length >= 7 AndAlso
+            Char.IsLetter(Value(4)) AndAlso Value(5) = ":"c AndAlso Value(6) = "\"c Then
+            Value = Value.Substring(4)
+        End If
+        Return Value
+    End Function
+
+    Friend Shared Function SameFilePath(First As String, Second As String) As Boolean
+        Return String.Equals(FilePathKey(First), FilePathKey(Second), StringComparison.OrdinalIgnoreCase)
     End Function
 
     Friend Shared Function Inspect(ModsFolder As String, Optional Context As InspectionContext = Nothing,
@@ -414,6 +438,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Next
                 Dim Item = NewMod(Json("id"), Json("name"), Json("version"), RootPath, NestedPath & Metadata.FullName, "Fabric", Enabled, Nested)
                 Item.Side = ReadSide(Json("environment"))
+                Item.IconPath = ReadIconPath(Json("icon"))
                 For Each AliasId In ArrayValues(Json("provides"))
                     If AliasId.Type = JTokenType.String Then Item.Provides(Text(AliasId)) = Item.Version
                 Next
@@ -432,6 +457,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Next
                 Dim Item = NewMod(Loader("id"), Loader("metadata")?("name"), Loader("version"), RootPath, NestedPath & Metadata.FullName, "Quilt", Enabled, Nested)
                 Item.Group = Text(Loader("group"))
+                Item.IconPath = ReadIconPath(Loader("metadata")?("icon"))
                 Item.Side = ReadSide(Json("minecraft")?("environment"))
                 For Each AliasValue In ArrayValues(Loader("provides"))
                     Dim AliasId = If(AliasValue.Type = JTokenType.String, Text(AliasValue), Text(AliasValue("id")))
@@ -465,7 +491,9 @@ Friend NotInheritable Class ModDependencyInspector
                 ReadLegacy(JToken.Parse(Content), RootPath, NestedPath & Metadata.FullName, Enabled, Nested, Items, Report)
             Case "litemod.json"
                 Dim Json = JObject.Parse(Content)
-                Items.Add(NewMod(Json("name"), Json("displayName"), Json("version"), RootPath, NestedPath & Metadata.FullName, "LiteLoader", Enabled, Nested))
+                Dim Item = NewMod(Json("name"), Json("displayName"), Json("version"), RootPath, NestedPath & Metadata.FullName, "LiteLoader", Enabled, Nested)
+                Item.IconPath = ReadIconPath(Json("icon"))
+                Items.Add(Item)
                 If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：LiteLoader 依赖可能在运行时代码中声明。")
         End Select
         If Items.Count = 0 Then Throw New FormatException("声明中未找到模组 ID")
@@ -526,6 +554,20 @@ Friend NotInheritable Class ModDependencyInspector
     Private Shared Function ArrayValues(Value As JToken) As IEnumerable(Of JToken)
         Return If(TypeOf Value Is JArray, CType(Value, JArray).AsEnumerable(), Enumerable.Empty(Of JToken)())
     End Function
+    Private Shared Function ReadIconPath(Value As JToken) As String
+        If TypeOf Value Is JObject Then
+            Value = CType(Value, JObject).Properties().OrderBy(Function(Item)
+                Dim Size As Integer
+                Return If(Integer.TryParse(Item.Name, Size) AndAlso Size >= 32, Size, Integer.MaxValue)
+            End Function).Select(Function(Item) Item.Value).FirstOrDefault()
+        End If
+        If Value Is Nothing OrElse Value.Type <> JTokenType.String Then Return ""
+        Dim Name = Text(Value).Replace("\"c, "/"c)
+        If Name.StartsWith("/", StringComparison.Ordinal) OrElse Name.Contains(":") OrElse
+            Name.Split("/"c).Any(Function(Part) Part = ".." OrElse Part = "" OrElse Part = ".") Then Return ""
+        Return Name
+    End Function
+
     Private Shared Function ReadSide(Value As JToken) As String
         If TypeOf Value Is JArray Then
             Dim Values = CType(Value, JArray).Select(Function(Item) Text(Item)).ToList()
@@ -678,6 +720,7 @@ Friend NotInheritable Class ModDependencyInspector
             Dim Version = Scalar(Section, "version")
             If Version = "$" & "{file.jarVersion}" Then Version = ManifestVersion
             Dim Item = NewMod(New JValue(Scalar(Section, "modId")), New JValue(Scalar(Section, "displayName")), New JValue(Version), RootPath, MetadataPath, If(Neo, "NeoForge", "Forge"), Enabled, Nested)
+            Item.IconPath = ReadIconPath(New JValue(Scalar(Section, "logoFile", Scalar(GlobalSection, "logoFile"))))
             If Scalar(GlobalSection, "clientSideOnly") = "true" Then Item.Side = "client"
             Items.Add(Item)
         Next
@@ -727,6 +770,7 @@ Friend NotInheritable Class ModDependencyInspector
         Dim Values = If(TypeOf Json Is JArray, Json, Json("modList"))
         For Each Value As JObject In ArrayValues(Values).OfType(Of JObject)()
             Dim Item = NewMod(Value("modid"), Value("name"), Value("version"), RootPath, MetadataPath, "Forge (旧版)", Enabled, Nested)
+            Item.IconPath = ReadIconPath(Value("logoFile"))
             For Each Required In ArrayValues(Value("requiredMods"))
                 Dim Raw = Text(Required), At = Raw.IndexOf("@"c)
                 Item.Dependencies.Add(New Dependency With {.Id = If(At < 0, Raw, Raw.Substring(0, At)), .Versions = New JValue(If(At < 0, "*", Raw.Substring(At + 1))),
@@ -782,7 +826,7 @@ Friend NotInheritable Class ModDependencyInspector
         'Java 8 update syntax is numeric; preserve unknown suffixes instead of guessing EA/release ordering.
         Return Regex.Replace(Value, "^(\d+(?:\.\d+)*)_(\d+)$", "$1.$2")
     End Function
-    Private Shared Function Identities(Item As ModInfo) As Dictionary(Of String, String)
+    Friend Shared Function Identities(Item As ModInfo) As Dictionary(Of String, String)
         Dim Result As New Dictionary(Of String, String)(Item.Provides, StringComparer.Ordinal)
         Result(Item.Id) = Item.Version
         If Not String.IsNullOrEmpty(Item.Group) Then Result(Item.Group & ":" & Item.Id) = Item.Version
@@ -791,6 +835,27 @@ Friend NotInheritable Class ModDependencyInspector
     Private Shared Function ActiveMods(Report As InspectionReport) As List(Of ModInfo)
         Return Report.Mods.Where(Function(Item) Item.Enabled AndAlso SideApplies(Item.Side, Report.Context)).ToList()
     End Function
+    Friend Shared Function FileSatisfiesDependency(Report As InspectionReport, FullPath As String, Requirement As Dependency) As Boolean
+        Dim Modules = Report.Mods.Where(Function(Item) SameFilePath(Item.RootPath, FullPath) AndAlso SideApplies(Item.Side, Report.Context))
+        Return Resolve(Requirement, ProviderMap(Modules), Report.Context).State = MatchState.Satisfied
+    End Function
+
+    Friend Shared Function IsRequiredFileProvider(Report As InspectionReport, Edge As DependencyEdge, FullPath As String) As Boolean
+        Return FileProviderRelation(Report, Edge, FullPath) = FileProviderKind.Required
+    End Function
+
+    Friend Shared Function FileProviderRelation(Report As InspectionReport, Edge As DependencyEdge, FullPath As String) As FileProviderKind
+        If Not Edge.Evaluated OrElse Edge.ConditionBypassed OrElse SameFilePath(Edge.Owner.RootPath, FullPath) Then Return FileProviderKind.None
+        Dim Providers = Edge.Providers.Where(Function(Item) Not Item.IsBuiltin).ToList()
+        If Not Providers.Any(Function(Item) SameFilePath(Item.RootPath, FullPath)) OrElse FileSatisfiesDependency(Report, Edge.Owner.RootPath, Edge.Requirement) Then Return FileProviderKind.None
+        If Providers.All(Function(Item) SameFilePath(Item.RootPath, FullPath)) Then Return FileProviderKind.Required
+        Dim WithoutFile = ActiveMods(Report).Where(Function(Item) Not SameFilePath(Item.RootPath, FullPath)).Concat(Report.Builtins)
+        If Edge.State = MatchState.Satisfied AndAlso Resolve(Edge.Requirement, ProviderMap(WithoutFile), Report.Context).State = MatchState.Unsatisfied Then Return FileProviderKind.Required
+        If Edge.Requirement.Children.Count = 0 AndAlso Edge.State = MatchState.Satisfied AndAlso
+            Resolve(Edge.Requirement, ProviderMap(Providers.Where(Function(Item) SameFilePath(Item.RootPath, FullPath))), Report.Context).State = MatchState.Unsatisfied Then Return FileProviderKind.None
+        Return FileProviderKind.Possible
+    End Function
+
     Private Shared Function ProviderMap(Mods As IEnumerable(Of ModInfo)) As Dictionary(Of String, List(Of ModInfo))
         Dim Result As New Dictionary(Of String, List(Of ModInfo))(StringComparer.Ordinal)
         For Each Item In Mods
@@ -884,7 +949,8 @@ Friend NotInheritable Class ModDependencyInspector
             For Each Requirement In Item.Dependencies
                 Dim Value = Resolve(Requirement, Map, Report.Context)
                 Dim Edge As New DependencyEdge With {.Owner = Item, .Requirement = Requirement, .State = Value.State, .Providers = Value.Providers,
-                    .Evaluated = RequiredKeys.Contains(Item.Key) AndAlso SideApplies(Requirement.Side, Report.Context)}
+                    .Evaluated = RequiredKeys.Contains(Item.Key) AndAlso SideApplies(Requirement.Side, Report.Context),
+                    .ConditionBypassed = Requirement.Unless IsNot Nothing AndAlso Resolve(Requirement.Unless, Map, Report.Context).State = MatchState.Satisfied}
                 Report.Edges.Add(Edge)
                 For Each Provider In Value.Providers
                     If Not Report.ReverseDependencies.ContainsKey(Provider.Key) Then Report.ReverseDependencies(Provider.Key) = New List(Of DependencyEdge)
@@ -925,15 +991,15 @@ Friend NotInheritable Class ModDependencyInspector
 
     Friend Shared Function GetImpacts(Report As InspectionReport, RemovedPaths As IEnumerable(Of String)) As List(Of RemovalImpact)
         If Report Is Nothing Then Throw New ArgumentNullException(NameOf(Report))
-        Dim Removed As New HashSet(Of String)(RemovedPaths.Select(Function(Name) Path.GetFullPath(Name)), StringComparer.OrdinalIgnoreCase)
+        Dim Removed As New HashSet(Of String)(RemovedPaths.Select(Function(Name) FilePathKey(Name)), StringComparer.OrdinalIgnoreCase)
         Dim Active = ActiveMods(Report), Original = ProviderMap(Active.Concat(Report.Builtins))
-        Dim Unavailable As New HashSet(Of String)(Active.Where(Function(Item) Removed.Contains(Item.RootPath)).Select(Function(Item) Item.Key), StringComparer.Ordinal)
+        Dim Unavailable As New HashSet(Of String)(Active.Where(Function(Item) Removed.Contains(FilePathKey(Item.RootPath))).Select(Function(Item) Item.Key), StringComparer.Ordinal)
         Dim Result As New List(Of RemovalImpact), Changed = True, Round As Integer
         While Changed
             Changed = False
             Dim Map = ProviderMap(Active.Where(Function(Item) Not Unavailable.Contains(Item.Key)).Concat(Report.Builtins))
             Dim Additions As New List(Of RemovalImpact)
-            For Each Item In Active.Where(Function(Entry) Not Removed.Contains(Entry.RootPath) AndAlso Not Unavailable.Contains(Entry.Key) AndAlso Not Entry.IsCandidate)
+            For Each Item In Active.Where(Function(Entry) Not Removed.Contains(FilePathKey(Entry.RootPath)) AndAlso Not Unavailable.Contains(Entry.Key) AndAlso Not Entry.IsCandidate)
                 Dim Failed As New List(Of Dependency)
                 For Each Requirement In Item.Dependencies.Where(Function(Entry) Entry.Kind = DependencyKind.Required AndAlso SideApplies(Entry.Side, Report.Context))
                     If Resolve(Requirement, Original, Report.Context).State = MatchState.Unsatisfied Then Continue For
@@ -965,14 +1031,14 @@ Friend NotInheritable Class ModDependencyInspector
         Lines.Add("仍可继续操作；如需一起禁用或删除，请先返回模组管理选择这些文件。")
         Return String.Join(vbCrLf, Lines)
     End Function
-    Private Shared Function DependencyMentions(Requirement As Dependency, Ids As IEnumerable(Of String)) As Boolean
+    Friend Shared Function DependencyMentions(Requirement As Dependency, Ids As IEnumerable(Of String)) As Boolean
         Dim Names = New HashSet(Of String)(Ids, StringComparer.Ordinal)
         If Names.Contains(If(Requirement.Id, "")) Then Return True
         If Requirement.Unless IsNot Nothing AndAlso DependencyMentions(Requirement.Unless, Names) Then Return True
         Return Requirement.Children.Any(Function(Child) DependencyMentions(Child, Names))
     End Function
     Private Shared Function DescribeFile(Report As InspectionReport, FullPath As String) As String
-        Dim Target = Path.GetFullPath(FullPath), Items = Report.Mods.Where(Function(Item) String.Equals(Item.RootPath, Target, StringComparison.OrdinalIgnoreCase)).ToList()
+        Dim Target = FilePathKey(FullPath), Items = Report.Mods.Where(Function(Item) SameFilePath(Item.RootPath, Target)).ToList()
         Dim Lines As New List(Of String) From {Path.GetFileName(Target)}
         If Items.Count = 0 Then
             Lines.Add("未识别到支持的本地模组元数据，无法确定依赖关系。")
@@ -995,7 +1061,9 @@ Friend NotInheritable Class ModDependencyInspector
                 If Requirement.Kind = DependencyKind.Incompatible OrElse Requirement.Kind = DependencyKind.Conflict Then State = If(Edge IsNot Nothing AndAlso Edge.State = MatchState.Satisfied, "检测到匹配项", "未检测到确定匹配项")
                 Lines.Add("  • [" & KindText(Requirement.Kind) & "] " & Requirement.Display & "（" & State & If(Requirement.Side = "*", "", "；" & Requirement.Side) & "）")
             Next
-            Dim Reverse = Report.Edges.Where(Function(Edge) Edge.Owner.RootPath <> Item.RootPath AndAlso DependencyMentions(Edge.Requirement, Identities(Item).Keys)).ToList()
+            Dim Referrers As List(Of DependencyEdge) = Nothing
+            Report.ReverseDependencies.TryGetValue(Item.Key, Referrers)
+            Dim Reverse = If(Referrers, New List(Of DependencyEdge)).Where(Function(Edge) IsRequiredFileProvider(Report, Edge, Item.RootPath)).ToList()
             Lines.Add("被这些模组依赖：")
             If Reverse.Count = 0 Then Lines.Add("  未发现其他已启用模组声明依赖此 ID。")
             For Each Edge In Reverse.Take(60)

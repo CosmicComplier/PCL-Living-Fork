@@ -2,7 +2,7 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.1](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.1) · [更新说明](RELEASE_NOTES_v1.3.1.md) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.3.2](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.2) · [更新说明](RELEASE_NOTES_v1.3.2.md) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
@@ -12,7 +12,7 @@
 - **整合包更新**：从本地文件或 CurseForge / Modrinth 更新已识别的整合包，先预览变化与冲突，保留个人修改并下载变化文件。取消后会等待文件处理和必要的回滚结束，再解除版本占用。
 - **还原点**：手动或在更新前保存 Minecraft、加载器、模组与配置，支持整套恢复、删除和恢复前留档，保留当前存档进度。
 - **存档备份**：正常退出后备份世界，更新 Minecraft 前额外备份；在存档下展开查看、恢复和删除备份，并设置保留份数。
-- **模组依赖检查**：查看依赖与被依赖关系，删除、禁用前提示影响，启动前检查明确的依赖错误；缺失元数据时尝试联网补充。
+- **模组依赖检查**：用带圆角图标的关系图查看平台声明的前置、被依赖关系与冲突；网络超时或未查到精确平台声明时，改以本地声明作为主要参考。未确认或已禁用的前置合并后用红框标注，删除、禁用的影响确认使用两列红框。启动检查保留本地可靠声明。
 - **测试副本与崩溃对照**：克隆当前版本进行测试，在版本选择中按来源折叠显示；崩溃时对照上次正常运行后的环境变化，并连接到还原点。
 - **整合包导出与模式**：可附带启动器、选择该版本的版本隔离，并使用仅保留必要入口的整合包界面。
 

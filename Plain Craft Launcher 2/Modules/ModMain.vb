@@ -167,6 +167,8 @@ EndHint:
         ''' 登录模式：登录步骤 1 中返回的 JSON。
         ''' </summary>
         Public Content As Object
+        '在 UI 线程创建只读自定义正文，继续复用原生弹窗的按钮与生命周期。
+        Public ContentFactory As Func(Of FrameworkElement)
         ''' <summary>
         ''' 输入模式：输入验证规则。
         ''' </summary>
@@ -332,6 +334,27 @@ EndHint:
     ''' 等待显示的弹窗。
     ''' </summary>
     Public WaitingMyMsgBox As New ConcurrentQueue(Of MyMsgBoxConverter)
+    Friend Sub MyMsgBoxContent(Caption As String, Title As String, Factory As Func(Of FrameworkElement))
+        WaitingMyMsgBox.Enqueue(New MyMsgBoxConverter With {.Type = MyMsgBoxType.Text, .Text = If(Caption, ""), .Title = If(Title, "提示"),
+            .ContentFactory = Factory, .HighLight = True, .ForceWait = True})
+    End Sub
+
+    Friend Function MyMsgBoxConfirmContent(Caption As String, Title As String, ConfirmText As String, Factory As Func(Of FrameworkElement)) As Integer
+        If FrmMain?.PanMsg Is Nothing Then Return MyMsgBox(Caption, Title, ConfirmText, "取消", IsWarn:=True)
+        Dim Converter As New MyMsgBoxConverter With {.Type = MyMsgBoxType.Text, .Text = Caption, .Title = Title,
+            .Button1 = ConfirmText, .Button2 = "取消", .IsWarn = True, .ForceWait = True, .ContentFactory = Factory}
+        WaitingMyMsgBox.Enqueue(Converter)
+        Try
+            FrmMain.DragStop()
+            If RunInUi() Then MyMsgBoxTick()
+            ComponentDispatcher.PushModal()
+            Dispatcher.PushFrame(Converter.WaitFrame)
+        Finally
+            ComponentDispatcher.PopModal()
+        End Try
+        Return If(Converter.Result, 2)
+    End Function
+
     Public Sub MyMsgBoxTick()
         Try
             If FrmMain?.PanMsg Is Nothing OrElse FrmMain.WindowState = WindowState.Minimized Then Return
