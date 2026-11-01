@@ -26,14 +26,22 @@ Friend NotInheritable Class ModDependencyImpactView
             If Not Entry.Reasons.Contains(Reason) Then Entry.Reasons.Add(Reason)
         End Sub
         For Each Impact In Inspector.GetImpacts(Report, Paths)
-            Add(Impact.Mod.RootPath, If(Impact.IsDefinite, "", "待确认 · ") & Impact.Reason)
+            Dim HasPlatform = Report.OnlineFiles.Any(Function(File) Inspector.SameFilePath(File.FullPath, Impact.Mod.RootPath) AndAlso File.Matches.Any(Function(Match) Match.IsExact))
+            If Not Report.OnlineTimedOut AndAlso HasPlatform Then Continue For
+            Add(Impact.Mod.RootPath, "本地参考 · " & If(Impact.IsDefinite, "", "待确认 · ") & Impact.Reason)
         Next
-        For Each File In Report.OnlineFiles.Where(Function(Value) Value.Enabled AndAlso Value.IsSupplementTarget AndAlso Not Removed.Contains(Inspector.FilePathKey(Value.FullPath)))
-            For Each Requirement In File.Matches.Where(Function(Match) Match.IsExact).SelectMany(Function(Match) Match.Dependencies).
-                Where(Function(Value) Value.Kind = "required" AndAlso Value.EnabledPaths.Count > 0 AndAlso Value.EnabledPaths.All(Function(Path) Removed.Contains(Inspector.FilePathKey(Path))))
-                Add(File.FullPath, Requirement.Platform & " 平台前置：" & If(Requirement.ProjectName, Requirement.ProjectId))
+        Dim Unavailable As New HashSet(Of String)(Removed, StringComparer.OrdinalIgnoreCase), Changed As Boolean = True
+        While Changed
+            Changed = False
+            For Each File In Report.OnlineFiles.Where(Function(Value) Value.Enabled AndAlso Value.IsSupplementTarget AndAlso Not Unavailable.Contains(Inspector.FilePathKey(Value.FullPath)))
+                For Each Requirement In File.Matches.Where(Function(Match) Match.IsExact).SelectMany(Function(Match) Match.Dependencies).
+                    Where(Function(Value) Value.Kind = "required" AndAlso Value.EnabledPaths.Count > 0 AndAlso Value.EnabledPaths.All(Function(Path) Unavailable.Contains(Inspector.FilePathKey(Path))))
+                    Dim Direct = Requirement.EnabledPaths.All(Function(Path) Removed.Contains(Inspector.FilePathKey(Path)))
+                    Add(File.FullPath, If(Direct, "", "间接受影响 · ") & Requirement.Platform & " 平台前置：" & If(Requirement.ProjectName, Requirement.ProjectId))
+                    If Unavailable.Add(Inspector.FilePathKey(File.FullPath)) Then Changed = True
+                Next
             Next
-        Next
+        End While
         Return Result.Values.ToList()
     End Function
 

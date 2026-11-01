@@ -281,9 +281,14 @@ End Module
  $compare=Enrich (Scan $folder) $folder $compareOptions
  Assert ($compare.OnlineAttempted -and $network.Calls.Count -gt 0 -and (FileInfo $compare $path).IsSupplementTarget) 'Manual platform comparison skipped a complete local declaration.'
  Assert (-not $compare.HasErrors -and -not $compare.MetadataIncomplete -and -not (FileInfo $compare $disabled).IsSupplementTarget) 'Manual platform comparison changed startup checks or promoted a disabled peer.'
+ $batchNetwork=[ModDependencyOnlineFixtureNetwork]::new();$batchOptions=Options $batchNetwork;$batchOptions.ComparePlatformDependencies=$true;$batchOptions.MaxSearchFiles=0
+ $batch=Enrich (Scan $folder) $folder $batchOptions
+ Assert ($batch.OnlineAttempted -and (FileInfo $batch $path).IsSupplementTarget -and -not (FileInfo $batch $disabled).IsSupplementTarget) 'Manual impact comparison did not inspect enabled files with complete local metadata.'
  $network=[ModDependencyOnlineFixtureNetwork]::new()
  $outside=Jar (Folder 'outside-target') 'outside.jar.disabled';$options=Options $network;$options.TargetFile=$outside;$report=Enrich (Scan $folder) $folder $options
  Assert (-not $report.OnlineAttempted -and $network.Calls.Count -eq 0) 'Explicit lookup accepted a file outside the mod folder.'
+ $options.ComparePlatformDependencies=$true;$report=Enrich (Scan $folder) $folder $options
+ Assert (-not $report.OnlineAttempted -and $network.Calls.Count -eq 0) 'Invalid explicit platform target silently expanded to a batch lookup.'
  $network=[ModDependencyOnlineFixtureNetwork]::new();$network.Search=Json @{hits=@(@{project_id='DisabledCandidate';title='Disabled search candidate';project_type='mod'})}
  $options=Options $network;$options.TargetFile=$disabled;$options.MaxSearchFiles=1;$report=Enrich (Scan $folder) $folder $options
  Assert ((FileInfo $report $disabled).Matches.Count -eq 0 -and (FileInfo $report $disabled).Candidates.Count -eq 1 -and -not $report.HasErrors) 'An unmatched explicit disabled target did not remain a candidate-only search.'

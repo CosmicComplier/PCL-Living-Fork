@@ -180,7 +180,8 @@ Friend NotInheritable Class ModDependencyOnline
         If Report Is Nothing Then Throw New ArgumentNullException(NameOf(Report))
         Dim Settings = If(Options, New LookupOptions())
         Dim TargetFile = ExplicitTarget(Settings.TargetFile, ModsFolder, Report, Settings.ComparePlatformDependencies)
-        If Not Report.MetadataIncomplete AndAlso TargetFile Is Nothing Then Return Report
+        If Not String.IsNullOrWhiteSpace(Settings.TargetFile) AndAlso TargetFile Is Nothing Then Return Report
+        If Not Report.MetadataIncomplete AndAlso TargetFile Is Nothing AndAlso Not Settings.ComparePlatformDependencies Then Return Report
         Report.OnlineAttempted = True
         Report.OnlineCancelled = False
         Report.OnlineTimedOut = False
@@ -229,7 +230,7 @@ Friend NotInheritable Class ModDependencyOnline
         End If
         Dim Targets = Paths.ToDictionary(Function(Value) Value,
             Function(Value) If(Work.TargetFile IsNot Nothing, ModDependencyInspector.SameFilePath(Value, Work.TargetFile),
-                IsEnabledFile(Value) AndAlso NeedsSupplement(Value, Work.Report)), StringComparer.OrdinalIgnoreCase)
+                IsEnabledFile(Value) AndAlso (Work.Options.ComparePlatformDependencies OrElse NeedsSupplement(Value, Work.Report))), StringComparer.OrdinalIgnoreCase)
         If Not Targets.Values.Any(Function(Value) Value) Then Return Result
         Dim Total As Long
         For Each FullPath In Paths.OrderByDescending(Function(Value) Targets(Value)).ThenBy(Function(Value) Value, StringComparer.OrdinalIgnoreCase).Take(Math.Max(1, Math.Min(128, Work.Options.MaxFiles)))

@@ -124,14 +124,16 @@
             Hint("正在检查模组依赖，请稍候。")
             Return
         End If
+        Hint("正在获取模组依赖影响声明……")
         RunInNewThread(Sub()
                            Dim Caption As String = Nothing, Stamp As String = Nothing, Failure As Exception = Nothing
                            Dim ImpactItems As List(Of ModDependencyImpactView.Item) = Nothing
                            Try
                                Stamp = DependencyStamp(Target)
-                               Dim Report = ModDependencyOnline.InspectWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target))
-                               Caption = ModDependencyInspector.DescribeImpacts(Report, Candidates)
+                               Dim Report = ModDependencyOnline.InspectWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target),
+                                   Options:=New ModDependencyOnline.LookupOptions With {.ComparePlatformDependencies = True, .MaxSearchFiles = 0})
                                ImpactItems = ModDependencyImpactView.Collect(Report, Candidates)
+                               Caption = If(ImpactItems.Count = 0, Nothing, String.Join(vbCrLf, ImpactItems.Select(Function(Item) Item.Name & "：" & String.Join("；", Item.Reasons))))
                            Catch ex As Exception
                                Failure = ex
                            End Try

@@ -102,7 +102,7 @@ try{
  # A platform-required dependency can be only recommended in local metadata; keep provenance and startup semantics.
  $localErrors=$report.Issues.Count;$localMods=$report.Mods.Count
  $localOnly=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+Dependency'));$localOnly.Id='local_only';$focusMod.Dependencies.Add($localOnly)
- $onlineFile=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineFileInfo'));$onlineFile.FullPath=$selected;$onlineFile.Enabled=$true
+ $onlineFile=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineFileInfo'));$onlineFile.FullPath=$selected;$onlineFile.Enabled=$true;$onlineFile.IsSupplementTarget=$true
  $match=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$match.Platform='Modrinth';$match.ProjectId='ExactOwner';$match.IsExact=$true
  foreach($pair in @(@('ConfigP','Config library',$configJar),@('RendererP','Renderer',(Join-Path $fixture 'renderer.jar')))){
   $dep=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$dep.Platform='Modrinth';$dep.Kind='required';$dep.ProjectId=$pair[0];$dep.ProjectName=$pair[1];$dep.EnabledPaths.Add($pair[2]);$match.Dependencies.Add($dep)
@@ -175,8 +175,14 @@ try{
  $largeScroll=$largeGraph.Children[0];$largeScroll.ScrollToBottom();$largeGraph.UpdateLayout()
  $last=$largeNodes|Where-Object {$_.Tag.Title -eq 'Needed 39'}|Select-Object -First 1
  if([Windows.Controls.Canvas]::GetTop($last)+$last.Height -gt $largeScroll.VerticalOffset+$largeScroll.ViewportHeight+1){throw 'The last required node cannot be reached by scrolling'}
+ $impactFixtureReport=$report
  if($ModFile){$report=Scan ([IO.Path]::GetDirectoryName($ModFile));$selected=$ModFile}
  $impactType=$asm.GetType('PCL.ModDependencyImpactView',$true)
+ $platformPeer.IsSupplementTarget=$true
+ $requiresOwner=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$requiresOwner.Platform='Modrinth';$requiresOwner.Kind='required';$requiresOwner.ProjectName='Selected mod';$requiresOwner.EnabledPaths.Add($selected);$peerMatch.Dependencies.Add($requiresOwner)
+ $platformImpacts=$impactType.GetMethod('Collect',$flags).Invoke($null,@($impactFixtureReport,[string[]]@($configJar)))
+ if(@($platformImpacts|Where-Object Name -eq 'Selected mod').Count -ne 1 -or @($platformImpacts|Where-Object Name -eq 'Consumer').Count -ne 1){throw 'Platform-required but locally recommended dependency lost direct or transitive impact warnings'}
+ $peerMatch.Dependencies.Clear()
  $impactItems=$impactType.GetMethod('Collect',$flags).Invoke($null,@($large,[string[]]@((Join-Path $fixture 'large_focus.jar'))))
  if($impactItems.Count -ne 32){throw 'Impact cards lost affected mods beyond the old text limit'}
  $impactView=$impactType.GetConstructors($flags)|Where-Object {-not $_.IsStatic}|Select-Object -First 1
