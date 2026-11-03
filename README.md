@@ -41,6 +41,11 @@ dotnet restore .\PCLCS\PCLCS.csproj
 
 输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.4.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
+## 国内发布同步
+
+国内下载入口：[CNB Releases](https://cnb.cool/ddzmumo/PCL-Living-Fork/-/releases)。GitHub 正式 Release 发布或编辑后，Actions 立即触发 CNB 同步并等待结果；CNB 每 30 分钟的定时检查作为补偿。
+
+同步仅包含版本说明、EXE、ZIP、校验文件及公开更新清单。CNB 的版本标签基于自身最小 `main` 分支创建，不镜像 GitHub 源码。手动补同步可在 Actions 中运行 `Sync release to CNB`，可指定版本标签。
 ## 来源与许可
 
 原作作者为龙腾猫跃及 PCL 原项目贡献者，原作版权归成都瓜皮龙科技有限公司。基线为上游 2.14.0.0，保留原作与第三方组件的署名和许可。

@@ -1,0 +1,37 @@
+name: Sync release to CNB
+
+on:
+  release:
+    types: [published, edited, released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag; leave blank to synchronize latest
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cnb-release-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'DDZmumo/PCL-Living-Fork' && (github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease))
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Trigger CNB and wait for synchronization
+        env:
+          CNB_TRIGGER_TOKEN: ${{ secrets.CNB_TRIGGER_TOKEN }}
+          CNB_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || '' }}
+        run: python scripts/Trigger-CnbSync.py --wait
