@@ -1,5 +1,4 @@
 Imports System.IO
-Imports System.Text
 
 Friend Class PersonalOptionsSession
     Friend Id As String = Guid.NewGuid().ToString("N")
@@ -30,9 +29,7 @@ Friend Module PersonalGameSettings
         Return PCLCS.PersonalOptionsRules.Parse(Text)
     End Function
     Private Function ReadOptions(FileName As String) As Byte()
-        If Not File.Exists(FileName) Then Return Nothing
-        If New FileInfo(FileName).Length > 4 * 1024 * 1024 OrElse (File.GetAttributes(FileName) And FileAttributes.ReparsePoint) <> 0 Then Throw New IOException("不读取过大或链接形式的 options.txt。")
-        Return File.ReadAllBytes(FileName)
+        Return PCLCS.PersonalOptionsFiles.Read(FileName)
     End Function
     Private Function Decode(Bytes As Byte()) As String
         Return PCLCS.PersonalOptionsRules.Decode(Bytes)
@@ -84,12 +81,7 @@ Friend Module PersonalGameSettings
             Dim Keys As New HashSet(Of String)(Values.Properties().Where(Function(Pair) Selected(Pair.Name)).Select(Function(Pair) Pair.Name), StringComparer.Ordinal)
             If Not Instance.Version.Valid Then Keys.RemoveWhere(Function(Key) Key.StartsWith("key_", StringComparison.Ordinal))
             Dim Text = Decode(Bytes), Merged = MergeText(Text, Values, Modern(Instance), Keys, Instance.Version.Valid AndAlso Instance.Version.Vanilla.Major >= 19)
-            If Text <> Merged Then
-                Dim Encoded = New UTF8Encoding(Bytes.Length >= 3 AndAlso Bytes(0) = &HEF AndAlso Bytes(1) = &HBB AndAlso Bytes(2) = &HBF)
-                Dim Body = Encoded.GetPreamble().Concat(Encoded.GetBytes(Merged)).ToArray()
-                LocalGameData.AtomicWrite(FileName, Body, LocalGameData.Hash(Bytes), True)
-                IniClearCache(FileName)
-            End If
+            PCLCS.PersonalOptionsFiles.ApplyMerged(FileName, Bytes, Text, Merged, AddressOf IniClearCache)
             Dim Baseline As New JObject
             For Each Pair In Parse(Merged).Where(Function(Item) Keys.Contains(Item.Key))
                 Dim Value = CanonicalValue(Pair.Key, Pair.Value)

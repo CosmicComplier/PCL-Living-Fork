@@ -12,6 +12,7 @@
     <Compile Include="../../PCLCS/Minecraft/WorldMetadataFiles.cs" Link="Production/WorldMetadataFiles.cs" />
     <Compile Include="../../PCLCS/Minecraft/LocalGameDataStore.cs" Link="Production/LocalGameDataStore.cs" />
     <Compile Include="../../PCLCS/Minecraft/PersonalOptionsRules.cs" Link="Production/PersonalOptionsRules.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PersonalOptionsFiles.cs" Link="Production/PersonalOptionsFiles.cs" />
     <Reference Include="Newtonsoft.Json">
       <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
       <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>

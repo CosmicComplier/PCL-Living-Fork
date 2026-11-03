@@ -47,6 +47,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 | 存档元数据 | `WorldMetadataReader.Read(Stream, bool)` 解析已解压 NBT；`WorldMetadataFiles.Read/Describe` 负责文件／gzip／详情，返回 `WorldMetadataInfo` 或原中文说明 | 原 VB 类型保留 16 字段映射与原调用入口；路径检查和日志通过委托接入现有适配，8 MiB 与异常边界不变。27 组流样本及 15 组真实文件／格式样本通过；Windows 原消费者结果另记账本，页面后台仍按对应 C 任务迁移 |
 | 本机游戏资料 | `LocalGameDataStore` 接收动态根目录和原路径校验，负责 JObject／UTF-8／SHA256／原子写入和进程身份检查 | VB 仍持有原 `Gate`、动态 `TestRoot` 和全部兼容入口；不新增内部锁或改写调用端的锁范围。沿用 LF 自带 Newtonsoft DLL、`.pcl-backup`、陈旧摘要拒绝和临时文件清理；权限不明的进程检查仍保守保留会话 |
 | 个人选项规则 | `PersonalOptionsRules` 解析、转换键码／FOV、解码和合并 options 文本；只读类别表，`MergeText` 接收动态选中谓词 | VB 继续读取原 Settings 并保留入口；文件事务与会话在 C004b／c 单独迁移。保留首冒号、大小写／别名、未知字段、重复行、混合换行和原末尾状态；对 .NET 10 非有限浮点接受变化作旧 FOV 格式推断的窄适配，不更换同步规则 |
+| 个人选项文件 | `PersonalOptionsFiles.Read/ApplyMerged` 读取原始字节并提交已合并文本，复用现有 `LocalGameDataStore` 原子写入 | 4 MiB／链接检查和默认读取共享方式保持；无变化不写／不校验摘要／不清缓存，变化保留原 BOM 前缀和备份，成功后回调清缓存；调用者继续持有原 Gate，不增加锁或回滚策略 |
 
 现阶段这些边界通过显式参数、结果对象和必要的委托／接口实现。程序集拆分以实际依赖闭包和构建验证为依据；当前 `PCLCS` 的 WPF 项目引用仍在，单个解析器无 WPF 不代表整个库已解耦。后续任务可以细化字段和接口，但须同步更新本表、生产调用与对应回归。
 
