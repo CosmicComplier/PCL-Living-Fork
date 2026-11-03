@@ -1,6 +1,5 @@
 Imports System.IO
 Imports System.IO.Compression
-Imports System.Text
 
 Friend NotInheritable Class WorldMetadata
     Friend Name As String
@@ -17,9 +16,6 @@ Friend NotInheritable Class WorldMetadata
     Friend SpawnX As Integer?, SpawnY As Integer?, SpawnZ As Integer?
     Friend DayTime As Long?
     Friend Time As Long?
-    Private Input As Stream
-    Private Budget As Integer = 16 * 1024 * 1024
-
     Friend Shared Function Read(Folder As String) As WorldMetadata
         Return ReadCore(Folder, False)
     End Function
@@ -31,81 +27,17 @@ Friend NotInheritable Class WorldMetadata
         If Not File.Exists(FileName) OrElse New FileInfo(FileName).Length > 8 * 1024 * 1024 Then Return Nothing
         InstanceResourceStore.EnsureWithin(Folder, FileName)
         Using File As New FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete), Uncompressed As New GZipStream(File, CompressionMode.Decompress)
-            Dim Result As New WorldMetadata With {.Input = Uncompressed}
-            If Result.ByteValue() <> 10 Then Return Nothing
-            Result.StringValue()
-            Do
-                Dim Kind = Result.ByteValue()
-                If Kind = 0 Then Exit Do
-                Dim Key = Result.StringValue()
-                If Kind = 10 AndAlso Key = "Data" Then
-                    Result.ReadData(Details)
-                    Return If(Not Details AndAlso Result.LastPlayedUtc = Date.MinValue, Nothing, Result)
-                End If
-                Result.Skip(Kind, 0)
-            Loop
+            Dim Data = PCLCS.WorldMetadataReader.Read(Uncompressed, Details)
+            If Data Is Nothing Then Return Nothing
+            Return New WorldMetadata With {
+                .Name = Data.Name, .LastPlayedUtc = Data.LastPlayedUtc, .VersionName = Data.VersionName,
+                .DataVersion = Data.DataVersion, .GameMode = Data.GameMode, .Difficulty = Data.Difficulty,
+                .Hardcore = Data.Hardcore, .AllowCommands = Data.AllowCommands, .WasModded = Data.WasModded,
+                .Snapshot = Data.Snapshot, .Seed = Data.Seed,
+                .SpawnX = Data.SpawnX, .SpawnY = Data.SpawnY, .SpawnZ = Data.SpawnZ,
+                .DayTime = Data.DayTime, .Time = Data.Time}
         End Using
-        Return Nothing
     End Function
-    Private Sub ReadData(Details As Boolean)
-        Do
-            Dim Kind = ByteValue()
-            If Kind = 0 Then Return
-            Dim Key = StringValue()
-            If Key = "LevelName" AndAlso Kind = 8 Then
-                Name = StringValue()
-            ElseIf Key = "LastPlayed" AndAlso Kind = 4 Then
-                Dim Timestamp = LongValue()
-                If Timestamp > 0 Then LastPlayedUtc = DateTimeOffset.FromUnixTimeMilliseconds(Timestamp).UtcDateTime
-            ElseIf Details AndAlso Kind = 3 AndAlso {"GameType", "Difficulty", "DataVersion", "SpawnX", "SpawnY", "SpawnZ"}.Contains(Key) Then
-                Dim Number = IntValue()
-                Select Case Key
-                    Case "GameType" : GameMode = Number
-                    Case "Difficulty" : Difficulty = Number
-                    Case "DataVersion" : DataVersion = Number
-                    Case "SpawnX" : SpawnX = Number
-                    Case "SpawnY" : SpawnY = Number
-                    Case "SpawnZ" : SpawnZ = Number
-                End Select
-            ElseIf Details AndAlso Kind = 1 AndAlso {"hardcore", "allowCommands", "WasModded", "Difficulty"}.Contains(Key) Then
-                Dim Number = ByteValue()
-                Select Case Key
-                    Case "hardcore" : Hardcore = Number <> 0
-                    Case "allowCommands" : AllowCommands = Number <> 0
-                    Case "WasModded" : WasModded = Number <> 0
-                    Case "Difficulty" : Difficulty = Number
-                End Select
-            ElseIf Details AndAlso Kind = 4 AndAlso {"RandomSeed", "Time", "DayTime"}.Contains(Key) Then
-                Dim Number = LongValue()
-                Select Case Key
-                    Case "RandomSeed" : If Not Seed.HasValue Then Seed = Number
-                    Case "Time" : Time = Number
-                    Case "DayTime" : DayTime = Number
-                End Select
-            ElseIf Details AndAlso Kind = 10 AndAlso (Key = "Version" OrElse Key = "WorldGenSettings") Then
-                ReadExtra(Key)
-            Else
-                Skip(Kind, 0)
-            End If
-            If Not Details AndAlso Name IsNot Nothing AndAlso LastPlayedUtc <> Date.MinValue Then Return
-        Loop
-    End Sub
-    Private Sub ReadExtra(Section As String)
-        Do
-            Dim Kind = ByteValue()
-            If Kind = 0 Then Return
-            Dim Key = StringValue()
-            If Section = "Version" AndAlso Key = "Name" AndAlso Kind = 8 Then
-                VersionName = StringValue()
-            ElseIf Section = "Version" AndAlso Key = "Snapshot" AndAlso Kind = 1 Then
-                Snapshot = ByteValue() <> 0
-            ElseIf Section = "WorldGenSettings" AndAlso Key = "seed" AndAlso Kind = 4 Then
-                Seed = LongValue()
-            Else
-                Skip(Kind, 1)
-            End If
-        Loop
-    End Sub
     Friend Shared Function Describe(Folder As String) As String
         Dim Lines As New List(Of String) From {"存档文件夹：" & New DirectoryInfo(Folder).Name}
         Try
@@ -140,67 +72,4 @@ Friend NotInheritable Class WorldMetadata
         Lines.Add(vbCrLf & "位置：" & Path.GetFullPath(Folder))
         Return String.Join(vbCrLf, Lines)
     End Function
-    Private Function ByteValue() As Integer
-        Budget -= 1
-        If Budget < 0 Then Throw New InvalidDataException("存档元数据超过读取限制。")
-        Dim Value = Input.ReadByte()
-        If Value < 0 Then Throw New EndOfStreamException
-        Return Value
-    End Function
-    Private Function IntValue() As Integer
-        Dim Value As UInteger = 0
-        For Index = 0 To 3
-            Value = (Value << 8) Or CUInt(ByteValue())
-        Next
-        Return BitConverter.ToInt32(BitConverter.GetBytes(Value), 0)
-    End Function
-    Private Function LongValue() As Long
-        Dim Value As ULong = 0
-        For Index = 0 To 7
-            Value = (Value << 8) Or CULng(ByteValue())
-        Next
-        Return BitConverter.ToInt64(BitConverter.GetBytes(Value), 0)
-    End Function
-    Private Function StringValue() As String
-        Dim Length = (ByteValue() << 8) Or ByteValue()
-        Dim Bytes(Math.Max(0, Length - 1)) As Byte
-        For Index = 0 To Length - 1
-            Bytes(Index) = CByte(ByteValue())
-        Next
-        Return If(Length = 0, "", Encoding.UTF8.GetString(Bytes))
-    End Function
-    Private Sub Discard(Count As Long)
-        If Count < 0 OrElse Count > Budget Then Throw New InvalidDataException("存档元数据长度无效。")
-        For Index As Long = 1 To Count
-            ByteValue()
-        Next
-    End Sub
-    Private Sub Skip(Kind As Integer, Depth As Integer)
-        If Depth > 64 Then Throw New InvalidDataException("存档元数据层级过深。")
-        Select Case Kind
-            Case 0 : Return
-            Case 1 : Discard(1)
-            Case 2 : Discard(2)
-            Case 3, 5 : Discard(4)
-            Case 4, 6 : Discard(8)
-            Case 7 : Discard(IntValue())
-            Case 8 : StringValue()
-            Case 9
-                Dim Element = ByteValue(), Count = IntValue()
-                If Count < 0 OrElse Count > 100000 Then Throw New InvalidDataException("存档元数据列表长度无效。")
-                For Index = 1 To Count
-                    Skip(Element, Depth + 1)
-                Next
-            Case 10
-                Do
-                    Dim Element = ByteValue()
-                    If Element = 0 Then Exit Do
-                    StringValue()
-                    Skip(Element, Depth + 1)
-                Loop
-            Case 11 : Discard(CLng(IntValue()) * 4)
-            Case 12 : Discard(CLng(IntValue()) * 8)
-            Case Else : Throw New InvalidDataException("未知的存档元数据类型。")
-        End Select
-    End Sub
 End Class
