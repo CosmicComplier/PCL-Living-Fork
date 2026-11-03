@@ -6,7 +6,7 @@
 
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 初始 Windows Debug、Release 自动化构建和回归已核实成功；新迁移代码的 Windows 检查尚未完成，不能沿用初始结果。
+- 初始 Windows 基线通过；首批提交 `d27f394580a83ea50077a96adda056c141dc8748` 的 Windows Debug／Release 完整自动化与双平台迁移矩阵也已实际通过。整项 .NET 10 产品迁移和实际交互验收仍在后续任务中。
 - 首批并行工作：固定源码清单、模块映射、迁移专用 CI，以及 WorldMetadata 生产解析器的 C# 提取和 VB 适配接入。各批次结果以下方证据为准。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
@@ -24,6 +24,17 @@
 | 首批 C# 解析器测试 | `dotnet build tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release --no-restore -warnaserror` 零警告／零错误；`dotnet run --project tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release --no-build` 27／27 组通过 | Linux .NET SDK 10.0.403，编译链接真实生产解析器；覆盖现代／旧世界、16 字段、signed 值、UTF-8、未知类型、截断、短路、64 层与 16 MiB 边界及流所有权；不代替 Windows 外壳与 GUI 回归 |
 | 现有辅助库编译 | `dotnet build PCLCS/PCLCS.csproj --configuration Release -p:EnableWindowsTargeting=true` 成功，零警告／零错误 | Linux 对现有 net48 的 PCLCS／MeloongCore 编译验证；不是 WPF 主程序运行结果。修正资源 Include 的磁盘大小写，原 LogicalName 保持不变 |
 | 首批独立自审 | NBT 旧语义、PCL.WorldMetadata 16 字段／类型及 Read／ReadDetails／Describe 反射入口保持；所有字段映射完整，Describe 文案未变 | 源码逐段对照与独立复核；新提交完整 Windows Build 和迁移矩阵仍待推送后运行 |
+
+本轮已推送的实现与验证检查点：
+
+| 检查点 | 修改及实际验证 |
+| --- | --- |
+| `c3a2838` | 固定 goal、提交／PR 策略、LF／PCL／CE 模块映射、可重复源码清单和进度账本；后续规则按用户补充继续完善 |
+| `e47fc55` | 修正 OptiFine 哈希资源磁盘路径大小写，保持 LogicalName；现有 net48 辅助库在 Linux 编译通过 |
+| `bdad3a7` | 将 NBT 引擎迁入 `PCLCS.WorldMetadataReader`，保留 PCL.WorldMetadata 字段和生产入口；新增真实 NBT 测试 |
+| `d27f394` | 新增限定迁移分支的 .NET 10／源码清单 CI；以下两次远端运行均针对该完整提交 |
+| [Windows Build 41696728260](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260) | [Debug job 126129118107](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118107) 与 [Release job 126129118529](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118529) 各 40 步 success，包含原有自动化回归、凭据保护、旧更新桥和产物上传；主程序仍为 net48，不能据此关闭 N003 或 R003 |
+| [Migration validation 41696728492](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728492) | Ubuntu job `126129118456`、Windows job `126129119218` 均 success：固定清单一致，.NET 10 真实生产解析器测试通过；这只验证已提取的解析器范围 |
 
 清单重新生成：
 
@@ -57,9 +68,9 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G001 | done | 无 | 固定 LF／PCL 源清单工具与初始 JSON；可重复输出、条件源和项目声明已记录，见基线表 |
 | G002 | done | G001 | LF／PCL／CE 模块映射、生产入口、依赖和逐组迁移边界；核对源清单覆盖，并记录 CE 参考位置及未查证处 |
 | G003 | done | 固定 LF 来源 | 初始 Windows Debug／Release 构建与既有自动化回归；证据为 run `41656492901`，GUI 对照仍归 R003 |
-| G004 | in_progress | G001 | 迁移 CI：Linux／Windows 固定清单重现与纯 C# 生产测试；工作流先静态核查，推送后保存真实 job 结果 |
-| B001 | todo | G002 | 固定模块边界：实例／组件／依赖模型、启动与文件变更计划，标明 UI、网络、存储、Windows、Java 适配；以首个实际功能链验证边界 |
-| C001 | in_progress | G001、G003 | WorldMetadata NBT 解析提到无 WPF 的 C# 生产类，VB 保留调用适配；真实字节样本、损坏输入、边界及原消费者回归，Windows 新批次构建尚待结果 |
+| G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
+| B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
+| C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
 | C002 | todo | B001、C001 | 迁移 `WorldMetadata` 剩余文件／格式适配与世界详情消费者；保留路径约束、gzip、回退和文案，对照现有世界详情／备份脚本，逐步取消该功能的 VB 实现 |
 | C003 | todo | B001 | 迁移 `LocalGameData` 的持久化与原子写入功能链；旧数据、并发变更、临时文件和失败恢复样本通过 |
 | C004 | todo | C003 | 迁移 `PersonalGameSettings` 规则及生产调用；字段白名单、双向同步、换行、备份、旧键值与进程恢复回归 |
@@ -90,7 +101,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C029 | todo | C005、C008、C010、C011、C012、C016、C020、C027 | 完成实例页面和资源页面的 C# 后台与 XAML 调用，既有功能链全回归 |
 | C030 | todo | C022、C027 | 完成设置、个性化、工具、帮助、关于及现有可选联机页面的迁移；默认关闭项单独验收，不静默删除 |
 | C031 | todo | C023、C025、C026、C027、C028、C029、C030 | 成组完成 `Application`、`FormMain`、`ModMain`、事件／音乐／维护等剩余入口；窗口、路由、单实例和关闭生命周期回归 |
-| N001 | in_progress | G002、G003 | 审计 LF 自有项目与 MeloongCore 固定版本的 .NET 10 兼容、第三方程序集、COM／Windows API 和资源装载，列明替换与保留依据 |
+| N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | todo | N001、C024、C025 | 将 LF 自有 C# 库适配 .NET 10；实际项目构建、依赖加载和纯业务测试通过，框架过渡不遮蔽旧路径 |
 | N003 | todo | N002、C031 | 主程序切换 C# SDK WPF／.NET 10，处理 My／VB 生成代码、XAML、资源名和程序启动；Windows Debug／Release 实构建与运行 |
 | N004 | todo | N003、C022 | 验证旧账号和配置数据、共享目录、版本隔离、备份／还原点与旧格式写回，保留脱敏样本和实际结果 |
@@ -109,11 +120,11 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 | 批次 | 当前进度 | 仍需完成 |
 | --- | --- | --- |
-| G001 | 工具和固定 JSON 已生成；另一批次独立重复运行文本一致 | 集成提交后记录提交，并随 CI 保存固定清单重现结果 |
+| G001 | 已随 `c3a2838` 推送，双平台 CI 固定清单重现一致 | 当前固定基线不随后续迁移改写；需要时为新提交生成独立当前清单 |
 | G002 | 模块映射完成：14 条功能链、固定源码清单全部 249 文件归组；53 个链接目标、46 个脚本名核实 | 已完成映射交付，后续按实际迁移更新对应行，不代表功能已迁移 |
-| G004 | 迁移工作流已编写，静态检查通过 | 推送后检查 Linux／Windows job，记录链接、提交和真实结论 |
-| C001 | C# 解析器、原 VB 生产调用适配及 27 组测试完成；net48 辅助库编译和独立自审通过 | 集成提交并推送，执行新提交的完整 Windows Build 和双平台迁移矩阵；结果出来前保持 `in_progress` |
+| G004 | 已随 `d27f394` 推送，Ubuntu／Windows 迁移矩阵通过 | 后续生产改动继续使用该工作流，并按实际依赖扩展测试 |
+| C001 | C# 解析器、原 VB 适配和 27 组测试已提交；独立自审、net48 辅助库编译、完整 Windows Debug／Release 及双平台迁移矩阵通过 | 本项完成。文件／gzip／格式与消费者的进一步 C# 迁移属于 C002，VB 兼容外壳仍纳入最终源码清单 |
 
-下次入口：先核对当前分支、差异和远端检查，收尾 G004／C001 的新提交 Windows 与迁移矩阵结果；并检查 N001 兼容审计交付。远端检查等待期间继续 B001 的独立边界工作。新变更门禁通过后，再执行 C002／C003 中最早满足依赖的批次，保持本段与实际状态一致。
+下次入口：核对迁移分支和远端状态，确认上述代码检查点及后续文档提交均已推送，然后从 C002 开始：在保留原路径约束、gzip 生命周期、损坏／缺失回退、日志和文案的前提下，把 WorldMetadata 剩余文件／格式适配按生产调用拆成可验证 C# 小批次；先参考 MODULE_MAP 的共享边界及兼容审计。C001 已通过，不重复重做 NBT 引擎。C002 后继续 C003；每批记录具体命令、结果和详细提交正文。
 
-当前待核实事项：新迁移批次的 Windows 构建与完整回归、迁移后的 GUI／实际账号／游戏启动验收、第三方和子模块 .NET 10 兼容。原始 Windows 自动化基线已存在，不能把这些后续事项误记为原基线缺失；同样不能把原基线成功外推到新代码。
+当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
