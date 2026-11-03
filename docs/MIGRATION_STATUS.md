@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新迁移检查点 `b12b6cfee2e6a877a65a50485908ca21943b2145`：Windows Debug／Release 各 41 步成功，.NET 10 单元矩阵 Ubuntu 300／300、Windows 315／315；独立 75-case CLR4 对照基线契约失败 0，**实测 8 路径＋2 Unicode 差异未消除**。本项只验证原控制流迁移与诊断，不能声称现代路径等价；主产品仍为 net48。
-- 当前推进 C007b2 的现代路径／旧 Ordinal 适配设计，依据 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)，尚未改适配代码。C005c2／C006d 的整页后台／动画仍缺 WPF 前置，两母项保持 blocked，不阻止独立核心任务。
+- 当前推进 C007b2，依据 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md) 已接通现代 Windows 路径检查与旧 Ordinal helper；Linux 308／308 组、net48 库及现代对照 host 零警告编译通过。扩展 oracle v2 保留原 75 例，增加到 124 例／52 项真实 String→Win32 比较，Windows 实跑与剩余 GetDirectoryName 边界尚待验证；不关闭现代等价。C005c2／C006d 的界面母项保持 blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -108,7 +108,9 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| C007b2 的现代 Windows 路径 API／旧 Ordinal 两部分 | 两代理按实际报告只读研究 | 目前没有适配写入授权；父维护实测报告／账本，避免在已验证 C007b1 上并行改写 |
+| `InstanceResourcePathCompatibility.cs`、其同名测试 | 路径适配子代理 | 只拥有两新文件，保 NETFRAMEWORK／非 Win 原 BCL；其余 Core／VB／oracle 不改，父统一接线 |
+| `InstanceResourcePathText.cs`、其测试、既有 oracle host／driver／脚本 | ordinal／oracle 子代理 | 局部 Win32 比较与新旧探针、扩展路径样本独占；Text 生产已冻结交父，父小修原 StartsWith 空值参数名为 value；路径 API 文件不改 |
+| Core 三比较／两路径 hook、主测试链接、工作流／文档／所有提交 | 主执行者 | 不覆盖两代理未交付文件；文本／接线独立审查通过，完整 helper／新 oracle 仍未验证 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -207,7 +209,7 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007a | done | B001 | `459bb0a`：原八字段／Validator／消费者、13 跨平台＋1 Windows 组已接通，Ubuntu 296／Windows 303 组、Windows 各 41 步与实际 sealed／8 字段／冻结 Icon 和资源链、独立终审及零警告编译全通过 |
 | C007b | in_progress | C007a | 固定源审计已给出边界；按 b1 原控制流＋独立诊断 oracle、b2 有证据的现代适配分开，最终必须关闭现代真实差异，不能以 diagnostic 成功代替等价 |
 | C007b1 | done | C007a | `b12b6cf`：原 Core／VB 真委托／12 新组、原消费者 Windows 各 41 步和 Ubuntu 300／Windows 315 组通过；独立 CLR4 与现代 oracle 实际运行并保留 10 差异。done 仅指本批控制流／诊断交付，母项未等价 |
-| C007b2 | in_progress | C007b1 | 正根据实测 8 路径＋2 Unicode 差异研究最小 Windows 适配；随后转 RequireEquivalent 强门禁并回归全部真实消费者，不提前闭项。不复用 C006a 原串预检、不复制 BCL 内部解析器或扩大 root／link 信任策略 |
+| C007b2 | in_progress | C007b1 | 已实现 8 路径＋2 Unicode 的现代 Windows 局部适配；比较 helper 保 UTF16／原 receiver NRE，路径适配保 Win32 归约后检查。124 例扩展 CLR4 oracle 验 trim／长度／GetDir及 52 项 Frame→Win32 比较，候选失败独立记录；GetDirectoryName 暂保 BCL 转发。尚未 Windows／RequireEquivalent／本批实消费者通过，不提前闭项，不扩大 root／link 信任 |
 
 ## 当前批次与下一步
 
@@ -230,8 +232,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C006c | 已随 `257e98e`／`6023f3d` 推送，Ubuntu 283／Windows 289 组、Windows Debug／Release 各 41 步及真实新流程／旧卡片消费者通过；有效 NBT 只读／字节、原坏 gzip、精确坏 JSON finally 都有实际样本 | 本批完成，C006d／母项仍等待 WPF；未知进程权限与枚举器失败位置仅原契约／源码审查，不伪称竞态或实游戏验收 |
 | C007a | 已随 `459bb0a` 推送；Ubuntu 296／Windows 303 组、Windows 各 41 步与原类型／继承字段／Icon 和完整资源消费者通过，独立终审／零警告编译通过；其余 Store／路径逐字未改，脚本 BOM 保留 | 本批完成，不新增 hash／类型检查或文件并发保证；全局路径与其余 Store 继续 C007b 及后续实际拆分 |
 | C007b1 | 已随 `b12b6cf` 推送；Windows 各 41 步、Ubuntu 300／Windows 315 单元组和独立 CLR4／现代 75-case 对照运行成功，Diagnostic 明确输出 8＋2 差异，报告已从 artifact核实并摘要入库 | 本批完成，母项仍未等价。历史 LegacyDriver.vb 只用于原源注入的测试，不在产品编译链，不用于降低产品 VB 统计 |
-| C007b2 | 已取得真实报告，分别只读核路径校验／精确裁剪与旧 Unicode Ordinal 语义；尚未修改适配源 | 下一步确定有证据的 helper与必要 Win32 对照，实施后必须 RequireEquivalent＋全部消费者，不能以原 Diagnostic success 关闭 |
+| C007b2 | 两个 helper 与生产 hook、16 组 Windows／8 组 Linux 新单元已落；实际 Linux 308／308，net48 库与 .NET 10 host 零警告／错误编译，旧 VB 注入驱动仅完成 Linux 编译。生产／测试独立终审通过，扩展 oracle v2 保留原 75 例并增加到 124 例／52 项原 String→Win32 候选比较 | 待本批 Windows CI 与 124 例实跑；GetDirectoryName 暂为 BCL 转发，设备根／归约边界仍明确待验证；差异归零后 RequireEquivalent＋全部消费者。Linux 编译不冒称 CLR4 或 WPF 运行；原 Diagnostic success 不关闭本项 |
 
-下次入口：核对分支、远端和 C007b2 所有权，直接读入库报告摘要／artifact，按真实 8＋2 差异实现现代适配并以 RequireEquivalent 关闭；C007b1 的原源码／CLR4／诊断已实际运行，不重建另一套基线。C007a、C006a／b／c、C005c1 已全通过；C005／C006 的界面母项仍 blocked。
+下次入口：核对分支、远端与 C007b2 的 Windows CI，获取本批扩展报告，依据实际差异继续局部适配；全部归零后才改 RequireEquivalent。原 75 例与固定 CLR4 来源保留，不重建基线或调整旧期望掩盖差异。C007a、C006a／b／c、C005c1 已全通过；C005／C006 的界面母项仍 blocked。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

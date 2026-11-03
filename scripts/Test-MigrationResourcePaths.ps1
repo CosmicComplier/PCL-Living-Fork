@@ -123,6 +123,8 @@ try {
         sharedAssemblySha256 = (Get-FileHash -LiteralPath $sharedAssembly -Algorithm SHA256).Hash
         newtonsoftAssemblySha256 = (Get-FileHash -LiteralPath $newtonsoft -Algorithm SHA256).Hash
         modernProductionSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePaths.cs') -Algorithm SHA256).Hash
+        modernPathTextSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathText.cs') -Algorithm SHA256).Hash
+        modernPathCompatibilitySourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathCompatibility.cs') -Algorithm SHA256).Hash
     }
     [IO.File]::WriteAllText((Join-Path $baselineDirectory 'provenance.json'), ($provenance | ConvertTo-Json -Depth 5), $utf8)
 

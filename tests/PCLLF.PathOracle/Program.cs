@@ -12,7 +12,7 @@ using PCLCS;
 // Prefix implementation: real MeloongCore c774ae4c85fd94e0eaa171db21e78a65870df19b.
 // The old guard is compiled from git, not reimplemented in this driver.
 internal static class Program {
-    internal const string Protocol = "pcllf-resource-paths-v1";
+    internal const string Protocol = "pcllf-resource-paths-v2";
     private const string Lf = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983";
     private const string Shared = "c774ae4c85fd94e0eaa171db21e78a65870df19b";
     private const string Outside = "资源路径超出了当前目录。";
@@ -76,9 +76,18 @@ internal static class Program {
 
         JArray cases = new();
         void Add(string id, string operation, string? value, JObject expected, string? parent = null, bool allowRoot = false, string? other = null, bool informational = false) {
-            cases.Add(new JObject(new JProperty("id", id), new JProperty("operation", operation), new JProperty("value", value),
+            JObject item = new(new JProperty("id", id), new JProperty("operation", operation), new JProperty("value", value),
                 new JProperty("root", parent), new JProperty("allowRoot", allowRoot), new JProperty("other", other),
-                new JProperty("expected", expected), new JProperty("informational", informational)));
+                new JProperty("expected", expected), new JProperty("informational", informational));
+            if (operation == "ordinal") {
+                // Numeric UTF16 preserves isolated surrogates as well as NUL, independent
+                // of JSON string-reader Unicode replacement and UTF8 encoder policy.
+                item["value"] = null;
+                item["other"] = null;
+                item["valueUtf16"] = new JArray(value!.Select(unit => (int)unit));
+                item["otherUtf16"] = new JArray(other!.Select(unit => (int)unit));
+            }
+            cases.Add(item);
         }
         void Ensure(string id, string parent, string value, string? error = null, bool allow = false) =>
             Add(id, "ensure", value, error is null ? Ok() : Error("System.IO.IOException", error), parent, allow);
@@ -116,6 +125,16 @@ internal static class Program {
         // without assuming that a runner's temp-directory ancestors lack links or restrictions.
         Add("guard.drive-root-descendant", "ensure", Path.Combine(fixture, "missing-drive-root-leaf"),
             SystemOutcome("ok", "System.NullReferenceException", "System.ArgumentNullException", "System.IO.IOException", "System.UnauthorizedAccessException", "System.Security.SecurityException"), drive);
+        foreach ((string id, string first, string second) in new[] { ("sigma", "Σ", "ς"), ("deseret", "\U00010400", "\U00010428") }) {
+            string unicodeRoot = Path.Combine(fixture, "unicode-" + first), variant = Path.Combine(fixture, "unicode-" + second);
+            Ensure("guard.unicode-" + id + "-equal", unicodeRoot, variant, Outside, true);
+            Ensure("guard.unicode-" + id + "-prefix", unicodeRoot, Path.Combine(variant, "missing", "leaf"), Outside);
+            Ensure("guard.unicode-" + id + "-exact", unicodeRoot, Path.Combine(unicodeRoot, "missing", "leaf"));
+        }
+        foreach ((string id, string prefix) in new[] { ("nt", @"\??\"), ("dot", @"\\.\") }) {
+            Add("guard.device-" + id + "-descendant", "ensure", prefix + Path.Combine(fixture, "missing-device-leaf"),
+                SystemOutcome("ok", "System.NullReferenceException", "System.ArgumentNullException", "System.ArgumentException", "System.IO.IOException", "System.UnauthorizedAccessException", "System.Security.SecurityException"), prefix + drive);
+        }
 
         Add("normalize.absolute", "normalize", root, Ok(root));
         Add("normalize.trailing", "normalize", root + "\\\\//", Ok(root));
@@ -145,6 +164,48 @@ internal static class Program {
         Add("normalize.device-nt-nul", "normalize", @"\??\" + root + "\\bad\0name", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
         Add("normalize.unc-exact", "normalize", @"\\?\UNC\pcllf-path-oracle.invalid\share\leaf", Ok(@"\\pcllf-path-oracle.invalid\share\leaf"));
         Add("normalize.unc-lower", "normalize", @"\\?\unc\server\share", Ok(Path.Combine(cwd, "unc", "server", "share")));
+        // Reference Source ec9 Path.TrimEndChars / LongPathHelper.s_trimEndChars.
+        // The real CLR4 driver also records the runtime's private arrays as evidence.
+        foreach (char trim in new[] { '\t', '\n', '\v', '\f', '\r', ' ', '\u0085', '\u00a0' })
+            Add("normalize.trim-" + ((int)trim).ToString("x4", CultureInfo.InvariantCulture), "normalize", root + "\\tail" + trim, Ok(root + "\\tail"));
+        Add("normalize.nontrim-2000", "normalize", root + "\\tail\u2000", SystemOutcome("ok", "System.ArgumentException"));
+        Add("normalize.dot-tab", "normalize", root + "\\tail.\t", SystemOutcome("ok", "System.ArgumentException"));
+        foreach (int size in new[] { 254, 255, 256 }) {
+            string component = new('a', size);
+            JObject expected = size <= 255 ? Ok(root + "\\" + component) : Error("System.IO.PathTooLongException");
+            Add("normalize.component-final-" + size, "normalize", root + "\\" + component, expected);
+            Add("normalize.component-middle-" + size, "normalize", root + "\\" + component + "\\leaf", size <= 255 ? Ok(root + "\\" + component + "\\leaf") : Error("System.IO.PathTooLongException"));
+        }
+        string TotalLengthPath(int length) {
+            StringBuilder path = new(root);
+            while (path.Length < length) {
+                if (length - path.Length == 1) path.Append('a');
+                else { path.Append('\\'); path.Append('a', Math.Min(200, length - path.Length)); }
+            }
+            return path.ToString(); // Every component stays <=201; no target IO.
+        }
+        string maximum = TotalLengthPath(32766), overMaximum = TotalLengthPath(32767);
+        Add("normalize.total-32766", "normalize", maximum, Ok(maximum));
+        Add("normalize.total-32767", "normalize", overMaximum, Error("System.IO.PathTooLongException"));
+        Add("normalize.total-before-illegal", "normalize", overMaximum[..^1] + "|", Error("System.IO.PathTooLongException"));
+        Add("normalize.leading-space-drive", "normalize", "  " + root, SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("normalize.leading-space-rooted", "normalize", "  " + root[2..], SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("normalize.leading-space-relative", "normalize", "  relative\\leaf", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        // Normalize only: no Exists/GetAttributes call is permitted for these fake UNC paths.
+        Add("normalize.unc-no-share", "normalize", @"\\pcllf-path-oracle.invalid", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("normalize.unc-no-share-slash", "normalize", @"\\pcllf-path-oracle.invalid\", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        // Frame tests IsExtended before stripping leading root spaces. Observe that order.
+        Add("normalize.leading-space-nt", "normalize", "  " + @"\??\" + root + "\\sub\\..\\leaf", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("normalize.leading-space-extended", "normalize", "  " + @"\\?\" + root + "\\sub\\..\\leaf", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        string oversized = new('a', 256);
+        Add("normalize.pipe-before-oversize", "normalize", root + "\\bad|name\\" + oversized, SystemOutcome("System.ArgumentException", "System.IO.PathTooLongException"));
+        Add("normalize.pipe-after-oversize", "normalize", root + "\\" + oversized + "\\bad|name", SystemOutcome("System.ArgumentException", "System.IO.PathTooLongException"));
+        Add("normalize.wildcard-before-oversize", "normalize", root + "\\bad?name\\" + oversized, SystemOutcome("System.ArgumentException", "System.IO.PathTooLongException"));
+        Add("normalize.colon-after-oversize", "normalize", root + "\\" + oversized + "\\bad:name", SystemOutcome("System.NotSupportedException", "System.IO.PathTooLongException"));
+        Add("dirname.nt-repeated-separators", "get-directory-name", @"\??\" + root + @"\\sub\\leaf", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("dirname.nt-nul", "get-directory-name", @"\??\" + root + "\\bad\0name", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("dirname.nt-root", "get-directory-name", @"\??\" + drive, SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        Add("dirname.dot-root", "get-directory-name", @"\\.\" + drive, SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
         Add("prefix.drive", "prefix", @"\\?\C:\a", Ok(@"C:\a"));
         Add("prefix.unc", "prefix", @"\\?\UNC\server\share\a", Ok(@"\\server\share\a"));
         Add("prefix.unc-lower", "prefix", @"\\?\unc\server\share", Ok(@"unc\server\share"));
@@ -160,6 +221,12 @@ internal static class Program {
         Add("prefix.null", "prefix", null, Ok());
         foreach ((string id, string first, string second) in new[] { ("ascii", "I", "i"), ("turkish", "\u0130", "i"), ("sigma", "Σ", "ς"), ("kelvin", "K", "K"), ("sharp-s", "ß", "SS"), ("deseret", "\U00010400", "\U00010428") })
             Add("ordinal." + id, "ordinal", first, new JObject(new JProperty("allowed", new JArray("ok"))), other: second, informational: true);
+        foreach ((string id, string first, string second) in new[] {
+            ("sigma-capital-small", "Σ", "σ"), ("sigma-small-final", "σ", "ς"),
+            ("ascii-prefix", new string('a', 64) + "Σ", new string('A', 64) + "ς"),
+            ("nul-difference", "A\0B", "a\0C"), ("nul-prefix", "A\0Btail", "a\0b"),
+            ("high-surrogate", "\ud800A", "\ud800a"), ("low-surrogate", "\udc00A", "\udc00a") })
+            Add("ordinal." + id, "ordinal", first, SystemOutcome("ok"), other: second, informational: true);
 
         Save(Path.Combine(fixture, "cases.json"), new JObject(new JProperty("protocol", Protocol), new JProperty("fixture", fixture),
             new JProperty("cwd", cwd), new JProperty("profile", "LF-default"), new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("cases", cases)));
@@ -174,12 +241,33 @@ internal static class Program {
                 case "normalize": result = Ok(InstanceResourcePaths.Normalize(value!, PathUtils.RemoveExtendedPrefix)); break;
                 case "prefix": result = Ok(PathUtils.RemoveExtendedPrefix(value!)); break;
                 case "ensure": InstanceResourcePaths.EnsureWithin(Text(item["root"])!, value!, (bool)item["allowRoot"]!, PathUtils.RemoveExtendedPrefix); result = Ok(); break;
-                case "ordinal": result = Ok(string.Equals(value, Text(item["other"]), StringComparison.OrdinalIgnoreCase)); break;
+                case "get-directory-name": result = Ok(InstanceResourcePathCompatibility.GetDirectoryName(value)); break;
+                case "ordinal":
+                    value = OrdinalText(item, "value");
+                    string other = OrdinalText(item, "other");
+                    result = Ok(InstanceResourcePathText.SamePathText(value, other));
+                    result["reverseValue"] = InstanceResourcePathText.SamePathText(other, value);
+                    result["startsWith"] = InstanceResourcePathText.StartsWithPathText(value, other);
+                    result["reverseStartsWith"] = InstanceResourcePathText.StartsWithPathText(other, value);
+                    break;
                 default: throw new InvalidOperationException("Unknown operation in path protocol.");
             }
-        } catch (Exception error) { result = Error(error.GetType().FullName!, error.Message); }
+        } catch (Exception error) {
+            result = Error(error.GetType().FullName!, error.Message);
+            if (error.InnerException is System.ComponentModel.Win32Exception native) result["win32Error"] = native.NativeErrorCode;
+        }
         result["id"] = item["id"]!.DeepClone();
         return result;
+    }
+
+    private static string OrdinalText(JObject item, string name) {
+        JArray units = item[name + "Utf16"] as JArray ?? throw new InvalidDataException("Missing UTF16 comparison request.");
+        char[] text = new char[units.Count];
+        for (int index = 0; index < text.Length; index++) {
+            if (units[index].Type != JTokenType.Integer) throw new InvalidDataException("Non-integer UTF16 request unit.");
+            text[index] = checked((char)(int)units[index]);
+        }
+        return new string(text);
     }
 
     private static JObject Switch(string name) {
@@ -189,7 +277,7 @@ internal static class Program {
 
     private static JObject Context() => new(new JProperty("runtime", RuntimeInformation.FrameworkDescription), new JProperty("clr", Environment.Version.ToString()),
         new JProperty("domainFramework", AppContext.TargetFrameworkName), new JProperty("assemblyFramework", Assembly.GetExecutingAssembly().GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName),
-        new JProperty("cwd", Environment.CurrentDirectory), new JProperty("culture", CultureInfo.CurrentCulture.Name), new JProperty("is64Bit", Environment.Is64BitProcess),
+        new JProperty("cwd", Environment.CurrentDirectory), new JProperty("culture", CultureInfo.CurrentCulture.Name), new JProperty("is64Bit", Environment.Is64BitProcess), new JProperty("os", Environment.OSVersion.ToString()),
         new JProperty("useLegacyPathHandling", Switch("Switch.System.IO.UseLegacyPathHandling")), new JProperty("blockLongPaths", Switch("Switch.System.IO.BlockLongPaths")));
 
     private static int Compare(string casesPath, string baselinePath, string reportPath, string mode) {
@@ -215,15 +303,36 @@ internal static class Program {
         JArray oldResults = baseline["results"] as JArray ?? throw new InvalidDataException("Missing baseline results.");
         if (cases.Count != oldResults.Count) throw new InvalidDataException("Baseline result count differs from request.");
         HashSet<string> ids = new(StringComparer.Ordinal);
-        JArray modern = new(), differences = new(), informational = new(), failures = new();
+        JArray modern = new(), differences = new(), informational = new(), failures = new(), nativeFailures = new();
         for (int index = 0; index < cases.Count; index++) {
             JObject item = cases[index] as JObject ?? throw new InvalidDataException("Invalid case object.");
             JObject old = oldResults[index] as JObject ?? throw new InvalidDataException("Invalid result object.");
             string id = (string?)item["id"] ?? throw new InvalidDataException("Missing case id.");
             if (!ids.Add(id) || (string?)old["id"] != id) throw new InvalidDataException("Duplicate or reordered oracle case id.");
-            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal") || item["allowRoot"]?.Type != JTokenType.Boolean)
+            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name") || item["allowRoot"]?.Type != JTokenType.Boolean)
                 throw new InvalidDataException("Unknown operation or malformed request.");
             ValidateOutcome(old, (string)item["operation"]!);
+            if ((string?)item["operation"] == "ordinal") {
+                // Decode before executing either side, so malformed protocol cannot be
+                // mistaken for a meaningful candidate/runtime difference in Diagnostic mode.
+                OrdinalText(item, "value");
+                OrdinalText(item, "other");
+                if ((string?)old["status"] == "ok") {
+                    JObject native = old["native"] as JObject ?? throw new InvalidDataException("Missing independent CLR4 Win32 probe.");
+                    if ((string?)native["status"] == "exception") {
+                        ValidateOutcome(native, "ordinal");
+                        if (native["win32Error"] is JToken error && error.Type != JTokenType.Integer)
+                            throw new InvalidDataException("Malformed native Win32 error code.");
+                        nativeFailures.Add(new JObject(new JProperty("id", id), new JProperty("framework", old["status"]!.DeepClone()), new JProperty("win32", native.DeepClone())));
+                    } else {
+                        foreach (string field in new[] { "value", "reverseValue", "startsWith", "reverseStartsWith" }) {
+                            if (native[field]?.Type != JTokenType.Boolean) throw new InvalidDataException("Malformed CLR4 native probe result.");
+                            if (!JToken.DeepEquals(old[field], native[field])) nativeFailures.Add(new JObject(new JProperty("id", id), new JProperty("api", field),
+                                new JProperty("framework", old[field]!.DeepClone()), new JProperty("win32", native[field]!.DeepClone())));
+                        }
+                    }
+                }
+            }
             JObject expected = (JObject?)item["expected"] ?? throw new InvalidDataException("Missing independent baseline contract.");
             bool contract;
             if (expected["allowed"] is JArray allowed) {
@@ -241,14 +350,16 @@ internal static class Program {
         }
         JObject report = new(new JProperty("protocol", Protocol), new JProperty("mode", mode), new JProperty("profile", manifest["profile"]!.DeepClone()),
             new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("caseCount", cases.Count), new JProperty("linkCount", JArray.Parse(File.ReadAllText(Path.Combine(fixture, "links.json"), Utf8)).Count),
+            new JProperty("nativeComparisonCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "ordinal") * 4),
             new JProperty("requests", cases.DeepClone()),
             new JProperty("baseline", baseline), new JProperty("modern", new JObject(new JProperty("context", Context()), new JProperty("results", modern))),
-            new JProperty("contractFailures", failures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
-            new JProperty("equivalent", failures.Count == 0 && differences.Count == 0 && informational.Count == 0));
+            new JProperty("contractFailures", failures), new JProperty("nativeCandidateFailures", nativeFailures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
+            new JProperty("equivalent", failures.Count == 0 && nativeFailures.Count == 0 && differences.Count == 0 && informational.Count == 0));
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
         Save(reportPath, report);
-        Console.WriteLine($"Path oracle: {cases.Count} cases; {failures.Count} baseline contract failures; {differences.Count} path differences; {informational.Count} Unicode differences (also strict failures). Mode={mode}.");
+        Console.WriteLine($"Path oracle: {cases.Count} cases; {failures.Count} baseline contract failures; {nativeFailures.Count} rejected native comparisons; {differences.Count} path differences; {informational.Count} text differences (also strict failures). Mode={mode}.");
         if (failures.Count != 0) return 3;
+        if (nativeFailures.Count != 0) return 4; // Diagnostic must not endorse a candidate contradicted by real CLR4.
         return mode == "RequireEquivalent" && (differences.Count != 0 || informational.Count != 0) ? 2 : 0;
     }
 
@@ -258,6 +369,8 @@ internal static class Program {
             JTokenType valueType = result["value"]!.Type;
             if (operation == "ensure" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : valueType is not (JTokenType.String or JTokenType.Null))
                 throw new InvalidDataException("Baseline returned a value incompatible with the requested operation.");
+            if (operation == "ordinal" && new[] { "reverseValue", "startsWith", "reverseStartsWith" }.Any(field => result[field]?.Type != JTokenType.Boolean))
+                throw new InvalidDataException("Missing real String reverse/prefix baseline comparisons.");
         } else if ((string?)result["status"] == "exception") {
             if (result["type"]?.Type != JTokenType.String || string.IsNullOrEmpty((string?)result["type"]) || result["message"]?.Type != JTokenType.String)
                 throw new InvalidDataException("Malformed exceptional baseline result.");
@@ -266,7 +379,12 @@ internal static class Program {
 
     private static bool SameOutcome(JObject expected, JObject actual) {
         if ((string?)expected["status"] != (string?)actual["status"]) return false;
-        if ((string?)expected["status"] == "ok") return JToken.DeepEquals(expected["value"], actual["value"]);
+        if ((string?)expected["status"] == "ok") {
+            if (!JToken.DeepEquals(expected["value"], actual["value"])) return false;
+            foreach (string field in new[] { "reverseValue", "startsWith", "reverseStartsWith" })
+                if (expected.Property(field) is not null && !JToken.DeepEquals(expected[field], actual[field])) return false;
+            return true;
+        }
         if ((string?)expected["type"] != (string?)actual["type"]) return false;
         string? message = (string?)expected["message"];
         return message is not Outside and not Link || message == (string?)actual["message"];

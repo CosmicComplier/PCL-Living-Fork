@@ -13,6 +13,8 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePaths.cs" Link="Production/InstanceResourcePaths.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePathText.cs" Link="Production/InstanceResourcePathText.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePathCompatibility.cs" Link="Production/InstanceResourcePathCompatibility.cs" />
     <Reference Include="MeloongCore"><HintPath>$(PathOracleSharedAssembly)</HintPath></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(PathOracleNewtonsoftAssembly)</HintPath></Reference>
   </ItemGroup>
