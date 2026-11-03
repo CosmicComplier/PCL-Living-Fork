@@ -50,6 +50,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 | 个人选项文件 | `PersonalOptionsFiles.Read/ApplyMerged` 读取原始字节并提交已合并文本，复用现有 `LocalGameDataStore` 原子写入 | 4 MiB／链接检查和默认读取共享方式保持；无变化不写／不校验摘要／不清缓存，变化保留原 BOM 前缀和备份，成功后回调清缓存；调用者继续持有原 Gate，不增加锁或回滚策略 |
 | 个人选项会话 | `PersonalOptionsFlow` 负责导入／Prepare／Track／Capture／Finish／恢复；`IPersonalOptionsInstance` 五项惰性属性及可继承字段 DTO 对接原实例／设置 | 复用原 Store 与 Monitor Gate；保留动态求值、恢复先行、日志状态和异常顺序。VB 原会话类型继承 DTO，由工厂返回同一派生对象；路径／设置／缓存／日志经具体委托适配，不新建通用存储／进程框架；实际 Windows 门面证据见账本 |
 | 按键保存 | `InstanceKeybindingFiles.Save` 处理 Previous 检查、重复行更新、BOM／换行与原子写入，调用原 running／路径／缓存适配和同一 Gate | 复用规则解码／校验及 Hash／AtomicWrite；同值仍备份／写入／清 cache，不能套用个人习惯的 no-op。写原 Replacement，不归一键名；模型、读取归属与页面交互仍在 C005 后续批次 |
+| 按键读取与归属 | `InstanceKeybindingReader` 负责原 options 读取、31 默认项、JAR 语言／metadata 归属及 SharedCount；原 VB 类型继承七字段 DTO，工厂与 Cast 保留项目对象 | 原路径、日志、固定 Meloong 标题换行经具体委托；保留 BOM 自动检测、原取消点／异常集合、阈值、顺序及当前文化排序，不跳过空 Targets 的扫描。坏 ZIP 仍外抛，模型读取完成不等于页面后台已转换 |
 
 现阶段这些边界通过显式参数、结果对象和必要的委托／接口实现。程序集拆分以实际依赖闭包和构建验证为依据；当前 `PCLCS` 的 WPF 项目引用仍在，单个解析器无 WPF 不代表整个库已解耦。后续任务可以细化字段和接口，但须同步更新本表、生产调用与对应回归。
 
@@ -61,6 +62,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 - **CE 候选：** [Base][ce-base] 的 `ModBase.cs`、`ModAnimation.cs`、`MyBitmap.cs` 和 [Controls][ce-controls] 可对照 C# WPF 转换；[PCL.Core/UI/Animation][ce-animation] 有独立时钟、插值、缓动结构。后者的调度模型不能直接替换 LF 动画并默认手感等价。
 - **前置／保留：** 核对依赖属性、`Handles`／`WithEvents`、默认属性、委托、Dispatcher、名称作用域、资源及图片格式。保留命名动画组的中断／叠加、页面重复进入、鼠标悬停／按下／禁用、滚轮和弹窗焦点行为；固定默认主题与背景选择沿用 LF。
 - **批次／禁止倒依赖：** 先一个控件及直接消费者，再一个页面的 XAML／后台／资源绑定；基础全局状态和导航环最后成组适配。动画规则不要依赖具体页面，图片加载适配不要进入通用资源 DTO。
+- **按键页已核实的结构前置：** 当前 VB main 同时拥有 XAML partial、MyPageRight／自定义控件／LocalResourceUi 和具体页面路由，且已引用 PCLCS，不能让 PCLCS 反向引用 main。先提取页面纯显示／分组规则（C005c1）；C027 基础层就绪后由独立 C029a 建立单向的 C# WPF 呈现库和惰性 host，再迁整页（C005c2）及实际路由。C029 只汇总最终页面，不成为宿主前置的依赖；主工程 C031／N003 在其后集成，避免循环或未编译的 C# 页面占位。
 - **回归：** `Test-BackgroundModes.ps1`、`Test-IconCompatibility.ps1`；相关页面脚本的预览检查，再在 Windows 人工对照滚动、切页、连续点击和动画取消。现有脚本没有覆盖所有动画时序，不能以截图代替交互验收。
 
 ### M02 加载器、Worker、取消、进度与文件占用

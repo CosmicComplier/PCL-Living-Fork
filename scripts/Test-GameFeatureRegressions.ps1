@@ -19,6 +19,11 @@ try{
  [IO.File]::WriteAllText((Join-Path $world 'level.dat'),'world-fixture')
  [IO.File]::WriteAllText((Join-Path $version 'options.txt'),"lang:zh_cn`n")
  $rows=Call $bindings 'ReadBindings' @($version,[Threading.CancellationToken]::None)
+ if($rows.Count -ne 31){throw 'First-run binding catalog changed from the original 31 defaults'}
+ foreach($row in $rows){
+  if($row.GetType().FullName -cne 'PCL.InstanceKeybinding'){throw 'Binding reader did not preserve the original VB row type'}
+  foreach($name in @('Key','Name','Owners','Value','Normalized','SharedCount','Saved')){if($null -eq $row.GetType().GetField($name,$flags)){throw ('Binding field reflection contract changed: '+$name)}}
+ }
  $blank=$rows.Count -eq 0
  $instanceType=$asm.GetType('PCL.ModMinecraft+McInstance');$instance=$instanceType.GetConstructor([type[]]@([string])).Invoke(@([string]$version));$instanceType.GetProperty('Version').SetValue($instance,[PCLCS.McVersion]::new('1.20.1',$true),$null)
  $settings['VersionArgumentIndieV2'].ValueCache[$instance.PathVersion]=$true

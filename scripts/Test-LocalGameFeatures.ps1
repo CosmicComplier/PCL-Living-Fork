@@ -117,12 +117,13 @@ try{
   $archive=[IO.Compression.ZipFile]::Open($jar,[IO.Compression.ZipArchiveMode]::Create)
   try{
    $writer=[IO.StreamWriter]::new($archive.CreateEntry('fabric.mod.json').Open());try{$writer.Write('{"id":"'+$mod+'","name":"Example '+$mod+'"}')}finally{$writer.Dispose()}
-   $writer=[IO.StreamWriter]::new($archive.CreateEntry('assets/'+$mod+'/lang/en_us.json').Open());try{$writer.Write('{"'+$mod+'.action":"Example action"}')}finally{$writer.Dispose()}
+   $writer=[IO.StreamWriter]::new($archive.CreateEntry('assets/'+$mod+'/lang/en_us.json').Open());try{$writer.Write('{"'+$mod+'.action":"Example\r\nline\u000bvertical"}')}finally{$writer.Dispose()}
   }finally{$archive.Dispose()}
  }
  $rows=Call $bindings 'ReadBindings' @($target.PathVersion,[Threading.CancellationToken]::None)
  $entry=@($rows|Where-Object {(Field $_ 'Key') -eq 'key_fixture.action'})[0]
  if((Field $entry 'SharedCount') -ne 3 -or (Field $entry 'Owners') -notmatch 'Example fixture'){throw 'Shared-key or local mod ownership identification failed'}
+ if((Field $entry 'Name') -cne ('Example line'+[char]11+'vertical')){throw 'Binding title changed the original Meloong line-ending contract'}
  $unknownEntry=@($rows|Where-Object {(Field $_ 'Key') -eq 'key_unknown.action'})[0]
  if((Field $unknownEntry 'SharedCount') -ne 2 -or (Field $unknownEntry 'Owners') -match 'Example'){throw 'Default chat binding conflict or unknown owner handling failed'}
  $before=[IO.File]::ReadAllText($targetFile)

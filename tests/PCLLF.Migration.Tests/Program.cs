@@ -48,7 +48,8 @@ internal static class Program {
             .. PersonalOptionsRulesTests.Cases(),
             .. PersonalOptionsFileTests.Cases(),
             .. PersonalOptionsFlowTests.Cases(),
-            .. InstanceKeybindingFileTests.Cases()
+            .. InstanceKeybindingFileTests.Cases(),
+            .. InstanceKeybindingReaderTests.Cases()
         ];
         int failures = 0;
         foreach ((string name, Action run) in tests) {
