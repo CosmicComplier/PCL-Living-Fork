@@ -129,8 +129,12 @@ try{
  Call $bindings 'Save' @($target.PathVersion,'key_fixture.action','key.keyboard.r','key.keyboard.y')|Out-Null
  if([IO.File]::ReadAllText($targetFile) -cne $before.Replace('key_fixture.action:key.keyboard.r','key_fixture.action:key.keyboard.y')){throw 'Rebinding changed unrelated options'}
  Assert-Rejected {Call $bindings 'Save' @($target.PathVersion,'key_fixture.action','key.keyboard.r','key.keyboard.u')} 'A stale binding overwrote a newer edit'
+ $sameValueBytes=[Convert]::ToBase64String([IO.File]::ReadAllBytes($targetFile))
+ Put ($targetFile+'.pcl-backup') 'same-value-backup-sentinel'
+ Call $bindings 'Save' @($target.PathVersion,'key_fixture.action','key.keyboard.y','key.keyboard.y')|Out-Null
+ foreach($path in @($targetFile,($targetFile+'.pcl-backup'))){if([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -cne $sameValueBytes){throw 'Same-value rebinding did not preserve bytes and rotate the backup'}}
  if([string](Call $sync 'NormalizeBinding' @('19:ALT')) -cne 'key.keyboard.r:ALT' -or [string](Call $sync 'BindingForVersion' @('key.keyboard.r:ALT',$false)) -cne '19:ALT'){throw 'Modifier or legacy binding conversion failed'}
- Write-Output 'Local game features passed: personal-field merge, author/custom-option preservation, backup/newlines, bidirectional changes, version exception, legacy keys/FOV, active/exited sessions, atomic conflicts, Quick Play paths/arguments/missing worlds, shared-key/mod ownership, rebinding and stale-edit protection. No real games, accounts or user profiles were used.'
+ Write-Output 'Local game features passed: personal-field merge, author/custom-option preservation, backup/newlines, bidirectional changes, version exception, legacy keys/FOV, active/exited sessions, atomic conflicts, Quick Play paths/arguments/missing worlds, shared-key/mod ownership, rebinding, stale-edit protection and same-value backup rotation. No real games, accounts or user profiles were used.'
 }finally{
  $data.GetProperty('TestRoot',$flags).SetValue($null,$null,$null)
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'

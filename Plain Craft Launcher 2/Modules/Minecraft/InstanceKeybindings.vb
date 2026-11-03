@@ -111,30 +111,8 @@ Friend Module InstanceKeybindings
         Return Result '“全部”保留游戏配置中的顺序；同键分组仅由占用视图执行。
     End Function
     Friend Sub Save(GameFolder As String, Key As String, Previous As String, Replacement As String)
-        If HasRunningMinecraft Then Throw New IOException("请先关闭游戏，再修改按键配置。")
-        If Not Key.StartsWith("key_", StringComparison.Ordinal) OrElse PersonalGameSettings.NormalizeBinding(Replacement) Is Nothing Then Throw New IOException("按键值无效。")
-        Dim FileName = Path.Combine(GameFolder, "options.txt")
-        InstanceResourceStore.EnsureWithin(GameFolder, FileName)
-        If Not File.Exists(FileName) OrElse New FileInfo(FileName).Length > 4 * 1024 * 1024 Then Throw New IOException("请先运行一次游戏，生成按键配置。")
-        SyncLock LocalGameData.Gate
-            Dim Bytes = File.ReadAllBytes(FileName), Text = New UTF8Encoding(False, True).GetString(Bytes).TrimStart(ChrW(&HFEFF))
-            Dim Newline = If(Text.Contains(vbCrLf), vbCrLf, vbLf), Lines = Text.Replace(vbCrLf, vbLf).Split(ChrW(10)).ToList()
-            Dim Index = Lines.FindLastIndex(Function(Line) Line.StartsWith(Key & ":", StringComparison.Ordinal))
-            If Index < 0 Then
-                If Previous IsNot Nothing Then Throw New IOException("该按键配置已变化，请刷新后重试。")
-                If Lines.Count > 0 AndAlso Lines.Last() = "" Then Lines.RemoveAt(Lines.Count - 1)
-                Lines.Add(Key & ":" & Replacement)
-                If Text.EndsWith(vbLf, StringComparison.Ordinal) Then Lines.Add("")
-            ElseIf Previous Is Nothing OrElse Lines(Index).Substring(Key.Length + 1) <> Previous Then
-                Throw New IOException("该按键配置已变化，请刷新后重试。")
-            End If
-            For Position = 0 To Lines.Count - 1
-                If Lines(Position).StartsWith(Key & ":", StringComparison.Ordinal) Then Lines(Position) = Key & ":" & Replacement
-            Next
-            Dim Encoding As New UTF8Encoding(Bytes.Length >= 3 AndAlso Bytes(0) = &HEF AndAlso Bytes(1) = &HBB AndAlso Bytes(2) = &HBF)
-            LocalGameData.AtomicWrite(FileName, Encoding.GetPreamble().Concat(Encoding.GetBytes(String.Join(Newline, Lines))).ToArray(), LocalGameData.Hash(Bytes), True)
-            IniClearCache(FileName)
-        End SyncLock
+        PCLCS.InstanceKeybindingFiles.Save(GameFolder, Key, Previous, Replacement, LocalGameData.Gate,
+            Function() HasRunningMinecraft, Sub(Root, FileName) InstanceResourceStore.EnsureWithin(Root, FileName), AddressOf IniClearCache)
     End Sub
     Private Function DefaultBindings() As List(Of InstanceKeybinding)
         Dim Defaults As New Dictionary(Of String, String) From {

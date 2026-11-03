@@ -42,6 +42,7 @@
 | `758a3c2` | C004a 个人选项纯规则迁入 `PersonalOptionsRules`，保留原动态设置；窄适配 .NET 10 的 existing FOV 非有限解析变化，新增 28 组规则测试和 42 条 CLR4 原始解析 oracle |
 | `35114dd` | C004b options.txt 原始读取和合并写回进入 `PersonalOptionsFiles`；18 组跨平台／20 组 Windows 文件样本，保留 no-op／BOM／hash／备份及成功后 cache 顺序 |
 | `1c1841f` | C004c 导入／准备／跟踪／捕获／恢复进入 `PersonalOptionsFlow`，惰性实例适配、原 Store／Gate 和派生字段 DTO 接通 23 个原入口；27 组新增真实流程样本及 Windows 原会话字段／对象状态断言 |
+| `f36c6e6` | 关闭 C004 三批核心／适配验收，记录完整证据与当前清单，拆出 C005a／b／c 及原按键／标题换行约束；现代主工程和最终适配删除仍未完成 |
 | [Windows Build 41696728260](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260) | [Debug job 126129118107](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118107) 与 [Release job 126129118529](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118529) 各 40 步 success，包含原有自动化回归、凭据保护、旧更新桥和产物上传；主程序仍为 net48，不能据此关闭 N003 或 R003 |
 | [Migration validation 41696728492](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728492) | Ubuntu job `126129118456`、Windows job `126129119218` 均 success：固定清单一致，.NET 10 真实生产解析器测试通过；这只验证已提取的解析器范围 |
 | [C002 Windows Build 41705399746](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705399746) | 提交 `0388bd6f6f99ac142a3a6d88032a70ba727fe6f3`：Debug job `126159247355`、Release job `126159247567` 各 40 步 success；增强后的真实 WorldMetadata 门面、文件链接校验、只读／共享、精确文案及旧回归均运行通过 |
@@ -75,7 +76,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| `InstanceKeybindingFiles.cs`、`InstanceKeybindingFileTests.cs`、原 `InstanceKeybindings.vb` 的 Save | C005a 子代理正在实施 | 仅此三文件；不改模型／读取／默认表，父代理接线项目／Main／文档／脚本并提交，审查者只读 |
+| `InstanceKeybindingFiles.cs`、`InstanceKeybindingFileTests.cs`、原 `InstanceKeybindings.vb` 的 Save | C005a 子代理已交付，主执行者接线 | 子代理不再写；不改模型／读取／默认表，父统一接线项目／Main／文档／脚本及提交，审查者只读 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -148,7 +149,7 @@ C005 先按实际生产入口拆分，Save 与个人习惯合并写回的语义�
 
 | 子任务 | 状态 | 依赖 | 实现与验收边界 |
 | --- | --- | --- | --- |
-| C005a | in_progress | C004 | 迁移 Save 及原调用接线；复用 NormalizeBinding／Decode／Hash／AtomicWrite，保留 running／校验／路径／尺寸／Gate 顺序、Previous 与最后重复值检查、全部同名行更新、BOM／换行。即使值相同仍写入／备份／清 cache，不能直接套用带 no-op 的 ApplyMerged |
+| C005a | in_progress | C004 | Save 已进入 `InstanceKeybindingFiles` 并由原四参数入口转发；21 组新增真实文件样本令 Linux 总矩阵 156／156 通过，net48 核心／平台门面编译和独立源码／测试／PS 审查通过。保留同值仍写、Previous／重复／原值、BOM／换行／Gate 顺序；待自身 Windows 门禁 |
 | C005b | todo | C005a | 迁移七字段模型、31 项默认键、ReadBindings 与 Mod 归属扫描；区分 strict File.ReadAllText 的 BOM 自动检测、取消点和异常范围、语言优先级／原始顺序／重复项、SharedCount 与当前文化的 Owners 排序 |
 | C005c | todo | C005b、实际 WPF 前置 | 页面后台及交互功能链，处理原 Loader／捕获／订阅／动画与确认，保留现有分组和脏写保护；只迁移 Save 或模型不能声称页面已转换，实际前置按 C027／主工程边界接续 |
 
@@ -165,8 +166,8 @@ C005 先按实际生产入口拆分，Save 与个人习惯合并写回的语义�
 | C004a | 已随 `758a3c2` 推送，Ubuntu 90／Windows 92 组总矩阵与完整 Windows Debug／Release 均通过；真实 CLR4 oracle 42 条通过，独立源码审查和 net48 编译通过 | 本批完成；固定微软来源与有限值极端精度限制见兼容审计，C004b／c 不因此完成 |
 | C004b | 已随 `35114dd` 推送，Ubuntu 108／Windows 112 组总矩阵与完整 Windows Debug／Release 各 41 步通过；独立审查与 net48 编译通过，新增共享读取／只读语义两组和链接实际运行 | 本批完成；cache 回调异常仍是写入完成后抛错，不新增回滚或多线程竞态保证 |
 | C004c | 已随 `1c1841f` 推送，Linux／Ubuntu 135、Windows 139 组及完整 Windows Debug／Release 各 41 步通过；原 VB 类型／六字段／Tracked 实测通过，独立生产／测试／PS 审查和 net48 编译通过 | 本批及 C004 核心验收完成；枚举外层异常位置由源码复核，权限未知和真实 Minecraft／多线程竞态不在本批实测范围，最后适配门面仍纳入 R001 |
-| C005a | 已完成只读勘查并分配 Save／核心文件／测试所有权，正在实施；未声明新通过 | 先稳定真实 Save 入口和相关文件样本，再接线／自审／本地及 Windows 验证；C005b／c 不并行改同一文件 |
+| C005a | Save 核心与原门面已接通，21 组新用例已加入 Main／项目，Linux 156／156 组通过；net48 PCLCS 零警告／错误，独立生产／测试／PS 终审通过。原 imports、七字段、ReadBindings 与 DefaultBindings 逐文本未变 | 推送后验证 Windows 读取／写入共享和只读两组、真实 VB 按键消费者与原完整回归；PS 新增 same-value backup 哨兵断言，不能把纯测试当 Windows 证明。未测多线程竞态或真实游戏 |
 
-下次入口：核对分支、远端和本地 C005a 三文件所有权，若子代理仍在写入或验证先接收结果，不重复／覆盖。C004 三批与 42 条 CLR4 oracle 已通过，不重做规则／文件／会话。继续 C005a 的真实 Save：同值仍写、Previous=null 不等于空串、最后重复值判旧但全部同名行更新、写原 Replacement；检查失败后 cache 和备份状态。其后按 C005b／c 实际依赖接续，不提前关闭母项或 UI。后续标题换行须显式保留 MeloongCore c774ae4 的 StringExtensions.ReplaceLineEndings（不含 VT）语义，避免 .NET 10 内置同名方法抢绑定；当前只记录，不扩大变更。
+下次入口：核对分支、远端与 C005a 检查点，先收尾该批 Windows／双平台矩阵及 same-value 原消费者哨兵结果；核心和 21 组真实样本已接通，不重复实施。C004 三批／42 条 CLR4 oracle 已通过。a 门禁通过后推进 C005b 模型／读取／归属，保持 strict ReadAllText 的 BOM 自动检测、缺文件不检查取消、逐行／JAR／语言条目取消点及原异常范围／顺序。标题换行须显式保留 MeloongCore c774ae4 的 StringExtensions.ReplaceLineEndings（不含 VT）语义，Owners 继续当前文化排序；不提前关闭 C005 母项或 UI。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

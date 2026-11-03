@@ -49,6 +49,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 | 个人选项规则 | `PersonalOptionsRules` 解析、转换键码／FOV、解码和合并 options 文本；只读类别表，`MergeText` 接收动态选中谓词 | VB 继续读取原 Settings 并保留入口；文件事务与会话在 C004b／c 单独迁移。保留首冒号、大小写／别名、未知字段、重复行、混合换行和原末尾状态；对 .NET 10 非有限浮点接受变化作旧 FOV 格式推断的窄适配，不更换同步规则 |
 | 个人选项文件 | `PersonalOptionsFiles.Read/ApplyMerged` 读取原始字节并提交已合并文本，复用现有 `LocalGameDataStore` 原子写入 | 4 MiB／链接检查和默认读取共享方式保持；无变化不写／不校验摘要／不清缓存，变化保留原 BOM 前缀和备份，成功后回调清缓存；调用者继续持有原 Gate，不增加锁或回滚策略 |
 | 个人选项会话 | `PersonalOptionsFlow` 负责导入／Prepare／Track／Capture／Finish／恢复；`IPersonalOptionsInstance` 五项惰性属性及可继承字段 DTO 对接原实例／设置 | 复用原 Store 与 Monitor Gate；保留动态求值、恢复先行、日志状态和异常顺序。VB 原会话类型继承 DTO，由工厂返回同一派生对象；路径／设置／缓存／日志经具体委托适配，不新建通用存储／进程框架；实际 Windows 门面证据见账本 |
+| 按键保存 | `InstanceKeybindingFiles.Save` 处理 Previous 检查、重复行更新、BOM／换行与原子写入，调用原 running／路径／缓存适配和同一 Gate | 复用规则解码／校验及 Hash／AtomicWrite；同值仍备份／写入／清 cache，不能套用个人习惯的 no-op。写原 Replacement，不归一键名；模型、读取归属与页面交互仍在 C005 后续批次 |
 
 现阶段这些边界通过显式参数、结果对象和必要的委托／接口实现。程序集拆分以实际依赖闭包和构建验证为依据；当前 `PCLCS` 的 WPF 项目引用仍在，单个解析器无 WPF 不代表整个库已解耦。后续任务可以细化字段和接口，但须同步更新本表、生产调用与对应回归。
 
