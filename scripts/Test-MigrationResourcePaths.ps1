@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Diagnostic','RequireEquivalent')][string]$Mode = 'Diagnostic',
+    [ValidateSet('Diagnostic','RequireEquivalent')][string]$Mode = 'RequireEquivalent',
     [string]$ReportPath = 'artifacts/migration/resource-paths.json'
 )
 # Windows PowerShell 5.1 compatible. No LF source/algorithm is translated here.

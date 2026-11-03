@@ -1,6 +1,6 @@
 # Windows 资源路径对照记录
 
-本记录属于 C007b 的等价迁移，不新增路径能力或扩大链接保护策略。C007b1 与 C007b2 首批均已实际对照；原 8＋2 差异已消除，扩展样本新发现的 9 项路径差异仍待处理，不能将 Diagnostic 成功解释为路径等价。
+本记录属于 C007b 的等价迁移，不新增路径能力或扩大链接保护策略。`348b0a5` 已实际对照 137 例／52 项候选，原 8＋2 与后续 9 项差异全部消除；CI 改为 RequireEquivalent，仍待严格模式新提交实跑。下列历史差异保留作为实现依据，不把 Diagnostic 成功本身解释为路径等价。
 
 ## 固定来源与实际运行
 
@@ -38,7 +38,7 @@
 - Root 是可信锚点。内部文件／目录链接及内部链接祖先按原规则拒绝；Root 自身或其上方链接仍按原规则信任。缺失后代允许，不创建目录，也不新增 root 必须存在或必须为目录的要求。
 - 固定 Meloong 前缀处理按 Ordinal 区分大小写，AfterLast 取最后完整标记；小写／混合 `unc`、重复标记等独立金值通过。假 UNC 仅做字符串规范化或提前返回分支，不对假服务器后代执行 Exists。
 
-## C007b2 适配与扩展验证中
+## C007b2 适配与扩展验证
 
 生产路径现经 `InstanceResourcePathCompatibility`／`InstanceResourcePathText`。net48 继续使用原 BCL；现代 Windows 在系统归约后补旧非法字符、组件／总长度、精确八尾字符与通配符／冒号异常顺序，extended 原串仍先返回。文本比较经显式 UTF16 长度的 Windows `CompareStringOrdinal`，保留原实例 receiver 的 NullReferenceException；非 Windows 继续使用平台 API。这是等价适配，不新增原生模块或性能改造。
 
@@ -61,10 +61,14 @@ oracle v2 保留原 75 例和期望，新增真实 Unicode guard、八 trim、�
 
 后继工作树已加入 NT 原串父目录截取、dot-device 盘符根末分隔符修正、UNC 缺 share 拒绝；只有前导空格移走后才出现 extended 的形状交给 `GetFullPathNameW`，避免现代 API 二次提前返回。GetDir 仅为 Normalize 后祖先遍历补旧 limited 长度，不作为所有 raw BCL 输入的通用替代；先归一分隔符再按旧跨度检查，保留中间 255 与末尾 255 的区别。canonical extended 盘符根与 dot-device 的旧根长度不同，不能套用同一裁剪。
 
-为这些后继改动增加 5 组 Windows 生产回归，oracle 保留原 124 例再增 13 例（中间 254／255、末尾 255、总长 32766／32767、真实 guard／canonical 根、NT 父目录保 NUL、非法原串优先与空白），新总计 137／52。GetDir 的原串非法字符检查先于 limited 长度，不能套用 FullPath 归约后检查顺序。末次小修后三个工程零警告编译、本地 308／308 与独立终审通过，Windows 后继报告尚待执行；旧 124 例报告不代表这些新边界已验证。
+为这些后继改动增加 5 组 Windows 生产回归，oracle 保留原 124 例再增 13 例（中间 254／255、末尾 255、总长 32766／32767、真实 guard／canonical 根、NT 父目录保 NUL、非法原串优先与空白），新总计 137／52。GetDir 的原串非法字符检查先于 limited 长度，不能套用 FullPath 归约后检查顺序。末次小修后三个工程零警告编译、本地 308／308 与独立终审通过。
+
+`348b0a516b2395d1559135cf0a0e9fb36bdec270` 的 [Migration validation 41737707302](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707302)：Ubuntu job `126271080274` 308／308、Windows job `126271080675` 336／336；真实 137 例／52 项比较全无差异，四个失败数组均空，`equivalent=true`。新增长度合同已由实际 CLR4 确认，NT 父目录返回值确实保留 NUL，canonical leading-space 根仍抛原 NullReferenceException；不能把 dot-device 修复扩大到它。
+
+[完整 JSON artifact 13280505603](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707302/artifacts/13280505603)，ZIP SHA256 `3e32a4f3a0f67f193f77bf9e324a64e7817360b4a3efecce77ff428c47a1b6e7`，已下载逐项核对，不依赖本地 scratch。原进程仍 CLR4.0.30319.42000、现代 .NET 10.0.14；本次为 Diagnostic 模式的零差异实测，严格模式下一提交实际运行后再关闭门禁。
 
 ## 下一步
 
-C007b2 以实测差异为依据，分别处理现代 Windows 的路径 API 和旧 OrdinalIgnoreCase 语义。生产 equality／prefix 和 oracle 必须调用同一实际适配入口；旧基线继续使用固定原 VB／真实 Framework，不更改期望掩盖差异。适配后改为 RequireEquivalent，并运行完整 Windows 资源、备份、更新、克隆、取消与恢复消费者。
+CI 与脚本默认改为 RequireEquivalent，等待该提交的真实执行；任何 path／text／候选／基线差异均阻止通过。生产 equality／prefix 和 oracle 调同一实际适配入口；旧基线继续用固定原 VB／真实 Framework，不改期望掩盖差异。完整 Windows 资源、备份、更新、克隆、取消与恢复消费者同样持续验证。
 
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。

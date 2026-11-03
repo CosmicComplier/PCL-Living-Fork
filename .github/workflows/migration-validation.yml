@@ -100,11 +100,11 @@ jobs:
           git submodule update --init MeloongCore
           test "$(git -C MeloongCore rev-parse HEAD)" = c774ae4c85fd94e0eaa171db21e78a65870df19b
 
-      - name: Compare fixed LF CLR4 and modern Windows paths (diagnostic)
+      - name: Require fixed LF CLR4 and modern Windows path equivalence
         if: matrix.os == 'windows-latest'
-        # Diagnostic reports differences; C007b2 must eliminate them before the equivalence gate closes.
+        # C007b2 measured all 137 cases / 52 native comparisons equal; any future difference fails.
         shell: powershell
-        run: ./scripts/Test-MigrationResourcePaths.ps1 -Mode Diagnostic -ReportPath artifacts/migration/resource-paths.json
+        run: ./scripts/Test-MigrationResourcePaths.ps1 -Mode RequireEquivalent -ReportPath artifacts/migration/resource-paths.json
 
       - name: Upload the Windows path comparison report
         if: always() && matrix.os == 'windows-latest'
