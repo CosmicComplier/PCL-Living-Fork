@@ -7,18 +7,24 @@ Public Class PageLaunchRight
     Private RecentWorldVisible As Boolean
     Private RecentSessionRunning As Boolean
     Private RecentLaunchPending As Boolean
+    Private DependencyChecksVisible As Boolean
+    Private DependencyOptionsRefreshing As Boolean
 
     Private Sub InitRecentWorldCard() Handles Me.Initialized
         DisabledPageAnimControls.Add(CardRecentWorlds)
+        DisabledPageAnimControls.Add(CardDependencyChecks)
         Dim Title = CardRecentWorlds.MainTextBlock
         Title.FontSize = 12
         Title.Margin = New Thickness(12, 7, 12, 0)
+        RefreshDependencyOptions()
     End Sub
     Private Sub RecentPageEntered() Handles Me.PageEnter
+        RefreshDependencyOptions()
         RunInUi(AddressOf UpdateRecentWorldVisibility, True)
     End Sub
 
     Private Sub Init() Handles Me.Loaded
+        RefreshDependencyOptions()
         PanBack.ScrollToHome()
         PanLog.Visibility = ModeDebug.ToVisibility
         RefreshRecentWorlds()
@@ -48,7 +54,7 @@ Public Class PageLaunchRight
     Friend Sub ShowRecentWorld(Item As Tuple(Of RecentWorld, ImageSource))
         LatestRecentWorld = Item
         If Item Is Nothing Then
-            ApplyRecentWorldState(True, IsLoaded AndAlso AniControlEnabled = 0)
+            ApplyRecentWorldState(RecentLaunchPending OrElse HasRunningMinecraft OrElse RecentSessionRunning OrElse McLaunchLoader.State = LoadState.Loading, IsLoaded AndAlso AniControlEnabled = 0)
             Return
         End If
         Dim World = Item.Item1
@@ -82,6 +88,7 @@ Public Class PageLaunchRight
     End Sub
     Friend Sub ApplyRecentWorldState(GameActive As Boolean, Animate As Boolean)
         Dim Visible = LatestRecentWorld IsNot Nothing AndAlso Not GameActive AndAlso Not RecentLaunchPending AndAlso Settings.Get(Of Boolean)("LaunchRecentWorlds")
+        ApplyDependencyOptionsState(GameActive OrElse RecentLaunchPending, Animate, Visible)
         Dim AnimationName = "Recent World Card " & PageUuid
         If RecentWorldVisible = Visible AndAlso (AniIsRun(AnimationName) OrElse CardRecentWorlds.Visibility = If(Visible, Visibility.Visible, Visibility.Collapsed)) Then Return
         RecentWorldVisible = Visible
@@ -112,6 +119,53 @@ Public Class PageLaunchRight
                 AaTranslateX(CardRecentWorlds, -24 - TransRecentWorld.X, 150, Ease:=New AniEaseInFluent(AniEasePower.Weak)),
                 AaCode(Sub() CardRecentWorlds.Visibility = Visibility.Collapsed, After:=True)
             }, AnimationName)
+        End If
+    End Sub
+
+    Friend Sub RefreshDependencyOptions()
+        If DependencyOptionsRefreshing OrElse PanDependencyChecks Is Nothing Then Return
+        DependencyOptionsRefreshing = True
+        AniControlEnabled += 1
+        Try
+            SettingService.RefreshSettings(PanDependencyChecks)
+        Finally
+            AniControlEnabled -= 1
+            DependencyOptionsRefreshing = False
+        End Try
+        UpdateDependencyOptionsExpansion()
+    End Sub
+
+    Private Sub DependencyCheckChanged(Sender As Object, User As Boolean) Handles CheckModDependencies.Change
+        If Not DependencyOptionsRefreshing Then UpdateDependencyOptionsExpansion()
+    End Sub
+
+    Private Sub UpdateDependencyOptionsExpansion()
+        Dim Target = If(CheckModDependencies.Checked, Visibility.Visible, Visibility.Collapsed)
+        If CheckAutoFillDependencies.Visibility = Target Then Return
+        CheckAutoFillDependencies.Visibility = Target
+        CardDependencyChecks.TriggerForceResize()
+    End Sub
+
+    Friend Sub ApplyDependencyOptionsState(GameActive As Boolean, Animate As Boolean, RecentVisible As Boolean)
+        '保留上次游玩卡片的位置，异步读取记录时开关不会跳动。
+        PanDependencyOptionsAnchor.Margin = New Thickness(20, 0, 0, 108)
+        Dim Visible = Not GameActive, Name = "Dependency Options " & PageUuid
+        If DependencyChecksVisible = Visible AndAlso CardDependencyChecks.Visibility = If(Visible, Visibility.Visible, Visibility.Collapsed) Then Return
+        DependencyChecksVisible = Visible
+        AniStop(Name)
+        CardDependencyChecks.IsHitTestVisible = Visible
+        If Not Animate Then
+            CardDependencyChecks.Visibility = If(Visible, Visibility.Visible, Visibility.Collapsed)
+            CardDependencyChecks.Opacity = If(Visible, 1, 0)
+            TransDependencyChecks.X = If(Visible, 0, -24)
+        ElseIf Visible Then
+            CardDependencyChecks.Visibility = Visibility.Visible
+            AniStart({AaOpacity(CardDependencyChecks, 1 - CardDependencyChecks.Opacity, 180),
+                AaTranslateX(CardDependencyChecks, -TransDependencyChecks.X, 280, Ease:=New AniEaseOutBack(AniEasePower.Weak))}, Name)
+        Else
+            AniStart({AaOpacity(CardDependencyChecks, -CardDependencyChecks.Opacity, 100),
+                AaTranslateX(CardDependencyChecks, -24 - TransDependencyChecks.X, 150, Ease:=New AniEaseInFluent(AniEasePower.Weak)),
+                AaCode(Sub() CardDependencyChecks.Visibility = Visibility.Collapsed, After:=True)}, Name)
         End If
     End Sub
     Private Sub RecentWorldClick(Sender As Object, e As MouseButtonEventArgs) Handles ItemRecentWorld.Click
@@ -149,6 +203,11 @@ Public Class PageLaunchRight
         End If
     End Sub
     Private Sub ReleaseRecentWorlds() Handles Me.Unloaded
+        AniStop("Dependency Options " & PageUuid)
+        DependencyChecksVisible = False
+        CardDependencyChecks.Visibility = Visibility.Collapsed
+        CardDependencyChecks.Opacity = 0
+        TransDependencyChecks.X = -24
         Interlocked.Increment(RecentWorldRevision)
         AniStop("Recent World Card " & PageUuid)
         AniStop("Recent World Launch " & PageUuid)

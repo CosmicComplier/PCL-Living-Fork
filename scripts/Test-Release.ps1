@@ -6,6 +6,10 @@ Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
 $root=Split-Path $PSScriptRoot -Parent
 foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')) { [Reflection.Assembly]::LoadFrom((Join-Path $root $path)) | Out-Null }
 $asm=[Reflection.Assembly]::LoadFrom($ExecutablePath)
+$product=[Diagnostics.FileVersionInfo]::GetVersionInfo($ExecutablePath)
+$executableName='PCL Living Fork - '+$product.ProductVersion+'.exe'
+if([IO.Path]::GetFileName($ExecutablePath) -cne $executableName -or -not [IO.File]::Exists($ExecutablePath+'.config')){throw 'Versioned build executable/config naming mismatch'}
+if($asm.GetType('PCL.ModBase').GetField('LauncherExecutableName').GetRawConstantValue() -cne $executableName){throw 'Build filename does not match export/update runtime naming'}
 $type=$asm.GetType('PCL.Settings',$true)
 $flags=[Reflection.BindingFlags]'NonPublic,Static'
 $enc=$type.GetMethod('DesEncrypt',$flags);$dec=$type.GetMethod('DesDecrypt',$flags)
@@ -74,7 +78,8 @@ foreach($url in @('http://github.com/DDZmumo/LivingPCL2-Re/releases/download/v1.
 }
 $oldAsset=@{name='LivingPCL2-Re-1.2.0.exe';browser_download_url='https://github.com/DDZmumo/LivingPCL2-Re/releases/download/v1.2.0/LivingPCL2-Re-1.2.0.exe'}
 $newAsset=@{name='PCL-Living-Fork-1.2.0.exe';browser_download_url='https://github.com/DDZmumo/PCL-Living-Fork/releases/download/v1.2.0/PCL-Living-Fork-1.2.0.exe'}
-foreach($case in @(@{assets=@($oldAsset);expected=$oldAsset.name},@{assets=@($oldAsset,$newAsset);expected=$newAsset.name})){
+$versionedAsset=@{name=$executableName;browser_download_url=('https://github.com/DDZmumo/PCL-Living-Fork/releases/download/v'+$product.ProductVersion+'/'+[uri]::EscapeDataString($executableName))}
+foreach($case in @(@{assets=@($oldAsset);expected=$oldAsset.name},@{assets=@($oldAsset,$newAsset);expected=$newAsset.name},@{assets=@($oldAsset,$newAsset,$versionedAsset);expected=$versionedAsset.name})){
  $info=[Newtonsoft.Json.Linq.JObject]::Parse((@{assets=$case.assets}|ConvertTo-Json -Depth 5))
  $selected=$updater.GetMethod('ReleaseExecutable',$flags).Invoke($null,[object[]](,$info))
  if($selected['name'].ToString() -cne $case.expected){throw 'Updater chose the wrong renamed/legacy release asset'}
@@ -83,6 +88,8 @@ $hash=[string](Get-FileHash -LiteralPath $ExecutablePath -Algorithm SHA256).Hash
 $manifest=$hash.ToLowerInvariant()+'  LivingPCL2-Re-1.0.1.exe'
 $parsed=$updater.GetMethod('ManifestHash',$flags).Invoke($null,@($manifest,'LivingPCL2-Re-1.0.1.exe'))
 if($parsed -cne $hash.ToLowerInvariant()) { throw 'SHA256 manifest parsing failed' }
+$parsed=$updater.GetMethod('ManifestHash',$flags).Invoke($null,@(($hash.ToLowerInvariant()+'  '+$executableName),$executableName))
+if($parsed -cne $hash.ToLowerInvariant()){throw 'SHA256 parsing failed for a versioned filename with spaces'}
 $folder=Join-Path ([IO.Path]::GetTempPath()) ('LivingPCL-UpdateTest-'+[Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($folder) | Out-Null
 $target=Join-Path $folder 'LivingPCL.exe'

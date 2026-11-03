@@ -233,7 +233,7 @@ Friend NotInheritable Class ModDependencyOnline
                 IsEnabledFile(Value) AndAlso (Work.Options.ComparePlatformDependencies OrElse NeedsSupplement(Value, Work.Report))), StringComparer.OrdinalIgnoreCase)
         If Not Targets.Values.Any(Function(Value) Value) Then Return Result
         Dim Total As Long
-        For Each FullPath In Paths.OrderByDescending(Function(Value) Targets(Value)).ThenBy(Function(Value) Value, StringComparer.OrdinalIgnoreCase).Take(Math.Max(1, Math.Min(128, Work.Options.MaxFiles)))
+        For Each FullPath In Paths.OrderByDescending(Function(Value) Targets(Value)).ThenBy(Function(Value) Value, StringComparer.OrdinalIgnoreCase).Take(Math.Max(1, Math.Min(512, Work.Options.MaxFiles)))
             Work.Check()
             Try
                 Dim Info As New FileInfo(FullPath)
@@ -250,7 +250,7 @@ Friend NotInheritable Class ModDependencyOnline
                 Work.Note("部分本地文件无法读取，未据此判定缺失依赖。")
             End Try
         Next
-        If Paths.Count > Math.Max(1, Math.Min(128, Work.Options.MaxFiles)) Then Work.Note("联网补充达到文件数量上限；本次平台映射可能不完整。")
+        If Paths.Count > Math.Max(1, Math.Min(512, Work.Options.MaxFiles)) Then Work.Note("联网补充达到文件数量上限；本次平台映射可能不完整。")
         Return Result
     End Function
     Private Shared Function IsModFile(Value As String) As Boolean
@@ -611,7 +611,7 @@ Friend NotInheritable Class ModDependencyOnline
         If Project("classId") IsNot Nothing AndAlso Project("classId").Type <> JTokenType.Null Then Return S(Project("classId")) = "6"
         Return IsCurseForgeWebsite(S(Project("links")?("websiteUrl")))
     End Function
-    Private Shared Function DefaultRequest(Url As String, Method As HttpMethod, Body As String, Token As CancellationToken) As JToken
+    Friend Shared Function DefaultRequest(Url As String, Method As HttpMethod, Body As String, Token As CancellationToken) As JToken
         If Not IsAllowedApi(Url) Then Throw New ArgumentException("Unsupported dependency API address.")
         'Keep credential attachment in the existing exact-host boundary. Never follow a redirect with signed headers.
         Using Handler As New HttpClientHandler With {.AllowAutoRedirect = False, .UseCookies = False, .AutomaticDecompression = DecompressionMethods.GZip Or DecompressionMethods.Deflate},

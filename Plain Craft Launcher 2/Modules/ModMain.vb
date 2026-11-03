@@ -197,6 +197,7 @@ EndHint:
         ''' </summary>
         Public Button3Action As Action = Nothing
         Public IsWarn As Boolean = False
+        Public WarningButton As Integer = 1
         Public ForceWait As Boolean = False
         Public WaitFrame As New DispatcherFrame(True)
         ''' <summary>
@@ -339,10 +340,11 @@ EndHint:
             .ContentFactory = Factory, .HighLight = True, .ForceWait = True})
     End Sub
 
-    Friend Function MyMsgBoxConfirmContent(Caption As String, Title As String, ConfirmText As String, Factory As Func(Of FrameworkElement)) As Integer
-        If FrmMain?.PanMsg Is Nothing Then Return MyMsgBox(Caption, Title, ConfirmText, "取消", IsWarn:=True)
+    Friend Function MyMsgBoxConfirmContent(Caption As String, Title As String, ConfirmText As String, Factory As Func(Of FrameworkElement),
+        Optional CancelText As String = "取消", Optional ThirdText As String = "", Optional WarningButton As Integer = 1, Optional IsWarn As Boolean = True) As Integer
+        If FrmMain?.PanMsg Is Nothing Then Return MyMsgBox(Caption, Title, ConfirmText, CancelText, ThirdText, IsWarn:=IsWarn)
         Dim Converter As New MyMsgBoxConverter With {.Type = MyMsgBoxType.Text, .Text = Caption, .Title = Title,
-            .Button1 = ConfirmText, .Button2 = "取消", .IsWarn = True, .ForceWait = True, .ContentFactory = Factory}
+            .Button1 = ConfirmText, .Button2 = CancelText, .Button3 = ThirdText, .IsWarn = IsWarn, .WarningButton = WarningButton, .ForceWait = True, .ContentFactory = Factory}
         WaitingMyMsgBox.Enqueue(Converter)
         Try
             FrmMain.DragStop()

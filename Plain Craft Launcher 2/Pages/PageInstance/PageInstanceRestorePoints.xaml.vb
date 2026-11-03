@@ -8,6 +8,8 @@
     Private HealthyOnly As Boolean
     Private Owner As McInstance
     Private PendingFocusId As String
+    Private BindingRetention As Boolean
+    Private RetentionDirty As Boolean
     Friend Sub FocusPoint(Id As String)
         PendingFocusId = Id
         SearchBox.Text = ""
@@ -33,16 +35,66 @@
         Refresh()
     End Sub
     Private Sub PageUnloaded() Handles Me.Unloaded
+        CommitRetention()
         RemoveHandler EnvironmentHistoryUi.Changed, AddressOf Refresh
         PointsLoader.Cancel()
     End Sub
     Public Sub Refresh() Implements IRefreshable.Refresh
+        If Owner IsNot PageInstanceLeft.Instance Then CommitRetention()
         Owner = PageInstanceLeft.Instance
+        BindRetention()
         If Owner Is Nothing Then Return
         SelectedIds.Clear()
         BtnRestore.IsEnabled = False
         PointsLoader.Start(Owner.PathVersion, IsForceRestart:=True)
     End Sub
+
+    Private Sub BindRetention()
+        BindingRetention = True
+        Try
+            CardRetention.IsEnabled = Owner IsNot Nothing
+            CheckAutoCleanup.Checked = Owner IsNot Nothing AndAlso Settings.Get(Of Boolean)("VersionEnvironmentHistoryAutoCleanup", Instance:=Owner)
+            PanRetention.Visibility = If(CheckAutoCleanup.Checked, Visibility.Visible, Visibility.Collapsed)
+            If Not RetentionDirty OrElse Not TextRetention.IsKeyboardFocusWithin Then
+                TextRetention.Text = If(Owner Is Nothing, 10, Settings.Get(Of Integer)("VersionEnvironmentHistoryRetention", Instance:=Owner)).ToString()
+                RetentionDirty = False
+            End If
+        Finally
+            BindingRetention = False
+        End Try
+    End Sub
+    Private Sub AutoCleanupChanged(Sender As Object, User As Boolean) Handles CheckAutoCleanup.Change
+        If BindingRetention Then Return
+        PanRetention.Visibility = If(CheckAutoCleanup.Checked, Visibility.Visible, Visibility.Collapsed)
+        CardRetention.TriggerForceResize()
+        If User AndAlso Owner IsNot Nothing Then Settings.Set("VersionEnvironmentHistoryAutoCleanup", CheckAutoCleanup.Checked, Instance:=Owner)
+    End Sub
+    Private Sub RetentionEdited() Handles TextRetention.TextChanged
+        If Not BindingRetention AndAlso Owner IsNot Nothing AndAlso TextRetention.IsKeyboardFocusWithin Then RetentionDirty = True
+    End Sub
+    Private Sub RetentionLostFocus() Handles TextRetention.LostKeyboardFocus
+        CommitRetention()
+    End Sub
+    Private Sub RetentionKey(Sender As Object, e As KeyEventArgs) Handles TextRetention.PreviewKeyDown
+        If e.Key <> Key.Enter Then Return
+        CommitRetention() : e.Handled = True
+    End Sub
+    Friend Function CommitRetention() As Boolean
+        If BindingRetention OrElse Owner Is Nothing OrElse Not RetentionDirty Then Return True
+        RetentionDirty = False
+        Dim Count As Integer
+        Dim Valid = Integer.TryParse(TextRetention.Text, Count) AndAlso Count >= 1 AndAlso Count <= 100
+        Dim Previous = Settings.Get(Of Integer)("VersionEnvironmentHistoryRetention", Instance:=Owner)
+        If Valid AndAlso Count <> Previous Then Settings.Set("VersionEnvironmentHistoryRetention", Count, Instance:=Owner)
+        BindingRetention = True
+        Try
+            TextRetention.Text = If(Valid, Count, Previous).ToString()
+        Finally
+            BindingRetention = False
+        End Try
+        If Not Valid Then Hint("自动还原点保留数量必须为 1 到 100。", HintType.Red)
+        Return Valid
+    End Function
     Private Sub LoadedPoints()
         If Owner Is Nothing OrElse Owner IsNot PageInstanceLeft.Instance Then Return
         Entries = PointsLoader.Output

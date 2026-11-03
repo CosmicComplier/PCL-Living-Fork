@@ -272,10 +272,14 @@ End Module
  Put $manifestPath ($manifest.ToString())
  Reject {Call 'Restore' @($game,$bad,50,$token,$null)} 'Tampered path manifest was restored'
  if([IO.File]::Exists((Join-Path $fixture 'escape.txt'))){throw 'Path traversal escaped the fixture'}
- # Retention is per world, and runs only after a verified new backup.
+ # Retention is per world, excludes manual backups, and runs only after a verified new backup.
+ $legacy=Join-Path $store ('points/'+$first+'/manifest.json');$legacyPoint=[Newtonsoft.Json.Linq.JObject]::Parse([IO.File]::ReadAllText($legacy));$legacyPoint.Remove('manual')|Out-Null;$legacyPoint['reason']=[Newtonsoft.Json.Linq.JValue]::new('手动备份');[IO.File]::WriteAllText($legacy,$legacyPoint.ToString())
+ $manual=Call 'CaptureWorld' @($game,'World A','手动备份',2,$token,$null)
  1..3|ForEach-Object {Put (Join-Path $world 'level.dat') ('retention-'+$_);Call 'CaptureWorld' @($game,'World A','retention',2,$token,$null)|Out-Null}
  $points=Call 'Points' @($game)
- if(@($points|Where-Object {$_['world'].ToString() -eq 'World A'}).Count -ne 2 -or -not ($points|Where-Object {$_['id'].ToString() -eq $otherId})){throw 'Retention crossed world boundaries or kept the wrong number'}
+ $worldPoints=@($points|Where-Object {$_['world'].ToString() -eq 'World A'})
+ if(@($worldPoints|Where-Object {$_['id'].ToString() -notin @($first,$manual)}).Count -ne 2 -or -not ($points|Where-Object {$_['id'].ToString() -eq $otherId})){throw 'Retention crossed world boundaries or kept the wrong number of automatic backups'}
+ foreach($id in @($first,$manual)){if(-not ($worldPoints|Where-Object {$_['id'].ToString() -eq $id})){throw 'Retention removed a current or legacy manual backup'}}
  $selected=@($points|Where-Object {$_['world'].ToString() -eq 'World A'}|ForEach-Object {$_['id'].ToString()})
  Reject {Call 'DeletePoints' @($game,[string[]]@($selected[0],'../invalid'))} 'Invalid delete batch was accepted'
  if(-not ((Call 'Points' @($game))|Where-Object {$_['id'].ToString() -eq $selected[0]})){throw 'Invalid batch partly removed a valid backup'}

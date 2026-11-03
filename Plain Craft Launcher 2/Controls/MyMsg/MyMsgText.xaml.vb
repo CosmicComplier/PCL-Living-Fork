@@ -19,10 +19,16 @@ Public Class MyMsgText
                 PanCaption.Padding = New Thickness(0)
                 MinWidth = 0
                 RefreshContentBounds()
+                Dim Versions = TryCast(PanCaption.Content, ModpackVersionSelectView)
+                If Versions IsNot Nothing Then
+                    Btn1.IsEnabled = Versions.Selected IsNot Nothing
+                    AddHandler Versions.SelectionChanged, Sub() Btn1.IsEnabled = Versions.Selected IsNot Nothing
+                End If
             End If
             Btn1.Text = Converter.Button1
             If Converter.IsWarn Then
-                Btn1.ColorType = MyButton.ColorState.Red
+                Dim Warning = If(Converter.WarningButton = 3, Btn3, If(Converter.WarningButton = 2, Btn2, Btn1))
+                Warning.ColorType = MyButton.ColorState.Red
                 LabTitle.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushRedLight")
             End If
             Btn2.Text = Converter.Button2
@@ -42,7 +48,9 @@ Public Class MyMsgText
         Dim Body = TryCast(PanCaption.Content, FrameworkElement)
         Dim Graph = TryCast(Body, ModDependencyGraphView)
         Dim Impacts = TryCast(Body, ModDependencyImpactView)
-        Width = Math.Min(If(Graph IsNot Nothing, Graph.PreferredWidth, If(Impacts IsNot Nothing, Impacts.PreferredWidth, 980)), Math.Max(0, If(Host Is Nothing, 1000, Host.ActualWidth) - 50))
+        Dim Dependencies = TryCast(Body, ModDependencyCheckView)
+        Dim Modpack = TryCast(Body, ModpackDialogView)
+        Width = Math.Min(If(Modpack IsNot Nothing, Modpack.PreferredWidth, If(Dependencies IsNot Nothing, Dependencies.PreferredWidth, If(Graph IsNot Nothing, Graph.PreferredWidth, If(Impacts IsNot Nothing, Impacts.PreferredWidth, 980)))), Math.Max(0, If(Host Is Nothing, 1000, Host.ActualWidth) - 50))
         MaxHeight = Math.Max(0, If(Host Is Nothing, 740, Host.ActualHeight) - 50)
         If Body IsNot Nothing Then Body.MaxHeight = Math.Max(0, MaxHeight - 156)
     End Sub

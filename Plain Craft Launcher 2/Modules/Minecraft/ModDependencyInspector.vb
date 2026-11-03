@@ -83,6 +83,11 @@ Friend NotInheritable Class ModDependencyInspector
                 Return If(String.IsNullOrWhiteSpace(Name), Id, Name) & " [" & Id & "]"
             End Get
         End Property
+        Friend Function CopyWithEnabled(Value As Boolean) As ModInfo
+            Dim Copy = DirectCast(MemberwiseClone(), ModInfo)
+            Copy.Enabled = Value
+            Return Copy
+        End Function
     End Class
 
     Friend Class Dependency
@@ -840,6 +845,15 @@ Friend NotInheritable Class ModDependencyInspector
         Return Resolve(Requirement, ProviderMap(Modules), Report.Context).State = MatchState.Satisfied
     End Function
 
+    Friend Shared Function WithEnabledFiles(Report As InspectionReport, Paths As IEnumerable(Of String), Token As CancellationToken) As InspectionReport
+        Dim Enabled As New HashSet(Of String)(Paths.Select(AddressOf FilePathKey), StringComparer.OrdinalIgnoreCase)
+        Dim Result As New InspectionReport With {.Context = Report.Context, .Builtins = Report.Builtins, .MetadataIncomplete = Report.MetadataIncomplete}
+        Result.Notices.AddRange(Report.Notices)
+        Result.Mods.AddRange(Report.Mods.Select(Function(Item) Item.CopyWithEnabled(Item.Enabled OrElse Enabled.Contains(FilePathKey(Item.RootPath)))))
+        BuildReport(Result, Token)
+        Return Result
+    End Function
+
     Friend Shared Function IsRequiredFileProvider(Report As InspectionReport, Edge As DependencyEdge, FullPath As String) As Boolean
         Return FileProviderRelation(Report, Edge, FullPath) = FileProviderKind.Required
     End Function
@@ -921,7 +935,7 @@ Friend NotInheritable Class ModDependencyInspector
         If Values.Contains(MatchState.Satisfied) Then Return MatchState.Satisfied
         Return If(Values.Contains(MatchState.Unknown), MatchState.Unknown, MatchState.Unsatisfied)
     End Function
-    Private Shared Sub BuildReport(Report As InspectionReport, Token As CancellationToken)
+    Friend Shared Sub BuildReport(Report As InspectionReport, Token As CancellationToken)
         Dim Active = ActiveMods(Report), Map = ProviderMap(Active.Concat(Report.Builtins))
         For Each Group In Active.Where(Function(Item) Not Item.IsNested).GroupBy(Function(Item) Item.Id, StringComparer.Ordinal).Where(Function(Items) Items.Count() > 1)
             Report.Issues.Add(New InspectionIssue With {.Kind = IssueKind.DuplicateId, .Owner = Group.First(), .RelatedMods = Group.ToList(), .IsError = True,
@@ -1107,7 +1121,7 @@ Friend NotInheritable Class ModDependencyInspector
         Public Prerelease As String
     End Class
     Private Shared Function ParseVersion(Value As String) As NumericVersion
-        Dim Match = Regex.Match(If(Value, ""), "^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$")
+        Dim Match = Regex.Match(If(Value, ""), "^(\d+(?:\.\d+)*)(?:-((?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?))?(?:\+[0-9A-Za-z.-]+)?$")
         If Not Match.Success Then Return Nothing
         Dim Parts As New List(Of Long)
         For Each Part In Match.Groups(1).Value.Split("."c)
@@ -1115,16 +1129,19 @@ Friend NotInheritable Class ModDependencyInspector
             If Not Long.TryParse(Part, NumberStyles.None, CultureInfo.InvariantCulture, Number) Then Return Nothing
             Parts.Add(Number)
         Next
-        Return New NumericVersion With {.Parts = Parts.ToArray(), .Prerelease = Match.Groups(2).Value}
+        'Fabric 的空预发布键（例如 1.21-）与正式版 1.21 不同，用作该版本所有预发布的下界。
+        Return New NumericVersion With {.Parts = Parts.ToArray(), .Prerelease = If(Match.Groups(2).Success, Match.Groups(2).Value, Nothing)}
     End Function
     Private Shared Function CompareVersions(Left As NumericVersion, Right As NumericVersion) As Integer
         For Index = 0 To Math.Max(Left.Parts.Length, Right.Parts.Length) - 1
             Dim Comparison = If(Index < Left.Parts.Length, Left.Parts(Index), 0L).CompareTo(If(Index < Right.Parts.Length, Right.Parts(Index), 0L))
             If Comparison <> 0 Then Return Comparison
         Next
-        If Left.Prerelease = Right.Prerelease Then Return 0
-        If Left.Prerelease = "" Then Return 1
-        If Right.Prerelease = "" Then Return -1
+        If String.Equals(Left.Prerelease, Right.Prerelease, StringComparison.Ordinal) Then Return 0
+        If Left.Prerelease Is Nothing Then Return 1
+        If Right.Prerelease Is Nothing Then Return -1
+        If Left.Prerelease = "" Then Return -1
+        If Right.Prerelease = "" Then Return 1
         Dim LeftParts = Left.Prerelease.Split("."c), RightParts = Right.Prerelease.Split("."c)
         For Index = 0 To Math.Min(LeftParts.Length, RightParts.Length) - 1
             Dim LeftNumber As Long, RightNumber As Long, LeftNumeric = Long.TryParse(LeftParts(Index), LeftNumber), RightNumeric = Long.TryParse(RightParts(Index), RightNumber)
@@ -1185,7 +1202,7 @@ Friend NotInheritable Class ModDependencyInspector
                 For Index = Bump + 1 To Upper.Length - 1
                     Upper(Index) = 0
                 Next
-                Dim UpperVersion As New NumericVersion With {.Parts = Upper, .Prerelease = ""}
+                Dim UpperVersion As New NumericVersion With {.Parts = Upper, .Prerelease = Nothing}
                 Return If(Comparison >= 0 AndAlso CompareVersions(Current, UpperVersion) < 0, MatchState.Satisfied, MatchState.Unsatisfied)
             Case Else : Return MatchState.Unknown
         End Select

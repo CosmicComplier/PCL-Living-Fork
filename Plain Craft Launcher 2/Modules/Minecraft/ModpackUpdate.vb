@@ -343,9 +343,19 @@ Friend NotInheritable Class ModpackUpdate
         Next
     End Sub
     Friend Shared Sub DownloadFiles(Files As List(Of NetFile), Token As CancellationToken)
+        DownloadFilesWithProgress(Files, Token, Nothing)
+    End Sub
+
+    Friend Shared Sub DownloadFilesWithProgress(Files As List(Of NetFile), Token As CancellationToken, Progress As ProgressProvider)
+        Token.ThrowIfCancellationRequested()
         Dim Loader As New LoaderDownload("下载整合包更新文件", Files)
         Using Registration = Token.Register(AddressOf Loader.Cancel)
-            Loader.WaitForExit(c:=Token)
+            SyncLock Loader.LockState
+                Token.ThrowIfCancellationRequested()
+                Loader.Start()
+            End SyncLock
+            Loader.WaitForExit(c:=Token, p:=Progress, StartIfNeeded:=False)
+            Progress?.Set(1)
         End Using
     End Sub
 

@@ -587,8 +587,8 @@ Public Class PageInstanceExport
             ExportedVersionIsolation.ConfigureExport(OverridesFolder, EnableVersionIsolation, VersionOnlyFolders)
             '复制 PCL 本体（正式版）
             If IncludePCL Then
-                FileUtils.Copy(PathExe, CacheFolder & "PCL Living Fork.exe")
-                If FileUtils.Exists(PathExe & ".config") Then FileUtils.Copy(PathExe & ".config", CacheFolder & "PCL Living Fork.exe.config")
+                FileUtils.Copy(PathExe, CacheFolder & LauncherExecutableName)
+                If FileUtils.Exists(PathExe & ".config") Then FileUtils.Copy(PathExe & ".config", CacheFolder & LauncherExecutableName & ".config")
             End If
             '复制 PCL 个性化内容
             If IncludePCLCustom Then

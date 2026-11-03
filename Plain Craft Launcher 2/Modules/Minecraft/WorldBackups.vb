@@ -322,7 +322,7 @@ Friend NotInheritable Class WorldBackups
                 '损坏的元数据仍应允许完整保存原始文件，便于后续恢复。
             End Try
             Dim Point As New JObject(New JProperty("schema", 1), New JProperty("id", Id), New JProperty("gameFolder", Full(GameFolder)), New JProperty("world", Identifier),
-                New JProperty("label", Label), New JProperty("created", Date.UtcNow), New JProperty("reason", Reason), New JProperty("bytes", Total), New JProperty("archiveBytes", New FileInfo(Safe(Stage, "world.zip")).Length), New JProperty("files", Files), New JProperty("directories", New JArray(Directories)))
+                New JProperty("label", Label), New JProperty("created", Date.UtcNow), New JProperty("reason", Reason), New JProperty("manual", ManualReason(Reason)), New JProperty("bytes", Total), New JProperty("archiveBytes", New FileInfo(Safe(Stage, "world.zip")).Length), New JProperty("files", Files), New JProperty("directories", New JArray(Directories)))
             WriteJson(Safe(Stage, "manifest.json"), Point)
             ReadArchive(Stage, Point, Token)
             Token.ThrowIfCancellationRequested()
@@ -349,8 +349,16 @@ Friend NotInheritable Class WorldBackups
         Next
         Directory.Delete(Folder, False)
     End Sub
+    Private Shared Function ManualReason(Reason As String) As Boolean
+        Return Reason = "手动备份" OrElse String.Equals(Reason, "manual", StringComparison.OrdinalIgnoreCase)
+    End Function
+    Friend Shared Function IsManualPoint(Point As JObject) As Boolean
+        Dim Value = Point("manual")
+        If Value IsNot Nothing Then Return Value.Type <> JTokenType.Boolean OrElse Value.ToObject(Of Boolean)()
+        Return ManualReason(Point("reason")?.ToString())
+    End Function
     Private Shared Sub Prune(GameFolder As String, Identifier As String, Count As Integer)
-        For Each Point In Points(GameFolder).Where(Function(Item) String.Equals(Item("world").ToString(), Identifier, StringComparison.OrdinalIgnoreCase)).Skip(Retain(Count))
+        For Each Point In Points(GameFolder).Where(Function(Item) String.Equals(Item("world").ToString(), Identifier, StringComparison.OrdinalIgnoreCase) AndAlso Not IsManualPoint(Item)).Skip(Retain(Count))
             Try
                 DeleteTree(Store(GameFolder), PointFolder(GameFolder, Point("id").ToString()))
             Catch ex As Exception

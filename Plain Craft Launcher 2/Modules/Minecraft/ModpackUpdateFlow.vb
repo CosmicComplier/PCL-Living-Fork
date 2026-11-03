@@ -45,7 +45,7 @@ Friend NotInheritable Class ModpackUpdateFlow
         If String.IsNullOrEmpty(Result) Then Throw New OperationCanceledException()
         Return Result
     End Function
-    Private Shared Function ChooseOnline(Baseline As JObject, Stage As String, Token As CancellationToken, ByRef Source As JObject) As String
+    Private Shared Function ChooseOnline(Baseline As JObject, Stage As String, Token As CancellationToken, ByRef Source As JObject, Progress As ProgressProvider) As String
         Source = TryCast(Baseline("source"), JObject)
         If Source IsNot Nothing Then Source = CType(Source.DeepClone(), JObject)
         If Source Is Nothing Then
@@ -75,11 +75,15 @@ Friend NotInheritable Class ModpackUpdateFlow
         Dim Versions = ResourceVersion.FromProjectId(Id, Platform, False).Where(Function(Item) Item.Id <> CurrentId).OrderByDescending(Function(Item) Item.ReleaseDate).Take(60).ToList()
         Token.ThrowIfCancellationRequested()
         If Versions.Count = 0 Then Throw New IOException("没有其他可下载的整合包版本。")
-        Dim Choice As Integer? = Nothing
-        RunInUiWait(Sub() Choice = MyMsgBoxSelect(Versions.Select(Function(Item) CType(New MyRadioBox With {.Text = Item.Display & " · " & Item.ReleaseDate.ToString("yyyy-MM-dd") & " · " & Item.ReleaseTypeDisplay}, IMyRadio)), "选择整合包版本", "下载并预览", "取消"))
-        If Not Choice.HasValue Then Throw New OperationCanceledException()
-        Dim Selected = Versions(Choice.Value), Destination = Path.Combine(Stage, If(Platform = ResourcePlatforms.Modrinth, "update.mrpack", "update.zip"))
-        ModpackUpdate.DownloadFiles(New List(Of NetFile) From {Selected.ToNetFile(Destination, ResourceVersion.DownloadReason.Update, Selected.GameVersions.FirstOrDefault(), Selected.ModLoaders)}, Token)
+        Dim Selected As ResourceVersion = Nothing
+        RunInUiWait(Sub()
+                        Dim View As New ModpackVersionSelectView(Versions, If(Baseline("name")?.ToString(), "整合包"), Baseline("version")?.ToString())
+                        If MyMsgBoxConfirmContent("请选择要下载并预览的整合包版本。", "选择整合包版本", "下载并预览", Function() View, IsWarn:=False) = 1 Then Selected = View.Selected
+                    End Sub)
+        If Selected Is Nothing Then Throw New OperationCanceledException()
+        Token.ThrowIfCancellationRequested()
+        Dim Destination = Path.Combine(Stage, If(Platform = ResourcePlatforms.Modrinth, "update.mrpack", "update.zip"))
+        ModpackUpdate.DownloadFilesWithProgress(New List(Of NetFile) From {Selected.ToNetFile(Destination, ResourceVersion.DownloadReason.Update, Selected.GameVersions.FirstOrDefault(), Selected.ModLoaders)}, Token, Progress)
         Source("project") = ProjectInfo.Id
         Source("version") = Selected.Id
         Return Destination
@@ -87,6 +91,7 @@ Friend NotInheritable Class ModpackUpdateFlow
 
     Private Shared Sub Execute(Instance As McInstance, Online As Boolean, ArchivePath As String, Task As LoaderTask(Of String, String))
         Dim Token = Task.CreateCancellationToken(), Stage = RequestTaskTempFolder()
+        Task.Progress = 0.03
         If ModpackUpdate.Pending(Instance.PathVersion).Any() Then
             If MyMsgBox("上次整合包更新被中断，需要先恢复更新前的文件。", "恢复整合包", "恢复", "取消", IsWarn:=True) <> 1 Then Throw New OperationCanceledException()
             Instance = RecoverInstance(Instance)
@@ -100,20 +105,22 @@ Friend NotInheritable Class ModpackUpdateFlow
             Baseline = ModpackUpdate.Manifest(Original)
         End If
         Dim Source As JObject = Nothing
-        If Online Then ArchivePath = ChooseOnline(Baseline, Stage, Token, Source)
+        If Online Then ArchivePath = ChooseOnline(Baseline, Stage, Token, Source, Task.CreateSyncProgressProvider(0.03, 0.12))
+        Task.Progress = 0.12
         Dim Package = ModpackUpdate.ReadPackage(ArchivePath, Path.Combine(Stage, "next"), Token)
         Package.Source = Source '本地包不能冒用旧在线版本号，之后可重新关联项目。
         Dim Plan = ModpackUpdate.Plan(Root, Baseline, Package)
         Task.Progress = 0.15
         '仅暂存变化的文件，读取模组 ID 后才展示最终冲突；此时不修改游戏目录。
-        ModpackUpdate.DownloadChanges(Plan, Stage, Token)
+        ModpackUpdate.DownloadChanges(Plan, Stage, Token, Sub(Files, Cancel) ModpackUpdate.DownloadFilesWithProgress(Files, Cancel, Task.CreateSyncProgressProvider(0.15, 0.65)))
+        Task.Progress = 0.65
         Dim RuntimeChanged = Instance.Version.VanillaName <> Package.Minecraft OrElse Instance.Version.ModLoaderVersions.Count <> Package.Loaders.Count OrElse
             Package.Loaders.Any(Function(Pair) Not Instance.Version.ModLoaderVersions.ContainsKey(Pair.Key) OrElse Instance.Version.ModLoaderVersions(Pair.Key) <> Pair.Value)
         Dim Summary = Package.Name & " " & Package.Version & vbCrLf &
             $"更新 {Plan.Changes.Where(Function(Item) Not Item.Conflict).Count()} 项，保留个人修改 {Plan.Changes.Where(Function(Item) Item.Conflict).Count()} 项。" & vbCrLf &
-            If(RuntimeChanged, "Minecraft 或加载器将更新；存档会保留，请确认新版本兼容。" & vbCrLf, "") & vbCrLf &
-            String.Join(vbCrLf, Plan.Changes.Select(Function(Item) Item.Reason & "：" & Item.Relative))
-        If MyMsgBox(Summary, "整合包更新预览", "保留个人修改并更新", "取消", IsWarn:=Plan.Changes.Any(Function(Item) Item.Conflict) OrElse RuntimeChanged) <> 1 Then Throw New OperationCanceledException()
+            If(RuntimeChanged, "Minecraft 或加载器将更新；存档会保留，请确认新版本兼容。", "")
+        If MyMsgBoxConfirmContent(Summary, "整合包更新预览", "保留个人修改并更新",
+            Function() New ModpackUpdatePreviewView(Plan, Instance.Version.VanillaName, Instance.Version.ModLoaderVersions), IsWarn:=False) <> 1 Then Throw New OperationCanceledException()
         Dim Extras As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         Dim RuntimeBefore As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         If RuntimeChanged Then
@@ -124,7 +131,7 @@ Friend NotInheritable Class ModpackUpdateFlow
             Dim Build As New LoaderCombo(Of String)("准备整合包游戏组件", McInstallLoadersGet(New McInstallRequest With {
                 .NewInstanceName = Instance.Name, .InstanceFolder = BuildFolder, .Components = New McComponents(Package.Minecraft, Package.Loaders), .IsIntermediateOutput = True,
                 .MinecraftFolder = Path.GetDirectoryName(Path.GetDirectoryName(Instance.PathVersion.TrimEnd("\"c))) & "\"}))
-            Dim PrepareRuntime = LoaderFileOperation.CreateWorkload(Build, BuildFolder)
+            Dim PrepareRuntime = LoaderFileOperation.CreateWorkloadWithProgress(Build, BuildFolder, Task.CreateSyncProgressProvider(0.65, 0.85))
             Using Registration = Token.Register(AddressOf Build.Cancel)
                 PrepareRuntime()
             End Using
@@ -149,8 +156,13 @@ Friend NotInheritable Class ModpackUpdateFlow
         Next
         Task.Progress = 0.85
         WorldBackups.BeforeMinecraftChange(Instance, Instance.Version.VanillaName, Package.Minecraft, Token)
+        Task.Progress = 0.87
         EnvironmentHistory.CaptureInstance(Instance, "整合包更新前", Token)
-        Dim Backup = ModpackUpdate.Commit(Plan, Instance.PathVersion, Token, Extras)
+        Task.Progress = 0.9
+        Dim OperationCount = Plan.Changes.Where(Function(Item) Not Item.Conflict).Count() + Extras.Count + 1
+        Dim Backup = ModpackUpdate.Commit(Plan, Instance.PathVersion, Token, Extras,
+            Sub(Index) Task.Progress = 0.9 + 0.08 * Index / Math.Max(1, OperationCount))
+        Task.Progress = 0.98
         Task.Output = Backup
         ReloadInstance(Instance)
         Logger.Info("整合包更新完成，原文件备份：" & Backup)

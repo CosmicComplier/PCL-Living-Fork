@@ -14,6 +14,18 @@
       <local:MyButton x:Name="BtnSelectAll" Text="全选" Grid.Column="2" MinWidth="110" Padding="13,0" Margin="0,0,15,0" HorizontalAlignment="Left" />
  </Grid>
     </local:MyCard>
+    <local:MyCard x:Name="CardRetention" Title="保留设置" Margin="0,0,0,15" IsEnabled="False">
+     <StackPanel Margin="25,40,25,20">
+      <local:MyCheckBox x:Name="CheckAutoCleanup" Text="自动清理超过上限的旧还原点" ToolTip="手动还原点不计入上限。新还原点保存成功后，才会清理最旧的自动还原点。" />
+      <StackPanel x:Name="PanRetention" Orientation="Horizontal" Margin="0,12,0,0" Visibility="Collapsed">
+       <TextBlock Text="保留最近" VerticalAlignment="Center" Margin="0,0,10,0" />
+       <local:MyTextBox x:Name="TextRetention" Width="65" MaxLength="3" Text="10" ShowValidateResult="False" ToolTip="允许 1 到 100 个自动还原点，手动还原点不计入。">
+        <local:MyTextBox.ValidateRules><local:ValidateInteger Min="1" Max="100" /></local:MyTextBox.ValidateRules>
+       </local:MyTextBox>
+       <TextBlock Text="个自动还原点" VerticalAlignment="Center" Margin="10,0,0,0" />
+      </StackPanel>
+     </StackPanel>
+    </local:MyCard>
     <local:MyCard x:Name="CardList" Title=" " Margin="0,0,0,14" MinHeight="55" VerticalAlignment="Top">
      <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="15,13,0,0" Height="28">
       <local:MyRadioButton x:Name="FilterAll" Text="全部" ColorType="Highlight" Checked="True" Margin="2,0" />

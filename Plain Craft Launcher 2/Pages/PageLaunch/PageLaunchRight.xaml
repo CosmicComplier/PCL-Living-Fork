@@ -17,6 +17,20 @@
             </local:MyCard>
         </StackPanel>
     </local:MyScrollViewer>
+    <Grid x:Name="PanDependencyOptionsAnchor" Width="260" Margin="20,0,0,108" HorizontalAlignment="Left" VerticalAlignment="Bottom">
+    <local:MyCard x:Name="CardDependencyChecks" Width="260" HorizontalAlignment="Left" VerticalAlignment="Top"
+                  Visibility="Collapsed" Opacity="0">
+        <local:MyCard.RenderTransform>
+            <TranslateTransform x:Name="TransDependencyChecks" X="-24" />
+        </local:MyCard.RenderTransform>
+        <StackPanel x:Name="PanDependencyChecks" Margin="14,12">
+            <local:MyCheckBox x:Name="CheckModDependencies" local:SettingService.Key="LaunchModDependencyCheck" Text="启动时检查模组依赖" Height="22"
+                              ToolTip="关闭后跳过启动前的依赖检查。手动查看模组依赖不受影响。" />
+            <local:MyCheckBox x:Name="CheckAutoFillDependencies" local:SettingService.Key="LaunchModDependencyAutoFill" Text="自动补全模组依赖" Height="22" Margin="0,9,0,0"
+                              ToolTip="发现缺失的必需前置后先确认，再下载匹配当前版本和加载器的模组，复查后启动。" Visibility="Collapsed" />
+        </StackPanel>
+    </local:MyCard>
+    </Grid>
     <local:MyCard x:Name="CardRecentWorlds" Title="上次游玩" Width="260" Height="78" Margin="20,0,0,20"
                   HorizontalAlignment="Left" VerticalAlignment="Bottom" Visibility="Collapsed" Opacity="0" UseAnimation="False">
         <local:MyCard.RenderTransform>

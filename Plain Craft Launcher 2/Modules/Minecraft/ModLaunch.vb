@@ -141,7 +141,7 @@
                 McLoginLoader, '.ProgressWeight = 15, .Block = False
                 New LoaderCombo(Of String)("补全文件", DlClientFix(McInstanceSelected, False, True)) With {.ProgressWeight = 15, .Show = False},
                 New LoaderTask(Of Integer, Integer)("恢复未完成的存档操作", Sub(Task) WorldBackups.RecoverBeforeLaunch(McInstanceSelected.PathIndie, Task.CreateCancellationToken())) With {.ProgressWeight = 1},
-                New LoaderTask(Of Integer, Integer)("检查模组依赖", AddressOf McLaunchDependencyCheck) With {.ProgressWeight = 1},
+                New LoaderTask(Of Integer, Integer)("检查模组依赖", AddressOf McLaunchDependencyCheck) With {.ProgressWeight = 1, .InterruptOnCancel = False},
                 New LoaderTask(Of String, Integer)("获取启动参数", AddressOf McLaunchArgumentMain) With {.ProgressWeight = 2},
                 New LoaderTask(Of Integer, Integer)("解压文件", AddressOf McLaunchNatives) With {.ProgressWeight = 2},
                 New LoaderTask(Of Integer, Integer)("预启动处理", AddressOf McLaunchPrerun) With {.ProgressWeight = 1},
@@ -222,28 +222,79 @@ NextInner:
 #Region "内存优化"
 
     Private Sub McLaunchDependencyCheck(Loader As LoaderTask(Of Integer, Integer))
+        If Not Settings.Get(Of Boolean)("LaunchModDependencyCheck") Then Return
         If CurrentLaunchOptions?.SaveBatch IsNot Nothing Then Return
         If McInstanceSelected Is Nothing OrElse Not McInstanceSelected.Modable Then Return
-        Dim Context = ModDependencyInspector.ContextForInstance(McInstanceSelected, McLaunchJavaSelected?.Version?.ToString())
+        Dim Target = McInstanceSelected, ModsFolder = IO.Path.Combine(Target.PathIndie, "mods")
+        Dim Context = ModDependencyInspector.ContextForInstance(Target, McLaunchJavaSelected?.Version?.ToString())
         Dim Token = Loader.CreateCancellationToken()
         Dim CheckThread = Thread.CurrentThread
-        Dim Report = ModDependencyOnline.InspectWithOnline(IO.Path.Combine(McInstanceSelected.PathIndie, "mods"), Context, Token)
+        Dim Report = ModDependencyInspector.Inspect(ModsFolder, Context, Token)
         If Loader.IsCanceled OrElse Token.IsCancellationRequested Then Return
-        If Not Report.HasErrors Then Return
+        If LaunchDependencyCheck.WasAccepted(ModsFolder, Report) Then Return
+        Dim Plan = If(Settings.Get(Of Boolean)("LaunchModDependencyAutoFill"), ModDependencyAutoFill.BuildPlan(ModsFolder, Report, Token), ModDependencyActivation.Prepare(ModsFolder, Report, Token))
+        Plan.Caption = Target.Name
+        If Loader.IsCanceled OrElse Token.IsCancellationRequested Then Return
+        Dim CanRepair = Plan.Items.Count > 0 OrElse Plan.Enables.Count > 0
+        If Not CanRepair AndAlso Not Report.HasErrors Then Return
         Dim Choice As Integer
         RunInUiWait(Sub()
                         If Loader.IsCanceledWithThread(CheckThread) OrElse Token.IsCancellationRequested Then Return
-                        Choice = MyMsgBox(Report.ToSummary(), "启动前模组检查", "返回 Mod 管理", "仍然启动", IsWarn:=True)
+                        Choice = MyMsgBoxConfirmContent("请检查以下模组问题。", "启动前模组检查", Plan.ActionText,
+                            Function() New ModDependencyCheckView(Report, Plan), "取消启动", "仍然启动", WarningButton:=3)
                     End Sub)
         If Loader.IsCanceled OrElse Token.IsCancellationRequested Then Return
-        If Choice = 2 Then Return
-        Dim Target = McInstanceSelected
+        If Choice = 2 Then Throw New OperationCanceledException()
+        If Choice = 3 Then
+            LaunchDependencyCheck.Accept(ModsFolder, Report)
+            Return
+        End If
+        If Choice = 1 AndAlso CanRepair Then
+            InstallLaunchDependencies(Target, Plan, Token)
+            Token.ThrowIfCancellationRequested()
+            Report = ModDependencyInspector.Inspect(ModsFolder, Context, Token)
+            If Not Report.HasErrors Then Return
+            RunInUiWait(Sub()
+                If Not Token.IsCancellationRequested Then Choice = MyMsgBoxConfirmContent("前置已处理，仍有以下问题。", "启动前模组检查", "返回 Mod 管理", Function() New ModDependencyCheckView(Report), "取消启动", "仍然启动", WarningButton:=3)
+            End Sub)
+            Token.ThrowIfCancellationRequested()
+            If Choice = 2 Then Throw New OperationCanceledException()
+            If Choice = 3 Then
+                LaunchDependencyCheck.Accept(ModsFolder, Report) : Return
+            End If
+        End If
         RunInUiWait(Sub()
                     If Loader.IsCanceledWithThread(CheckThread) OrElse Token.IsCancellationRequested Then Return
                     PageInstanceLeft.Instance = Target
                     FrmMain.PageChange(FormMain.PageType.InstanceSetup, FormMain.PageSubType.InstanceMod)
                 End Sub)
         Throw New OperationCanceledException()
+    End Sub
+
+    Private Sub InstallLaunchDependencies(Instance As McInstance, Plan As ModDependencyAutoFill.Plan, Token As CancellationToken)
+        Token.ThrowIfCancellationRequested()
+        If Not PathUtils.IsSame(Plan.Root, IO.Path.Combine(Instance.PathIndie, "mods")) Then Throw New IO.IOException("当前版本的游戏目录已变化，请重新检查依赖。")
+        Dim Added As Integer
+        Dim Failure As Exception = Nothing
+        '同步事务结束（包括回滚与清理）后才由 Worker.Stopped 释放版本锁。
+        Dim Worker As New RedoableWorker(Sub(Cancellation As Threading.CancellationToken?)
+            Try
+                Added = ModDependencyAutoFill.Install(Plan, Cancellation.GetValueOrDefault())
+            Catch ex As Exception
+                Failure = ex
+                Throw
+            End Try
+        End Sub)
+        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then Throw New IO.IOException("此版本正在被其他操作使用，请稍后重试。")
+        Using Finished As New Threading.ManualResetEventSlim(False)
+            AddHandler Worker.Stopped, Sub() Finished.Set()
+            Worker.Start(Token)
+            Finished.Wait()
+        End Using
+        Token.ThrowIfCancellationRequested()
+        If Failure IsNot Nothing Then Throw New IO.IOException("模组依赖补全失败：" & Failure.Message, Failure)
+        Dim Text = If(Plan.Enables.Count > 0, "已启用 " & Plan.Enables.Count & " 个前置" & If(Added > Plan.Enables.Count, "，已安装 " & (Added - Plan.Enables.Count) & " 个前置", ""), If(Added > 0, "已安装 " & Added & " 个必需前置", "所需前置已存在"))
+        Hint(Text & "，正在复查", HintType.Green)
     End Sub
     Private Sub McLaunchMemoryOptimize(Loader As LoaderTask(Of Integer, Integer))
         McLaunchLog("内存优化开始")

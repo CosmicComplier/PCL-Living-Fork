@@ -1,6 +1,10 @@
 '文件事务的独占锁必须覆盖实际负载及其 finally/回滚，不能仅跟随加载器的显示状态。
 Friend NotInheritable Class LoaderFileOperation
     Friend Shared Function CreateWorkload(Loader As LoaderCombo(Of String), Input As String) As Action
+        Return CreateWorkloadWithProgress(Loader, Input, Nothing)
+    End Function
+
+    Friend Shared Function CreateWorkloadWithProgress(Loader As LoaderCombo(Of String), Input As String, Progress As ProgressProvider) As Action
         Dim Gate As New Object, Running As Integer, Closed As Boolean
         '也覆盖嵌套组合内不同输入/输出类型的同步文件任务。
         Loader.GuardFileWorkload(
@@ -27,7 +31,8 @@ Friend NotInheritable Class LoaderFileOperation
                            Loader.Start(Input)
                        End SyncLock
                        '取消发生在开始与等待之间时，不能由 WaitForExit 再次启动组合加载器。
-                       Loader.WaitForExit(StartIfNeeded:=False)
+                       Loader.WaitForExit(StartIfNeeded:=False, p:=Progress)
+                       Progress?.Set(1)
                    Finally
                        SyncLock Gate
                            Closed = True

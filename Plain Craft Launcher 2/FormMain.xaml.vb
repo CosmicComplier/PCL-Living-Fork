@@ -9,7 +9,7 @@ Public Class FormMain
     Private Sub ShowUpdateLog()
         RunInNewThread(
         Sub()
-            Dim Content = $"{LauncherDisplayName} {VersionBaseName}{vbCrLf}{vbCrLf}本次更新加入地图自动安装、资源回收站与全局背景切换，并修复资源文件夹的打开位置。完整更新内容请查看本项目的 GitHub 发布说明。"
+            Dim Content = $"{LauncherDisplayName} {VersionBaseName}{vbCrLf}{vbCrLf}新增启动前模组依赖检查和自动补全，优化整合包更新界面与下载进度，支持可选的还原点自动清理。手动还原点和手动存档备份不自动清理。"
             If MyMsgBox(Content, LauncherDisplayName & " 更新说明", "确定", "查看更新日志") = 2 Then OpenWebsite(LauncherReleasesUrl)
         End Sub, "Fork UpdateLog Output")
     End Sub
@@ -175,7 +175,7 @@ Public Class FormMain
             End Try
             '开源版本提示
             If VersionBranchMain = "OpenSource" Then
-                MyMsgBox($"{LauncherDisplayName} {VersionBaseName} 是基于 PCL 官方开源版的第三方版本。{vbCrLf}{vbCrLf}- 地图下载：压缩包保存到 saves\PCLLFWorldDownload，自动解压到 saves{vbCrLf}- 资源回收站：支持还原、彻底删除与清空，操作完成后在左下角提示{vbCrLf}- 全局背景：在个性化设置中切换原生白底与现有背景{vbCrLf}- 接口状态：Minecraft API 与 CurseForge 第三方 API 均已获批，使用自有 Client ID 与正式 API Key{vbCrLf}- 启动器更新：来自 DDZmumo/PCL-Living-Fork 的 GitHub Releases", $"{LauncherDisplayName} {VersionBaseName} 版本说明")
+                MyMsgBox($"{LauncherDisplayName} {VersionBaseName} 是基于 PCL 官方开源版的第三方版本。{vbCrLf}{vbCrLf}- 首页可开关模组依赖检查与自动补全{vbCrLf}- 整合包更新按分类预览，下载显示实际进度{vbCrLf}- 还原点可选设置自动清理上限，手动记录单独保留", $"{LauncherDisplayName} {VersionBaseName} 版本说明")
             End If
             ModLauncherUpdate.CheckForUpdates(True)
         End Sub, "初始化", ThreadPriority.Lowest)

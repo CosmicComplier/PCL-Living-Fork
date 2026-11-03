@@ -2,23 +2,24 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.3](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.3) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.3) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
 - **游戏资源管理**：在启动器内管理存档、截图、模组、资源包、光影包和投影/原理图，使用 PCL 原生列表、多选与动效。资源回收站支持还原和彻底删除；资源包和光影包支持在线更新，CurseForge 地图下载后自动解压安装。
 - **个人游戏习惯**：按类别同步按键、鼠标、视野、字幕等设置，每个版本可单独例外；按键管理支持搜索、同键占用检查和重新绑定。
 - **继续上次的世界**：首页和存档管理可直接进入支持 Quick Play 的 Java 版存档，首页卡片可在“个性化 → 主页”关闭。
-- **整合包更新**：从本地文件或 CurseForge / Modrinth 更新已识别的整合包，先预览变化与冲突，保留个人修改并下载变化文件。取消后会等待文件处理和必要的回滚结束，再解除版本占用。
-- **还原点**：手动或在更新前保存 Minecraft、加载器、模组与配置，支持整套恢复、删除和恢复前留档，保留当前存档进度。
-- **存档备份**：正常退出后备份世界，更新 Minecraft 前额外备份；在存档下展开查看、恢复和删除备份，并设置保留份数。
+- **整合包更新**：从本地文件或 CurseForge / Modrinth 更新已识别的整合包，按正式版、测试版选择版本；预览按新增、更新、移除和保留个人修改分类，下载时同步实际进度。取消后会等待文件处理和必要的回滚结束，再解除版本占用。
+- **还原点**：手动或在更新前保存 Minecraft、加载器、模组与配置，支持整套恢复、删除和恢复前留档，保留当前存档进度。可选开启自动还原点数量上限，手动还原点不计入，也不会自动清理。
+- **存档备份**：正常退出后备份世界，更新 Minecraft 前额外备份；在存档下展开查看、恢复和删除备份，并设置自动备份保留份数。手动备份单独保留，不计入自动清理上限。
 - **模组依赖检查**：用带圆角图标的关系图查看平台声明的前置、被依赖关系与冲突；网络超时或未查到精确平台声明时，改以本地声明作为主要参考。未确认或已禁用的前置合并后用红框标注，删除、禁用的影响确认使用两列红框。启动检查保留本地可靠声明。
+- **启动前依赖管理**：主页“上次游玩”上方可开关依赖检查和自动补全，首次使用默认勾选，之后保留玩家选择。必需前置先列出并确认，已禁用且兼容的文件可直接启用；缺少文件时通过原生下载任务补全，复查后启动。内嵌组件按所属 JAR 归组；依赖齐全时不弹补全提示，相同环境中已确认继续启动的问题在本次运行期间不重复询问。
 - **测试副本与崩溃对照**：克隆当前版本进行测试，在版本选择中按来源折叠显示；崩溃时对照上次正常运行后的环境变化，并连接到还原点。
 - **整合包导出与模式**：可附带启动器、选择该版本的版本隔离，并使用仅保留必要入口的整合包界面。
 
 ## 使用
 
-需要 **Windows 64 位系统和 .NET Framework 4.8**。从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载 EXE，或解压 ZIP 后运行 `PCL Living Fork.exe`。
+需要 **Windows 64 位系统和 .NET Framework 4.8**。从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载 EXE，或解压 ZIP 后运行 `PCL Living Fork - 1.3.4.exe`。
 
 升级时保留原有 `PCL`、`.minecraft` 和游戏目录。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 
@@ -38,7 +39,7 @@ dotnet restore .\PCLCS\PCLCS.csproj
 .\scripts\Build-Release.ps1
 ```
 
-输出为 `Plain Craft Launcher 2\bin\PCL Living Fork.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL Living Fork - 1.3.4.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
 ## 来源与许可
 

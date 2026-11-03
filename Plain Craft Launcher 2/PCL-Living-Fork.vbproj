@@ -27,7 +27,7 @@
     <MapFileExtensions>true</MapFileExtensions>
     <TargetCulture>zh-CN</TargetCulture>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>1.3.3.0</ApplicationVersion>
+    <ApplicationVersion>1.3.4.0</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
     <Deterministic>true</Deterministic>
@@ -212,6 +212,8 @@
     <Compile Include="Controls\ModDependencyGraphView.vb" />
     <Compile Include="Controls\ModDependencyIcon.vb" />
     <Compile Include="Controls\ModDependencyImpactView.vb" />
+    <Compile Include="Controls\ModDependencyCheckView.vb" />
+    <Compile Include="Controls\ModpackUpdateViews.vb" />
     <Compile Include="Controls\MyPageRight.vb" />
     <Compile Include="Controls\MyPageLeft.vb" />
     <Compile Include="Controls\MyIconTextButton.xaml.vb">
@@ -285,6 +287,8 @@
     <Compile Include="Modules\Minecraft\WorldBackups.vb" />
     <Compile Include="Modules\Minecraft\ModDependencyInspector.vb" />
     <Compile Include="Modules\Minecraft\ModDependencyOnline.vb" />
+    <Compile Include="Modules\Minecraft\LaunchDependencyCheck.vb" />
+    <Compile Include="Modules\Minecraft\ModDependencyAutoFill.vb" />
     <Compile Include="Modules\Minecraft\InstanceCloneGroups.vb" />
     <Compile Include="Modules\Minecraft\InstanceCloner.vb" />
     <Compile Include="Modules\Minecraft\RecentEnvironmentChanges.vb" />
