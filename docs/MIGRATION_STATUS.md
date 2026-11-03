@@ -71,8 +71,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
 | B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
 | C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
-| C002 | todo | B001、C001 | 迁移 `WorldMetadata` 剩余文件／格式适配与世界详情消费者；保留路径约束、gzip、回退和文案，对照现有世界详情／备份脚本，逐步取消该功能的 VB 实现 |
-| C003 | todo | B001 | 迁移 `LocalGameData` 的持久化与原子写入功能链；旧数据、并发变更、临时文件和失败恢复样本通过 |
+| C002 | in_progress | B001、C001 | C002a：将文件／gzip／详情文案迁入 C#，VB 保留类型映射与路径／日志适配；接通原详情页、最近世界和备份消费者，新增真实文件样本并运行原 Windows 回归。最终删除 VB 门面随消费者和主工程转换验收 |
+| C003 | in_progress | B001 | 独立子代理负责 `LocalGameDataStore.cs`、原 VB 门面与独立测试文件；主执行者集成项目／脚本。迁移持久化与原子写入，保留旧数据、并发变更、临时清理和失败恢复语义 |
 | C004 | todo | C003 | 迁移 `PersonalGameSettings` 规则及生产调用；字段白名单、双向同步、换行、备份、旧键值与进程恢复回归 |
 | C005 | todo | C004 | 迁移 `InstanceKeybindings` 与其页面功能链；模组归属、冲突分组、重新绑定和陈旧写入保护回归 |
 | C006 | todo | C002、C003 | 迁移 `QuickPlayWorlds` 与最近世界入口；版本门槛、路径、参数、缺失世界与首页动画顺序回归 |
@@ -124,6 +124,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G002 | 模块映射完成：14 条功能链、固定源码清单全部 249 文件归组；53 个链接目标、46 个脚本名核实 | 已完成映射交付，后续按实际迁移更新对应行，不代表功能已迁移 |
 | G004 | 已随 `d27f394` 推送，Ubuntu／Windows 迁移矩阵通过 | 后续生产改动继续使用该工作流，并按实际依赖扩展测试 |
 | C001 | C# 解析器、原 VB 适配和 27 组测试已提交；独立自审、net48 辅助库编译、完整 Windows Debug／Release 及双平台迁移矩阵通过 | 本项完成。文件／gzip／格式与消费者的进一步 C# 迁移属于 C002，VB 兼容外壳仍纳入最终源码清单 |
+| C002a | 文件／gzip 与原中文详情文案进入 `WorldMetadataFiles`，原 VB 仅保留 16 字段映射和路径／日志委托；三个原消费者继续调用同一入口。新增 15 组真实文件／完整文案样本，Linux .NET 10 合计 42／42 通过，net48 PCLCS 编译零警告／错误；独立源码审查通过 | 原 Windows `Test-WorldDetails.ps1` 已增强全部字段、精确 CRLF、基本／详情区别、共享／只读、真实文件链接检查及句柄释放，待推送 CI 实际验证。尚未转换详情页／Quick Play／备份 UI 后台，不据此关闭 C006／C010／C029 或整项迁移 |
+| C003a | 子代理已交付独立 C# 持久化核心、VB 转发和真实文件样本；未提交 | 主执行者接入现有 Newtonsoft DLL 和测试入口，适配 EngineOnly 夹具，独立复核并运行 Windows 原回归后再关闭 |
 
 下次入口：核对迁移分支和远端状态，确认上述代码检查点及后续文档提交均已推送，然后从 C002 开始：在保留原路径约束、gzip 生命周期、损坏／缺失回退、日志和文案的前提下，把 WorldMetadata 剩余文件／格式适配按生产调用拆成可验证 C# 小批次；先参考 MODULE_MAP 的共享边界及兼容审计。C001 已通过，不重复重做 NBT 引擎。C002 后继续 C003；每批记录具体命令、结果和详细提交正文。
 
