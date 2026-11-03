@@ -19,9 +19,9 @@
 
 ## 使用
 
-需要 **Windows 64 位系统和 .NET Framework 4.8**。从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载 EXE，或解压 ZIP 后运行 `PCL Living Fork - 1.3.4.exe`。
+需要 **Windows 64 位系统和 .NET Framework 4.8**。从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载 EXE，或解压 ZIP 后运行 `PCL-Living-Fork-1.3.4.exe`。
 
-升级时保留原有 `PCL`、`.minecraft` 和游戏目录。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
+升级时保留原有 `PCL`、`.minecraft` 和游戏目录。标准版本文件名会随程序内更新同步版本号，自定义文件名保留。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 
 可与官方 PCL 共用兼容的账号和设置；同目录运行时共用 `PCL\Setup.ini`，修改共享配置也会影响另一边。保留固定默认配色，可在“设置 → 个性化 → 背景图片”切换原生白底与现有背景；自定义及其他颜色主题请[赞助原作者](https://meloong.com/afd/a/LTCat)，获取官方快照版。
 
@@ -39,7 +39,7 @@ dotnet restore .\PCLCS\PCLCS.csproj
 .\scripts\Build-Release.ps1
 ```
 
-输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL Living Fork - 1.3.4.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.4.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
 ## 来源与许可
 

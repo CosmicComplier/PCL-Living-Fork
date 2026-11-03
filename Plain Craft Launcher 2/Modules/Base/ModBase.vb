@@ -9,7 +9,7 @@ Public Module ModBase
     '下列版本信息由更新器自动修改
     Public Const VersionBaseName As String = "1.3.4" 'LivingPCL 显示用版本名；内部兼容码沿用代码基线。
     Public Const LauncherDisplayName As String = "PCL Living Fork"
-    Public Const LauncherExecutableName As String = LauncherDisplayName & " - " & VersionBaseName & ".exe"
+    Public Const LauncherExecutableName As String = "PCL-Living-Fork-" & VersionBaseName & ".exe"
     Public Const LauncherRepository As String = "DDZmumo/PCL-Living-Fork"
     Public Const LauncherRepositoryUrl As String = "https://github.com/" & LauncherRepository
     Public Const LauncherIssuesUrl As String = LauncherRepositoryUrl & "/issues"
