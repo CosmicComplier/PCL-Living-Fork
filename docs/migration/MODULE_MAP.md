@@ -51,6 +51,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 | 个人选项会话 | `PersonalOptionsFlow` 负责导入／Prepare／Track／Capture／Finish／恢复；`IPersonalOptionsInstance` 五项惰性属性及可继承字段 DTO 对接原实例／设置 | 复用原 Store 与 Monitor Gate；保留动态求值、恢复先行、日志状态和异常顺序。VB 原会话类型继承 DTO，由工厂返回同一派生对象；路径／设置／缓存／日志经具体委托适配，不新建通用存储／进程框架；实际 Windows 门面证据见账本 |
 | 按键保存 | `InstanceKeybindingFiles.Save` 处理 Previous 检查、重复行更新、BOM／换行与原子写入，调用原 running／路径／缓存适配和同一 Gate | 复用规则解码／校验及 Hash／AtomicWrite；同值仍备份／写入／清 cache，不能套用个人习惯的 no-op。写原 Replacement，不归一键名；模型、读取归属与页面交互仍在 C005 后续批次 |
 | 按键读取与归属 | `InstanceKeybindingReader` 负责原 options 读取、31 默认项、JAR 语言／metadata 归属及 SharedCount；原 VB 类型继承七字段 DTO，工厂与 Cast 保留项目对象 | 原路径、日志、固定 Meloong 标题换行经具体委托；保留 BOM 自动检测、原取消点／异常集合、阈值、顺序及当前文化排序，不跳过空 Targets 的扫描。坏 ZIP 仍外抛，模型读取完成不等于页面后台已转换 |
+| 按键页面规则 | `InstanceKeybindingView.DisplayKey/BuildView<T>` 返回显示文本、行计数和平铺／分组块，泛型成员保原对象引用 | 原 VB 页面真实调用，继续管理控件／文案／数值文化／布局／捕获。保留 Ordinal 搜索／分块差异、VB null／空串等值、可见成员与全局总数、ALL 平铺；完整 WPF 后台仍待 C005c2／C029a，纯计划不是新 UI 框架 |
 
 现阶段这些边界通过显式参数、结果对象和必要的委托／接口实现。程序集拆分以实际依赖闭包和构建验证为依据；当前 `PCLCS` 的 WPF 项目引用仍在，单个解析器无 WPF 不代表整个库已解耦。后续任务可以细化字段和接口，但须同步更新本表、生产调用与对应回归。
 

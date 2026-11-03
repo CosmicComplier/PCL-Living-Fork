@@ -69,22 +69,19 @@
         PanBindings.Children.Clear()
         KeyButtons.Clear()
         Dim Query = SearchBox.Text.Trim()
-        Dim Matching = Entries.Where(Function(Item) Query = "" OrElse (Item.Name & " " & Item.Owners & " " & Item.Key & " " & DisplayKey(Item.Normalized)).IndexOf(Query, StringComparison.OrdinalIgnoreCase) >= 0).ToList()
-        Dim Visible = Matching.Where(Function(Item) Not ConflictsOnly OrElse Item.SharedCount > 1).ToList()
-        BtnFilterAll.Text = If(Query = "", "全部", "搜索结果") & $" ({Matching.Count})"
-        BtnFilterConflicts.Text = $"同键占用 ({Matching.Where(Function(Item) Item.SharedCount > 1).Count()})"
-        LabEmpty.Visibility = If(Visible.Count > 0, Visibility.Collapsed, Visibility.Visible)
+        Dim View = PCLCS.InstanceKeybindingView.BuildView(Entries, Query, ConflictsOnly)
+        BtnFilterAll.Text = If(Query = "", "全部", "搜索结果") & $" ({View.MatchingCount})"
+        BtnFilterConflicts.Text = $"同键占用 ({View.ConflictCount})"
+        LabEmpty.Visibility = If(View.VisibleCount > 0, Visibility.Collapsed, Visibility.Visible)
         LabEmpty.Text = If(Entries.Count = 0, "暂无按键记录。请先启动一次该版本的游戏并保存设置。", "没有找到符合条件的按键。")
-        Dim Rendered As New HashSet(Of String)(StringComparer.Ordinal)
-        For Each Entry In Visible
-            If Not ConflictsOnly OrElse Entry.SharedCount <= 1 OrElse Entry.Normalized = "key.keyboard.unknown" Then
-                PanBindings.Children.Add(CreateBindingRow(Entry))
+        For Each Block In View.Blocks
+            If Not Block.IsGroup Then
+                PanBindings.Children.Add(CreateBindingRow(Block.Members(0)))
                 Continue For
             End If
-            If Not Rendered.Add(Entry.Normalized) Then Continue For
-            Dim Members = Visible.Where(Function(Item) Item.Normalized = Entry.Normalized).ToList()
-            Dim Total = Math.Max(Entry.SharedCount, Entries.Where(Function(Item) Item.Normalized = Entry.Normalized).Count())
-            Dim Group As New MyCard With {.Title = DisplayKey(Entry.Normalized) & $" 键位 · 与 {Total - 1} 项共用", .Margin = New Thickness(0, 8, 0, 12), .Tag = Entry.Normalized}
+            Dim Members = Block.Members
+            Dim Total = Block.TotalCount
+            Dim Group As New MyCard With {.Title = DisplayKey(Block.Normalized) & $" 键位 · 与 {Total - 1} 项共用", .Margin = New Thickness(0, 8, 0, 12), .Tag = Block.Normalized}
             Dim Rows As New StackPanel With {.Margin = New Thickness(15, 36, 15, 12)}
             For Each Member In Members
                 Rows.Children.Add(CreateBindingRow(Member))
@@ -117,31 +114,7 @@
         Return Row
     End Function
     Private Function DisplayKey(Value As String) As String
-        If String.IsNullOrEmpty(Value) OrElse Value = "key.keyboard.unknown" Then Return "未绑定"
-        Dim Parts = Value.Split(":"c), Name As String
-        Select Case Parts(0)
-            Case "key.mouse.left" : Name = "鼠标左键"
-            Case "key.mouse.right" : Name = "鼠标右键"
-            Case "key.mouse.middle" : Name = "鼠标中键"
-            Case "key.mouse.4" : Name = "鼠标侧键 1"
-            Case "key.mouse.5" : Name = "鼠标侧键 2"
-            Case "key.keyboard.left.control" : Name = "左 Ctrl"
-            Case "key.keyboard.right.control" : Name = "右 Ctrl"
-            Case "key.keyboard.left.shift" : Name = "左 Shift"
-            Case "key.keyboard.right.shift" : Name = "右 Shift"
-            Case "key.keyboard.left.alt" : Name = "左 Alt"
-            Case "key.keyboard.right.alt" : Name = "右 Alt"
-            Case "key.keyboard.space" : Name = "空格"
-            Case "key.keyboard.enter" : Name = "回车"
-            Case "key.keyboard.backspace" : Name = "退格"
-            Case "key.keyboard.up" : Name = "↑"
-            Case "key.keyboard.down" : Name = "↓"
-            Case "key.keyboard.left" : Name = "←"
-            Case "key.keyboard.right" : Name = "→"
-            Case Else : Name = Parts(0).Replace("key.keyboard.keypad.", "小键盘 ").Replace("key.keyboard.", "").Replace("key.mouse.", "鼠标 ").ToUpperInvariant()
-        End Select
-        Dim Modifiers = Parts.Skip(1).Where(Function(Part) Part <> "NONE" AndAlso Part <> "UNIVERSAL").Select(Function(Part) Part.Replace("CONTROL", "Ctrl").Replace("SHIFT", "Shift").Replace("ALT", "Alt")).ToList()
-        Return If(Modifiers.Count = 0, Name, String.Join(" + ", Modifiers) & " + " & Name)
+        Return PCLCS.InstanceKeybindingView.DisplayKey(Value)
     End Function
     Private Sub BeginCapture(Entry As InstanceKeybinding)
         If HasRunningMinecraft OrElse Owner Is Nothing OrElse McInstanceLock.IsLocked(Owner) Then

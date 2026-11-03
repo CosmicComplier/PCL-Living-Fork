@@ -16,6 +16,7 @@
     <Compile Include="../../PCLCS/Minecraft/PersonalOptionsFlow.cs" Link="Production/PersonalOptionsFlow.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceKeybindingFiles.cs" Link="Production/InstanceKeybindingFiles.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceKeybindingReader.cs" Link="Production/InstanceKeybindingReader.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceKeybindingView.cs" Link="Production/InstanceKeybindingView.cs" />
     <Reference Include="Newtonsoft.Json">
       <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
       <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>
