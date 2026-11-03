@@ -54,7 +54,8 @@ internal static class Program {
             .. QuickPlayWorldRulesTests.Cases(),
             .. QuickPlayHistoryTests.Cases(),
             .. QuickPlayFlowTests.Cases(),
-            .. InstanceResourceEntryTests.Cases()
+            .. InstanceResourceEntryTests.Cases(),
+            .. InstanceResourcePathTests.Cases()
         ];
         int failures = 0;
         foreach ((string name, Action run) in tests) {

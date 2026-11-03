@@ -34,18 +34,11 @@ Friend NotInheritable Class InstanceResourceStore
     End Function
 
     Private Shared Function Normalize(Value As String) As String
-        Return Path.GetFullPath(PathUtils.RemoveExtendedPrefix(Value)).TrimEnd("\"c, "/"c)
+        Return PCLCS.InstanceResourcePaths.Normalize(Value, AddressOf PathUtils.RemoveExtendedPrefix)
     End Function
 
     Friend Shared Sub EnsureWithin(Root As String, FileName As String, Optional AllowRoot As Boolean = False)
-        Dim Parent = Normalize(Root), Full = Normalize(FileName)
-        If AllowRoot AndAlso Full.Equals(Parent, StringComparison.OrdinalIgnoreCase) Then Return
-        If Not Full.StartsWith(Parent & "\", StringComparison.OrdinalIgnoreCase) Then Throw New IOException("资源路径超出了当前目录。")
-        Dim Current = Full
-        Do While Not Current.Equals(Parent, StringComparison.OrdinalIgnoreCase)
-            If (File.Exists(Current) OrElse Directory.Exists(Current)) AndAlso (File.GetAttributes(Current) And FileAttributes.ReparsePoint) <> 0 Then Throw New IOException("请通过资源管理器管理链接文件或链接目录。")
-            Current = Path.GetDirectoryName(Current)
-        Loop
+        PCLCS.InstanceResourcePaths.EnsureWithin(Root, FileName, AllowRoot, AddressOf PathUtils.RemoveExtendedPrefix)
     End Sub
 
     Friend Shared Function SafeName(Value As String) As String

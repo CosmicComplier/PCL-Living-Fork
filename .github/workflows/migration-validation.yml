@@ -16,6 +16,7 @@ on:
       - 'tests/**'
       - 'scripts/Inventory-Migration.py'
       - 'scripts/Test-MigrationInventory.py'
+      - 'scripts/Test-MigrationResourcePaths.ps1'
       - 'docs/migration/source-inventory.baseline.json'
       - '.github/workflows/migration-validation.yml'
   pull_request:
@@ -33,6 +34,7 @@ on:
       - 'tests/**'
       - 'scripts/Inventory-Migration.py'
       - 'scripts/Test-MigrationInventory.py'
+      - 'scripts/Test-MigrationResourcePaths.ps1'
       - 'docs/migration/source-inventory.baseline.json'
       - '.github/workflows/migration-validation.yml'
   workflow_dispatch:
@@ -91,6 +93,26 @@ jobs:
 
       - name: Run pure C# migration regressions on .NET 10
         run: dotnet run --project tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release
+
+      - name: Initialize the fixed Shared dependency for Windows path comparison
+        if: matrix.os == 'windows-latest'
+        run: |
+          git submodule update --init MeloongCore
+          test "$(git -C MeloongCore rev-parse HEAD)" = c774ae4c85fd94e0eaa171db21e78a65870df19b
+
+      - name: Compare fixed LF CLR4 and modern Windows paths (diagnostic)
+        if: matrix.os == 'windows-latest'
+        # Diagnostic reports differences; C007b2 must eliminate them before the equivalence gate closes.
+        shell: powershell
+        run: ./scripts/Test-MigrationResourcePaths.ps1 -Mode Diagnostic -ReportPath artifacts/migration/resource-paths.json
+
+      - name: Upload the Windows path comparison report
+        if: always() && matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: migration-resource-path-comparison-windows
+          path: artifacts/migration/resource-paths.json
+          if-no-files-found: warn
 
       - name: Upload the generated inventory
         if: always()

@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已完整验证的检查点 `459bb0a8f8b1112187e884f1a9985014e58dc970`：Windows Debug／Release 各 41 步成功，.NET 10 矩阵 Ubuntu 296／296、Windows 303／303 通过。C007a 及此前核心均有下方实际证据；主产品仍为 net48，整项现代运行时和实际交互验收尚未完成。
-- 当前推进 C007b 的固定源码／Windows oracle 审计，尚未更改共享路径实现；C005c2／C006d 的整页后台／动画仍缺 WPF 前置，两母项保持 blocked，不阻止独立核心任务。
+- 当前推进 C007b1：路径控制流 C# 转发与独立 CLR4／现代 Windows 诊断 oracle；尚未作现代路径适配，也不声称旧／新 BCL 等价。C005c2／C006d 的整页后台／动画仍缺 WPF 前置，两母项保持 blocked，不阻止独立核心任务。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -104,7 +104,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| C007b 的 Normalize／EnsureWithin、固定 Meloong／BCL 来源与旧运行时 oracle 方案 | 两子代理只读审计，主执行者集成 | 尚未分配新实现写入权；当前工作树应无生产变更，不并行改全局 guard |
+| `InstanceResourcePaths.cs`、`InstanceResourcePathTests.cs`、Store 的 Normalize／EnsureWithin 转发 | 路径子代理已交付，主执行者接管 | 原控制流／12 组测试冻结，父已注册并运行 Linux 300／300；保固定真委托，无现代 shim |
+| `tests/PCLLF.PathOracle/**`、`scripts/Test-MigrationResourcePaths.ps1` | oracle 子代理已交付，主执行者接管 | 75 组／5 真实链接对照文件冻结，独立审查中；父修正 CLR4 未显式定义开关也可默认 false 的 profile 门禁，未为此改变产品 config；Windows 尚未运行 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -201,7 +202,9 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | 子任务 | 状态 | 依赖 | 实现与验收边界 |
 | --- | --- | --- | --- |
 | C007a | done | B001 | `459bb0a`：原八字段／Validator／消费者、13 跨平台＋1 Windows 组已接通，Ubuntu 296／Windows 303 组、Windows 各 41 步与实际 sealed／8 字段／冻结 Icon 和资源链、独立终审及零警告编译全通过 |
-| C007b | in_progress | C007a | 正只读核实固定 Meloong／BCL 源码与 oracle 方案，尚未迁移；保持 RemoveExtendedPrefix 大小写／AfterLast、硬编码 `\`／OrdinalIgnoreCase、AllowRoot 提前返回、逐级 reparse 与信任 root 的原行为，需真实 CLR4／现代 Windows 对照，不以 Linux 分隔符改造替代 |
+| C007b | in_progress | C007a | 固定源审计已给出边界；按 b1 原控制流＋独立诊断 oracle、b2 有证据的现代适配分开，最终必须关闭现代真实差异，不能以 diagnostic 成功代替等价 |
+| C007b1 | in_progress | C007a | 原 Core／VB 真委托与 4 跨平台＋8 Windows 组已接通，Linux 300／300、测试及 net48 库零警告，独立终审限控制流。75 组／5 链接 oracle 提取 LF 固定原 VB 方法编独立 CLR4 EXE；现代 host 零警告编译，原 VB 驱动在 Linux 用 Roslyn／net48 引用预编译成功但未执行 CLR4。待真实 Windows runtime／脚本／报告，Diagnostic 不代替等价，Strict 包含 Unicode 差异 |
+| C007b2 | todo | C007b1 | 根据真实 old/new 差异逐项适配现代 Windows API，转 RequireEquivalent 强门禁并回归全部真实消费者；不直接复用 C006a 原串字符预检，不复制 BCL 内部解析器或扩大 root／link 信任策略 |
 
 ## 当前批次与下一步
 
@@ -223,8 +226,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C006b | 已随 `f1fa26b` 推送；Ubuntu 252／Windows 258 组、Windows Debug／Release 各 41 步与实际旧型／4＋5 字段／GUID-N／UTC 消费者全通过；生产／测试独立终审、net48／测试零警告编译通过，非本批方法逐字不变 | 本批完成。Root 每 Address 仍读两次；fresh 样本的 read/read/write 为 Address 回调计数，不冒称 Root 只调用三次。不是多线程竞态或真实 Minecraft 验证 |
 | C006c | 已随 `257e98e`／`6023f3d` 推送，Ubuntu 283／Windows 289 组、Windows Debug／Release 各 41 步及真实新流程／旧卡片消费者通过；有效 NBT 只读／字节、原坏 gzip、精确坏 JSON finally 都有实际样本 | 本批完成，C006d／母项仍等待 WPF；未知进程权限与枚举器失败位置仅原契约／源码审查，不伪称竞态或实游戏验收 |
 | C007a | 已随 `459bb0a` 推送；Ubuntu 296／Windows 303 组、Windows 各 41 步与原类型／继承字段／Icon 和完整资源消费者通过，独立终审／零警告编译通过；其余 Store／路径逐字未改，脚本 BOM 保留 | 本批完成，不新增 hash／类型检查或文件并发保证；全局路径与其余 Store 继续 C007b 及后续实际拆分 |
-| C007b | 两代理只读审计固定来源与旧路径行为矩阵；当前没有待集成生产改动 | 下一步明确可执行的真实旧 CLR4／现代 Windows oracle 和最小接口，再实现／回归；不能只搬 API 调用就宣称现代路径等价 |
+| C007b1 | 原路径／12 组已接通、Linux 300／300、测试／net48 库及现代 host 零警告；固定原 VB 方法与驱动 net48 预编译成功，独立生产／测试／协议终审通过，修正未定义 switch 默认 false 的误拒。CI 仅 Windows 跑 fixed Shared／独立 CLR4 Diagnostic，不改产品 SDK9／VS Build | 待真实 Windows baseline／脚本／报告；Frame 归约后校验、device、GetDirectoryName 与 Ordinal 差异仍待适配。历史 LegacyDriver.vb 不在产品编译链，不用于降低产品 VB 统计；本地预编译不冒称 CLR4 运行通过 |
 
-下次入口：核对分支、远端和 C007b 只读审计结果，先落可运行的原 LF CLR4／现代 Windows 路径 oracle 与最小生产边界；C007a、C006a／b／c、C005c1 已全通过，不重复提取或等待。C005／C006 的界面子项缺 C027／独立 C029a，母项保持 blocked；继续 C007 子任务，不将整项假标完成。
+下次入口：核对分支、远端和 C007b1 活动文件所有权，先集成并实际运行原 LF CLR4／现代 Windows 诊断 oracle 与原控制流迁移；需要等价适配的差异归 C007b2，不以 Diagnostic 通过关闭母项。C007a、C006a／b／c、C005c1 已全通过，不重复提取或等待；C005／C006 的界面母项仍 blocked。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

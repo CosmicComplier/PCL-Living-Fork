@@ -21,6 +21,7 @@
     <Compile Include="../../PCLCS/Minecraft/QuickPlayHistory.cs" Link="Production/QuickPlayHistory.cs" />
     <Compile Include="../../PCLCS/Minecraft/QuickPlayFlow.cs" Link="Production/QuickPlayFlow.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourceEntryData.cs" Link="Production/InstanceResourceEntryData.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePaths.cs" Link="Production/InstanceResourcePaths.cs" />
     <Reference Include="Newtonsoft.Json">
       <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
       <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>
