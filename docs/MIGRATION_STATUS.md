@@ -6,8 +6,8 @@
 
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 初始 Windows 基线通过；首批提交 `d27f394580a83ea50077a96adda056c141dc8748` 的 Windows Debug／Release 完整自动化与双平台迁移矩阵也已实际通过。整项 .NET 10 产品迁移和实际交互验收仍在后续任务中。
-- 首批并行工作：固定源码清单、模块映射、迁移专用 CI，以及 WorldMetadata 生产解析器的 C# 提取和 VB 适配接入。各批次结果以下方证据为准。
+- 最新生产检查点 `cfd4cbf23bb276fba800e930f8cb67c39b11c426` 的 Windows Debug／Release 各 41 步成功；.NET 10 迁移矩阵 Ubuntu 62／62、Windows 64／64 通过。C002／C003 已完成对应核心与适配验收；主产品仍为 net48，整项现代运行时和实际交互验收尚未完成。
+- 当前推进 C004a：个人选项的纯规则提取。此前完成固定源码清单、模块映射、迁移 CI、存档 NBT／文件／详情，以及本机游戏资料持久化的 C# 接入。各批次结果以下方证据为准。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -23,7 +23,8 @@
 | 清单工具重复运行 | 固定 LF `--ref` 输出成功；CI 基线核查批次独立重复运行并与提交候选基线逐文本一致 | Python 标准库和 Git；无时间、机器路径、凭据或子模块内容；新批次 `--ref HEAD` 需在提交后另产当前清单 |
 | 首批 C# 解析器测试 | `dotnet build tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release --no-restore -warnaserror` 零警告／零错误；`dotnet run --project tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release --no-build` 27／27 组通过 | Linux .NET SDK 10.0.403，编译链接真实生产解析器；覆盖现代／旧世界、16 字段、signed 值、UTF-8、未知类型、截断、短路、64 层与 16 MiB 边界及流所有权；不代替 Windows 外壳与 GUI 回归 |
 | 现有辅助库编译 | `dotnet build PCLCS/PCLCS.csproj --configuration Release -p:EnableWindowsTargeting=true` 成功，零警告／零错误 | Linux 对现有 net48 的 PCLCS／MeloongCore 编译验证；不是 WPF 主程序运行结果。修正资源 Include 的磁盘大小写，原 LogicalName 保持不变 |
-| 首批独立自审 | NBT 旧语义、PCL.WorldMetadata 16 字段／类型及 Read／ReadDetails／Describe 反射入口保持；所有字段映射完整，Describe 文案未变 | 源码逐段对照与独立复核；新提交完整 Windows Build 和迁移矩阵仍待推送后运行 |
+| 首批独立自审 | NBT 旧语义、PCL.WorldMetadata 16 字段／类型及 Read／ReadDetails／Describe 反射入口保持；所有字段映射完整，Describe 文案未变 | 源码逐段对照与独立复核；后续 C002／C003 实现也已通过下列各自 Windows／迁移矩阵，不能将这一结论外推到尚未实施的模块 |
+| C002／C003 当前清单 | `--ref cfd4cbf23bb276fba800e930f8cb67c39b11c426`：255 个源文件，其中产品 251、测试 3、工具 1；产品 VB 仍为 168 文件／55,692 行 | 当前清单在忽略的 artifacts 下重新生成；初始基线不改写。兼容门面仍是产品 VB，不能按 C# 增量或总行数声称完成度 |
 
 本轮已推送的实现与验证检查点：
 
@@ -35,8 +36,13 @@
 | `d27f394` | 新增限定迁移分支的 .NET 10／源码清单 CI；以下两次远端运行均针对该完整提交 |
 | `c7cb287` | 固定详细 commit／PR 正文要求、模型边界和 .NET 10 兼容审计；现代运行门禁仍保留 |
 | `0388bd6` | C002a 文件／gzip／详情文案迁入 C#；15 组真实文件样本加入既有 27 组测试；Windows 原详情脚本增强全部字段、精确格式、共享／只读及真实符号链接检查 |
+| `cfd4cbf` | C003 持久化／原子写入／进程身份迁入 `LocalGameDataStore`；保留原 Gate／动态 TestRoot／所有入口。新增 20 组跨平台实际样本与 2 组 Windows 文件语义；EngineOnly 夹具及其专门 CI 接通 |
 | [Windows Build 41696728260](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260) | [Debug job 126129118107](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118107) 与 [Release job 126129118529](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118529) 各 40 步 success，包含原有自动化回归、凭据保护、旧更新桥和产物上传；主程序仍为 net48，不能据此关闭 N003 或 R003 |
 | [Migration validation 41696728492](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728492) | Ubuntu job `126129118456`、Windows job `126129119218` 均 success：固定清单一致，.NET 10 真实生产解析器测试通过；这只验证已提取的解析器范围 |
+| [C002 Windows Build 41705399746](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705399746) | 提交 `0388bd6f6f99ac142a3a6d88032a70ba727fe6f3`：Debug job `126159247355`、Release job `126159247567` 各 40 步 success；增强后的真实 WorldMetadata 门面、文件链接校验、只读／共享、精确文案及旧回归均运行通过 |
+| [C002 Migration validation 41705399845](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705399845) | Ubuntu job `126159247961`、Windows job `126159248400` 均 success，42／42 组生产解析器／文件／文案测试及固定源码基线核查通过 |
+| [C003 Windows Build 41705751541](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705751541) | 提交 `cfd4cbf23bb276fba800e930f8cb67c39b11c426`：Debug job `126160481124`、Release job `126160481435` 各 41 步 success；含原完整回归、两种方式的真实备份引擎、个人习惯／Quick Play、还原／克隆／取消恢复、凭据保护、旧更新桥和产物上传 |
+| [C003 Migration validation 41705751480](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705751480) | Ubuntu job `126160481337` 62／62、Windows job `126160481670` 64／64 组通过，固定清单一致；日志确认两个符号链接用例均实际执行，Windows 共享锁和只读拒绝两组也通过，没有 SKIP。这些是功能样本，不代替完整 GUI／真实账号／游戏运行验收 |
 
 清单重新生成：
 
@@ -58,6 +64,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
+| `PersonalOptionsRules.cs`、`PersonalOptionsRulesTests.cs`、原 `PersonalGameSettings.vb` | C004a 子代理 | 仅负责这三个文件；项目／Main／文档／脚本由主执行者接线与集成，不自行提交或切分支 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -73,9 +80,9 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
 | B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
 | C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
-| C002 | in_progress | B001、C001 | C002a：将文件／gzip／详情文案迁入 C#，VB 保留类型映射与路径／日志适配；接通原详情页、最近世界和备份消费者，新增真实文件样本并运行原 Windows 回归。最终删除 VB 门面随消费者和主工程转换验收 |
-| C003 | in_progress | B001 | 独立子代理负责 `LocalGameDataStore.cs`、原 VB 门面与独立测试文件；主执行者集成项目／脚本。迁移持久化与原子写入，保留旧数据、并发变更、临时清理和失败恢复语义 |
-| C004 | todo | C003 | 迁移 `PersonalGameSettings` 规则及生产调用；字段白名单、双向同步、换行、备份、旧键值与进程恢复回归 |
+| C002 | done | B001、C001 | 文件／gzip／详情文案已迁入 C#，原三个消费者经兼容入口接通；42 组双平台样本与 Windows Debug／Release 完整回归通过。最终删除类型映射／路径日志 VB 门面仍由 C006／C010／C029／C031、R001 验收，不声称页面后台已转换 |
+| C003 | done | B001 | `LocalGameDataStore` 已接通所有原持久化入口，保留 Gate、动态 TestRoot、旧 JSON／编码、摘要检查、备份与失败清理；Windows 两种备份引擎与完整旧回归通过，.NET 10 Ubuntu 20／Windows 22 组对应样本通过。剩余 VB 转发门面归最终主工程验收 |
+| C004 | in_progress | C003 | 按下方 C004a／b／c 拆分 `PersonalGameSettings` 规则、文件适配与会话；先实施 C004a，母项须三批及原功能链回归全部完成才能关闭 |
 | C005 | todo | C004 | 迁移 `InstanceKeybindings` 与其页面功能链；模组归属、冲突分组、重新绑定和陈旧写入保护回归 |
 | C006 | todo | C002、C003 | 迁移 `QuickPlayWorlds` 与最近世界入口；版本门槛、路径、参数、缺失世界与首页动画顺序回归 |
 | C007 | todo | B001 | 迁移本地资源路径和文件模型、`InstanceResourceStore`；现有资源种类、隔离目录、边界和列表行为回归 |
@@ -118,6 +125,14 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 任务存在交叉文件时，以最先完成的功能链为准更新后续任务的剩余范围，不重复转换。例如 C010 已完成备份页面后台，则 C029 只验收该入口集成并处理尚余页面。较大的 C017、C019、C020、C021、C027、C031 在执行前按可运行入口拆出子编号；子任务完成不会隐式关闭母项的其他验收。
 
+C004 按实际生产入口拆分如下，不提前改变原会话与文件事务：
+
+| 子任务 | 状态 | 依赖 | 实现与验收边界 |
+| --- | --- | --- | --- |
+| C004a | in_progress | C003 | 提取白名单、首冒号解析、键名别名、键码／FOV／修饰符、严格 UTF-8 解码和文本合并；原动态 Settings 通过委托边界读取，保留 `ForVersion` 等原反射入口。真实生产源码样本覆盖大小写、重复键／行、冒号、4096 字符、混合换行、末尾空行、BOM、未知字段及目标缺省键保护 |
+| C004b | todo | C004a | 迁移 options.txt 文件适配：4 MiB／ReparsePoint 拒绝、原始字节与 BOM、缺文件不提前生成、哈希比较／备份及成功后清 INI 缓存；不重复实现 C003 的原子文件写入 |
+| C004c | todo | C004b | 迁移导入和 Prepare／Track／Capture／Finish／恢复会话的业务与模型，明确实例／设置／进程／日志适配；保留 Gate 范围、日志先落盘再 Tracked、已删除日志的幂等、失败保留日志和仅回写本次相对 baseline 变化项。原 Windows 脚本验证双向同步、版本开关、活进程与退出恢复 |
+
 ## 当前批次与下一步
 
 | 批次 | 当前进度 | 仍需完成 |
@@ -126,9 +141,10 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G002 | 模块映射完成：14 条功能链、固定源码清单全部 249 文件归组；53 个链接目标、46 个脚本名核实 | 已完成映射交付，后续按实际迁移更新对应行，不代表功能已迁移 |
 | G004 | 已随 `d27f394` 推送，Ubuntu／Windows 迁移矩阵通过 | 后续生产改动继续使用该工作流，并按实际依赖扩展测试 |
 | C001 | C# 解析器、原 VB 适配和 27 组测试已提交；独立自审、net48 辅助库编译、完整 Windows Debug／Release 及双平台迁移矩阵通过 | 本项完成。文件／gzip／格式与消费者的进一步 C# 迁移属于 C002，VB 兼容外壳仍纳入最终源码清单 |
-| C002a | 文件／gzip 与原中文详情文案进入 `WorldMetadataFiles`，原 VB 仅保留 16 字段映射和路径／日志委托；三个原消费者继续调用同一入口。新增 15 组真实文件／完整文案样本，Linux .NET 10 合计 42／42 通过，net48 PCLCS 编译零警告／错误；独立源码审查通过 | 原 Windows `Test-WorldDetails.ps1` 已增强全部字段、精确 CRLF、基本／详情区别、共享／只读、真实文件链接检查及句柄释放，待推送 CI 实际验证。尚未转换详情页／Quick Play／备份 UI 后台，不据此关闭 C006／C010／C029 或整项迁移 |
-| C003a | `LocalGameDataStore` 与 VB 转发已接通，测试项目链接真实生产源码及 LF 原 Newtonsoft DLL；Linux .NET 10 共 62／62 组通过，其中本机资料 20 组。独立源码复核通过；net48 辅助库编译零警告／错误 | Windows 增加共享锁／只读两组，链接权限不足会显式 SKIP，必须按实际输出记录；原完整回归及 EngineOnly 夹具待 CI。陈旧摘要测试是顺序模拟外部编辑，权限不明进程分支只有源码核对，不声称多线程竞争／真实进程权限错误已实测 |
+| C002a | 已随 `0388bd6` 推送；42／42 双平台与 Windows Debug／Release 完整回归均通过，真实路径适配／文件链接、共享／只读、16 字段、精确 CRLF 和句柄释放已实测；独立源码审查通过 | 本批完成。尚未转换详情页／Quick Play／备份 UI 后台及最终门面，不据此关闭 C006／C010／C029／C031、R001 或整项迁移 |
+| C003a | 已随 `cfd4cbf` 推送；完整 Windows Debug／Release 和 EngineOnly 通过；Ubuntu 62／Windows 64 组总矩阵通过，其中本机资料 20／22 组，链接用例无跳过。独立源码复核与 net48 编译通过 | 本批完成。陈旧摘要测试是顺序模拟外部编辑，进程权限不明分支只有源码核对，不声称多线程竞争／真实进程权限错误已实测；VB 转发门面仍在最终源码清单中 |
+| C004a | 已完成入口勘查并分配独立规则／测试文件所有权，正在实施；没有宣称新测试或新生产实现已通过 | 主执行者接线，实际构建／样本／原 Windows 回归及自审后提交；C004b／c 暂不并行改写同一 VB 文件 |
 
-下次入口：核对迁移分支、远端和正在运行的 CI，先收尾 C002a／C003a 的 Windows 与双平台结果，按实际失败修复并记录；两批生产实现已接通，不重复迁移 NBT／文件／文案或本机资料核心。原消费者仅保留适配门面，页面／Quick Play／备份后台和最终 VB 门面删除分别由 C006／C010／C029／C031、R001 承接。C002／C003 相关门禁通过后从 C004 的 PersonalGameSettings 继续，先参考 MODULE_MAP 及兼容审计；每批保留实际命令、结果和详细提交正文。
+下次入口：先核对迁移分支、远端和本地 C004a 文件归属，若子代理仍在实施或验证，先接收／检查其结果，不并行覆盖。C002／C003 已有各自完整 Windows／双平台通过证据，不重复迁移 NBT／文件／文案或本机资料核心。继续最早未完成的 C004a；保留动态 Selected、原始 UTF-8/BOM 与换行／重复行语义，不能新增白名单或规则。随后按 C004b／c 接续，全部验收后才关闭 C004 并推进 C005；每批保留实际命令、结果和详细提交正文。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
