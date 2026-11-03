@@ -41,6 +41,10 @@ dotnet restore .\PCLCS\PCLCS.csproj
 
 输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.4.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
+## 迁移工程
+
+迁移分支的目标、实施顺序和 MMC 兼容验收要求见 [迁移工程说明](docs/MIGRATION.md)。工程从现有 LF 继续演进，以 PCL 原版源码为基础来源，以 CE 为同源迁移参考。
+
 ## 国内发布同步
 
 国内下载入口：[CNB Releases](https://cnb.cool/ddzmumo/PCL-Living-Fork/-/releases)。后续包含同步工作流的标签发布或编辑正式 Release 后，Actions 立即触发 CNB 同步并等待结果；CNB 每 30 分钟的定时检查作为补偿。

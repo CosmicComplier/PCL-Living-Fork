@@ -1,0 +1,4704 @@
+{
+  "schema_version": 1,
+  "source_commit": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+  "upstream_commit": "5ef81e490ae46b1100d61e33d0183094c7a80ca8",
+  "scope": "tracked VB/C#/XAML blobs in the selected Git tree; submodule contents excluded",
+  "semantics": {
+    "lines": "bytes.splitlines(); empty file = 0; final unterminated line counts",
+    "upstream_status": "same relative path and Git blob/mode; no rename detection",
+    "project_declarations": "literal project XML and common globs; SDK defaults inferred; MSBuild conditions/imports/properties not evaluated; Remove/Update recorded, not applied",
+    "path_matching": "project item paths matched case-insensitively for the Windows product"
+  },
+  "summary": {
+    "files": 249,
+    "lines": 62474,
+    "by_language": {
+      "C#": {
+        "files": 10,
+        "lines": 1034
+      },
+      "VB": {
+        "files": 168,
+        "lines": 55900
+      },
+      "XAML": {
+        "files": 71,
+        "lines": 5540
+      }
+    },
+    "by_group": {
+      "Application": {
+        "files": 5,
+        "lines": 2475
+      },
+      "Controls": {
+        "files": 55,
+        "lines": 7538
+      },
+      "Modules": {
+        "files": 9,
+        "lines": 2619
+      },
+      "Modules/Base": {
+        "files": 14,
+        "lines": 6549
+      },
+      "Modules/Minecraft": {
+        "files": 31,
+        "lines": 16308
+      },
+      "Modules/Resource": {
+        "files": 5,
+        "lines": 2294
+      },
+      "Modules/ThirdParty": {
+        "files": 1,
+        "lines": 151
+      },
+      "My Project": {
+        "files": 4,
+        "lines": 482
+      },
+      "PCLCS": {
+        "files": 3,
+        "lines": 364
+      },
+      "PCLCS/Launch": {
+        "files": 1,
+        "lines": 30
+      },
+      "PCLCS/Minecraft": {
+        "files": 3,
+        "lines": 413
+      },
+      "PCLCS/Resource": {
+        "files": 2,
+        "lines": 114
+      },
+      "Pages": {
+        "files": 8,
+        "lines": 1120
+      },
+      "Pages/PageDownload": {
+        "files": 24,
+        "lines": 6215
+      },
+      "Pages/PageInstance": {
+        "files": 31,
+        "lines": 6653
+      },
+      "Pages/PageLaunch": {
+        "files": 22,
+        "lines": 2976
+      },
+      "Pages/PageLink": {
+        "files": 2,
+        "lines": 1319
+      },
+      "Pages/PageOther": {
+        "files": 11,
+        "lines": 1013
+      },
+      "Pages/PageSetup": {
+        "files": 16,
+        "lines": 3383
+      },
+      "Resources": {
+        "files": 1,
+        "lines": 345
+      },
+      "scripts/update-bridge": {
+        "files": 1,
+        "lines": 113
+      }
+    },
+    "by_role": {
+      "product": {
+        "files": 248,
+        "lines": 62361
+      },
+      "tool": {
+        "files": 1,
+        "lines": 113
+      }
+    },
+    "by_upstream_status": {
+      "added": {
+        "files": 66,
+        "lines": 12535
+      },
+      "modified": {
+        "files": 67,
+        "lines": 33785
+      },
+      "unchanged": {
+        "files": 116,
+        "lines": 16154
+      }
+    },
+    "product_vb": {
+      "files": 168,
+      "lines": 55900
+    },
+    "without_project_declaration": 1,
+    "removed_upstream_sources": 2
+  },
+  "projects": [
+    {
+      "path": "PCLCS/PCLCS.csproj",
+      "sdk_style": true,
+      "properties": {
+        "TargetFramework": [
+          {
+            "value": "net48",
+            "conditions": []
+          }
+        ]
+      },
+      "project_references": [
+        {
+          "path": "MeloongCore/Shared/MeloongCore.csproj",
+          "conditions": []
+        },
+        {
+          "path": "MeloongCore/Wpf/MeloongCore.Wpf.csproj",
+          "conditions": []
+        }
+      ],
+      "unresolved_items": []
+    },
+    {
+      "path": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+      "sdk_style": false,
+      "properties": {
+        "TargetFrameworkVersion": [
+          {
+            "value": "v4.8",
+            "conditions": []
+          }
+        ]
+      },
+      "project_references": [
+        {
+          "path": "MeloongCore/Shared/MeloongCore.csproj",
+          "conditions": []
+        },
+        {
+          "path": "MeloongCore/Wpf/MeloongCore.Wpf.csproj",
+          "conditions": []
+        },
+        {
+          "path": "PCLCS/PCLCS.csproj",
+          "conditions": []
+        }
+      ],
+      "unresolved_items": [
+        {
+          "item": "Compile",
+          "operation": "Include",
+          "value": "$(GeneratedCredentialSource)",
+          "conditions": [
+            "'$(GeneratedCredentialSource)' != ''"
+          ]
+        }
+      ]
+    }
+  ],
+  "submodules": [
+    {
+      "path": "MeloongCore",
+      "commit": "c774ae4c85fd94e0eaa171db21e78a65870df19b"
+    }
+  ],
+  "files": [
+    {
+      "path": "PCLCS/Configs.cs",
+      "language": "C#",
+      "lines": 28,
+      "blob": "3de9d93858a4c3a607549bd0d401d09945680f9f",
+      "group": "PCLCS",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Constants.cs",
+      "language": "C#",
+      "lines": 84,
+      "blob": "314810e9e29f83e847f8f0ac79a5790813b533df",
+      "group": "PCLCS",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Java.cs",
+      "language": "C#",
+      "lines": 252,
+      "blob": "57d3eef18be62bcc03d0bf7df47faff83f87756b",
+      "group": "PCLCS",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Launch/LaunchUtils.cs",
+      "language": "C#",
+      "lines": 30,
+      "blob": "f96df69000b212b8fb0b0d314a8522157ddc9ada",
+      "group": "PCLCS/Launch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Minecraft/MCUtils.cs",
+      "language": "C#",
+      "lines": 47,
+      "blob": "641c9a33fd74dbbf7ba39b8168d94bb10686789f",
+      "group": "PCLCS/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Minecraft/McInstallManifest.cs",
+      "language": "C#",
+      "lines": 71,
+      "blob": "09eefdc73a04d713719725600e796f1d39879a86",
+      "group": "PCLCS/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Minecraft/McVersion.cs",
+      "language": "C#",
+      "lines": 295,
+      "blob": "2e5a5e8bb5e63973a1d0bfa13fd4169a91700a34",
+      "group": "PCLCS/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Resource/Resource.cs",
+      "language": "C#",
+      "lines": 31,
+      "blob": "fceedfbe5011ca3b5f2deb02d19ae1662ea3f5a1",
+      "group": "PCLCS/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "PCLCS/Resource/WikiEntry.cs",
+      "language": "C#",
+      "lines": 83,
+      "blob": "2e4f31007f0f244f82a5fcf95c3b97f36a00189b",
+      "group": "PCLCS/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "PCLCS/PCLCS.csproj",
+          "item": "Compile",
+          "declaration": "sdk_default_inferred",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Application.xaml",
+      "language": "XAML",
+      "lines": 526,
+      "blob": "8649890f82d4c8023ccb0896c1ce9d2d9de218dc",
+      "group": "Application",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "ApplicationDefinition",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Application.xaml.vb",
+      "language": "VB",
+      "lines": 288,
+      "blob": "2fbe62f960482f7adce6a7838e95534f83eb22f5",
+      "group": "Application",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/Behaviors/ClipboardInterceptor.vb",
+      "language": "VB",
+      "lines": 216,
+      "blob": "ea83e130940e4c2114f5330896501c5509632ed6",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/Behaviors/Interfaces.vb",
+      "language": "VB",
+      "lines": 23,
+      "blob": "8c70de32609996be86f72ffe021bda9a867533c1",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/Behaviors/LazyLoadBehavior.vb",
+      "language": "VB",
+      "lines": 46,
+      "blob": "17b065e00020a051e0bbf0f22b452668f120f1c3",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/LocalResourceUi.vb",
+      "language": "VB",
+      "lines": 60,
+      "blob": "eab7a4a042192dcdb50ae3893b3c3fbe85d864ce",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/ModDependencyCheckView.vb",
+      "language": "VB",
+      "lines": 108,
+      "blob": "700ef9ce996a5c0aceb2bc9165c4a2213a8c866d",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/ModDependencyGraphView.vb",
+      "language": "VB",
+      "lines": 377,
+      "blob": "4a112a072c8cd30cfba21d272167f97c6bf5ddab",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/ModDependencyIcon.vb",
+      "language": "VB",
+      "lines": 40,
+      "blob": "34e715bb689496b2fe43f70818608a34cdde1c89",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/ModDependencyImpactView.vb",
+      "language": "VB",
+      "lines": 73,
+      "blob": "450aab8ea1502a202bc876c401c45cb2c79214b9",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/ModpackUpdateViews.vb",
+      "language": "VB",
+      "lines": 226,
+      "blob": "38e50e15154b4334ced48a54e4ec82e6dc18c811",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyButton.xaml",
+      "language": "XAML",
+      "lines": 16,
+      "blob": "0bc7f079ee271e9df520e7d82cc77e3a359bc13f",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyButton.xaml.vb",
+      "language": "VB",
+      "lines": 176,
+      "blob": "7d31147493ffc2793ee54b3b70026594c7a91858",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyCard.vb",
+      "language": "VB",
+      "lines": 359,
+      "blob": "11d0a9082ce201ac70ea5b3e19d27f4b55fac663",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyCheckBox.xaml",
+      "language": "XAML",
+      "lines": 14,
+      "blob": "179043fb1a1b4a56c6c042330890eb2f7ff13824",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyCheckBox.xaml.vb",
+      "language": "VB",
+      "lines": 230,
+      "blob": "29de5aa9ada717c2e1a52a106f86eba969513444",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyComboBox.vb",
+      "language": "VB",
+      "lines": 173,
+      "blob": "bb9cd4918d167fad19872b420971a3d9b883a9d8",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyComboBoxItem.vb",
+      "language": "VB",
+      "lines": 67,
+      "blob": "e9b18c1b9e4be4cb0d3e6bcb152649b27c668677",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyDropShadow.vb",
+      "language": "VB",
+      "lines": 324,
+      "blob": "a499445f76c4dd9bd9cb4a631d0ca4db82868343",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyExtraButton.xaml",
+      "language": "XAML",
+      "lines": 30,
+      "blob": "1071f62276a1b85483ec37dba44a4b2adf3774ce",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyExtraButton.xaml.vb",
+      "language": "VB",
+      "lines": 217,
+      "blob": "dbc5eb3233102af7d26ecdbf6eb2f83d393441ac",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyExtraTextButton.xaml",
+      "language": "XAML",
+      "lines": 33,
+      "blob": "c3026394b03821023ac9d6a1802b99c62ec0cba3",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyExtraTextButton.xaml.vb",
+      "language": "VB",
+      "lines": 163,
+      "blob": "ab304d66461b044a3aad486ad624821092e1baf7",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyHint.xaml",
+      "language": "XAML",
+      "lines": 16,
+      "blob": "9be73a70d1d18f34fcfd2b799c4b0fd91eef3e53",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyHint.xaml.vb",
+      "language": "VB",
+      "lines": 148,
+      "blob": "4f0705c6b18af2af2e2efae82890c67c0469a05c",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyIconButton.xaml",
+      "language": "XAML",
+      "lines": 15,
+      "blob": "1059ffb2f0ce92acf9bd01b9c45acf6099618334",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyIconButton.xaml.vb",
+      "language": "VB",
+      "lines": 187,
+      "blob": "52df549ee0050295d52487a0e5000b9cdba1adcc",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyIconTextButton.xaml",
+      "language": "XAML",
+      "lines": 9,
+      "blob": "8e4e9558dc98f70480710b9887ae11158448ba84",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyIconTextButton.xaml.vb",
+      "language": "VB",
+      "lines": 173,
+      "blob": "1cf5093d812f67a9697ea324f350e046febd670d",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyImage.vb",
+      "language": "VB",
+      "lines": 156,
+      "blob": "b385ea7e56eacc6997805adb30ed6cbf05c93806",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyListItem.xaml",
+      "language": "XAML",
+      "lines": 27,
+      "blob": "218ddbe668d10294a1887f6cdb1e8289da820fe8",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyListItem.xaml.vb",
+      "language": "VB",
+      "lines": 658,
+      "blob": "2738be3a15c8f412a2f2caeeb6d20149b6b5e8a8",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyLoading.xaml",
+      "language": "XAML",
+      "lines": 37,
+      "blob": "0fc5626a327b1979bca212d2ae5476503d9de069",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyLoading.xaml.vb",
+      "language": "VB",
+      "lines": 276,
+      "blob": "94c0a91502bdd7b05be5cd0b62202ec203f2c366",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMenuItem.vb",
+      "language": "VB",
+      "lines": 62,
+      "blob": "fb0da8c3758a6774f8a3acc48d7a52f9f3f01ef5",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMsg/MyMsgInput.xaml",
+      "language": "XAML",
+      "lines": 39,
+      "blob": "acd08c607e8d55f12d3fdc95476d7f28b9a3feda",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMsg/MyMsgInput.xaml.vb",
+      "language": "VB",
+      "lines": 97,
+      "blob": "4ab321e8ec5b8460a2571575337eda3920cfb796",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMsg/MyMsgSelect.xaml",
+      "language": "XAML",
+      "lines": 36,
+      "blob": "9ba99cc42405748838e5abd6df48a4e42d02ac51",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMsg/MyMsgSelect.xaml.vb",
+      "language": "VB",
+      "lines": 104,
+      "blob": "8b2793d08fde2fa3bf8545fab2a944222f0c9509",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMsg/MyMsgText.xaml",
+      "language": "XAML",
+      "lines": 38,
+      "blob": "61b283742a72db3df65b70b0c2938f749f11fd77",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyMsg/MyMsgText.xaml.vb",
+      "language": "VB",
+      "lines": 146,
+      "blob": "af7780be7398bb660ebd3d6ef09460b4eb7f9185",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyPageLeft.vb",
+      "language": "VB",
+      "lines": 108,
+      "blob": "3ee6655c39d92168f19f2b033477cabba332444e",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyPageRight.vb",
+      "language": "VB",
+      "lines": 513,
+      "blob": "d9831cb03d9a14754e7e8ec0673f97ff02588652",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyRadioBox.xaml",
+      "language": "XAML",
+      "lines": 9,
+      "blob": "9eb7d714bc81205d3203b6a18fed23c4ddea7d93",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyRadioBox.xaml.vb",
+      "language": "VB",
+      "lines": 252,
+      "blob": "5c5f0733beeae1fc8fc43462c219d3a5e800a061",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyRadioButton.xaml",
+      "language": "XAML",
+      "lines": 9,
+      "blob": "81e0c8d158d458056d4ee4b4c74015bd3c7574cf",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyRadioButton.xaml.vb",
+      "language": "VB",
+      "lines": 262,
+      "blob": "5af9757955e10b36c1a2fe6610cec20199f3bd7e",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyResizer.vb",
+      "language": "VB",
+      "lines": 315,
+      "blob": "5e7446c54db997e676e28c9d90ca15cd6a2bf8e4",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyScrollBar.vb",
+      "language": "VB",
+      "lines": 51,
+      "blob": "c0e67f14bc39bf2580fc09ac5cb59e9293e739ea",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyScrollViewer.vb",
+      "language": "VB",
+      "lines": 46,
+      "blob": "161f4b396a5c120986ff9a9928917d7fbc6d7a02",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MySearchBox.xaml",
+      "language": "XAML",
+      "lines": 15,
+      "blob": "4b79b514863e6ebbb068975d76ecf5e960b31f59",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MySearchBox.xaml.vb",
+      "language": "VB",
+      "lines": 45,
+      "blob": "70a0e99227bf7428fa37c85d650e82fc929d9121",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MySlider.xaml",
+      "language": "XAML",
+      "lines": 29,
+      "blob": "f381fff15417d3a6298a654bd1f84de057c1dcd0",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MySlider.xaml.vb",
+      "language": "VB",
+      "lines": 210,
+      "blob": "199812d7ec5744fced63d72a4ed48ede96fcb212",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyTextBox.vb",
+      "language": "VB",
+      "lines": 322,
+      "blob": "04f09c9d8a9ec8c08ba380b8d151b24d1037628d",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyTextButton.vb",
+      "language": "VB",
+      "lines": 87,
+      "blob": "2004e89f3d7c69dd2fb266e05e0c3e2c57ce04f1",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Controls/MyVirtualizingElement.vb",
+      "language": "VB",
+      "lines": 70,
+      "blob": "e091f92f39b692fec9ced909f7e7a3d21add5ae3",
+      "group": "Controls",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/FormMain.xaml",
+      "language": "XAML",
+      "lines": 184,
+      "blob": "a3049ad280bb109e5c244a7940c86e3fd07cdd3b",
+      "group": "Application",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/FormMain.xaml.vb",
+      "language": "VB",
+      "lines": 1465,
+      "blob": "fef3112121ef23612bbbc9b8ab5ea3e57ae61d5d",
+      "group": "Application",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/GlobalSuppressions.vb",
+      "language": "VB",
+      "lines": 12,
+      "blob": "6ef2f31b5affda4bad5953b4b45a77823b6d778c",
+      "group": "Application",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/BuildCredentials.vb",
+      "language": "VB",
+      "lines": 89,
+      "blob": "2736091fd8248aba5f3bf64c50425ce079d86321",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/GameGarbageCleaner.vb",
+      "language": "VB",
+      "lines": 260,
+      "blob": "3cc66cb46bf69c3f0c4e5df021015e09a45f5165",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/LoaderFileOperation.vb",
+      "language": "VB",
+      "lines": 46,
+      "blob": "02fe07867cc6b645911d6ca4010856e20e2fcf62",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/LoginCertificatePolicy.vb",
+      "language": "VB",
+      "lines": 23,
+      "blob": "5c4e125ad6dd0cdea07865b4452062b339b02d63",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/ModAnimation.vb",
+      "language": "VB",
+      "lines": 1066,
+      "blob": "8cec2b7980d92af966fbbf54b286102a85933ef0",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/ModBase.vb",
+      "language": "VB",
+      "lines": 1230,
+      "blob": "b4c81d5f987442a3db1fb266c95f33543179f096",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/ModLoader.vb",
+      "language": "VB",
+      "lines": 813,
+      "blob": "0473fb58bf47bfd3d39a224299dc4bf77f2e7988",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/ModNet.vb",
+      "language": "VB",
+      "lines": 1938,
+      "blob": "f79efc04f3860ce76dd55f5c0ec70437c8cb8b2a",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/ModValidate.vb",
+      "language": "VB",
+      "lines": 424,
+      "blob": "712239009fb61d76acb4ec06c93e8b92a5a4cf0b",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/MyBitmap.vb",
+      "language": "VB",
+      "lines": 183,
+      "blob": "cb50b7a33e72b86c03b33765f4bc25da477c0c19",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/NativeMemoryOptimizer.vb",
+      "language": "VB",
+      "lines": 182,
+      "blob": "0163fa0836fd5e09faadd775206d21cfa1da76f1",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/PclLogger.vb",
+      "language": "VB",
+      "lines": 46,
+      "blob": "c864bf302c9649666f5a476cccd67f7575e8ee16",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/SafeRedirectHandler.vb",
+      "language": "VB",
+      "lines": 59,
+      "blob": "5c36c9a6ea5dc9865c3e6a717b8481d359fe5389",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Base/ToolboxDownloadSession.vb",
+      "language": "VB",
+      "lines": 190,
+      "blob": "4ff69bb6781d700ada443212a2080d3ca759cb82",
+      "group": "Modules/Base",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/LauncherSessionLock.vb",
+      "language": "VB",
+      "lines": 50,
+      "blob": "bbb088fde5bf0750e2535adc876ba8d97cd2d97f",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/LauncherWindowActivation.vb",
+      "language": "VB",
+      "lines": 44,
+      "blob": "14554a27275d78b3e970b0ed5526b8588c1722c3",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/EnvironmentHistory.vb",
+      "language": "VB",
+      "lines": 467,
+      "blob": "94494c0603f71f79e7dc8781cec3f03dd03689be",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ExportedVersionIsolation.vb",
+      "language": "VB",
+      "lines": 92,
+      "blob": "1cc91744f01a8f885642e9265ee3b466396d7dc7",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/InstalledComponentSummary.vb",
+      "language": "VB",
+      "lines": 81,
+      "blob": "f0742afc9a7b6c6b81351cb96e093d1a299c973f",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloneGroups.vb",
+      "language": "VB",
+      "lines": 128,
+      "blob": "4fbf9e2f6cea91bae55ea7f71fa1aef6fb630151",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloner.vb",
+      "language": "VB",
+      "lines": 581,
+      "blob": "dbc91c451f7a69d284be95e4bf51490cbbfdb845",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/InstanceKeybindings.vb",
+      "language": "VB",
+      "lines": 164,
+      "blob": "d1713cdcca162353d9da7a2d8b69779dc9d7a51f",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/InstanceResourceStore.vb",
+      "language": "VB",
+      "lines": 441,
+      "blob": "0f0963df4cc81ce0c2da5fc0f6a60a683238b258",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/InstanceResourceUpdates.vb",
+      "language": "VB",
+      "lines": 257,
+      "blob": "2f48e8dc8cd802500eda1ccb0d9271219755cf45",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/LaunchDependencyCheck.vb",
+      "language": "VB",
+      "lines": 110,
+      "blob": "5dba7a12b97036647c508cc49032d283047e6bef",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb",
+      "language": "VB",
+      "lines": 69,
+      "blob": "a7b1060d94929def0dd78453284c17a96fb0c9ca",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/MapDownloadInstaller.vb",
+      "language": "VB",
+      "lines": 46,
+      "blob": "879b8510661272a7918c6615aed03b24fd423ab4",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/MinecraftFolderPolicy.vb",
+      "language": "VB",
+      "lines": 27,
+      "blob": "bfe48d6bd5ff9df45018f57d7a96741e0ab2bcb2",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/MinecraftLogoCompatibility.vb",
+      "language": "VB",
+      "lines": 129,
+      "blob": "90217e302330833b2bebe4ed159c5a45c126abda",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModCrash.vb",
+      "language": "VB",
+      "lines": 1153,
+      "blob": "480ad39639fa18856a5103fbe8060adf8e231a61",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyAutoFill.vb",
+      "language": "VB",
+      "lines": 392,
+      "blob": "1855afab46dacccfdd3a674b223319ea11909c7b",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb",
+      "language": "VB",
+      "lines": 1256,
+      "blob": "c704de1fa265fd894f8375a4c5b20622c79d8ef0",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb",
+      "language": "VB",
+      "lines": 647,
+      "blob": "2c4c944037f184b0db5c1670dada325e8fb03f0e",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDownload.vb",
+      "language": "VB",
+      "lines": 1370,
+      "blob": "ed3a1a0aaedfebeacc5ed56eafba3676c6985489",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModJava.vb",
+      "language": "VB",
+      "lines": 584,
+      "blob": "20ef01b268f4850f2d5d46524a8b0efac67dcf8a",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModLaunch.vb",
+      "language": "VB",
+      "lines": 2349,
+      "blob": "9e3b7bca75d0a4e9b23b7d292da8aea7a612af55",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModMinecraft.vb",
+      "language": "VB",
+      "lines": 2215,
+      "blob": "f02a77aa144c102000d43f5118b30d8d52d9cde2",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModModpack.vb",
+      "language": "VB",
+      "lines": 881,
+      "blob": "acb628aa231f080c29e21782f26f7b7518dad802",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModWatcher.vb",
+      "language": "VB",
+      "lines": 421,
+      "blob": "3f389f121504ef87a7ba83e31181768148bfcb01",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModpackUpdate.vb",
+      "language": "VB",
+      "lines": 518,
+      "blob": "94e303282d0ae8fdd86bc5c1cc1b9dd077607a33",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModpackUpdateFlow.vb",
+      "language": "VB",
+      "lines": 185,
+      "blob": "0293f0a41e68eef0d5ecc3cbae706ab73a8b2007",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/PersonalGameSettings.vb",
+      "language": "VB",
+      "lines": 277,
+      "blob": "5a1c03e71b6185c7f64bb36657b9c8a16a04ae04",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/QuickPlayWorlds.vb",
+      "language": "VB",
+      "lines": 214,
+      "blob": "f8f92ce35dce1f0b83ec022d04d9fa80bca9c2ef",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/RecentEnvironmentChanges.vb",
+      "language": "VB",
+      "lines": 266,
+      "blob": "bb82db89b436fdb56c021b398449d327e8f2533e",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ResourceRecycleStore.vb",
+      "language": "VB",
+      "lines": 88,
+      "blob": "6486fd3b453e37ff352598cb6b85f66ba88541e5",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb",
+      "language": "VB",
+      "lines": 694,
+      "blob": "292b674465b277ecc8d3c27253e7ed96d686c4e2",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb",
+      "language": "VB",
+      "lines": 206,
+      "blob": "2980ad8e78a5022479cf815c61589174db277756",
+      "group": "Modules/Minecraft",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModDevelop.vb",
+      "language": "VB",
+      "lines": 6,
+      "blob": "46ac92b957f84be9fe1474eea3f562120146e4af",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModEvent.vb",
+      "language": "VB",
+      "lines": 450,
+      "blob": "c54c9e1352733b263e3a98b4597a8706b971355b",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModLauncherUpdate.vb",
+      "language": "VB",
+      "lines": 211,
+      "blob": "81f2f91bbe19b5be93ead3c093408d0a973bbb01",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModMain.vb",
+      "language": "VB",
+      "lines": 1085,
+      "blob": "b8d00480c4797abcbe9b90a70cf58a0c4d877466",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModModpackMode.vb",
+      "language": "VB",
+      "lines": 216,
+      "blob": "3d075a2cbab2bbdf2bae4fb21f361fa8b3af509c",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModMusic.vb",
+      "language": "VB",
+      "lines": 347,
+      "blob": "a3d54c9a898f79609b8715c0c4e4e06937ab974b",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ModSecret.vb",
+      "language": "VB",
+      "lines": 210,
+      "blob": "0aa2cce92f0b58e92df6c5831662b4481c31d4c9",
+      "group": "Modules",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Resource/LocalResourceFile.vb",
+      "language": "VB",
+      "lines": 277,
+      "blob": "b48bead887d0de77129e164e08dad80c7b891e1c",
+      "group": "Modules/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Resource/LocalResourceLoaders.vb",
+      "language": "VB",
+      "lines": 345,
+      "blob": "a36c7154d12c9f10e86b4f2c9630fa66b73e1fba",
+      "group": "Modules/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Resource/ResourceProject.vb",
+      "language": "VB",
+      "lines": 713,
+      "blob": "29677ddce93e74baf719bf7412d58334444751c2",
+      "group": "Modules/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Resource/ResourceSearcher.vb",
+      "language": "VB",
+      "lines": 532,
+      "blob": "daa45fc876db70bb408a5fadfe0530a6f58bcc77",
+      "group": "Modules/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Resource/ResourceVersion.vb",
+      "language": "VB",
+      "lines": 427,
+      "blob": "2272fc369d5dfbc7a5c23b822634823b42120530",
+      "group": "Modules/Resource",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/ThirdParty/DragHelper.vb",
+      "language": "VB",
+      "lines": 151,
+      "blob": "f6aa998b92c43e68700ba072ce52dc235bcb5746",
+      "group": "Modules/ThirdParty",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/My Project/AssemblyInfo.vb",
+      "language": "VB",
+      "lines": 57,
+      "blob": "0b21847c0c44d25902adce26bf6873bffce99938",
+      "group": "My Project",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/My Project/MyExtensions/MyWpfExtension.vb",
+      "language": "VB",
+      "lines": 121,
+      "blob": "cc13ffda76266a4a06ed2fa96963cfc4badd9eb1",
+      "group": "My Project",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/My Project/Resources.Designer.vb",
+      "language": "VB",
+      "lines": 233,
+      "blob": "f02f19095c0a6341ad5e0c50c5c4efcb5dcaa7ec",
+      "group": "My Project",
+      "role": "product",
+      "generated": true,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": [],
+          "generated": true
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/My Project/Settings.Designer.vb",
+      "language": "VB",
+      "lines": 71,
+      "blob": "526c3467171623610965017c07e180096d40ad39",
+      "group": "My Project",
+      "role": "product",
+      "generated": true,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": [],
+          "generated": true
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/ModDownloadLib.vb",
+      "language": "VB",
+      "lines": 2180,
+      "blob": "412a118734723a86315c9775f608eb2ce46e45ba",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/PageDownloadInstall.xaml",
+      "language": "XAML",
+      "lines": 360,
+      "blob": "962c9f2c9531d47d521d0efecd93d65c28188b81",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/PageDownloadInstall.xaml.vb",
+      "language": "VB",
+      "lines": 1195,
+      "blob": "2ce085ef244205a08d1dcd3be35ca7e2cbad8735",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/PageDownloadLeft.xaml",
+      "language": "XAML",
+      "lines": 60,
+      "blob": "aeffad66fddf68640b1d56cc9a4ff58faa1cd276",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/PageDownloadLeft.xaml.vb",
+      "language": "VB",
+      "lines": 166,
+      "blob": "5fcba934c88462d95cd1e99e8c1655c15d713e31",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/PageDownloadModify.vb",
+      "language": "VB",
+      "lines": 783,
+      "blob": "180d6147cf80e1966370fb76f3cdae3fc1fe6277",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/MyResourceItem.xaml",
+      "language": "XAML",
+      "lines": 83,
+      "blob": "3b3749337721d37ea3eb282651e2a714cf278912",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/MyResourceItem.xaml.vb",
+      "language": "VB",
+      "lines": 211,
+      "blob": "7f3bddebcc431b90a456221fc7421add8a6685c0",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadCompDetail.xaml",
+      "language": "XAML",
+      "lines": 34,
+      "blob": "8ace9dfd24504b6ad5c67488315948973df3f3ca",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadCompDetail.xaml.vb",
+      "language": "VB",
+      "lines": 589,
+      "blob": "30d0823a4a550f947ccae0ef07bdde36bbf1e7df",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadDataPack.xaml",
+      "language": "XAML",
+      "lines": 26,
+      "blob": "af67dd5420f4e8c50da9ec3b349fcf7d00f0587d",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadDataPack.xaml.vb",
+      "language": "VB",
+      "lines": 2,
+      "blob": "e404488b230676facd63f4a41ad81b4f6dd5bf19",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadMap.xaml",
+      "language": "XAML",
+      "lines": 8,
+      "blob": "ba8fbc3e0c465148929e79812bea9b0400bf93bd",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadMap.xaml.vb",
+      "language": "VB",
+      "lines": 2,
+      "blob": "72f447b37640b7c700ee4b49c2f2405772230dd9",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadMod.xaml",
+      "language": "XAML",
+      "lines": 36,
+      "blob": "aab6b3fc11dacab9bfd11bf6a11244bfc636ddbf",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadMod.xaml.vb",
+      "language": "VB",
+      "lines": 2,
+      "blob": "fdc59d0018a74c02fb03e590adcf1f6dbfec98d2",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadPack.xaml",
+      "language": "XAML",
+      "lines": 28,
+      "blob": "d279134a094eef353848e45290450bc38afdbf03",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadPack.xaml.vb",
+      "language": "VB",
+      "lines": 2,
+      "blob": "9861edd948bcf4b9ca92e7f8ee5c45ffc4fc74e3",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadResourcePack.xaml",
+      "language": "XAML",
+      "lines": 45,
+      "blob": "cb6771c2c7d55a2c9d7b7d53d3ce71645b0ceaf4",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadResourcePack.xaml.vb",
+      "language": "VB",
+      "lines": 2,
+      "blob": "e2aa466570aebd28a88f4149deeaade2a8c5bbec",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadShader.xaml",
+      "language": "XAML",
+      "lines": 34,
+      "blob": "e310b9ed3497287945f9c4db53fb069e3f9b6352",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageDownloadShader.xaml.vb",
+      "language": "VB",
+      "lines": 2,
+      "blob": "55ca81ea1e05b99f2a21c51638e8e52de08e3959",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageResource.xaml",
+      "language": "XAML",
+      "lines": 95,
+      "blob": "58a1b0349307a1b9957462688b131477c00aba8f",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageDownload/Resource/PageResource.xaml.vb",
+      "language": "VB",
+      "lines": 270,
+      "blob": "1a095f1bed57dd7946871f789cd8898b0a3d753b",
+      "group": "Pages/PageDownload",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/MyLocalModItem.xaml",
+      "language": "XAML",
+      "lines": 59,
+      "blob": "faeccf01f0d76c2c9240d505271b181300b195a7",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/MyLocalModItem.xaml.vb",
+      "language": "VB",
+      "lines": 618,
+      "blob": "fb3d34a2b32cb0792e4101168d1d0406384a1925",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/MyScreenshotItem.xaml",
+      "language": "XAML",
+      "lines": 16,
+      "blob": "0cec2d201ec27dc9cfce63382f6331510666bf85",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/MyScreenshotItem.xaml.vb",
+      "language": "VB",
+      "lines": 102,
+      "blob": "3cb00dcd0ddfd0e957b9a87fd6c418177c6f6394",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceClone.xaml",
+      "language": "XAML",
+      "lines": 32,
+      "blob": "bf7ca80b5ed8adfa26bc30fca9d057c8b2188fed",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceClone.xaml.vb",
+      "language": "VB",
+      "lines": 75,
+      "blob": "60ead35f3e00a09b1aa8f814dafde8762993c2d5",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceExport.xaml",
+      "language": "XAML",
+      "lines": 323,
+      "blob": "8b6df7100c4a0823ae847cb729729fcc80d60107",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceExport.xaml.vb",
+      "language": "VB",
+      "lines": 808,
+      "blob": "afcb84accc3e246c4c6b7ad587794bab8d05a10d",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceKeybindings.xaml",
+      "language": "XAML",
+      "lines": 35,
+      "blob": "f6f7c6f999b02a8b2e07b8226c463bd81b768252",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceKeybindings.xaml.vb",
+      "language": "VB",
+      "lines": 273,
+      "blob": "6bb5628ce5f76c47531d8a5ea110a84badf0a93f",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceLeft.xaml",
+      "language": "XAML",
+      "lines": 54,
+      "blob": "cd39842f7e70e6d0312f87f8ed2e2542c06b020f",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceLeft.xaml.vb",
+      "language": "VB",
+      "lines": 196,
+      "blob": "67ca93e4512d260c041e6d73ec092c9a5540acb8",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceMod.xaml",
+      "language": "XAML",
+      "lines": 79,
+      "blob": "43ee185de18a5b32288fc9e81fa42215df090aed",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceMod.xaml.vb",
+      "language": "VB",
+      "lines": 905,
+      "blob": "8017b9f5bd52f43593aefee2969be405b85dd22c",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceModDisabled.xaml",
+      "language": "XAML",
+      "lines": 30,
+      "blob": "f3949f6e955759cc91354f3b26ea19f62aa28fd2",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceModDisabled.xaml.vb",
+      "language": "VB",
+      "lines": 20,
+      "blob": "a08805f2989544ab5333154394b3dd1704029e8d",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceOverall.Components.vb",
+      "language": "VB",
+      "lines": 76,
+      "blob": "6a055ccb158dea8231295cd3a0b6f57aee83a8b1",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceOverall.xaml",
+      "language": "XAML",
+      "lines": 94,
+      "blob": "16a4221554045fcf3adb7dd91d4d08fffb549c9b",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceOverall.xaml.vb",
+      "language": "VB",
+      "lines": 332,
+      "blob": "7e3333dd095da44d1bb24adf316f8ab7662c297b",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.Backups.vb",
+      "language": "VB",
+      "lines": 160,
+      "blob": "0d8afc0f6698a577836cfa0cd9d67c4d33bcaeaa",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.Recycle.vb",
+      "language": "VB",
+      "lines": 133,
+      "blob": "df13a2f225e407fff98749388dea8d2dbb57e9e8",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.xaml",
+      "language": "XAML",
+      "lines": 90,
+      "blob": "3376e8ef114a88840c614e4eb1ecd0d81517d3fc",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.xaml.vb",
+      "language": "VB",
+      "lines": 777,
+      "blob": "01de87fe0dbea95eee49202c6291350164465437",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceRestorePoints.xaml",
+      "language": "XAML",
+      "lines": 54,
+      "blob": "279b93bc5884cf579280f17bdfa098f79fbf0d09",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceRestorePoints.xaml.vb",
+      "language": "VB",
+      "lines": 199,
+      "blob": "f6cd973608cb0ea731bdb1c833003b145d9c740d",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceSetup.xaml",
+      "language": "XAML",
+      "lines": 289,
+      "blob": "9398af6181153d8e3e48fcfb3db037be5efd72b4",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceSetup.xaml.vb",
+      "language": "VB",
+      "lines": 571,
+      "blob": "7a3a4135458bc147cbed97288f92492ace536c76",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml",
+      "language": "XAML",
+      "lines": 15,
+      "blob": "e2c75b94dad1178144dc941ef5be503044a3ecce",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml.vb",
+      "language": "VB",
+      "lines": 160,
+      "blob": "d3168db2aa7a77ce3c8d831e0b913ca91a046bf2",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml",
+      "language": "XAML",
+      "lines": 17,
+      "blob": "dd8d8e141ea0db8a1a557fb5b426c523721120da",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml.vb",
+      "language": "VB",
+      "lines": 61,
+      "blob": "e6af963ae94d03828a131c2c5b1badff5d587277",
+      "group": "Pages/PageInstance",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/MyMsgLogin.xaml",
+      "language": "XAML",
+      "lines": 40,
+      "blob": "b93c9c05eb2ac8ebe302652c47cab1a132f6fa7e",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/MyMsgLogin.xaml.vb",
+      "language": "VB",
+      "lines": 160,
+      "blob": "8aeac2a8812f02d36750b25fcd17b64391aa4a15",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/MySkin.xaml",
+      "language": "XAML",
+      "lines": 21,
+      "blob": "ad19dbbe2eeb134e676ddc62a5cb814adc501f0f",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/MySkin.xaml.vb",
+      "language": "VB",
+      "lines": 313,
+      "blob": "a06e73af598cfb53b2d12daa914cabf9a05d974f",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLaunchLeft.xaml",
+      "language": "XAML",
+      "lines": 156,
+      "blob": "18676165a9f4477f9db9ce053593aa24e6a8846d",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLaunchLeft.xaml.vb",
+      "language": "VB",
+      "lines": 837,
+      "blob": "86ee945af06395d04ae18bc41a74e2f88c38aeb9",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLaunchRight.xaml",
+      "language": "XAML",
+      "lines": 45,
+      "blob": "1340246c287ee72db99b47f623c291e841bd24ea",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLaunchRight.xaml.vb",
+      "language": "VB",
+      "lines": 509,
+      "blob": "d67e93bc015bd4d4edf3617e26f3ffbe000e2bcf",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginAuth.xaml",
+      "language": "XAML",
+      "lines": 24,
+      "blob": "bc3bc4490be2d67b598e74a02753dae6c6709983",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginAuth.xaml.vb",
+      "language": "VB",
+      "lines": 86,
+      "blob": "69ece178b79de86e2fa876ee67d65fc288838a02",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginAuthSkin.xaml",
+      "language": "XAML",
+      "lines": 27,
+      "blob": "6b5b49d2550009471e4f6c456ef0eb57c3253096",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginAuthSkin.xaml.vb",
+      "language": "VB",
+      "lines": 93,
+      "blob": "68390dc0f2ebaaa54cb0e2efda2390c72fd696a7",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginLegacy.xaml",
+      "language": "XAML",
+      "lines": 13,
+      "blob": "8de5102973d20864d9c133af7bd94b934dfce60b",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginLegacy.xaml.vb",
+      "language": "VB",
+      "lines": 77,
+      "blob": "36fe00261883b04773c4647602708a91c621199d",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginMs.xaml",
+      "language": "XAML",
+      "lines": 36,
+      "blob": "b4e0d1ded5bfa6d8d44bb4ecc02fab413cd6f830",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginMs.xaml.vb",
+      "language": "VB",
+      "lines": 107,
+      "blob": "1e16200b812fd2e56e1d5ab0b94f79b0c91c5125",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginMsSkin.xaml",
+      "language": "XAML",
+      "lines": 55,
+      "blob": "7084620e6eb303ac11db40dd53dbc1bec2d6a0bd",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginMsSkin.xaml.vb",
+      "language": "VB",
+      "lines": 182,
+      "blob": "7e5522c88da3960f9b1e0d918cd7f332d5d1221c",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginNide.xaml",
+      "language": "XAML",
+      "lines": 24,
+      "blob": "d0f78d6b4c28644cd4a1ba73e5cc110553038a8a",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginNide.xaml.vb",
+      "language": "VB",
+      "lines": 80,
+      "blob": "7439e1e7fe8ece66a30b98dd94615130d0065eef",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginNideSkin.xaml",
+      "language": "XAML",
+      "lines": 28,
+      "blob": "c551e6215dbfff4d43a4600f6ebc2ffcf46b4a85",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLaunch/PageLoginNideSkin.xaml.vb",
+      "language": "VB",
+      "lines": 63,
+      "blob": "dc59e7939a0a72fc348cb77a126d00bdb3ff8b9d",
+      "group": "Pages/PageLaunch",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLink/PageLinkMain.xaml",
+      "language": "XAML",
+      "lines": 207,
+      "blob": "0f0773b155661f1e79e36ac7a09cc59b526ccbf7",
+      "group": "Pages/PageLink",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": [
+            "'$(EnableLegacyLink)' == 'true'"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageLink/PageLinkMain.xaml.vb",
+      "language": "VB",
+      "lines": 1112,
+      "blob": "ab0eec3f7017e307f15b5b757f89781de2db3149",
+      "group": "Pages/PageLink",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": [
+            "'$(EnableLegacyLink)' == 'true'"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherAbout.xaml",
+      "language": "XAML",
+      "lines": 283,
+      "blob": "56aebb60b0a3ed4580f2c3aa386a1c2f585eb2b6",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherAbout.xaml.vb",
+      "language": "VB",
+      "lines": 21,
+      "blob": "7e2923398d8d89f364f04febb8d210117764feee",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherHelp.xaml",
+      "language": "XAML",
+      "lines": 23,
+      "blob": "3f13d61f190bd44fd0b5874aaafb1ceed8bd3666",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherHelp.xaml.vb",
+      "language": "VB",
+      "lines": 179,
+      "blob": "ae3e101672e43c2c77a45fecd0a329acbd18a3cd",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherHelpDetail.xaml",
+      "language": "XAML",
+      "lines": 24,
+      "blob": "c21a37a11231ef5ebd46f49727e34d61ff4110a3",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherHelpDetail.xaml.vb",
+      "language": "VB",
+      "lines": 37,
+      "blob": "8d329a98b6a59de71daf2bc16a84747ab82d1fe4",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherLeft.xaml",
+      "language": "XAML",
+      "lines": 19,
+      "blob": "f70cbfc6d294c2eeb8d7f06a8c3de076f26f6836",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherLeft.xaml.vb",
+      "language": "VB",
+      "lines": 129,
+      "blob": "ba20f94ae9b460c84f72b1f87ec4ccd5cda66af0",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherTest.Tools.vb",
+      "language": "VB",
+      "lines": 236,
+      "blob": "58f419a99110d0a9056823c82561b3f74e1aae9f",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherTest.xaml",
+      "language": "XAML",
+      "lines": 40,
+      "blob": "d77ec7d52a069d718122f12d0c6b8adb59af4c9b",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageOther/PageOtherTest.xaml.vb",
+      "language": "VB",
+      "lines": 22,
+      "blob": "ed03c371be84215cc9be030a82e0b263a5ce2805",
+      "group": "Pages/PageOther",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSelectLeft.xaml",
+      "language": "XAML",
+      "lines": 17,
+      "blob": "8418cc4f50b6ecdd9037e66e51faf19b310e30c2",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSelectLeft.xaml.vb",
+      "language": "VB",
+      "lines": 444,
+      "blob": "1a1994bc2735465eebda802d0cd0128b82e99135",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSelectRight.xaml",
+      "language": "XAML",
+      "lines": 25,
+      "blob": "b5d9a7208e883af7e915b99963810ebad4a7469e",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSelectRight.xaml.vb",
+      "language": "VB",
+      "lines": 292,
+      "blob": "bf0c7198904bf7d252f73ab25ca79668303c85a4",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupLaunch.xaml",
+      "language": "XAML",
+      "lines": 313,
+      "blob": "c0fb1baa2fa707fd100edd9d7bfb572f2bb30bf3",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupLaunch.xaml.vb",
+      "language": "VB",
+      "lines": 552,
+      "blob": "9fc0e41787604d4eddc639271c7ed3aeb0633308",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupLeft.xaml",
+      "language": "XAML",
+      "lines": 40,
+      "blob": "bc34a2b8e31fd8ab3c5960a0b4a084edfe70545c",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupLeft.xaml.vb",
+      "language": "VB",
+      "lines": 178,
+      "blob": "52180a97fef6818e6fde7dec09b5fb9f2bd0d73a",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupLink.xaml",
+      "language": "XAML",
+      "lines": 55,
+      "blob": "77d02f06d741e9c215aa29637383d1a82847fec3",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": [
+            "'$(EnableLegacyLink)' == 'true'"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupLink.xaml.vb",
+      "language": "VB",
+      "lines": 34,
+      "blob": "5137291fc3305d36d8760d8c6366813da8df91b5",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": [
+            "'$(EnableLegacyLink)' == 'true'"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupModpack.xaml",
+      "language": "XAML",
+      "lines": 26,
+      "blob": "9e1fd05e4e667a548536f58440a0edbf5f5ac567",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupModpack.xaml.vb",
+      "language": "VB",
+      "lines": 26,
+      "blob": "c522155ef2a3ea7f1de0650637d458192e2c49e6",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupSystem.xaml",
+      "language": "XAML",
+      "lines": 188,
+      "blob": "7d784def93aa5992bfab9d72884e70cc94e57a84",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupSystem.xaml.vb",
+      "language": "VB",
+      "lines": 93,
+      "blob": "7f859f9f04efed869c61afc45afd07d2ac2a8039",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupUI.xaml",
+      "language": "XAML",
+      "lines": 288,
+      "blob": "4463203bafc3c5132a3dac54bde0816d94b2be93",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/PageSetupUI.xaml.vb",
+      "language": "VB",
+      "lines": 497,
+      "blob": "71cf9eb0377561637550c1652f8b0dae458ff0d4",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/SettingService.vb",
+      "language": "VB",
+      "lines": 81,
+      "blob": "c9e1c15f41376d6a863288cc4629f0117b366b79",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/Settings.Accounts.vb",
+      "language": "VB",
+      "lines": 138,
+      "blob": "f34343b764c09c678c0ee1a60d0928d1d6c0c6ca",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/Settings.Compatibility.vb",
+      "language": "VB",
+      "lines": 122,
+      "blob": "5c729541ac78e94634c9e5c50600830a0d0b39c0",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSetup/Settings.vb",
+      "language": "VB",
+      "lines": 752,
+      "blob": "afc26abd96c96777e44bf7cb9e2da1579c8d1659",
+      "group": "Pages/PageSetup",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "modified",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSpeedLeft.xaml",
+      "language": "XAML",
+      "lines": 60,
+      "blob": "de7c209966c54f375c28157b281be53e45d67c61",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSpeedLeft.xaml.vb",
+      "language": "VB",
+      "lines": 235,
+      "blob": "9d25d253f91d22a45c5924c71ed9b59b99ba22ea",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSpeedRight.xaml",
+      "language": "XAML",
+      "lines": 40,
+      "blob": "0ee38c10e1cc1c13e8d79d61cfd4bea117518cdd",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Page",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Pages/PageSpeedRight.xaml.vb",
+      "language": "VB",
+      "lines": 7,
+      "blob": "8530a54c70cdc59e9938be1dea24adcebeb943ca",
+      "group": "Pages",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "Compile",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "Plain Craft Launcher 2/Resources/Custom.xaml",
+      "language": "XAML",
+      "lines": 345,
+      "blob": "b2becf85cda98c2ee641f83305a28928460a9c49",
+      "group": "Resources",
+      "role": "product",
+      "generated": false,
+      "upstream_status": "unchanged",
+      "project_declarations": [
+        {
+          "project": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+          "item": "None",
+          "declaration": "explicit_include",
+          "conditions": []
+        }
+      ]
+    },
+    {
+      "path": "scripts/update-bridge/Program.cs",
+      "language": "C#",
+      "lines": 113,
+      "blob": "b742673c6becfa37b4ce5c42abb3bc4e9cd15b6f",
+      "group": "scripts/update-bridge",
+      "role": "tool",
+      "generated": false,
+      "upstream_status": "added",
+      "project_declarations": []
+    }
+  ],
+  "removed_upstream_sources": [
+    "Plain Craft Launcher 2/Controls/MySliderDot.xaml",
+    "Plain Craft Launcher 2/Controls/MySliderDot.xaml.vb"
+  ]
+}
