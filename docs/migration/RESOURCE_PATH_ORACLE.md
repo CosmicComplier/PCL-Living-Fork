@@ -1,6 +1,6 @@
 # Windows 资源路径对照记录
 
-本记录属于 C007b 的等价迁移，不新增路径能力或扩大链接保护策略。C007b1 的原控制流迁移与诊断工具已运行；下列现代差异仍由 C007b2 处理，不能将 Diagnostic 成功解释为路径等价。
+本记录属于 C007b 的等价迁移，不新增路径能力或扩大链接保护策略。C007b1 与 C007b2 首批均已实际对照；原 8＋2 差异已消除，扩展样本新发现的 9 项路径差异仍待处理，不能将 Diagnostic 成功解释为路径等价。
 
 ## 固定来源与实际运行
 
@@ -44,7 +44,24 @@
 
 oracle v2 保留原 75 例和期望，新增真实 Unicode guard、八 trim、组件 254／255／256、总 UTF16 长度 32766／32767、混合错误、leading-space、NT／dot-device 根与 GetDirectoryName 边界，总计 124 例。13 组文本以整数 UTF16 单元传输，真实 Framework String 的双向 Equals／StartsWith 共 52 项独立核对 Win32 候选；候选抛错不覆盖 String 基线，候选差异在 Diagnostic 也失败。旧 private trim 字段只在历史测试驱动反射记录，生产无此依赖。假 UNC 仍只做 Normalize，不对服务器执行文件探测。
 
-本地实际 Linux 测试 308／308、net48 库与现代 host 零警告／错误；原方法注入 VB 驱动已编译，尚未在本批 Windows 执行。`GetDirectoryName` 此时仍直接转发 BCL，设备根／受限归约与短名处理仍未闭合；待扩展报告确定必要的局部适配，不能将既有 8＋2 差异或新增边界写为已消除。
+提交 `8c64fcc52f6468ea254f73f8368d81b39f428538` 的 [Migration validation 41736377415](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377415)：Ubuntu job `126266516885` 308／308、Windows job `126266516510` 331／331，均 success。真实独立 CLR4 与现代 apphost 的 124 例及 52 候选比较已执行；契约／候选／文本差异全 0，原 8 个路径差异全消除，新增 9 个路径差异。原 CLR4 两处 trim 字段实际均为 `[9,10,11,12,13,32,133,160]`。
+
+[完整 v2 JSON artifact 13280010226](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377415/artifacts/13280010226)，ZIP SHA256 `aceddb30263718b24039c6f731460c68e871532fb4b11d6c7104baac4f89712f`；固定源／config／manifest／Shared／Json 和现代两个 helper 哈希在报告中。`GetDirectoryName` 此提交仍直接转发 BCL；以下 9 项全部是新增样本，旧 75 项未删改期望。
+
+| 新差异 ID | 原 CLR4 | 当前现代适配 |
+| --- | --- | --- |
+| guard.device-nt-descendant／guard.device-dot-descendant | 成功，祖先 walk 能到达可信设备根 | NullReferenceException |
+| normalize.unc-no-share／normalize.unc-no-share-slash | ArgumentException | 接受仅 server 的 UNC |
+| normalize.leading-space-nt | ArgumentException | 原串返回 |
+| normalize.leading-space-extended | 折叠 sub／.. | 未折叠 |
+| dirname.nt-repeated-separators | 截取原串，保留重复分隔符 | 压缩重复分隔符 |
+| dirname.nt-root／dirname.dot-root | 截掉卷根最后反斜线 | null |
+
+继续依据这些真实差异做最小设备路径／UNC 适配。普通 FullPath／GetDirectoryName 与限定归约不可混用：GetDirectoryName 不做完整路径归约、八字符 trim 或 FullPath 的 wildcard／ADS 拒绝；短名展开时序等未覆盖输入仍需保留限制，不声称此小批复现全部 BCL。
+
+后继工作树已加入 NT 原串父目录截取、dot-device 盘符根末分隔符修正、UNC 缺 share 拒绝；只有前导空格移走后才出现 extended 的形状交给 `GetFullPathNameW`，避免现代 API 二次提前返回。GetDir 仅为 Normalize 后祖先遍历补旧 limited 长度，不作为所有 raw BCL 输入的通用替代；先归一分隔符再按旧跨度检查，保留中间 255 与末尾 255 的区别。canonical extended 盘符根与 dot-device 的旧根长度不同，不能套用同一裁剪。
+
+为这些后继改动增加 5 组 Windows 生产回归，oracle 保留原 124 例再增 13 例（中间 254／255、末尾 255、总长 32766／32767、真实 guard／canonical 根、NT 父目录保 NUL、非法原串优先与空白），新总计 137／52。GetDir 的原串非法字符检查先于 limited 长度，不能套用 FullPath 归约后检查顺序。末次小修后三个工程零警告编译、本地 308／308 与独立终审通过，Windows 后继报告尚待执行；旧 124 例报告不代表这些新边界已验证。
 
 ## 下一步
 

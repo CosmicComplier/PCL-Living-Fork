@@ -15,6 +15,11 @@ internal static class InstanceResourcePathCompatibilityTests {
             yield return ("resource Windows compatibility keeps character length wildcard and colon error order", FailureOrder);
             yield return ("resource Windows compatibility returns exact extended paths before NUL checks", ExtendedPaths);
             yield return ("resource Windows compatibility skips leading spaces only before rooted input", LeadingSpaces);
+            yield return ("resource Windows compatibility rejects incomplete UNC without probing it", IncompleteUnc);
+            yield return ("resource Windows compatibility preserves leading-space device normalization", LeadingDeviceSpaces);
+            yield return ("resource Windows directory walk retains Framework device root and separator boundaries", DeviceDirectoryWalk);
+            yield return ("resource Windows directory walk retains limited component length boundaries", LimitedDirectoryLengths);
+            yield return ("resource Windows directory checks raw characters before limited length", DirectoryInputOrder);
         }
     }
 
@@ -132,6 +137,62 @@ internal static class InstanceResourcePathCompatibilityTests {
         Equal(Path.GetPathRoot(Environment.CurrentDirectory) + rooted[1..], InstanceResourcePathCompatibility.GetFullPath("   " + rooted));
         const string relative = " leading relative name";
         Equal(Path.Combine(Environment.CurrentDirectory, relative), InstanceResourcePathCompatibility.GetFullPath(relative));
+        Equal(0, Directory.GetFileSystemEntries(fixture.Root).Length);
+    }
+
+    private static void IncompleteUnc() {
+        // The independent 124-case CLR4 report rejects both forms. These are
+        // string-only calls; never perform Exists/GetAttributes on a fake server.
+        const string server = @"\\pcllf-path-oracle.invalid";
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetFullPath(server));
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetFullPath(server + "\\"));
+    }
+
+    private static void LeadingDeviceSpaces() {
+        using Fixture fixture = new();
+        string child = fixture.Root + @"\sub\..\leaf";
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetFullPath("  " + @"\??\" + child));
+        Equal(@"\\?\" + fixture.Root + @"\leaf", InstanceResourcePathCompatibility.GetFullPath("  " + @"\\?\" + child));
+        Equal(0, Directory.GetFileSystemEntries(fixture.Root).Length);
+    }
+
+    private static void DeviceDirectoryWalk() {
+        using Fixture fixture = new();
+        string drive = Path.GetPathRoot(fixture.Root)!;
+        foreach (string prefix in new[] { @"\??\", @"\\.\" }) {
+            string root = prefix + drive;
+            Equal(root.TrimEnd('\\'), InstanceResourcePathCompatibility.GetDirectoryName(root));
+            // The original device root differs from the ordinary C: drive-root
+            // walk. It reaches the trusted parent instead of throwing NRE.
+            InstanceResourcePaths.EnsureWithin(root, prefix + fixture.Root + @"\missing-device-leaf", false, value => value);
+        }
+        string repeated = @"\??\" + fixture.Root + @"\\sub\\leaf";
+        Equal(@"\??\" + fixture.Root + @"\\sub\", InstanceResourcePathCompatibility.GetDirectoryName(repeated));
+        string nulParent = @"\??\" + fixture.Root + "\\dir\0name";
+        Equal(nulParent, InstanceResourcePathCompatibility.GetDirectoryName(nulParent + @"\leaf"));
+        Equal(0, Directory.GetFileSystemEntries(fixture.Root).Length);
+    }
+
+    private static void LimitedDirectoryLengths() {
+        using Fixture fixture = new();
+        string shorter = fixture.Root + "\\" + new string('a', 254);
+        string boundary = fixture.Root + "\\" + new string('a', 255);
+        Equal(shorter, InstanceResourcePathCompatibility.GetDirectoryName(shorter + @"\missing-leaf"));
+        Equal(fixture.Root, InstanceResourcePathCompatibility.GetDirectoryName(boundary));
+        Throws<PathTooLongException>(() => InstanceResourcePathCompatibility.GetDirectoryName(boundary + @"\missing-leaf"));
+        // FullPath accepts this middle component; the original ancestor walk
+        // fails at its first limited GetDirectoryName, before reaching the root.
+        Equal(boundary + @"\missing-leaf", InstanceResourcePathCompatibility.GetFullPath(boundary + @"\missing-leaf"));
+        Throws<PathTooLongException>(() => InstanceResourcePaths.EnsureWithin(fixture.Root, boundary + @"\missing-leaf", false, value => value));
+        Equal(0, Directory.GetFileSystemEntries(fixture.Root).Length);
+    }
+
+    private static void DirectoryInputOrder() {
+        using Fixture fixture = new();
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetDirectoryName(fixture.Root + "\\bad|" + new string('a', 256) + @"\leaf"));
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetDirectoryName(fixture.Root + @"\bad|name\..\leaf"));
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetDirectoryName(""));
+        Throws<ArgumentException>(() => InstanceResourcePathCompatibility.GetDirectoryName("\u00a0"));
         Equal(0, Directory.GetFileSystemEntries(fixture.Root).Length);
     }
 

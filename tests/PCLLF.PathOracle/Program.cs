@@ -206,6 +206,28 @@ internal static class Program {
         Add("dirname.nt-nul", "get-directory-name", @"\??\" + root + "\\bad\0name", SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
         Add("dirname.nt-root", "get-directory-name", @"\??\" + drive, SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
         Add("dirname.dot-root", "get-directory-name", @"\\.\" + drive, SystemOutcome("ok", "System.ArgumentException", "System.NotSupportedException"));
+        // GetDirectoryName uses Framework's limited normalization, whose component
+        // check counts a preceding separator for middle components. FullPath's
+        // successful 255-character component cannot serve as its expected result.
+        foreach (int size in new[] { 254, 255 }) {
+            string parent = root + "\\" + new string('a', size);
+            Add("dirname.component-middle-" + size, "get-directory-name", parent + "\\leaf",
+                size == 254 ? Ok(parent) : Error("System.IO.PathTooLongException"));
+        }
+        Add("dirname.component-final-255", "get-directory-name", root + "\\" + new string('a', 255), Ok(root));
+        Add("dirname.total-32766", "get-directory-name", maximum, Ok(maximum[..maximum.LastIndexOf('\\')]));
+        Add("dirname.total-32767", "get-directory-name", overMaximum, Error("System.IO.PathTooLongException"));
+        Add("guard.limited-middle-255", "ensure", root + "\\" + new string('a', 255) + "\\missing-leaf", Error("System.IO.PathTooLongException"), root);
+        Add("dirname.canonical-root", "get-directory-name", @"\\?\" + drive, Ok());
+        Add("dirname.nt-nul-parent", "get-directory-name", @"\??\" + root + "\\dir\0name\\leaf", Ok(@"\??\" + root + "\\dir\0name"));
+        Add("dirname.empty", "get-directory-name", "", Error("System.ArgumentException"));
+        Add("dirname.unicode-space", "get-directory-name", "\u00a0", Error("System.ArgumentException"));
+        Add("dirname.illegal-before-length", "get-directory-name", root + "\\bad|" + new string('a', 256) + "\\leaf", Error("System.ArgumentException"));
+        Add("dirname.collapsed-illegal", "get-directory-name", root + @"\bad|name\..\leaf", Error("System.ArgumentException"));
+        // Canonical extended roots have a different Framework root boundary from
+        // dot-device roots. Observe it independently rather than applying their fix.
+        Add("guard.leading-space-canonical-root", "ensure", "  " + @"\\?\" + Path.Combine(fixture, "missing-canonical-leaf"),
+            SystemOutcome("ok", "System.NullReferenceException", "System.ArgumentNullException", "System.IO.IOException", "System.UnauthorizedAccessException", "System.Security.SecurityException"), "  " + @"\\?\" + drive);
         Add("prefix.drive", "prefix", @"\\?\C:\a", Ok(@"C:\a"));
         Add("prefix.unc", "prefix", @"\\?\UNC\server\share\a", Ok(@"\\server\share\a"));
         Add("prefix.unc-lower", "prefix", @"\\?\unc\server\share", Ok(@"unc\server\share"));
