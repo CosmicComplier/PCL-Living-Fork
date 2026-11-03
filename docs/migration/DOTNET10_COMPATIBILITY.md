@@ -72,13 +72,15 @@ CE 稳定参考固定为 [`v2.15.1`／`1a7653127d578efdb2a9388999a3fdc67d9e49d5`
 
 最低验证：使用脱敏旧 Setup.ini／账号样本进行 net48→net10 读取、写回和约定方向的旧版复读；覆盖空值、损坏／部分迁移、Unicode、共享目录、锁、原子写入失败与重启恢复。现有 `Test-Release.ps1`／`Test-AuditFixes.ps1` 经宿主适配后的结果另记，实际登录刷新／取消仍单独验收。
 
-### A6．编码与 Java 输出（N002／N004 相关链阻塞）
+### A6．编码、数值与 Java 输出（N002／N004 相关链阻塞）
 
 来源：[默认编码判断](../../Plain%20Craft%20Launcher%202/Modules/Base/ModBase.vb#L81)、[Java 编码选择](../../Plain%20Craft%20Launcher%202/Modules/Minecraft/ModLaunch.vb#L1447)、[文件编码回退][mc-files]、[GB18030 动画文本](../../Plain%20Craft%20Launcher%202/Modules/Base/ModAnimation.vb#L1023)。现代 [Encoding.Default 固定 UTF-8][encoding-default]；GB18030／GBK／ANSI code page 需要确认 [CodePages provider][codepages] 在首次调用前注册。保留 `IsGBKEncoding` 的表达式而不处理运行时差异会改变路径选择。
 
 候选：为旧数据、旧网页和 Java 输出显式指定原有编码策略；在入口统一注册所需 provider，并把“系统活动代码页”与“UTF-8 默认”分别表达。不能直接把所有文件改写为 UTF-8。
 
 最低验证：中文与英文系统、系统 UTF-8 开／关、Java 8／17／21 的输出和 `native.encoding`／COMPAT；旧 GB18030 配置／网页／日志、非 ASCII 路径与字符替换。记录实际字节与显示文本，回归参数和用户文件写回。
+
+数值补充（C004a）：现代 `Double.TryParse` 可将 `1e400` 解析为 Infinity，并接受更多特殊值字面；旧 Framework 对溢出返回失败。这会改变原 `MergeText` 根据 existing FOV 推断归一值／角度的结果。`PersonalOptionsRules` 仅在这一推断处保留旧特殊值成功条件：Trim 后精确匹配 invariant `Infinity`／`-Infinity`／`NaN`，其余非有限结果沿用原默认格式。依据固定 [Reference Source Double.TryParse](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/double.cs#L274) 的公开行为核对，独立实现适配，没有引入其内部解析器。新增 .NET 10 样本与 Windows PowerShell CLR4 原始 TryParse oracle 对照；后者实际结果见账本。此处理不声称复现所有有限值极端舍入／Unicode 版本差异，其他数值入口仍需随所属功能对照。
 
 ### A7．HTTP、证书、取消与重定向（N002／N004 相关链阻塞）
 

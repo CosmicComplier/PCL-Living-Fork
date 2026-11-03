@@ -41,7 +41,7 @@ internal static class Program {
             ("null input contract", NullInput)
         ];
 
-        tests = [.. tests, .. WorldMetadataFileTests.Cases(), .. LocalGameDataTests.Cases()];
+        tests = [.. tests, .. WorldMetadataFileTests.Cases(), .. LocalGameDataTests.Cases(), .. PersonalOptionsRulesTests.Cases()];
         int failures = 0;
         foreach ((string name, Action run) in tests) {
             try {

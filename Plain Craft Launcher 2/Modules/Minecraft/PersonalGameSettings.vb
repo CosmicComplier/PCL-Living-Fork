@@ -1,6 +1,5 @@
 Imports System.IO
 Imports System.Text
-Imports System.Globalization
 
 Friend Class PersonalOptionsSession
     Friend Id As String = Guid.NewGuid().ToString("N")
@@ -13,34 +12,22 @@ End Class
 
 Friend Module PersonalGameSettings
     Private Const ProfileName As String = "personal-options.json"
-    Private ReadOnly BasicKeys As New HashSet(Of String)({"attack", "use", "pickItem", "forward", "back", "left", "right", "jump", "sneak", "sprint", "drop", "inventory", "chat", "playerlist", "command", "screenshot", "togglePerspective", "smoothCamera", "fullscreen", "spectatorOutlines", "advancements", "swapOffhand", "saveToolbarActivator", "loadToolbarActivator"}.Select(Function(Name) "key_key." & Name).Concat(Enumerable.Range(1, 9).Select(Function(Index) "key_key.hotbar." & Index)), StringComparer.Ordinal)
-    Private ReadOnly MouseKeys As New HashSet(Of String)({"mouseSensitivity", "invertYMouse", "mouseWheelSensitivity", "discrete_mouse_scroll", "rawMouseInput", "touchscreen", "toggleSprint", "toggleCrouch"}, StringComparer.Ordinal)
-    Private ReadOnly ViewKeys As New HashSet(Of String)({"fov", "fovEffectScale", "screenEffectScale", "bobView"}, StringComparer.Ordinal)
-    Private ReadOnly AccessibilityKeys As New HashSet(Of String)({"showSubtitles", "autoJump", "highContrast", "darknessEffectScale", "hideLightningFlashes", "notificationDisplayTime"}, StringComparer.Ordinal)
-    Private ReadOnly LegacyKeys As Dictionary(Of Integer, String) = CreateLegacyKeys()
 
     Friend Function Enabled(Instance As McInstance) As Boolean
         Return Instance IsNot Nothing AndAlso Settings.Get(Of Boolean)("LaunchPersonalOptionsSync") AndAlso Settings.Get(Of Integer)("VersionPersonalOptionsSync", Instance:=Instance) = 0
     End Function
     Private Function CanonicalKey(Key As String) As String
-        Return If(Key = "key_key.swapHands", "key_key.swapOffhand", Key)
+        Return PCLCS.PersonalOptionsRules.CanonicalKey(Key)
     End Function
     Private Function Selected(Key As String) As Boolean
-        If Key.StartsWith("key_", StringComparison.Ordinal) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsKeys") AndAlso BasicKeys.Contains(CanonicalKey(Key))
-        If MouseKeys.Contains(Key) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsMouse")
-        If ViewKeys.Contains(Key) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsView")
-        If AccessibilityKeys.Contains(Key) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsAccessibility")
+        If Key.StartsWith("key_", StringComparison.Ordinal) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsKeys") AndAlso PCLCS.PersonalOptionsRules.VanillaBinding(Key)
+        If PCLCS.PersonalOptionsRules.IsMouseKey(Key) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsMouse")
+        If PCLCS.PersonalOptionsRules.IsViewKey(Key) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsView")
+        If PCLCS.PersonalOptionsRules.IsAccessibilityKey(Key) Then Return Settings.Get(Of Boolean)("LaunchPersonalOptionsAccessibility")
         Return Key.StartsWith("soundCategory_", StringComparison.Ordinal) AndAlso Settings.Get(Of Boolean)("LaunchPersonalOptionsAudio")
     End Function
     Friend Function Parse(Text As String) As Dictionary(Of String, String)
-        Dim Values As New Dictionary(Of String, String)(StringComparer.Ordinal)
-        For Each Line In Text.Replace(vbCrLf, vbLf).Split(ChrW(10))
-            Dim Separator = Line.IndexOf(":"c)
-            If Separator <= 0 Then Continue For
-            Dim Key = CanonicalKey(Line.Substring(0, Separator))
-            Values(Key) = Line.Substring(Separator + 1)
-        Next
-        Return Values
+        Return PCLCS.PersonalOptionsRules.Parse(Text)
     End Function
     Private Function ReadOptions(FileName As String) As Byte()
         If Not File.Exists(FileName) Then Return Nothing
@@ -48,78 +35,19 @@ Friend Module PersonalGameSettings
         Return File.ReadAllBytes(FileName)
     End Function
     Private Function Decode(Bytes As Byte()) As String
-        Return New UTF8Encoding(False, True).GetString(Bytes).TrimStart(ChrW(&HFEFF))
+        Return PCLCS.PersonalOptionsRules.Decode(Bytes)
     End Function
     Private Function Modern(Instance As McInstance) As Boolean
         Return Instance.Version.Valid AndAlso Instance.Version.Vanilla.Major >= 13
     End Function
     Private Function CanonicalValue(Key As String, Value As String) As String
-        If Value.Length > 4096 OrElse Value.IndexOfAny({ChrW(0), ChrW(10), ChrW(13)}) >= 0 Then Return Nothing
-        If Key = "fov" Then
-            Dim FovNumber As Double
-            If Not Double.TryParse(Value, NumberStyles.Float, CultureInfo.InvariantCulture, FovNumber) OrElse Double.IsNaN(FovNumber) OrElse Double.IsInfinity(FovNumber) Then Return Nothing
-            If FovNumber >= -1 AndAlso FovNumber <= 1 Then FovNumber = 70 + FovNumber * 40
-            Return If(FovNumber >= 30 AndAlso FovNumber <= 110, FovNumber.ToString("0.########", CultureInfo.InvariantCulture), Nothing)
-        End If
-        If Not Key.StartsWith("key_", StringComparison.Ordinal) Then Return Value
-        Dim Number As Integer
-        If Not Integer.TryParse(Value, Number) Then Return If(Value.StartsWith("key.keyboard.") OrElse Value.StartsWith("key.mouse."), Value, Nothing)
-        If Number <= -1 AndAlso Number >= -100 Then
-            Dim Button = Number + 100
-            Return "key.mouse." & If(Button = 0, "left", If(Button = 1, "right", If(Button = 2, "middle", (Button + 1).ToString(CultureInfo.InvariantCulture))))
-        End If
-        Dim Name As String = Nothing
-        Return If(LegacyKeys.TryGetValue(Number, Name), "key.keyboard." & Name, Nothing)
+        Return PCLCS.PersonalOptionsRules.CanonicalValue(Key, Value)
     End Function
     Private Function ForVersion(Key As String, Value As String, IsModern As Boolean) As String
-        Value = CanonicalValue(Key, Value)
-        If Value Is Nothing OrElse IsModern OrElse Not Key.StartsWith("key_", StringComparison.Ordinal) Then Return Value
-        If Value.StartsWith("key.mouse.") Then
-            Dim Button = Value.Substring(10), Number As Integer
-            If Button = "left" Then Return "-100"
-            If Button = "right" Then Return "-99"
-            If Button = "middle" Then Return "-98"
-            If Integer.TryParse(Button, Number) AndAlso Number >= 4 AndAlso Number <= 100 Then Return (Number - 101).ToString(CultureInfo.InvariantCulture)
-            Return Nothing
-        End If
-        Dim Pair = LegacyKeys.FirstOrDefault(Function(Item) "key.keyboard." & Item.Value = Value)
-        Return If(Pair.Value Is Nothing, Nothing, Pair.Key.ToString(CultureInfo.InvariantCulture))
+        Return PCLCS.PersonalOptionsRules.ForVersion(Key, Value, IsModern)
     End Function
     Friend Function MergeText(Text As String, Values As JObject, IsModern As Boolean, Keys As ISet(Of String), Optional FovDegrees As Boolean = True) As String
-        Dim Newline = If(Text.Contains(vbCrLf), vbCrLf, vbLf)
-        Dim FinalNewline = Text.EndsWith(vbLf, StringComparison.Ordinal)
-        Dim Lines = Text.Replace(vbCrLf, vbLf).Split(ChrW(10)).ToList()
-        Dim Present = Parse(Text), Applied As New HashSet(Of String)(StringComparer.Ordinal)
-        Dim Replacements As New Dictionary(Of String, String)(StringComparer.Ordinal)
-        For Each Pair In Values.Properties()
-            Dim Key = CanonicalKey(Pair.Name)
-            If Not Keys.Contains(Key) OrElse Not Selected(Key) Then Continue For
-            '版本专用设置只有在目标已存在该键时才同步；不注入 Mod 或未知配置。
-            If Not Present.ContainsKey(Key) AndAlso Not BasicKeys.Contains(Key) AndAlso Not {"mouseSensitivity", "invertYMouse", "fov", "showSubtitles"}.Contains(Key) Then Continue For
-            Dim Converted = ForVersion(Key, Pair.Value.ToString(), IsModern)
-            If Key = "fov" AndAlso Converted IsNot Nothing Then
-                Dim Existing As String = Nothing, Numeric As Double
-                Dim UsesDegrees = FovDegrees
-                If Present.TryGetValue(Key, Existing) AndAlso Double.TryParse(Existing, NumberStyles.Float, CultureInfo.InvariantCulture, Numeric) Then UsesDegrees = Math.Abs(Numeric) > 1
-                Dim Degrees = Double.Parse(Converted, CultureInfo.InvariantCulture)
-                Converted = If(UsesDegrees, Math.Round(Degrees).ToString(CultureInfo.InvariantCulture), ((Degrees - 70) / 40).ToString("0.########", CultureInfo.InvariantCulture))
-            End If
-            If Converted IsNot Nothing Then Replacements(Key) = Converted
-        Next
-        For Index = 0 To Lines.Count - 1
-            Dim Separator = Lines(Index).IndexOf(":"c)
-            If Separator <= 0 Then Continue For
-            Dim Key = CanonicalKey(Lines(Index).Substring(0, Separator)), Value As String = Nothing
-            If Not Replacements.TryGetValue(Key, Value) Then Continue For
-            Lines(Index) = Lines(Index).Substring(0, Separator + 1) & Value
-            Applied.Add(Key)
-        Next
-        For Each Pair In Replacements.Where(Function(Item) Not Applied.Contains(Item.Key))
-            If Lines.Count > 0 AndAlso Lines.Last() = "" Then Lines.RemoveAt(Lines.Count - 1)
-            Lines.Add(If(Pair.Key = "key_key.swapOffhand" AndAlso Not IsModern, "key_key.swapHands", Pair.Key) & ":" & Pair.Value)
-        Next
-        Dim Result = String.Join(Newline, Lines)
-        Return Result & If(FinalNewline AndAlso Not Result.EndsWith(Newline, StringComparison.Ordinal), Newline, "")
+        Return PCLCS.PersonalOptionsRules.MergeText(Text, Values, IsModern, Keys, AddressOf Selected, FovDegrees)
     End Function
     Friend Function HasProfile() As Boolean
         SyncLock LocalGameData.Gate
@@ -178,18 +106,13 @@ Friend Module PersonalGameSettings
         End SyncLock
     End Sub
     Friend Function NormalizeBinding(Value As String) As String
-        If Value Is Nothing Then Return Nothing
-        Dim Parts = Value.Split(":"c), Main = CanonicalValue("key_key.forward", Parts(0))
-        If Main Is Nothing Then Return Nothing
-        Return Main & If(Parts.Length > 1, ":" & String.Join(":", Parts.Skip(1)).ToUpperInvariant(), "")
+        Return PCLCS.PersonalOptionsRules.NormalizeBinding(Value)
     End Function
     Friend Function BindingForVersion(Value As String, IsModern As Boolean) As String
-        If Value Is Nothing Then Return Nothing
-        Dim Parts = Value.Split(":"c), Main = ForVersion("key_key.forward", Parts(0), IsModern)
-        Return If(Main Is Nothing, Nothing, Main & If(Parts.Length > 1, ":" & String.Join(":", Parts.Skip(1)), ""))
+        Return PCLCS.PersonalOptionsRules.BindingForVersion(Value, IsModern)
     End Function
     Friend Function VanillaBinding(Key As String) As Boolean
-        Return BasicKeys.Contains(CanonicalKey(Key))
+        Return PCLCS.PersonalOptionsRules.VanillaBinding(Key)
     End Function
     Friend Sub CaptureEditedBinding(Instance As McInstance, Key As String, Value As String)
         If Not Enabled(Instance) OrElse Not Selected(Key) Then Return
@@ -257,21 +180,6 @@ Friend Module PersonalGameSettings
         Return False
     End Function
     Private Function CreateLegacyKeys() As Dictionary(Of Integer, String)
-        Dim Values As New Dictionary(Of Integer, String) From {{0, "unknown"}, {1, "escape"}, {14, "backspace"}, {15, "tab"}, {28, "enter"}, {29, "left.control"}, {42, "left.shift"}, {54, "right.shift"}, {56, "left.alt"}, {57, "space"}, {58, "caps.lock"}, {69, "num.lock"}, {70, "scroll.lock"}, {87, "f11"}, {88, "f12"}, {156, "keypad.enter"}, {157, "right.control"}, {181, "keypad.divide"}, {183, "print.screen"}, {184, "right.alt"}, {197, "pause"}, {199, "home"}, {200, "up"}, {201, "page.up"}, {203, "left"}, {205, "right"}, {207, "end"}, {208, "down"}, {209, "page.down"}, {210, "insert"}, {211, "delete"}, {219, "left.win"}, {220, "right.win"}, {221, "menu"}, {12, "minus"}, {13, "equal"}, {26, "left.bracket"}, {27, "right.bracket"}, {43, "backslash"}, {39, "semicolon"}, {40, "apostrophe"}, {41, "grave.accent"}, {51, "comma"}, {52, "period"}, {53, "slash"}, {55, "keypad.multiply"}, {74, "keypad.subtract"}, {78, "keypad.add"}, {83, "keypad.decimal"}}
-        For Index = 0 To 9
-            Values(2 + Index) = If(Index = 9, "0", (Index + 1).ToString())
-        Next
-        For Each Row In {Tuple.Create(16, "qwertyuiop"), Tuple.Create(30, "asdfghjkl"), Tuple.Create(44, "zxcvbnm")}
-            For Index = 0 To Row.Item2.Length - 1
-                Values(Row.Item1 + Index) = Row.Item2(Index).ToString()
-            Next
-        Next
-        For Index = 1 To 10
-            Values(58 + Index) = "f" & Index
-        Next
-        For Each Pair In New Dictionary(Of Integer, String) From {{71, "7"}, {72, "8"}, {73, "9"}, {75, "4"}, {76, "5"}, {77, "6"}, {79, "1"}, {80, "2"}, {81, "3"}, {82, "0"}}
-            Values(Pair.Key) = "keypad." & Pair.Value
-        Next
-        Return Values
+        Return PCLCS.PersonalOptionsRules.CreateLegacyKeys()
     End Function
 End Module

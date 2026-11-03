@@ -65,6 +65,21 @@ try{
  if([string](Call $sync 'MergeText' @("fov:70`n",$view,$true,$viewKeys,$true)) -cne "fov:90`n"){throw 'Normalized FOV was not converted to degrees'}
  $view=[Newtonsoft.Json.Linq.JObject]::Parse('{"fov":"90"}')
  if([string](Call $sync 'MergeText' @("fov:0.0`n",$view,$false,$viewKeys,$false)) -cne "fov:0.5`n"){throw 'Degree FOV was not converted for older options'}
+ # Keep a real CLR4 oracle for .NET 10's changed floating-point overflow/special-symbol parsing.
+ if([Environment]::Version.Major -ne 4){throw 'The legacy FOV baseline requires Windows PowerShell on CLR4.'}
+ $fovBaseline=[Collections.Generic.List[string]]::new()
+ $fovNbsp=[string][char]0xa0
+ foreach($raw in @('1e400','-1e400','Infinity','-Infinity','+Infinity','infinity','INFINITY','-infinity','NaN','nan','NAN','+NaN','-NaN',"`t Infinity ",($fovNbsp+'Infinity'+$fovNbsp),($fovNbsp+'NaN'+$fovNbsp),"`t-Infinity`t",'0','-1','1','1.0000001')){
+  foreach($fallback in @($false,$true)){
+   [double]$numeric=0;$parsed=[double]::TryParse($raw,[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$numeric)
+   $usesDegrees=$fallback;if($parsed){$usesDegrees=[Math]::Abs($numeric) -gt 1}
+   $expectedFov=if($usesDegrees){'90'}else{'0.5'}
+   $actual=[string](Call $sync 'MergeText' @(("fov:"+$raw+"`n"),$view,$false,$viewKeys,$fallback))
+   if($actual -cne ("fov:"+$expectedFov+"`n")){throw ('FOV differs from CLR4 parsing: '+$raw+'; default='+$fallback)}
+   $fovBaseline.Add(($raw.Trim()+'|'+$fallback+'='+$expectedFov))
+  }
+ }
+ Write-Output ('CLR4 FOV baseline passed: '+($fovBaseline -join '; '))
  $tracked=Call $sync 'Prepare' @($target)
  Call $sync 'Track' @($tracked,[Diagnostics.Process]::GetCurrentProcess())|Out-Null
  if($null -ne (Call $sync 'Prepare' @($target))){throw 'Options were applied to a directory with a live game session'}
