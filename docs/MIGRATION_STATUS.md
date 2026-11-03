@@ -6,8 +6,8 @@
 
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 最新迁移检查点 `348b0a516b2395d1559135cf0a0e9fb36bdec270`：Ubuntu 308／308、Windows 336／336；137-case 独立 CLR4 对照和 52 项原 String→Win32 候选实跑，四个失败数组均空、`equivalent=true`。原 8＋2 与后续 9 项差异已消除，见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)；有限样本不是全部 BCL／现代 WPF 验收，主产品仍 net48。
-- C007b2 的 CI 与脚本默认切换 RequireEquivalent，等待严格模式提交的真实执行及完整消费者通过后关闭。本批不再扩面原始 BCL 输入，短名时序限制明确保留；同时准备独立 C007c1 标题／目录映射。C005c2／C006d 的界面母项保持 blocked。
+- 最新已验收检查点 `8734df5707aed5e30944a4609ef516ffaac5c6c2`：Windows 各 41 步、Ubuntu 311／Windows 339 组与 **RequireEquivalent** 137／52 全通过，原 VB enum／Root／映射消费者通过，C007c1 完成。此前 C007b／b2 已由 `348b0a5`／`21675ee` 关闭；见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)。主产品仍 net48，非全部 BCL／现代 WPF 验收。
+- 当前 C007c2 SafeName 原函数已接入 C#，保三文案／顺序和平台文件名规则；本地 319／319、net48／测试零警告编译及独立终审通过，待 Windows 原入口验证。C005c2／C006d 的界面母项保持 blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -30,6 +30,7 @@
 | C006c 当前清单 | `--ref 6023f3dc3c0c544a8d7c12d189d676e90fb3377e`：273 个源文件，其中产品 260、测试 12、工具 1；产品 VB 仍为 168 文件／55,284 行 | 固定初始清单不改写；适配门面、控件和主工程仍是待迁产品源码，不据本表计算完成率 |
 | C007a 当前清单 | `--ref 459bb0a8f8b1112187e884f1a9985014e58dc970`：275 个源文件，其中产品 261、测试 13、工具 1；产品 VB 仍为 168 文件／55,270 行 | 八数据字段和一个校验核心已迁，Icon／全局路径／Store 其余及主工程仍待；不是完成率 |
 | C007b2 首批当前清单 | `--ref 8c64fcc52f6468ea254f73f8368d81b39f428538`：283 个源文件，其中产品 264、测试 18、工具 1；产品 VB 仍为 168 文件／55,263 行 | 总 VB 169 包括测试专用历史驱动 1 个；不算产品迁移增减，固定基线不改写，非完成率 |
+| C007c1 当前清单 | `--ref 8734df5707aed5e30944a4609ef516ffaac5c6c2`：285 个源文件，其中产品 265、测试 19、工具 1；产品 VB 仍为 168 文件／55,261 行 | 历史驱动仍只计测试；枚举与门面未删除，固定初始清单不改写，不据此计算完成率 |
 
 本轮已推送的实现与验证检查点：
 
@@ -61,11 +62,16 @@
 | `b12b6cf` | C007b1 路径两方法原控制流迁 C#，12 新组、独立固定原 VB／CLR4 与真实 .NET 10 对照及 Diagnostic CI；实际测出 8 路径＋2 Unicode 差异，母项保持未等价，见独立报告摘要 |
 | `8c64fcc` | C007b2 首批路径／旧 Ordinal helper、16 Windows／8 Linux 新组与 oracle v2 已推送；实际原 8＋2 差异消除、52 Win32 候选通过，新增 9 路径边界仍待后继适配，不据 Diagnostic 关闭母项 |
 | `348b0a5` | C007b2 后继设备根／UNC／leading-space 系统归约、GetDir limited 长度及原串错误顺序已推送；5 新 Windows 组与 137／52 对照全通过，新旧差异全部归零；后继启用严格 CI，不以本次 Diagnostic 模式代替门禁实跑 |
-| `21675ee` | CI 及脚本默认切到 RequireEquivalent，保留全部 137 例／52 候选及原基线／差异历史；等待真实严格提交结果，不改变生产路径或旧期望 |
+| `21675ee` | CI 及脚本默认切到 RequireEquivalent，保留全部 137 例／52 候选及原基线／差异历史；真实严格对照、308／336 单元及 Windows 各 41 步全通过，C007b2 完成 |
+| `8734df5` | C007c1 两原入口与 C# 映射、三组金值及真实原 enum／Root／精确异常顺序消费者已推送；311／339 单元、严格 137／52 与 Windows 各 41 步全通过，C007c1 完成 |
 | [C007b2 首批 Windows Build 41736377697](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377697) | 提交 `8c64fcc`：Debug job `126266518133`、Release job `126266518659` 各 41 步 success；原资源／备份还原／更新／取消恢复、账号合成迁移、旧更新桥及发布产物检查通过，仍是旧 net48 产品，非现代 WPF 运行证据 |
 | [C007b2 首批 Migration validation 41736377415](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377415) | Ubuntu job `126266516885` 308／308、Windows job `126266516510` 331／331，均 success；124-case 独立 CLR4／现代对照、52 项候选实跑，基线／候选失败 0、文本差异 0、新路径差异 9。Diagnostic 成功保留残差，不代表 RequireEquivalent，通过报告与 artifact 摘要可续接 |
 | [C007b2 后继 Migration validation 41737707302](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707302) | Ubuntu job `126271080274` 308／308、Windows job `126271080675` 336／336，均 success；137-case／52 候选真实实跑，基线／候选／path／text 失败均 0、equivalent=true。新增长度、NT 父 NUL、canonical 根旧 NRE 均由真实 CLR4 证实；artifact `13280505603` 及哈希见摘要 |
 | [C007b2 后继 Windows Build 41737707325](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707325) | `348b0a5`：Release job `126271080762`、Debug job `126271081115` 各 41 步 success；原资源、备份／还原、取消／更新／克隆及旧更新桥完整自动化通过，现代 WPF／真实账号／游戏验收仍待后续 |
+| [C007b2 严格 Migration validation 41738157780](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738157780) | `21675ee`：Windows job `126272610400` 336／336、Ubuntu job `126272610683` 308／308，均 success；日志明确 Mode=RequireEquivalent，137／52 零差异。artifact `13280565854` 已下载核对严格模式／equivalent=true 和空失败数组，ZIP SHA256 `d28ff017b1a99ead6c5020b452da27993bc7c0a6b2a2e17549d1edb0b16e1afc` |
+| [C007b2 严格 Windows Build 41738157829](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738157829) | `21675ee`：Debug job `126272610758`、Release job `126272611340` 各 41 步 success；完整现有消费者、文件事务、旧更新桥／产物检查通过。与 348b0a5 的生产代码树一致，严格门禁／资源路径子任务关闭，完整 Store／现代主工程仍未完成 |
+| [C007c1 Migration validation 41738281554](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738281554) | `8734df5`：Windows job `126273028908` 339／339、Ubuntu job `126273029104` 311／311，均 success；三组新映射／非法值金值及严格 137／52 零差异通过 |
+| [C007c1 Windows Build 41738281516](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738281516) | `8734df5`：Release job `126273029398`、Debug job `126273029740` 各 41 步 success；真实原 enum 名／Int32／五值、原入口十映射／Root Combine／null-无效值精确异常顺序、完整资源／事务／旧更新桥通过 |
 | [Windows Build 41696728260](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260) | [Debug job 126129118107](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118107) 与 [Release job 126129118529](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118529) 各 40 步 success，包含原有自动化回归、凭据保护、旧更新桥和产物上传；主程序仍为 net48，不能据此关闭 N003 或 R003 |
 | [Migration validation 41696728492](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728492) | Ubuntu job `126129118456`、Windows job `126129119218` 均 success：固定清单一致，.NET 10 真实生产解析器测试通过；这只验证已提取的解析器范围 |
 | [C002 Windows Build 41705399746](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705399746) | 提交 `0388bd6f6f99ac142a3a6d88032a70ba727fe6f3`：Debug job `126159247355`、Release job `126159247567` 各 40 步 success；增强后的真实 WorldMetadata 门面、文件链接校验、只读／共享、精确文案及旧回归均运行通过 |
@@ -215,10 +221,11 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | 子任务 | 状态 | 依赖 | 实现与验收边界 |
 | --- | --- | --- | --- |
 | C007a | done | B001 | `459bb0a`：原八字段／Validator／消费者、13 跨平台＋1 Windows 组已接通，Ubuntu 296／Windows 303 组、Windows 各 41 步与实际 sealed／8 字段／冻结 Icon 和资源链、独立终审及零警告编译全通过 |
-| C007b | in_progress | C007a | 固定源审计已给出边界；按 b1 原控制流＋独立诊断 oracle、b2 有证据的现代适配分开，最终必须关闭现代真实差异，不能以 diagnostic 成功代替等价 |
+| C007b | done | C007a | b1 原控制流＋独立诊断与 b2 有证据现代适配完成；137 例／52 候选严格等价、原消费者／各 41 步和双平台矩阵通过；局部生产边界与短名／全部 raw BCL 输入限制明确记录，不把本项外推至全部现代路径 API |
 | C007b1 | done | C007a | `b12b6cf`：原 Core／VB 真委托／12 新组、原消费者 Windows 各 41 步和 Ubuntu 300／Windows 315 组通过；独立 CLR4 与现代 oracle 实际运行并保留 10 差异。done 仅指本批控制流／诊断交付，母项未等价 |
-| C007b2 | in_progress | C007b1 | `348b0a5` 实际验证 137 例／52 候选全等价，308／336 单元通过；CI 与脚本默认转 RequireEquivalent，待严格提交／完整消费者结果。只关闭资源路径实际生产边界，不扩大 root／link 信任或泛称全部 BCL 等价 |
-| C007c1 | in_progress | C007a | 标题／目录 5 项映射已接两原入口，保 VB enum／Int32／CInt 桥／Root Combine 与无效值 IndexOutOfRange；三组生产规则令本地 311／311，实际 VB enum／原入口／Root 错误顺序检查已接脚本，待 Windows 验证 |
+| C007b2 | done | C007b1 | `348b0a5` 适配／`21675ee` 严格门禁：137 例／52 候选、308／336 单元、Windows 各 41 步与消费者全通过；保原 root／link／drive-root NRE，不泛称全部 BCL 或短名组合已覆盖 |
+| C007c1 | done | C007a | `8734df5`：两原入口／CInt 桥／原 enum／Root 保持，三组新金值，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及实际类型／入口／Root 异常顺序全通过 |
+| C007c2 | in_progress | C007c1 | 仅 SafeName 原函数及原入口，保三文案／短路顺序／UTF16 长120／平台非法字符表、DOS Regex IgnoreCase 与 .pcl- Ordinal；不顺带 AcceptFile／ZIP。8 组平台规则样本令本地 319／319，net48／测试零警告编译／独立终审通过；待 Windows 真入口与矩阵 |
 
 ## 当前批次与下一步
 
@@ -241,9 +248,10 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C006c | 已随 `257e98e`／`6023f3d` 推送，Ubuntu 283／Windows 289 组、Windows Debug／Release 各 41 步及真实新流程／旧卡片消费者通过；有效 NBT 只读／字节、原坏 gzip、精确坏 JSON finally 都有实际样本 | 本批完成，C006d／母项仍等待 WPF；未知进程权限与枚举器失败位置仅原契约／源码审查，不伪称竞态或实游戏验收 |
 | C007a | 已随 `459bb0a` 推送；Ubuntu 296／Windows 303 组、Windows 各 41 步与原类型／继承字段／Icon 和完整资源消费者通过，独立终审／零警告编译通过；其余 Store／路径逐字未改，脚本 BOM 保留 | 本批完成，不新增 hash／类型检查或文件并发保证；全局路径与其余 Store 继续 C007b 及后续实际拆分 |
 | C007b1 | 已随 `b12b6cf` 推送；Windows 各 41 步、Ubuntu 300／Windows 315 单元组和独立 CLR4／现代 75-case 对照运行成功，Diagnostic 明确输出 8＋2 差异，报告已从 artifact核实并摘要入库 | 本批完成，母项仍未等价。历史 LegacyDriver.vb 只用于原源注入的测试，不在产品编译链，不用于降低产品 VB 统计 |
-| C007b2 | `348b0a5` 已推送；Ubuntu 308／Windows 336 组与真实 137 例／52 候选全通过，四失败数组均空。独立终审与三个工程零警告编译通过，真实 CLR4 确认 limited 长度、NT 父 NUL／canonical 旧 NRE | 等严格提交 RequireEquivalent 与完整消费者结果后关闭；GetDir 仅服务 Normalize 后祖先遍历，短名时序与全部 raw BCL 输入不作完成承诺。测试专用历史 VB 不入产品，net48 实构建不冒称现代 WPF |
-| C007c1 | 两生产方法及原 CInt 桥已实现；原 enum／Root／SafeName 等其余方法不改，脚本保 BOM 并增加真实 VB identity／五值／原入口／Root Combine 和精确异常顺序。net48／测试零警告编译、本地 311／311、独立终审通过 | 待本批 Windows 原消费者与双平台检查，不能以字符串映射完成关闭整个 Store |
+| C007b2 | `348b0a5`／`21675ee` 已推送；Ubuntu 308／Windows 336、真实严格 137／52 和完整 Windows 各 41 步全通过，四失败数组均空；独立终审／零警告编译通过 | 本批完成，GetDir 仅服务 Normalize 后祖先遍历，短名时序与全部 raw BCL 输入不作完成承诺。后续现代工程仍须验证实际调用链；net48 实构建不冒称现代 WPF |
+| C007c1 | `8734df5` 已推送，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及真实 VB enum／入口／Root 原异常顺序全部通过；独立终审／零警告编译通过，脚本 BOM 保留 | 本批完成，不以字符串映射完成关闭整个 Store；Root 仍原 BCL Combine，更多现代 API 边界按实际消费另验 |
+| C007c2 | 单函数／原门面、8 组真实生产规则与 PS 三消息／41 字符／22 保留名／UTF16／null 样本已落，本地 319／319，测试／net48 零警告编译及独立终审通过 | 待提交后 Windows 原资源消费者与双平台矩阵，所有写入事务和原取消仍由既有流程执行 |
 
-下次入口：核对 C007b2 严格提交的 RequireEquivalent／完整消费者结果；137／52 已真实零差异，不重复原 8＋2／9 修复或重建基线。然后收尾独立 C007c1，并按 Store 下一实际方法拆 C007c2。C007a、C006a／b／c、C005c1 已全通过；C005／C006 的界面母项仍 blocked。
+下次入口：收尾 C007c2 SafeName 单函数的 Windows 结果；C007c1 与 C007b2 已全通过，不重复映射／路径修复或重建基线。之后按实际依赖拆 AcceptFile／ZIP／扫描等；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

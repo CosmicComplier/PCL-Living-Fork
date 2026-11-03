@@ -40,10 +40,7 @@ Friend NotInheritable Class InstanceResourceStore
     End Sub
 
     Friend Shared Function SafeName(Value As String) As String
-        If String.IsNullOrWhiteSpace(Value) OrElse Value <> Value.Trim() OrElse Value.EndsWith(".") OrElse Value.Length > 120 OrElse Value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 OrElse Value = "." OrElse Value = ".." Then Throw New IOException("文件名无效，请使用不含路径和特殊字符的名称。")
-        If Regex.IsMatch(Value, "\A(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", RegexOptions.IgnoreCase) Then Throw New IOException("此名称为系统保留名称。")
-        If Value.StartsWith(".pcl-", StringComparison.OrdinalIgnoreCase) Then Throw New IOException("此名称为启动器临时目录保留。")
-        Return Value
+        Return PCLCS.InstanceResourceNameRules.SafeName(Value)
     End Function
 
     Friend Shared Sub DeleteStage(Root As String, Stage As String)

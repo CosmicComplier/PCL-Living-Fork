@@ -26,10 +26,11 @@ function Invoke-Store($name,[object[]]$arguments){
 function Kind([string]$name){return [Enum]::Parse($kindType,$name)}
 function Put([string]$path,[string]$text){[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null;[IO.File]::WriteAllText($path,$text)}
 function Assert-Rejected([scriptblock]$action,[string]$message){$rejected=$false;try{& $action|Out-Null}catch{$rejected=$true};if(-not $rejected){throw $message}}
-function Assert-StoreException([string]$name,[object[]]$values,[type]$expected){
+function Assert-StoreException([string]$name,[object[]]$values,[type]$expected,[string]$expectedMessage){
  $observed=$null
  try{Invoke-Store $name $values|Out-Null}catch{$observed=$_.Exception;while($null -ne $observed.InnerException){$observed=$observed.InnerException}}
  if($null -eq $observed -or $observed.GetType() -ne $expected){throw ('Unexpected resource mapping exception for '+$name+'; expected '+$expected.FullName)}
+ if(-not [string]::IsNullOrEmpty($expectedMessage) -and $observed.Message -cne $expectedMessage){throw ('Resource validation message changed for '+$name)}
 }
 function New-Zip([string]$path,[hashtable]$items){
  $archive=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
@@ -69,6 +70,19 @@ try{
   Assert-StoreException 'Root' @($null,$kind) ([IndexOutOfRangeException])
  }
  Assert-StoreException 'Root' @($null,([Enum]::ToObject($kindType,0))) ([ArgumentNullException])
+ $invalidName='文件名无效，请使用不含路径和特殊字符的名称。'
+ $systemName='此名称为系统保留名称。'
+ $launcherName='此名称为启动器临时目录保留。'
+ $supplementary=[char]::ConvertFromUtf32(0x1f4be)
+ foreach($name in @('World name','截图 2026-11-03','CONSOLE','COM0','COM10','LPT0','LPT10','XCON','.pcl','.pclx-test','.hidden','pack..name',('a'*120),($supplementary*60))){if((Invoke-Store 'SafeName' @($name)) -cne $name){throw 'Resource name validation changed an accepted name'}}
+ Assert-StoreException 'SafeName' @($null) ([IO.IOException]) $invalidName
+ foreach($name in @('',' ',([string][char]9),([string][char]0x00a0),' name','name ','file.','.','..',('a'*121),(($supplementary*60)+'a'),'CON.',' CON','.pcl-bad/')){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $invalidName}
+ # Fixed original Windows filename set, independent of the implementation's current Path table.
+ $forbidden=@([char[]](0..31))+@([char[]]'<>:"/\|?*')
+ foreach($character in $forbidden){Assert-StoreException 'SafeName' @(('a'+[string]$character+'b')) ([IO.IOException]) $invalidName}
+ $reserved=@('CON','PRN','AUX','NUL')+@(1..9|ForEach-Object {'COM'+$_;'LPT'+$_})
+ foreach($name in $reserved){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $systemName;Assert-StoreException 'SafeName' @($name.ToLowerInvariant()+'.txt') ([IO.IOException]) $systemName}
+ foreach($name in @('.pcl-','.PCL-test')){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $launcherName}
  $worldKind=Kind 'Saves';$imageKind=Kind 'Screenshots';$packKind=Kind 'ResourcePacks';$shaderKind=Kind 'ShaderPacks';$schematicKind=Kind 'Schematics'
  $missing=Join-Path $fixture 'absent'
  if((Scan $missing $worldKind).Count -ne 0 -or [IO.Directory]::Exists($missing)){throw 'Viewing resources created a missing folder'}
@@ -223,7 +237,7 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: original enum/title/folder/error contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error and safe-name/UTF16/message contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

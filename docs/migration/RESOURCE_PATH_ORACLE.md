@@ -1,6 +1,6 @@
 # Windows 资源路径对照记录
 
-本记录属于 C007b 的等价迁移，不新增路径能力或扩大链接保护策略。`348b0a5` 已实际对照 137 例／52 项候选，原 8＋2 与后续 9 项差异全部消除；CI 改为 RequireEquivalent，仍待严格模式新提交实跑。下列历史差异保留作为实现依据，不把 Diagnostic 成功本身解释为路径等价。
+本记录属于 C007b 的等价迁移，不新增路径能力或扩大链接保护策略。`348b0a5` 适配与 `21675ee` 严格门禁已完成：真实 137 例／52 项候选及完整 Windows 消费者通过，原 8＋2 与后续 9 项差异全部消除。下列历史差异保留作为实现依据，不把 Diagnostic 成功本身解释为路径等价。
 
 ## 固定来源与实际运行
 
@@ -67,8 +67,12 @@ oracle v2 保留原 75 例和期望，新增真实 Unicode guard、八 trim、�
 
 [完整 JSON artifact 13280505603](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707302/artifacts/13280505603)，ZIP SHA256 `3e32a4f3a0f67f193f77bf9e324a64e7817360b4a3efecce77ff428c47a1b6e7`，已下载逐项核对，不依赖本地 scratch。原进程仍 CLR4.0.30319.42000、现代 .NET 10.0.14；本次为 Diagnostic 模式的零差异实测，严格模式下一提交实际运行后再关闭门禁。
 
-## 下一步
+## 严格门禁结果与后续范围
 
-CI 与脚本默认改为 RequireEquivalent，等待该提交的真实执行；任何 path／text／候选／基线差异均阻止通过。生产 equality／prefix 和 oracle 调同一实际适配入口；旧基线继续用固定原 VB／真实 Framework，不改期望掩盖差异。完整 Windows 资源、备份、更新、克隆、取消与恢复消费者同样持续验证。
+`21675ee18a87c0ceabcb0181c015f678e1a81b77` 的 [严格 Migration validation 41738157780](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738157780)：Windows job `126272610400` 336／336、Ubuntu job `126272610683` 308／308，均 success；日志明确 Mode=RequireEquivalent，137 例／52 候选和四失败数组全为零。[严格报告 artifact 13280565854](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738157780/artifacts/13280565854) 已下载核对，ZIP SHA256 `d28ff017b1a99ead6c5020b452da27993bc7c0a6b2a2e17549d1edb0b16e1afc`。
+
+同提交 [Windows Build 41738157829](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41738157829)：Debug job `126272610758`、Release job `126272611340` 各 41 步 success，包含完整资源／备份／更新／克隆／取消恢复消费者与旧更新桥。与 348b0a5 的生产代码树一致；C007b／b2 在实际资源边界范围闭项。
+
+任何后续 path／text／候选／基线差异都应阻止严格检查通过；生产和 oracle 调相同适配入口，旧基线继续用固定 VB／真实 Framework，不改期望掩盖差异。短名展开时序、全部 raw BCL 输入、未来现代 WPF 完整运行未据此关闭，N002／R002 仍须按真实产品调用链验证。
 
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。
