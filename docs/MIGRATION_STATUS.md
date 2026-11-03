@@ -33,6 +33,8 @@
 | `e47fc55` | 修正 OptiFine 哈希资源磁盘路径大小写，保持 LogicalName；现有 net48 辅助库在 Linux 编译通过 |
 | `bdad3a7` | 将 NBT 引擎迁入 `PCLCS.WorldMetadataReader`，保留 PCL.WorldMetadata 字段和生产入口；新增真实 NBT 测试 |
 | `d27f394` | 新增限定迁移分支的 .NET 10／源码清单 CI；以下两次远端运行均针对该完整提交 |
+| `c7cb287` | 固定详细 commit／PR 正文要求、模型边界和 .NET 10 兼容审计；现代运行门禁仍保留 |
+| `0388bd6` | C002a 文件／gzip／详情文案迁入 C#；15 组真实文件样本加入既有 27 组测试；Windows 原详情脚本增强全部字段、精确格式、共享／只读及真实符号链接检查 |
 | [Windows Build 41696728260](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260) | [Debug job 126129118107](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118107) 与 [Release job 126129118529](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118529) 各 40 步 success，包含原有自动化回归、凭据保护、旧更新桥和产物上传；主程序仍为 net48，不能据此关闭 N003 或 R003 |
 | [Migration validation 41696728492](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728492) | Ubuntu job `126129118456`、Windows job `126129119218` 均 success：固定清单一致，.NET 10 真实生产解析器测试通过；这只验证已提取的解析器范围 |
 
@@ -125,8 +127,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G004 | 已随 `d27f394` 推送，Ubuntu／Windows 迁移矩阵通过 | 后续生产改动继续使用该工作流，并按实际依赖扩展测试 |
 | C001 | C# 解析器、原 VB 适配和 27 组测试已提交；独立自审、net48 辅助库编译、完整 Windows Debug／Release 及双平台迁移矩阵通过 | 本项完成。文件／gzip／格式与消费者的进一步 C# 迁移属于 C002，VB 兼容外壳仍纳入最终源码清单 |
 | C002a | 文件／gzip 与原中文详情文案进入 `WorldMetadataFiles`，原 VB 仅保留 16 字段映射和路径／日志委托；三个原消费者继续调用同一入口。新增 15 组真实文件／完整文案样本，Linux .NET 10 合计 42／42 通过，net48 PCLCS 编译零警告／错误；独立源码审查通过 | 原 Windows `Test-WorldDetails.ps1` 已增强全部字段、精确 CRLF、基本／详情区别、共享／只读、真实文件链接检查及句柄释放，待推送 CI 实际验证。尚未转换详情页／Quick Play／备份 UI 后台，不据此关闭 C006／C010／C029 或整项迁移 |
-| C003a | 子代理已交付独立 C# 持久化核心、VB 转发和真实文件样本；未提交 | 主执行者接入现有 Newtonsoft DLL 和测试入口，适配 EngineOnly 夹具，独立复核并运行 Windows 原回归后再关闭 |
+| C003a | `LocalGameDataStore` 与 VB 转发已接通，测试项目链接真实生产源码及 LF 原 Newtonsoft DLL；Linux .NET 10 共 62／62 组通过，其中本机资料 20 组。独立源码复核通过；net48 辅助库编译零警告／错误 | Windows 增加共享锁／只读两组，链接权限不足会显式 SKIP，必须按实际输出记录；原完整回归及 EngineOnly 夹具待 CI。陈旧摘要测试是顺序模拟外部编辑，权限不明进程分支只有源码核对，不声称多线程竞争／真实进程权限错误已实测 |
 
-下次入口：核对迁移分支和远端状态，确认上述代码检查点及后续文档提交均已推送，然后从 C002 开始：在保留原路径约束、gzip 生命周期、损坏／缺失回退、日志和文案的前提下，把 WorldMetadata 剩余文件／格式适配按生产调用拆成可验证 C# 小批次；先参考 MODULE_MAP 的共享边界及兼容审计。C001 已通过，不重复重做 NBT 引擎。C002 后继续 C003；每批记录具体命令、结果和详细提交正文。
+下次入口：核对迁移分支、远端和正在运行的 CI，先收尾 C002a／C003a 的 Windows 与双平台结果，按实际失败修复并记录；两批生产实现已接通，不重复迁移 NBT／文件／文案或本机资料核心。原消费者仅保留适配门面，页面／Quick Play／备份后台和最终 VB 门面删除分别由 C006／C010／C029／C031、R001 承接。C002／C003 相关门禁通过后从 C004 的 PersonalGameSettings 继续，先参考 MODULE_MAP 及兼容审计；每批保留实际命令、结果和详细提交正文。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

@@ -7,6 +7,7 @@ on:
     paths:
       - 'PCLCS/**'
       - 'Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb'
+      - 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb'
       - 'tests/**'
       - 'scripts/Inventory-Migration.py'
       - 'scripts/Test-MigrationInventory.py'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'PCLCS/**'
       - 'Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb'
+      - 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb'
       - 'tests/**'
       - 'scripts/Inventory-Migration.py'
       - 'scripts/Test-MigrationInventory.py'

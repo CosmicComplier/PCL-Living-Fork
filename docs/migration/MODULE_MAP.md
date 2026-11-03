@@ -45,6 +45,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 | 现有启动计划 | 原 Java 要求、选中 Java、JVM／游戏参数、classpath 顺序、natives 与工作目录、Quick Play 上下文 | 账号取得、进程创建、窗口和日志由适配层处理；保留参数语义和脱敏，真实凭据不写入样本或计划证据；本轮不新增 MMC 规则 |
 | 文件变更与恢复计划 | 规范化相对路径、允许的根目录、变更前摘要、暂存与目标、事务日志及覆盖范围版本 | 操作持有者统一提供取消、进度、磁盘提交／回滚与锁；占用持续到真实收尾结束，不将 UI Canceled 状态当作工作完成 |
 | 存档元数据 | `WorldMetadataReader.Read(Stream, bool)` 解析已解压 NBT；`WorldMetadataFiles.Read/Describe` 负责文件／gzip／详情，返回 `WorldMetadataInfo` 或原中文说明 | 原 VB 类型保留 16 字段映射与原调用入口；路径检查和日志通过委托接入现有适配，8 MiB 与异常边界不变。27 组流样本及 15 组真实文件／格式样本通过；Windows 原消费者结果另记账本，页面后台仍按对应 C 任务迁移 |
+| 本机游戏资料 | `LocalGameDataStore` 接收动态根目录和原路径校验，负责 JObject／UTF-8／SHA256／原子写入和进程身份检查 | VB 仍持有原 `Gate`、动态 `TestRoot` 和全部兼容入口；不新增内部锁或改写调用端的锁范围。沿用 LF 自带 Newtonsoft DLL、`.pcl-backup`、陈旧摘要拒绝和临时文件清理；权限不明的进程检查仍保守保留会话 |
 
 现阶段这些边界通过显式参数、结果对象和必要的委托／接口实现。程序集拆分以实际依赖闭包和构建验证为依据；当前 `PCLCS` 的 WPF 项目引用仍在，单个解析器无 WPF 不代表整个库已解耦。后续任务可以细化字段和接口，但须同步更新本表、生产调用与对应回归。
 

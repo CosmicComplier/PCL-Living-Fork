@@ -168,6 +168,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "$check failed" }
         }
 
+    - name: Verify isolated backup engine migration adapters
+      if: github.ref == 'refs/heads/migration/csharp-modern-dotnet' || github.base_ref == 'migration/csharp-modern-dotnet'
+      run: |
+        powershell -NoProfile -STA -File scripts/Test-WorldBackups.ps1 -EngineOnly
+        if ($LASTEXITCODE -ne 0) { throw 'Isolated world backup engine checks failed' }
+
     - name: Verify custom download saves
       run: powershell -NoProfile -File scripts/Test-ToolboxDownload.ps1 -ExecutablePath "$env:PCL_EXE"
 

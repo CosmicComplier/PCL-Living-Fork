@@ -19,7 +19,10 @@ try{
  [Reflection.Assembly]::LoadFrom((Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'))|Out-Null
  if($EngineOnly){
   # Compile the actual engine, replacing only launcher/UI adapters with inert test doubles.
-  # This never builds the launcher or reads build credentials.
+  # Requires the current Shared and PCLCS libraries, but never builds the launcher or reads build credentials.
+  $core=Join-Path $root 'PCLCS/bin/PCLCS.dll'
+  if(-not [IO.File]::Exists($core)){throw 'Build PCLCS/PCLCS.csproj before running the isolated backup engine.'}
+  [Reflection.Assembly]::LoadFrom($core)|Out-Null
   $engine=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb'))
   $engine=$engine.Substring(0,$engine.IndexOf('Friend NotInheritable Class WorldBackupsUi'))
   Put (Join-Path $fixture 'Engine.vb') $engine
@@ -99,12 +102,17 @@ End Module
 '@
   Put (Join-Path $fixture 'Stubs.vb') $stubs
   $compiler=Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/Roslyn/vbc.exe'
-  if(-not (Test-Path -LiteralPath $compiler)){throw 'VB compiler not found; use -ExecutablePath after the normal launcher build.'}
+  if(-not (Test-Path -LiteralPath $compiler)){
+   $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+   if(Test-Path -LiteralPath $vswhere){$compiler=& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild/Current/Bin/Roslyn/vbc.exe'|Select-Object -First 1}
+  }
+  if(-not $compiler -or -not (Test-Path -LiteralPath $compiler)){throw 'VB compiler not found; use -ExecutablePath after the normal launcher build.'}
   $framework=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
   $output=Join-Path $fixture 'WorldBackupEngine.dll'
   $references=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll')|ForEach-Object {Join-Path $framework $_}
   $references+=Join-Path $root 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'
   $references+=Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'
+  $references+=$core
   $references+=Join-Path $framework 'Facades/netstandard.dll'
   $compilerArgs=@('/nologo','/target:library','/rootnamespace:PCL','/imports:System,System.Collections.Generic,System.Diagnostics,System.Linq,System.Threading,Newtonsoft.Json.Linq,MeloongCore',('/out:'+$output),('/sdkpath:'+$framework),('/reference:'+($references -join ',')),(Join-Path $fixture 'Engine.vb'),(Join-Path $fixture 'LocalGameData.vb'),(Join-Path $fixture 'Stubs.vb'))
   & $compiler @compilerArgs
