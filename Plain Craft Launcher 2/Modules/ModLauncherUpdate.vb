@@ -140,26 +140,10 @@ Public Module ModLauncherUpdate
 
     '沿用官方 PCL 的流程：运行已下载的新 EXE，由新进程替换退出后的旧 EXE。
     Friend Sub ReplaceExecutable(Staged As String, Target As String, ExpectedHash As String, Restart As Boolean)
-        ReplaceExecutableCore(Staged, Target, ExpectedHash, Restart, Nothing)
-    End Sub
-
-    Friend Function UpdatedExecutablePath(Target As String) As String
-        Dim Name = System.IO.Path.GetFileName(Target)
-        If System.Text.RegularExpressions.Regex.IsMatch(Name, "\A(?:PCL-Living-Fork-|LivingPCL2-Re-|PCL Living Fork - )\d+\.\d+\.\d+(?:\.\d+)?\.exe\z", System.Text.RegularExpressions.RegexOptions.IgnoreCase) Then
-            Return System.IO.Path.Combine(If(System.IO.Path.GetDirectoryName(Target), ""), LauncherExecutableName)
-        End If
-        Return Target
-    End Function
-
-    Friend Sub ReplaceExecutableCore(Staged As String, Target As String, ExpectedHash As String, Restart As Boolean, BeforeRestart As Action)
         ValidateExecutable(Staged, ExpectedHash)
-        Dim Destination = UpdatedExecutablePath(Target)
-        Dim Renaming = Not String.Equals(System.IO.Path.GetFullPath(Target), System.IO.Path.GetFullPath(Destination), StringComparison.OrdinalIgnoreCase)
-        If Renaming AndAlso (System.IO.File.Exists(Destination) OrElse Directory.Exists(Destination)) Then Throw New Exception("新版本文件名已被占用，现有启动器已保留。")
-        If Renaming AndAlso System.IO.File.Exists(Target & ".config") AndAlso (System.IO.File.Exists(Destination & ".config") OrElse Directory.Exists(Destination & ".config")) Then Throw New Exception("新版本配置文件名已被占用，现有启动器已保留。")
         Dim Temporary = Target & ".updating-" & Guid.NewGuid().ToString("N")
         Dim Backup = Target & ".update-backup-" & Guid.NewGuid().ToString("N")
-        Dim Replaced As Boolean = False, Renamed As Boolean = False, ConfigRenamed As Boolean = False
+        Dim Replaced As Boolean = False
         Dim HadTarget = System.IO.File.Exists(Target)
         If HadTarget AndAlso Not IsLivingExecutable(Target) Then Throw New Exception("更新目标不是 PCL Living Fork 启动器。")
         Try
@@ -171,22 +155,12 @@ Public Module ModLauncherUpdate
                 System.IO.File.Move(Temporary, Target)
             End If
             Replaced = True
-            If Renaming Then
-                System.IO.File.Move(Target, Destination)
-                Renamed = True
-                If System.IO.File.Exists(Target & ".config") Then
-                    System.IO.File.Move(Target & ".config", Destination & ".config")
-                    ConfigRenamed = True
-                End If
-            End If
-            BeforeRestart?.Invoke()
             If Restart Then
-                Dim Started = Process.Start(New ProcessStartInfo(Destination) With {.UseShellExecute = True, .WorkingDirectory = System.IO.Path.GetDirectoryName(Destination)})
+                Dim Started = Process.Start(New ProcessStartInfo(Target) With {.UseShellExecute = True, .WorkingDirectory = System.IO.Path.GetDirectoryName(Target)})
                 If Started Is Nothing OrElse Started.WaitForExit(3000) Then Throw New Exception("新版本启动失败。")
             End If
             If System.IO.File.Exists(Backup) Then System.IO.File.Delete(Backup)
         Catch
-            If ConfigRenamed Then System.IO.File.Move(Destination & ".config", Target & ".config")
             If Replaced Then
                 If HadTarget AndAlso System.IO.File.Exists(Backup) Then
                     System.IO.File.Copy(Backup, Target, True)
@@ -194,7 +168,6 @@ Public Module ModLauncherUpdate
                 ElseIf Not HadTarget AndAlso System.IO.File.Exists(Target) Then
                     System.IO.File.Delete(Target)
                 End If
-                If Renamed AndAlso System.IO.File.Exists(Destination) Then System.IO.File.Delete(Destination)
             End If
             Throw
         Finally

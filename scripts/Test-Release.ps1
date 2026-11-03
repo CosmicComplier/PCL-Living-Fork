@@ -112,27 +112,13 @@ try {
    $caseFolder=Join-Path $naming ([string]$i);[IO.Directory]::CreateDirectory($caseFolder)|Out-Null
    $previous=Join-Path $caseFolder $names[$i];[IO.File]::Copy($ExecutablePath,$previous);[IO.File]::AppendAllText($previous,'synthetic-old-version')
    [IO.File]::WriteAllText(($previous+'.config'),'synthetic-runtime-config')
-   $expected=Join-Path $caseFolder $(if($i -eq 3){$names[$i]}else{$executableName})
-   if($updater.GetMethod('UpdatedExecutablePath',$flags).Invoke($null,@([string]$previous)) -cne $expected){throw 'Update filename selection is incorrect'}
+   $expected=$previous
    $replace.Invoke($null,@($ExecutablePath,[string]$previous,$hash,$false))|Out-Null
    if((Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash -cne $hash -or [IO.File]::ReadAllText(($expected+'.config')) -cne 'synthetic-runtime-config'){throw 'Renamed update lost executable/config content'}
-   if($i -lt 3 -and ([IO.File]::Exists($previous) -or [IO.File]::Exists($previous+'.config'))){throw 'The standard filename still contains the previous version'}
-   if(@([IO.Directory]::EnumerateFiles($caseFolder)).Count -ne 2){throw 'Renamed update left temporary files'}
+   if([IO.File]::Exists((Join-Path $caseFolder $executableName))){throw 'Updater changed the original filename'}
+   if(@([IO.Directory]::EnumerateFiles($caseFolder)).Count -ne 2){throw 'In-place update left temporary files'}
   }
-  foreach($collision in @('exe','config')){
-   $caseFolder=Join-Path $naming ('collision-'+$collision);[IO.Directory]::CreateDirectory($caseFolder)|Out-Null
-   $previous=Join-Path $caseFolder 'PCL-Living-Fork-0.0.1.exe';[IO.File]::Copy($ExecutablePath,$previous);[IO.File]::WriteAllText(($previous+'.config'),'previous-config')
-   $occupied=(Join-Path $caseFolder $executableName)+$(if($collision -eq 'config'){'.config'}else{''});[IO.File]::WriteAllText($occupied,'existing-file-preserve')
-   $rejected=$false;try{$replace.Invoke($null,@($ExecutablePath,[string]$previous,$hash,$false))|Out-Null}catch{$rejected=$true}
-   if(-not $rejected -or [IO.File]::ReadAllText($occupied) -cne 'existing-file-preserve' -or -not [IO.File]::Exists($previous)){throw 'Update rename overwrote an occupied destination'}
-  }
-  $caseFolder=Join-Path $naming 'rollback';[IO.Directory]::CreateDirectory($caseFolder)|Out-Null
-  $previous=Join-Path $caseFolder 'PCL-Living-Fork-0.0.1.exe';[IO.File]::Copy($ExecutablePath,$previous);[IO.File]::AppendAllText($previous,'previous-binary');$previousHash=(Get-FileHash $previous -Algorithm SHA256).Hash
-  [IO.File]::WriteAllText(($previous+'.config'),'previous-config')
-  $failure=[Action]{throw 'synthetic restart failure'};$rejected=$false
-  try{$updater.GetMethod('ReplaceExecutableCore',$flags).Invoke($null,@($ExecutablePath,[string]$previous,$hash,$false,$failure.PSObject.BaseObject))|Out-Null}catch{$rejected=$true}
-  if(-not $rejected -or (Get-FileHash $previous -Algorithm SHA256).Hash -cne $previousHash -or [IO.File]::ReadAllText(($previous+'.config')) -cne 'previous-config' -or @([IO.Directory]::EnumerateFiles($caseFolder)).Count -ne 2){throw 'Failed renamed update did not restore the original executable/config'}
-  Write-Output 'Update naming: standard names/version/config synchronized, custom names preserved, collisions blocked and restart failure rolled back.'
+  Write-Output 'Update naming: standard, historical and custom filenames/configs preserved during replacement.'
  }finally{
   $full=[IO.Path]::GetFullPath($naming);$prefix=[IO.Path]::GetFullPath($folder).TrimEnd('\')+'\'
   if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Unsafe update-name fixture cleanup'}
