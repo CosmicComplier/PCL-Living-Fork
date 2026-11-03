@@ -72,6 +72,7 @@
 | [C006a Migration validation 41719762399](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41719762399) | Ubuntu job `126209113899` 226／226、Windows job `126209114524` 232／232 组通过，固定清单一致；Windows-only 旧路径类型／顺序／device／显式开关样本实际通过，无 SKIP |
 | [C006b Windows Build 41721885199](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41721885199) | 提交 `f1fa26b3705a002c237fba190c4c01bfe84a7442`：Debug job `126216509011`、Release job `126216508717` 各 41 步 success；实际旧 VB 会话／最近世界类型、4＋5 继承字段、GUID-N 和 Mojang ISO 日志 UTC 断言、Quick Play／个人习惯／按键／旧更新桥等完整回归通过 |
 | [C006b Migration validation 41721885208](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41721885208) | Ubuntu job `126216508313` 252／252、Windows job `126216508853` 258／258 组通过，固定清单一致；26 组新历史／日志／JSON／锁样本含真 UTF16LE BOM 和逐项 mtime 完整性均实际运行，无 SKIP |
+| [C006c 初次 Migration validation 41724453187](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41724453187) | 提交 `257e98ea14e2cd93d2c9a906c69c62d9709ad2d3`：Ubuntu job `126225449726` success，Windows job `126225449293` 为 288／289；唯一失败为 PrepareIdentity 金值将原 Address 的内部 `/` 规范化为 `\`。生产保留 LF 原相对名称是正确行为；只修正测试为原两参数 Combine 形状，随后重跑，不将此初次运行写为通过 |
 
 清单重新生成：
 
@@ -201,7 +202,7 @@ C006 按实际行为拆分；日志／历史与会话的清理顺序不同于 C0
 | C005c1 | 已随 `2f60f73` 推送；Ubuntu 210／Windows 215 组、完整 Windows Debug／Release 各 41 步与实际 KeybindingGroups 通过；net48 PCLCS／VB 泛型桥零警告／错误，独立终审通过，页面 BOM 与其余后台逐文本未变 | 本批完成；控件／Tag／Margin／文案和数值文化仍由原页面执行，不动捕获／Loader／KeyboardName，不替代 c2 整页迁移 |
 | C006a | 已随 `046ed2d` 推送；Ubuntu 226／Windows 232 组、完整 Windows Debug／Release 各 41 步、原 Prepare 和 41 字符 CLR4 oracle 通过；net48 PCLCS 零警告／错误、独立生产／测试／PS 终审通过 | 本批完成。不改变支持版本／日志／会话／首页；现代只保留 BCL 异常类型／顺序，不复制系统所有本地化文案 |
 | C006b | 已随 `f1fa26b` 推送；Ubuntu 252／Windows 258 组、Windows Debug／Release 各 41 步与实际旧型／4＋5 字段／GUID-N／UTC 消费者全通过；生产／测试独立终审、net48／测试零警告编译通过，非本批方法逐字不变 | 本批完成。Root 每 Address 仍读两次；fresh 样本的 read/read/write 为 Address 回调计数，不冒称 Root 只调用三次。不是多线程竞态或真实 Minecraft 验证 |
-| C006c | 原七方法已接通 Flow／8 惰性 getter／原 Gate／双 factory；31 组真实 CurrentProcess、Mojang ISO、日志、gzip／NBT／异常顺序样本令 Linux 283／283 通过，测试与 net48 库零警告／错误，生产／测试独立审查通过；有效 NBT 设只读后发现并核原字节、finally 恢复属性 | 待 Windows Debug／Release、Ubuntu／Windows 新矩阵与真实 live／dead／disabled probe、坏 JSON 精确异常 finally、原坏 gzip InvalidData 边界／字节及首页消费者；未知进程权限与枚举器失败位置仅原契约／源码审查，不伪称竞态或实游戏验收 |
+| C006c | 已随 `257e98e` 推送；31 组令 Linux 283／283 通过，测试与 net48 库零警告／错误、独立审查通过；首次 Windows 迁移矩阵 288／289，仅 PrepareIdentity 预期路径斜杠写法错误，正作纯测试修正。有效 NBT 只读／原字节样本在该 Windows 运行已通过 | 待测试修正后的完整 Windows／双平台检查；其余生产与脚本门禁分别核实。未知进程权限与枚举器失败位置仅原契约／源码审查，不伪称竞态或实游戏验收 |
 
 下次入口：核对分支、远端和 C006c 活动批次，先收尾会话／发现的生产接线与真实检查；C006a／b／C005c1 已全通过，不重复提取或等待。C005 因 c2 缺 C027／独立 C029a 保持 blocked；c 完成后若 d 仍缺真实 WPF 前置，将 C006 母项 blocked 并继续最早 ready C007，不将整项假标完成。
 

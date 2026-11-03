@@ -143,7 +143,8 @@ internal static class QuickPlayFlowTests {
         Equal("sessionfactory|instance.version|instance.folder", string.Join("|", fixture.Events.Where(value => value is "sessionfactory" or "instance.version" or "instance.folder")));
         Equal(fixture.VersionPath, actual.VersionPath);
         Equal(fixture.GameFolder, actual.GameFolder);
-        Equal(Path.Combine(fixture.ProfileRoot, "quickplay-logs", actual.Id + ".json"), actual.LogFile);
+        // 原 Address 接收含 / 的完整相对名称；Windows 也保留内部斜杠。
+        Equal(Path.Combine(fixture.ProfileRoot, "quickplay-logs/" + actual.Id + ".json"), actual.LogFile);
         Equal(true, Directory.Exists(Path.GetDirectoryName(actual.LogFile!)));
         Equal(false, File.Exists(actual.LogFile));
         Equal("--quickPlayPath", arguments[0]);
