@@ -2,7 +2,7 @@ name: Sync release to CNB
 
 on:
   release:
-    types: [published, edited, released]
+    types: [published, edited]
   workflow_dispatch:
     inputs:
       tag:

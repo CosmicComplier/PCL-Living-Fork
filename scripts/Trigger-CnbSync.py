@@ -9,10 +9,45 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from ReleaseSyncState import SOURCE, receipt_for, receipt_matches
 
 REPOSITORY = "ddzmumo/PCL-Living-Fork"
 API = "https://api.cnb.cool/" + REPOSITORY + "/-/build/"
 PAGE = "https://cnb.cool/" + REPOSITORY + "/-/build/logs/"
+
+
+def public_json(url, missing=False):
+    prefixes = ("https://api.github.com/repos/" + SOURCE + "/releases/", "https://cnb.cool/" + REPOSITORY + "/-/git/raw/updates/receipts/")
+    if not url.startswith(prefixes):
+        raise RuntimeError("Untrusted release state endpoint")
+    try:
+        req = Request(url, headers={"Accept": "application/json", "User-Agent": "PCLLF-Release-Event"})
+        with build_opener(NoRedirect()).open(req, timeout=15) as response:
+            raw = response.read(4 * 1024 * 1024 + 1)
+            if len(raw) > 4 * 1024 * 1024:
+                raise RuntimeError("Release state response is too large")
+            return json.loads(raw)
+    except HTTPError as error:
+        if missing and error.code == 404:
+            return None
+        raise RuntimeError("Release state request failed with HTTP " + str(error.code)) from None
+    except URLError:
+        raise RuntimeError("Release state request failed") from None
+
+
+def trigger_if_changed(token, tag="", wait=False, read=public_json, request=None):
+    if tag and not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", tag):
+        raise RuntimeError("Invalid requested release tag")
+    release = read("https://api.github.com/repos/" + SOURCE + "/releases/" + ("tags/" + quote(tag, safe="") if tag else "latest"))
+    actual_tag = release.get("tag_name", "")
+    if tag and actual_tag != tag:
+        raise RuntimeError("Release state does not match the requested tag")
+    receipt_for(release)
+    receipt = read("https://cnb.cool/" + REPOSITORY + "/-/git/raw/updates/receipts/" + quote(actual_tag, safe="") + ".json", missing=True)
+    if receipt_matches(receipt, release):
+        print("Already synchronized with identical notes and attachments; no CNB task started", flush=True)
+        return None
+    return trigger(token, actual_tag, wait, request=request or request_json)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -69,7 +104,7 @@ def main():
     parser.add_argument("--tag", default=os.environ.get("CNB_RELEASE_TAG", ""))
     parser.add_argument("--wait", action="store_true")
     args = parser.parse_args()
-    trigger(os.environ.get("CNB_TRIGGER_TOKEN", ""), args.tag, args.wait)
+    trigger_if_changed(os.environ.get("CNB_TRIGGER_TOKEN", ""), args.tag, args.wait)
 
 
 if __name__ == "__main__":

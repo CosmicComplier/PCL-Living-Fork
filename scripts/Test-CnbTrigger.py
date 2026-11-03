@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 from pathlib import Path
 import unittest
 
@@ -8,6 +9,50 @@ spec.loader.exec_module(module)
 
 
 class TriggerTests(unittest.TestCase):
+    def release(self):
+        names = ["PCL-Living-Fork-1.3.4.exe", "PCL-Living-Fork-1.3.4-win-x64.zip", "SHA256SUMS.txt"]
+        return {"tag_name": "v1.3.4", "name": "release", "body": "notes", "draft": False, "prerelease": False, "assets": [{"name": name, "size": 100, "digest": "sha256:" + "a" * 64} for name in names]}
+
+    def test_already_synchronized_does_not_start_cnb(self):
+        value = self.release()
+        receipt = module.receipt_for(value)
+        def read(url, missing=False):
+            return receipt if missing else value
+        def request(*args):
+            self.fail("Identical completed release started another CNB task")
+        self.assertIsNone(module.trigger_if_changed("synthetic", "v1.3.4", read=read, request=request))
+
+    def test_real_content_changes_trigger_once(self):
+        original = self.release()
+        receipt = module.receipt_for(original)
+        for change in ("body", "name", "digest"):
+            value = copy.deepcopy(original)
+            if change == "digest":
+                value["assets"][0]["digest"] = "sha256:" + "b" * 64
+            else:
+                value[change] += " changed"
+            calls = []
+            def read(url, missing=False):
+                return receipt if missing else value
+            def request(*args):
+                calls.append(args)
+                return {"success": True, "sn": "cnb-synthetic-change"}
+            module.trigger_if_changed("synthetic", "v1.3.4", read=read, request=request)
+            self.assertEqual(len(calls), 1)
+
+    def test_timestamp_and_asset_order_are_not_changes(self):
+        value = self.release()
+        receipt = module.receipt_for(value)
+        value["updated_at"] = "2099-01-01T00:00:00Z"
+        value["assets"].reverse()
+        self.assertTrue(module.receipt_matches(receipt, value))
+
+    def test_incomplete_release_cannot_start_a_task(self):
+        value = self.release()
+        value["assets"].pop()
+        with self.assertRaises(RuntimeError):
+            module.trigger_if_changed("synthetic", "v1.3.4", read=lambda *args, **kwargs: value, request=lambda *args: self.fail("Incomplete release reached CNB"))
+
     def test_release_event_targets_only_mirror_branch(self):
         calls = []
         def request(url, token, data=None):
