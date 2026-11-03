@@ -13,14 +13,7 @@ Friend Enum InstanceResourceKind
 End Enum
 
 Friend NotInheritable Class InstanceResourceEntry
-    Public RecycleId As String
-    Public Name As String
-    Public FullPath As String
-    Public Description As String
-    Public IsDirectory As Boolean
-    Public ModifiedUtc As Date
-    Public CreatedUtc As Date
-    Public Length As Long
+    Inherits PCLCS.InstanceResourceEntryData
     Public Icon As ImageSource
 End Class
 
@@ -196,14 +189,7 @@ Friend NotInheritable Class InstanceResourceStore
     End Function
 
     Friend Shared Sub ValidateEntry(Root As String, Entry As InstanceResourceEntry)
-        EnsureWithin(Root, Entry.FullPath)
-        If Not File.Exists(Entry.FullPath) AndAlso Not Directory.Exists(Entry.FullPath) Then Throw New IOException("资源已被移动或删除，请刷新列表后重试。")
-        '目录内容变化不应让整个存档失去可操作性；目录用创建时间识别替换，文件检查修改时间和大小。
-        If Entry.IsDirectory Then
-            If Directory.GetCreationTimeUtc(Entry.FullPath) <> Entry.CreatedUtc Then Throw New IOException("资源已变化，请刷新列表后重试。")
-        ElseIf File.GetLastWriteTimeUtc(Entry.FullPath) <> Entry.ModifiedUtc OrElse New FileInfo(Entry.FullPath).Length <> Entry.Length Then
-            Throw New IOException("资源已变化，请刷新列表后重试。")
-        End If
+        PCLCS.InstanceResourceEntryValidator.ValidateEntry(Root, Entry, Sub(Parent, FileName) EnsureWithin(Parent, FileName))
     End Sub
 
     Friend Shared Function Rename(Root As String, Entry As InstanceResourceEntry, NewName As String) As String

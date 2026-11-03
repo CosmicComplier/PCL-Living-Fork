@@ -99,7 +99,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| `InstanceResourceEntryData.cs`、`InstanceResourceEntryTests.cs`、`InstanceResourceStore.vb` 的数据类继承与 ValidateEntry | C007a 子代理 | 只改八数据字段及验证入口；保 VB sealed／Icon 和其余全部方法，父统一 Main／项目／脚本／工作流／文档接线与提交，审查者只读 |
+| `InstanceResourceEntryData.cs`、`InstanceResourceEntryTests.cs`、`InstanceResourceStore.vb` 的数据类继承与 ValidateEntry | C007a 子代理已交付，主执行者接管 | 三文件冻结；保 VB sealed／Icon 和其余全部方法，父统一接线／提交；生产／测试／PS 审查者只读 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -195,7 +195,7 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 
 | 子任务 | 状态 | 依赖 | 实现与验收边界 |
 | --- | --- | --- | --- |
-| C007a | in_progress | B001 | 迁移原八个无 WPF 数据字段与 ValidateEntry，VB 原 sealed 类继承并保留 Icon；校验严格按 guard→缺失→目录创建时间／文件修改时间与长度，原 Rename／Export／回收／更新消费者接通 |
+| C007a | in_progress | B001 | `InstanceResourceEntryData`／Validator 与原门面已接通，13 组跨平台＋1 Windows 目录内容变更组；Linux 总矩阵 296／296、测试／net48 库零警告／错误，独立生产／测试终审通过；待 Windows 原类型／8 字段／Icon／真实资源消费者与新矩阵 |
 | C007b | todo | C007a | 单独迁移 Normalize／EnsureWithin 与实际调用；固定 Meloong RemoveExtendedPrefix 的大小写／AfterLast、硬编码 `\`／OrdinalIgnoreCase、AllowRoot 提前返回、逐级 reparse 与信任 root 的原行为，先做 CLR4／现代 Windows 路径 oracle，不以 Linux 分隔符改造替代 |
 
 ## 当前批次与下一步
@@ -217,7 +217,7 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C006a | 已随 `046ed2d` 推送；Ubuntu 226／Windows 232 组、完整 Windows Debug／Release 各 41 步、原 Prepare 和 41 字符 CLR4 oracle 通过；net48 PCLCS 零警告／错误、独立生产／测试／PS 终审通过 | 本批完成。不改变支持版本／日志／会话／首页；现代只保留 BCL 异常类型／顺序，不复制系统所有本地化文案 |
 | C006b | 已随 `f1fa26b` 推送；Ubuntu 252／Windows 258 组、Windows Debug／Release 各 41 步与实际旧型／4＋5 字段／GUID-N／UTC 消费者全通过；生产／测试独立终审、net48／测试零警告编译通过，非本批方法逐字不变 | 本批完成。Root 每 Address 仍读两次；fresh 样本的 read/read/write 为 Address 回调计数，不冒称 Root 只调用三次。不是多线程竞态或真实 Minecraft 验证 |
 | C006c | 已随 `257e98e`／`6023f3d` 推送，Ubuntu 283／Windows 289 组、Windows Debug／Release 各 41 步及真实新流程／旧卡片消费者通过；有效 NBT 只读／字节、原坏 gzip、精确坏 JSON finally 都有实际样本 | 本批完成，C006d／母项仍等待 WPF；未知进程权限与枚举器失败位置仅原契约／源码审查，不伪称竞态或实游戏验收 |
-| C007a | 已在 C006c 全门禁后分配八字段 DTO／ValidateEntry 和真实文件样本，保其余 Store 入口／路径／Icon 原文 | 待生产接线、独立审查、统一编译与真实 Windows Rename／Export／回收／更新及迁移矩阵 |
+| C007a | 原八字段 DTO／ValidateEntry 已接通，Linux 296／296、测试／net48 库零警告／错误及独立生产／测试／PS 终审通过；原 Store／enum／Normalize／EnsureWithin 其余逐字不变，脚本原 BOM 保留、工作流加入 VB 原入口触发 | 待 Windows Debug／Release、双平台新矩阵与真实 Scan sealed 类型／继承八字段／本类冻结 Icon、Rename／Export／回收／更新消费者；不新增 hash／类型检查或文件并发保证 |
 
 下次入口：核对分支、远端和 C007a 活动批次，先收尾资源条目与陈旧校验的生产接线及真实检查；C006a／b／c、C005c1 已全通过，不重复提取或等待。C005／C006 的界面子项缺 C027／独立 C029a，母项保持 blocked；继续 C007 子任务，不将整项假标完成。
 

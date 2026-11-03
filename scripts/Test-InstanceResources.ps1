@@ -58,6 +58,12 @@ try{
  Write-Png (Join-Path $saves 'Test World/icon.png')
  $worlds=Scan $saves $worldKind
  if($worlds.Count -ne 1 -or $worlds[0].Name -ne 'Test World'){throw 'World folders were not listed'}
+ $resourceType=$worlds[0].GetType()
+ if($resourceType.FullName -cne 'PCL.InstanceResourceEntry' -or -not $resourceType.IsSealed -or $resourceType.BaseType.FullName -cne 'PCLCS.InstanceResourceEntryData'){throw 'Resource rows lost their original sealed VB type or production DTO base'}
+ $resourceFields=@{RecycleId=[string];Name=[string];FullPath=[string];Description=[string];IsDirectory=[bool];ModifiedUtc=[DateTime];CreatedUtc=[DateTime];Length=[long]}
+ foreach($name in $resourceFields.Keys){$field=$resourceType.GetField($name,$flags);if($null -eq $field -or $field.FieldType -ne $resourceFields[$name] -or $field.DeclaringType -ne $resourceType.BaseType){throw ('Inherited resource field contract changed: '+$name)}}
+ $iconField=$resourceType.GetField('Icon',$flags)
+ if($null -eq $iconField -or $iconField.FieldType -ne [Windows.Media.ImageSource] -or $iconField.DeclaringType -ne $resourceType -or $null -eq $worlds[0].Icon -or -not $worlds[0].Icon.IsFrozen){throw 'Resource row did not retain its original WPF Icon field and loaded image'}
  $export=Join-Path $fixture 'world.zip'
  Invoke-Store 'Export' @($saves,$worlds[0],$export,$none)|Out-Null
  $archive=[IO.Compression.ZipFile]::OpenRead($export)
