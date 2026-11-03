@@ -98,10 +98,30 @@ try{
  Assert-Rejected {Call $data 'AtomicWrite' @($targetFile,$bytes,'incorrect-old-hash',$true)} 'Concurrent options edit was overwritten'
  foreach($pair in @(@('1.19.4',$false),@('1.20.1',$true),@('26.2',$true))){if((Call $quick 'Supported' @((Instance ('version-'+$pair[0]) $pair[0]))) -ne $pair[1]){throw 'Quick Play version gate failed'}}
  $world=Join-Path $target.PathVersion 'saves/World with spaces';Put (Join-Path $world 'level.dat') 'synthetic-world';Put (Join-Path $world 'region/keep.txt') 'world-data-preserve'
- Assert-Rejected {Call $quick 'WorldPath' @($target.PathVersion,'../outside')} 'World traversal was accepted'
- $arguments=[Collections.Generic.List[string]]::new();$arguments.Add('--quickPlayMultiplayer');$arguments.Add('example.invalid');$arguments.Add('--server');$arguments.Add('example.invalid')
+ foreach($identifier in @($null,'',' ','.','..','../outside','..\outside','bad:name',([string][char]0))){Assert-Rejected {Call $quick 'WorldPath' @($target.PathVersion,$identifier)} 'Invalid Quick Play world identifier was accepted'}
+ if((Call $quick 'WorldPath' @($target.PathVersion,'World with spaces')) -cne $world){throw 'Quick Play changed the valid world path'}
+ # Query the real old path API before comparing the migrated VB production entry.
+ # Exception types affect ReadSessionLog, which catches IOException only.
+ $pathOracleCount=0
+ foreach($character in [IO.Path]::GetInvalidFileNameChars()){
+  $identifier='A'+[string]$character+'B';$expectedType=[IO.IOException]
+  try{[IO.Path]::GetFileName($identifier)|Out-Null}catch{$pathError=$_.Exception;while($null -ne $pathError.InnerException){$pathError=$pathError.InnerException};$expectedType=$pathError.GetType()}
+  $actualType=$null
+  try{Call $quick 'WorldPath' @($null,$identifier)|Out-Null}catch{$pathError=$_.Exception;while($null -ne $pathError.InnerException){$pathError=$pathError.InnerException};$actualType=$pathError.GetType()}
+  if($actualType -ne $expectedType){throw ('Quick Play path differs from CLR4 exception order for codepoint '+[int]$character+': expected '+$expectedType+', actual '+$actualType)}
+  $pathOracleCount++
+ }
+ Write-Output ('CLR4 Quick Play path oracle passed: '+$pathOracleCount+' invalid filename characters; GetFileName errors precede folder/guard.')
+ $missingWorld=Join-Path $target.PathVersion 'saves/missing-quickplay-leaf'
+ Assert-Rejected {Call $quick 'WorldPath' @($target.PathVersion,'missing-quickplay-leaf')} 'Missing Quick Play world was accepted'
+ if([IO.Directory]::Exists($missingWorld)){throw 'Quick Play validation created a missing world directory'}
+ $arguments=[Collections.Generic.List[string]]::new()
+ foreach($argument in @('prefix','--quickPlaySingleplayer','old world','--quickPlayMultiplayer','example.invalid','--quickPlayRealms','realm','--server','-single-hyphen-value','--port','25565','--server','--kept','value','--SERVER','upper-kept','--quickPlayPath=custom.json','--server=equals-kept','--quickPlaySingleplayer')){$arguments.Add($argument)}
  $context=Call $quick 'Prepare' @($target,'World with spaces',$arguments,$false)
  if($arguments.Contains('--quickPlayMultiplayer') -or $arguments.Contains('--server') -or -not $arguments.Contains('--quickPlaySingleplayer') -or $arguments[$arguments.IndexOf('--quickPlaySingleplayer')+1] -cne 'World with spaces'){throw 'World Quick Play conflicted with server arguments or split the folder name'}
+ $expectedArguments=@('prefix','--kept','value','--SERVER','upper-kept','--quickPlayPath=custom.json','--server=equals-kept','--quickPlaySingleplayer','World with spaces')
+ if($arguments.Count -ne $expectedArguments.Length+2 -or $arguments[$expectedArguments.Length] -cne '--quickPlayPath'){throw 'Quick Play duplicate, adjacent or trailing flags changed the argument layout'}
+ for($i=0;$i -lt $expectedArguments.Length;$i++){if($arguments[$i] -cne $expectedArguments[$i]){throw ('Quick Play retained argument changed at index '+$i)}}
  $log=Field $context 'LogFile'
  Put $log '[{"type":"singleplayer","identifier":"World with spaces","name":"A recent world","lastPlayedTime":"2026-10-01T12:00:00Z"}]'
  Call $quick 'Finish' @($context)|Out-Null

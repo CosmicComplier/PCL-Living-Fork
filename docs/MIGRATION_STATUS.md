@@ -86,7 +86,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| `QuickPlayWorldRules.cs`、`QuickPlayWorldRulesTests.cs`、`QuickPlayWorlds.vb` 的 WorldPath／RemoveArguments | C006a 子代理 | 只改两个叶子与其测试；父统一 Main／项目／工作流／脚本／文档接线、审查、提交，审查者只读 |
+| `QuickPlayWorldRules.cs`、`QuickPlayWorldRulesTests.cs`、`QuickPlayWorlds.vb` 的 WorldPath／RemoveArguments | C006a 子代理已交付，主执行者接管 | 主执行者补现代 Windows 旧异常边界和统一接线／审查／提交；审查者只读，下一批未获文件写入权 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -171,7 +171,7 @@ C006 按实际行为拆分；日志／历史与会话的清理顺序不同于 C0
 
 | 子任务 | 状态 | 依赖 | 实现与验收边界 |
 | --- | --- | --- | --- |
-| C006a | in_progress | C002、C003 | `WorldPath` 与 `RemoveArguments`：保留原平台文件名校验、路径委托／缺失错误与参数原地移除语义，临时世界及精确参数样本；原 Prepare／Start 继续经 VB 入口调用 |
+| C006a | in_progress | C002、C003 | `QuickPlayWorldRules` 已接通原两个入口，16 组跨平台／另 1 组仅 Windows 生产样本；Linux 总矩阵 226／226 与 net48 编译零警告通过。现代 Windows 窄补原路径 ArgumentException 顺序，固定来源见兼容审计；待真实 Windows 门禁 |
 | C006b | todo | C006a | 日志解析和最近世界持久化：原 DTO／JSON、1 MiB、id 优先、时间与名称回退、去重比较、最多 40 条及有效最近 5 条，错误捕获边界／读写时机回归 |
 | C006c | todo | C006b | 支持门槛／准备／跟踪／退出／恢复／隔离发现：惰性设置与实例、原 Gate、先改指定世界参数、尊重用户日志、Finish 的 finally 清理和 live recovery 仍读日志；原 VB 会话对象及生产启动消费者回归 |
 | C006d | blocked | C006c、C027、C029a | 最近世界页面／卡片 C# 后台与原动画／启动交接；等待可引用的控件／宿主，不能以核心转换代替真实页面迁移 |
@@ -192,7 +192,7 @@ C006 按实际行为拆分；日志／历史与会话的清理顺序不同于 C0
 | C005a | 已随 `a726586` 推送；Ubuntu 156／Windows 162 组与完整 Windows Debug／Release 各 41 步通过，same-value backup 原消费者断言、独立终审和 net48 编译通过 | 本批完成；不声称真实多线程竞态或游戏运行已实测，页面与读取后继继续 C005b／c |
 | C005b | 已随 `33a1c6a` 推送，Linux／Ubuntu 189、Windows 194 组及完整 Windows 各 41 步成功；原 VB 型／七字段／31 默认／实际 Meloong 标题和原消费者通过，独立终审及 net48 编译通过 | 本批完成；一项仅大小写不同文件 fixture 仅Linux执行，不声称所有文件系统一致或实际游戏／目录权限故障已验 |
 | C005c1 | 已随 `2f60f73` 推送；Ubuntu 210／Windows 215 组、完整 Windows Debug／Release 各 41 步与实际 KeybindingGroups 通过；net48 PCLCS／VB 泛型桥零警告／错误，独立终审通过，页面 BOM 与其余后台逐文本未变 | 本批完成；控件／Tag／Margin／文案和数值文化仍由原页面执行，不动捕获／Loader／KeyboardName，不替代 c2 整页迁移 |
-| C006a | 已分配两个路径／参数叶子和真实样本，主执行者统一集成 | 待生产接线、编译、样本、自审和 Windows 原消费者证据；不改变支持版本、日志、会话或首页 |
+| C006a | 原 VB 两方法已转发生产 C#，16 组跨平台样本令 Linux 总矩阵 226／226 通过；net48 PCLCS 零警告／错误，工作流增加原 VB 路径触发，Windows 脚本增强真实 Prepare 参数金值／缺失世界及 CLR4 非法字符 oracle | 待完整 Windows Debug／Release、Ubuntu／Windows 新矩阵与 CLR4 oracle 实际结果；不改变支持版本／日志／会话／首页。现代只保留 BCL 异常类型／顺序，不复制系统所有本地化文案 |
 
 下次入口：核对分支、远端和 C006a 活动批次，先收尾路径／参数生产接线与真实检查；C005c1 已全通过，不重复提取或等待。其母项因 c2 缺 C027／独立 C029a 保持 blocked；继续 C006 子任务，不因整页暂阻而停止工程，也不将整页假标完成。
 

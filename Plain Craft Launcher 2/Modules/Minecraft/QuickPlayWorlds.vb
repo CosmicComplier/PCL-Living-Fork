@@ -23,11 +23,7 @@ Friend Module QuickPlayWorlds
             (Not Instance.Version.IsSnapshot OrElse Instance.ReleaseTime.ToUniversalTime() >= New Date(2023, 4, 5, 0, 0, 0, DateTimeKind.Utc))
     End Function
     Friend Function WorldPath(GameFolder As String, Identifier As String) As String
-        If String.IsNullOrWhiteSpace(Identifier) OrElse Identifier = "." OrElse Identifier = ".." OrElse Path.GetFileName(Identifier) <> Identifier OrElse Identifier.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 Then Throw New IOException("存档文件夹名称无效。")
-        Dim Root = Path.Combine(GameFolder, "saves"), World = Path.Combine(Root, Identifier)
-        InstanceResourceStore.EnsureWithin(Root, World)
-        If Not Directory.Exists(World) OrElse Not File.Exists(Path.Combine(World, "level.dat")) Then Throw New IOException("该存档已移动、删除或尚未完整生成，请刷新存档列表。")
-        Return World
+        Return PCLCS.QuickPlayWorldRules.WorldPath(GameFolder, Identifier, Sub(Root, World) InstanceResourceStore.EnsureWithin(Root, World))
     End Function
     Friend Function Start(Instance As McInstance, Identifier As String) As Boolean
         Try
@@ -67,16 +63,7 @@ Friend Module QuickPlayWorlds
         End Try
     End Function
     Private Sub RemoveArguments(Arguments As List(Of String), Names As IEnumerable(Of String))
-        Dim SetNames As New HashSet(Of String)(Names, StringComparer.Ordinal)
-        Dim Index = 0
-        Do While Index < Arguments.Count
-            If SetNames.Contains(Arguments(Index)) Then
-                Arguments.RemoveAt(Index)
-                If Index < Arguments.Count AndAlso Not Arguments(Index).StartsWith("--", StringComparison.Ordinal) Then Arguments.RemoveAt(Index)
-            Else
-                Index += 1
-            End If
-        Loop
+        PCLCS.QuickPlayWorldRules.RemoveArguments(Arguments, Names)
     End Sub
     Friend Sub Track(Session As QuickPlaySession, Game As Process)
         If Session Is Nothing Then Return
