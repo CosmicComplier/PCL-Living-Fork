@@ -83,6 +83,35 @@ try{
  $reserved=@('CON','PRN','AUX','NUL')+@(1..9|ForEach-Object {'COM'+$_;'LPT'+$_})
  foreach($name in $reserved){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $systemName;Assert-StoreException 'SafeName' @($name.ToLowerInvariant()+'.txt') ([IO.IOException]) $systemName}
  foreach($name in @('.pcl-','.PCL-test')){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $launcherName}
+ $fileExtensions=@('.png','.jpg','.jpeg','.bmp','.zip','.litematic','.schem','.schematic','.nbt')
+ $acceptedExtensions=@{0=@();1=@('.png','.jpg','.jpeg','.bmp');2=@('.zip');3=@('.zip');4=@('.litematic','.schem','.schematic','.nbt')}
+ for($index=0;$index -lt 5;$index++){
+  $kind=[Enum]::ToObject($kindType,[int]$index)
+  foreach($extension in $fileExtensions){
+   $expected=$acceptedExtensions[$index] -contains $extension
+   foreach($name in @(('resource'+$extension),('relative.folder/FILE'+$extension.ToUpperInvariant()),$extension)){if((Invoke-Store 'AcceptFile' @($kind,$name)) -ne $expected){throw 'Resource extension whitelist changed'}}
+  }
+  foreach($name in @('resource','resource.txt','resource.jar','file.png:stream','file.zip\','file.nbt.','file.jpg ')){if(Invoke-Store 'AcceptFile' @($kind,$name)){throw 'Resource extension filter accepted a suffix or unlisted type'}}
+  Assert-StoreException 'AcceptFile' @($kind,$null) ([NullReferenceException])
+ }
+ foreach($invalid in @(-1,5,[int]::MinValue,[int]::MaxValue)){
+  $kind=[Enum]::ToObject($kindType,[int]$invalid)
+  if(Invoke-Store 'AcceptFile' @($kind,'valid.png')){throw 'Resource extension filter accepted an unknown kind'}
+  Assert-StoreException 'AcceptFile' @($kind,$null) ([NullReferenceException])
+ }
+ $pathForbidden=@([char[]](0..31))+@([char[]]'"<>|')
+ foreach($character in $pathForbidden){foreach($index in @(0,1,-1)){$kind=[Enum]::ToObject($kindType,[int]$index);Assert-StoreException 'AcceptFile' @($kind,('bad'+[string]$character+'name.png')) ([ArgumentException])}}
+ $imageKindForExtension=[Enum]::ToObject($kindType,1)
+ foreach($name in @('bad?name.png','bad*name.PNG','drive:name.jpg','file.png:stream.jpg')){if(-not (Invoke-Store 'AcceptFile' @($imageKindForExtension,$name))){throw 'Resource extension filter incorrectly applied filename or ADS rejection'}}
+ foreach($device in @('\\?\C:\bad|name.png','\??\C:\bad|name.png','\\.\C:\bad|name.png')){
+  # PowerShell's CLR4 domain can have a different legacy-path switch from LF.
+  # Compare the bridge to its real host API here; the modern cases pin LF defaults.
+  $hostError=$null
+  try{$extension=[IO.Path]::GetExtension($device);if($extension -cne '.png'){throw 'Unexpected host device extension'}}catch{$hostError=$_.Exception;while($null -ne $hostError.InnerException){$hostError=$hostError.InnerException}}
+  if($null -ne $hostError){if($hostError.GetType() -ne [ArgumentException]){throw $hostError};Assert-StoreException 'AcceptFile' @($imageKindForExtension,$device) ([ArgumentException])}
+  elseif(-not (Invoke-Store 'AcceptFile' @($imageKindForExtension,$device))){throw 'Resource extension filter changed the host device exception policy'}
+  Assert-StoreException 'AcceptFile' @($imageKindForExtension,('  '+$device)) ([ArgumentException])
+ }
  $worldKind=Kind 'Saves';$imageKind=Kind 'Screenshots';$packKind=Kind 'ResourcePacks';$shaderKind=Kind 'ShaderPacks';$schematicKind=Kind 'Schematics'
  $missing=Join-Path $fixture 'absent'
  if((Scan $missing $worldKind).Count -ne 0 -or [IO.Directory]::Exists($missing)){throw 'Viewing resources created a missing folder'}
@@ -237,7 +266,7 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: original enum/title/folder/error and safe-name/UTF16/message contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message and extension-filter/null/device contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

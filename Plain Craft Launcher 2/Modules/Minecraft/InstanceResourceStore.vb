@@ -58,17 +58,7 @@ Friend NotInheritable Class InstanceResourceStore
     End Sub
 
     Private Shared Function AcceptFile(Kind As InstanceResourceKind, FileName As String) As Boolean
-        Dim Extension = Path.GetExtension(FileName).ToLowerInvariant()
-        Select Case Kind
-            Case InstanceResourceKind.Screenshots
-                Return {".png", ".jpg", ".jpeg", ".bmp"}.Contains(Extension)
-            Case InstanceResourceKind.ResourcePacks, InstanceResourceKind.ShaderPacks
-                Return Extension = ".zip"
-            Case InstanceResourceKind.Schematics
-                Return {".litematic", ".schem", ".schematic", ".nbt"}.Contains(Extension)
-            Case Else
-                Return False
-        End Select
+        Return PCLCS.InstanceResourceFileRules.AcceptFile(CInt(Kind), FileName)
     End Function
 
     Friend Shared Function Scan(Root As String, Folder As String, Kind As InstanceResourceKind, Token As CancellationToken) As List(Of InstanceResourceEntry)
