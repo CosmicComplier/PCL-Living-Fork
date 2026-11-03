@@ -1,0 +1,89 @@
+name: Migration validation
+
+on:
+  push:
+    branches:
+      - migration/csharp-modern-dotnet
+    paths:
+      - 'PCLCS/**'
+      - 'Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb'
+      - 'tests/**'
+      - 'scripts/Inventory-Migration.py'
+      - 'scripts/Test-MigrationInventory.py'
+      - 'docs/migration/source-inventory.baseline.json'
+      - '.github/workflows/migration-validation.yml'
+  pull_request:
+    branches:
+      - migration/csharp-modern-dotnet
+    paths:
+      - 'PCLCS/**'
+      - 'Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb'
+      - 'tests/**'
+      - 'scripts/Inventory-Migration.py'
+      - 'scripts/Test-MigrationInventory.py'
+      - 'docs/migration/source-inventory.baseline.json'
+      - '.github/workflows/migration-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: .NET 10 pure C# and inventory (${{ matrix.os }})
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/migration/csharp-modern-dotnet'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+    steps:
+      - name: Checkout LF source and baseline history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Generate the fixed LF source inventory
+        run: python scripts/Inventory-Migration.py --ref f4aa0fae62c3ee8af24c81e61844c8fdd13c8983 --output artifacts/migration/source-inventory.baseline.json
+
+      - name: Verify the committed inventory is reproducible
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          expected = Path('docs/migration/source-inventory.baseline.json')
+          actual = Path('artifacts/migration/source-inventory.baseline.json')
+          if actual.read_text(encoding='utf-8') != expected.read_text(encoding='utf-8'):
+              raise SystemExit('Source inventory differs from the committed LF baseline.')
+          print('Source inventory matches the committed LF baseline.')
+          PY
+
+      - name: Run pure C# migration regressions on .NET 10
+        run: dotnet run --project tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release
+
+      - name: Upload the generated inventory
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: migration-source-inventory-${{ matrix.os }}
+          path: artifacts/migration/source-inventory.baseline.json
+          if-no-files-found: error
