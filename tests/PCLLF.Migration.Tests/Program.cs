@@ -46,7 +46,8 @@ internal static class Program {
             .. WorldMetadataFileTests.Cases(),
             .. LocalGameDataTests.Cases(),
             .. PersonalOptionsRulesTests.Cases(),
-            .. PersonalOptionsFileTests.Cases()
+            .. PersonalOptionsFileTests.Cases(),
+            .. PersonalOptionsFlowTests.Cases()
         ];
         int failures = 0;
         foreach ((string name, Action run) in tests) {

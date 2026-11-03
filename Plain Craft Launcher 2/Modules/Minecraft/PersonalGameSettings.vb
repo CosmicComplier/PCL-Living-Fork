@@ -1,19 +1,16 @@
-Imports System.IO
-
 Friend Class PersonalOptionsSession
-    Friend Id As String = Guid.NewGuid().ToString("N")
-    Friend VersionPath As String
-    Friend GameFolder As String
-    Friend Baseline As JObject
-    Friend Keys As New HashSet(Of String)(StringComparer.Ordinal)
-    Friend Tracked As Boolean
+    Inherits PCLCS.PersonalOptionsSessionData
 End Class
 
 Friend Module PersonalGameSettings
-    Private Const ProfileName As String = "personal-options.json"
+    Private ReadOnly Flow As New PCLCS.PersonalOptionsFlow(
+        LocalGameData.Service, LocalGameData.Gate, Function() HasRunningMinecraft,
+        Function(VersionPath) Adapt(New McInstance(VersionPath)), AddressOf Selected,
+        AddressOf IniClearCache, Function(First, Second) PathUtils.IsSame(First, Second),
+        Sub(ErrorValue, Message) Logger.Warn(ErrorValue, Message), Function() New PersonalOptionsSession)
 
     Friend Function Enabled(Instance As McInstance) As Boolean
-        Return Instance IsNot Nothing AndAlso Settings.Get(Of Boolean)("LaunchPersonalOptionsSync") AndAlso Settings.Get(Of Integer)("VersionPersonalOptionsSync", Instance:=Instance) = 0
+        Return Flow.Enabled(Adapt(Instance))
     End Function
     Private Function CanonicalKey(Key As String) As String
         Return PCLCS.PersonalOptionsRules.CanonicalKey(Key)
@@ -35,7 +32,7 @@ Friend Module PersonalGameSettings
         Return PCLCS.PersonalOptionsRules.Decode(Bytes)
     End Function
     Private Function Modern(Instance As McInstance) As Boolean
-        Return Instance.Version.Valid AndAlso Instance.Version.Vanilla.Major >= 13
+        Return Flow.Modern(Adapt(Instance))
     End Function
     Private Function CanonicalValue(Key As String, Value As String) As String
         Return PCLCS.PersonalOptionsRules.CanonicalValue(Key, Value)
@@ -47,55 +44,16 @@ Friend Module PersonalGameSettings
         Return PCLCS.PersonalOptionsRules.MergeText(Text, Values, IsModern, Keys, AddressOf Selected, FovDegrees)
     End Function
     Friend Function HasProfile() As Boolean
-        SyncLock LocalGameData.Gate
-            Dim Values = TryCast(LocalGameData.ReadJson(ProfileName)("values"), JObject)
-            Return Values IsNot Nothing AndAlso Values.Count > 0
-        End SyncLock
+        Return Flow.HasProfile()
     End Function
     Friend Sub ImportFrom(Instance As McInstance)
-        If Instance Is Nothing Then Throw New IOException("请先选择一个已经运行过的游戏版本。")
-        If HasRunningMinecraft Then Throw New IOException("请先关闭游戏，再导入个人设置。")
-        Dim Bytes = ReadOptions(Path.Combine(Instance.PathIndie, "options.txt"))
-        If Bytes Is Nothing Then Throw New IOException("该版本尚未生成 options.txt，请先启动一次游戏并保存设置。")
-        Dim Values As New JObject
-        For Each Pair In Parse(Decode(Bytes)).Where(Function(Item) Selected(Item.Key))
-            Dim Value = CanonicalValue(Pair.Key, Pair.Value)
-            If Value IsNot Nothing Then Values(Pair.Key) = Value
-        Next
-        If Values.Count = 0 Then Throw New IOException("该版本没有可导入的个人设置。")
-        SyncLock LocalGameData.Gate
-            LocalGameData.WriteJson(ProfileName, New JObject(New JProperty("version", 1), New JProperty("values", Values)))
-        End SyncLock
+        Flow.ImportFrom(Adapt(Instance))
     End Sub
     Friend Function Prepare(Instance As McInstance) As PersonalOptionsSession
-        If Not Enabled(Instance) OrElse HasRunningMinecraft Then Return Nothing
-        RecoverExitedSessions()
-        Dim Folder = Instance.PathIndie, FileName = Path.Combine(Folder, "options.txt")
-        If HasActiveSession(Folder) Then Return Nothing
-        Dim Bytes = ReadOptions(FileName)
-        '首次启动仍交给游戏/默认配置 Mod 生成文件，避免抢先创建文件阻止作者的默认配置生效。
-        If Bytes Is Nothing Then Return Nothing
-        SyncLock LocalGameData.Gate
-            Dim Values = TryCast(LocalGameData.ReadJson(ProfileName)("values"), JObject)
-            If Values Is Nothing OrElse Values.Count = 0 Then Return Nothing
-            Dim Keys As New HashSet(Of String)(Values.Properties().Where(Function(Pair) Selected(Pair.Name)).Select(Function(Pair) Pair.Name), StringComparer.Ordinal)
-            If Not Instance.Version.Valid Then Keys.RemoveWhere(Function(Key) Key.StartsWith("key_", StringComparison.Ordinal))
-            Dim Text = Decode(Bytes), Merged = MergeText(Text, Values, Modern(Instance), Keys, Instance.Version.Valid AndAlso Instance.Version.Vanilla.Major >= 19)
-            PCLCS.PersonalOptionsFiles.ApplyMerged(FileName, Bytes, Text, Merged, AddressOf IniClearCache)
-            Dim Baseline As New JObject
-            For Each Pair In Parse(Merged).Where(Function(Item) Keys.Contains(Item.Key))
-                Dim Value = CanonicalValue(Pair.Key, Pair.Value)
-                If Value IsNot Nothing Then Baseline(Pair.Key) = Value
-            Next
-            Return New PersonalOptionsSession With {.VersionPath = Instance.PathVersion, .GameFolder = Folder, .Baseline = Baseline, .Keys = Keys}
-        End SyncLock
+        Return DirectCast(Flow.Prepare(Adapt(Instance)), PersonalOptionsSession)
     End Function
     Friend Sub Track(Session As PersonalOptionsSession, Game As Process)
-        If Session Is Nothing Then Return
-        SyncLock LocalGameData.Gate
-            LocalGameData.WriteJson("options-sessions/" & Session.Id & ".json", New JObject(New JProperty("versionPath", Session.VersionPath), New JProperty("gameFolder", Session.GameFolder), New JProperty("pid", Game.Id), New JProperty("started", Game.StartTime.ToUniversalTime().Ticks), New JProperty("baseline", Session.Baseline), New JProperty("keys", New JArray(Session.Keys))))
-            Session.Tracked = True
-        End SyncLock
+        Flow.Track(Session, Game)
     End Sub
     Friend Function NormalizeBinding(Value As String) As String
         Return PCLCS.PersonalOptionsRules.NormalizeBinding(Value)
@@ -107,71 +65,56 @@ Friend Module PersonalGameSettings
         Return PCLCS.PersonalOptionsRules.VanillaBinding(Key)
     End Function
     Friend Sub CaptureEditedBinding(Instance As McInstance, Key As String, Value As String)
-        If Not Enabled(Instance) OrElse Not Selected(Key) Then Return
-        SyncLock LocalGameData.Gate
-            Dim Profile = LocalGameData.ReadJson(ProfileName), Values = TryCast(Profile("values"), JObject)
-            If Values Is Nothing Then Return
-            Dim Canonical = CanonicalValue(Key, Value)
-            If Canonical Is Nothing Then Return
-            Values(CanonicalKey(Key)) = Canonical
-            LocalGameData.WriteJson(ProfileName, Profile)
-        End SyncLock
+        Flow.CaptureEditedBinding(Adapt(Instance), Key, Value)
     End Sub
     Friend Sub Finish(Session As PersonalOptionsSession)
-        If Session Is Nothing Then Return
-        SyncLock LocalGameData.Gate
-            Dim Journal = LocalGameData.Address("options-sessions/" & Session.Id & ".json")
-            If Session.Tracked AndAlso Not File.Exists(Journal) Then Return
-            Capture(Session)
-            If File.Exists(Journal) Then File.Delete(Journal)
-        End SyncLock
+        Flow.Finish(Session)
     End Sub
     Private Sub Capture(Session As PersonalOptionsSession)
-        Dim Instance As New McInstance(Session.VersionPath)
-        If Not Enabled(Instance) Then Return
-        Dim Bytes = ReadOptions(Path.Combine(Session.GameFolder, "options.txt"))
-        If Bytes Is Nothing Then Return
-        Dim Current = Parse(Decode(Bytes))
-        SyncLock LocalGameData.Gate
-            Dim Profile = LocalGameData.ReadJson(ProfileName), Values = TryCast(Profile("values"), JObject)
-            If Values Is Nothing Then Return
-            For Each Key In Session.Keys.Where(Function(Value) Selected(Value))
-                Dim Raw As String = Nothing
-                If Not Current.TryGetValue(Key, Raw) Then Continue For
-                Dim Value = CanonicalValue(Key, Raw)
-                If Value IsNot Nothing AndAlso Session.Baseline(Key) IsNot Nothing AndAlso Value <> Session.Baseline(Key).ToString() Then Values(Key) = Value
-            Next
-            LocalGameData.WriteJson(ProfileName, Profile)
-        End SyncLock
+        Flow.Capture(Session)
     End Sub
     Friend Sub RecoverExitedSessions()
-        Dim Folder = LocalGameData.Address("options-sessions")
-        If Not Directory.Exists(Folder) Then Return
-        SyncLock LocalGameData.Gate
-        For Each FileName In Directory.EnumerateFiles(Folder, "*.json")
-            Try
-                Dim Json = LocalGameData.ReadJson("options-sessions/" & Path.GetFileName(FileName))
-                If LocalGameData.ProcessMatches(Json("pid").ToObject(Of Integer)(), Json("started").ToObject(Of Long)()) Then Continue For
-                Dim Session As New PersonalOptionsSession With {.Id = Path.GetFileNameWithoutExtension(FileName), .VersionPath = Json("versionPath").ToString(), .GameFolder = Json("gameFolder").ToString(), .Baseline = DirectCast(Json("baseline"), JObject), .Keys = New HashSet(Of String)(Json("keys").Select(Function(Item) Item.ToString()), StringComparer.Ordinal), .Tracked = True}
-                Finish(Session)
-            Catch ex As Exception
-                Logger.Warn(ex, "恢复个人游戏设置同步会话失败")
-            End Try
-        Next
-        End SyncLock
+        Flow.RecoverExitedSessions()
     End Sub
     Private Function HasActiveSession(GameFolder As String) As Boolean
-        Dim Folder = LocalGameData.Address("options-sessions")
-        If Not Directory.Exists(Folder) Then Return False
-        SyncLock LocalGameData.Gate
-            For Each FileName In Directory.EnumerateFiles(Folder, "*.json")
-                Dim Json = LocalGameData.ReadJson("options-sessions/" & Path.GetFileName(FileName))
-                If PathUtils.IsSame(Json("gameFolder").ToString(), GameFolder) AndAlso LocalGameData.ProcessMatches(Json("pid").ToObject(Of Integer)(), Json("started").ToObject(Of Long)()) Then Return True
-            Next
-        End SyncLock
-        Return False
+        Return Flow.HasActiveSession(GameFolder)
     End Function
     Private Function CreateLegacyKeys() As Dictionary(Of Integer, String)
         Return PCLCS.PersonalOptionsRules.CreateLegacyKeys()
     End Function
+    Private Function Adapt(Instance As McInstance) As PCLCS.IPersonalOptionsInstance
+        Return If(Instance Is Nothing, Nothing, New PersonalOptionsInstance(Instance))
+    End Function
+    Private NotInheritable Class PersonalOptionsInstance
+        Implements PCLCS.IPersonalOptionsInstance
+        Private ReadOnly Owner As McInstance
+        Friend Sub New(Instance As McInstance)
+            Owner = Instance
+        End Sub
+        Public ReadOnly Property VersionPath As String Implements PCLCS.IPersonalOptionsInstance.VersionPath
+            Get
+                Return Owner.PathVersion
+            End Get
+        End Property
+        Public ReadOnly Property GameFolder As String Implements PCLCS.IPersonalOptionsInstance.GameFolder
+            Get
+                Return Owner.PathIndie
+            End Get
+        End Property
+        Public ReadOnly Property SyncEnabled As Boolean Implements PCLCS.IPersonalOptionsInstance.SyncEnabled
+            Get
+                Return Settings.Get(Of Boolean)("LaunchPersonalOptionsSync") AndAlso Settings.Get(Of Integer)("VersionPersonalOptionsSync", Instance:=Owner) = 0
+            End Get
+        End Property
+        Public ReadOnly Property VersionValid As Boolean Implements PCLCS.IPersonalOptionsInstance.VersionValid
+            Get
+                Return Owner.Version.Valid
+            End Get
+        End Property
+        Public ReadOnly Property VanillaMajor As Integer Implements PCLCS.IPersonalOptionsInstance.VanillaMajor
+            Get
+                Return Owner.Version.Vanilla.Major
+            End Get
+        End Property
+    End Class
 End Module

@@ -40,6 +40,9 @@ try{
  $settings['LaunchPersonalOptionsSync'].ValueCache['']=$true
  Call $sync 'ImportFrom' @($source)|Out-Null
  $session=Call $sync 'Prepare' @($target)
+ if($null -eq $session -or $session.GetType().FullName -cne 'PCL.PersonalOptionsSession'){throw 'Prepare did not preserve the original VB session type'}
+ foreach($name in @('Id','VersionPath','GameFolder','Baseline','Keys','Tracked')){if($null -eq $session.GetType().GetField($name,$flags)){throw ('Session field reflection contract changed: '+$name)}}
+ if((Field $session 'VersionPath') -cne $target.PathVersion -or (Field $session 'GameFolder') -cne $target.PathIndie -or (Field $session 'Tracked')){throw 'Prepared session fields or initial tracking state changed'}
  $merged=[IO.File]::ReadAllText($targetFile)
  if($merged -notmatch 'mouseSensitivity:0.8' -or $merged -notmatch 'key_key.forward:key.keyboard.r' -or $merged -notmatch 'showSubtitles:true'){throw 'Personal options were not applied'}
  foreach($line in @('renderDistance:32','resourcePacks:["author-target.zip"]','key_mod.magic:key.keyboard.v')){if(-not $merged.Contains($line)){throw 'Author/custom options were changed'}}
@@ -82,6 +85,7 @@ try{
  Write-Output ('CLR4 FOV baseline passed: '+($fovBaseline -join '; '))
  $tracked=Call $sync 'Prepare' @($target)
  Call $sync 'Track' @($tracked,[Diagnostics.Process]::GetCurrentProcess())|Out-Null
+ if(-not (Field $tracked 'Tracked')){throw 'Tracking did not update the original session object'}
  if($null -ne (Call $sync 'Prepare' @($target))){throw 'Options were applied to a directory with a live game session'}
  $journalName='options-sessions/'+(Field $tracked 'Id')+'.json'
  $journal=Call $data 'ReadJson' @($journalName);$journal['pid']=[Newtonsoft.Json.Linq.JValue]::new(2147483646);$journal['started']=[Newtonsoft.Json.Linq.JValue]::new([long]1)

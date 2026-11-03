@@ -3,6 +3,11 @@ Friend NotInheritable Class LocalGameData
     Friend Shared ReadOnly Gate As New Object
     Friend Shared Property TestRoot As String
     Private Shared ReadOnly Store As New PCLCS.LocalGameDataStore(Function() Root, Sub(Root, FileName) InstanceResourceStore.EnsureWithin(Root, FileName))
+    Friend Shared ReadOnly Property Service As PCLCS.LocalGameDataStore
+        Get
+            Return Store
+        End Get
+    End Property
     Friend Shared ReadOnly Property Root As String
         Get
             Return PCLCS.LocalGameDataStore.GetRoot(TestRoot)
