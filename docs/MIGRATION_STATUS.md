@@ -6,8 +6,8 @@
 
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 最新已完整验证的生产检查点 `2f60f73afb085912708789551923d3de988f1751`：Windows Debug／Release 各 41 步成功；.NET 10 迁移矩阵 Ubuntu 210／210、Windows 215／215 通过。C002／C003／C004／C005a／b／c1 核心和适配验收完成；主产品仍为 net48，整项现代运行时和实际交互验收尚未完成。
-- 当前推进 C006a：Quick Play 存档路径与互斥参数叶子；按键整页后台／交互 C005c2 仍缺 WPF 前置，母项保留 blocked，不阻止独立核心任务。此前各核心有下方实际证据。
+- 最新已完整验证的生产检查点 `046ed2dd90427537e48012bbab537cc32e80d587`：Windows Debug／Release 各 41 步成功；.NET 10 迁移矩阵 Ubuntu 226／226、Windows 232／232 通过。C006a 路径／参数与此前核心均有下方实际证据；主产品仍为 net48，整项现代运行时和实际交互验收尚未完成。
+- 当前推进 C006b：Quick Play 日志与最近世界历史；按键整页后台／交互 C005c2 仍缺 WPF 前置，母项保留 blocked，不阻止独立核心任务。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -47,6 +47,8 @@
 | `a726586` | C005a Save 迁入 `InstanceKeybindingFiles`，21 组跨平台／23 组 Windows 文件样本，原 VB 门面接通；原脚本验证 same-value backup 轮换，模型／读取／默认表未改 |
 | `33a1c6a` | C005b 模型／默认／读取归属进入 `InstanceKeybindingReader`，33 组 Linux／32 组 Windows 读取 ZIP 样本；补 Framework 压缩引用，原模型字段与实际 Meloong 委托验证接通，并拆开 WPF 宿主前置与最终汇总依赖 |
 | `2f60f73` | C005c1 原页面 DisplayKey／RenderList 的显示、搜索、计数与显式分组规则进入 `InstanceKeybindingView`，21 组金值验证精确比较、全局总数、原对象及输入不变；其余页面后台、控件、捕获与动画保留 |
+| `8a5e707` | 关闭 C005c1 的真实 Windows 与矩阵证据，母项因整页前置 blocked；固定当前清单并拆出 C006a／b／c／d，长期目标仍在进行 |
+| `046ed2d` | C006a 两路径／参数叶子进入 `QuickPlayWorldRules`，16 组跨平台／另 1 组 Windows 生产样本；窄补现代 Windows 原 ArgumentException 顺序，增强真实 Prepare 参数与 CLR4 路径 oracle，不改版本／日志／会话 |
 | [Windows Build 41696728260](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260) | [Debug job 126129118107](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118107) 与 [Release job 126129118529](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728260/job/126129118529) 各 40 步 success，包含原有自动化回归、凭据保护、旧更新桥和产物上传；主程序仍为 net48，不能据此关闭 N003 或 R003 |
 | [Migration validation 41696728492](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41696728492) | Ubuntu job `126129118456`、Windows job `126129119218` 均 success：固定清单一致，.NET 10 真实生产解析器测试通过；这只验证已提取的解析器范围 |
 | [C002 Windows Build 41705399746](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41705399746) | 提交 `0388bd6f6f99ac142a3a6d88032a70ba727fe6f3`：Debug job `126159247355`、Release job `126159247567` 各 40 步 success；增强后的真实 WorldMetadata 门面、文件链接校验、只读／共享、精确文案及旧回归均运行通过 |
@@ -65,6 +67,8 @@
 | [C005b Migration validation 41716125643](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41716125643) | Ubuntu job `126196457531` 189／189、Windows job `126196458304` 194／194 组通过，固定清单一致；读取新增 33／32 组差异是 Windows 不创建仅大小写不同文件的单项 fixture，非异常／取消能力被跳过 |
 | [C005c1 Windows Build 41717722719](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41717722719) | 提交 `2f60f73afb085912708789551923d3de988f1751`：Debug job `126202044008`、Release job `126202043635` 各 41 步 success；真实 KeybindingGroups 页面消费者、个人习惯／按键／Quick Play、独立备份引擎、凭据保护及旧更新桥通过 |
 | [C005c1 Migration validation 41717722638](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41717722638) | Ubuntu job `126202044078` 210／210、Windows job `126202044337` 215／215 组通过，固定清单一致；新增 21 组精确显示／搜索／计数／分组金值均运行，无 SKIP；不是整页 C# 转换或完整 GUI 实机验收 |
+| [C006a Windows Build 41719762439](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41719762439) | 提交 `046ed2dd90427537e48012bbab537cc32e80d587`：Debug job `126209114550`、Release job `126209113916` 各 41 步 success；真实 CLR4 GetFileName oracle 遍历 41 字符通过，原 Prepare 精确参数、缺失世界、个人习惯／日志／按键及旧更新桥等回归通过 |
+| [C006a Migration validation 41719762399](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41719762399) | Ubuntu job `126209113899` 226／226、Windows job `126209114524` 232／232 组通过，固定清单一致；Windows-only 旧路径类型／顺序／device／显式开关样本实际通过，无 SKIP |
 
 清单重新生成：
 
@@ -86,7 +90,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
 | `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
 | `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| `QuickPlayWorldRules.cs`、`QuickPlayWorldRulesTests.cs`、`QuickPlayWorlds.vb` 的 WorldPath／RemoveArguments | C006a 子代理已交付，主执行者接管 | 主执行者补现代 Windows 旧异常边界和统一接线／审查／提交；审查者只读，下一批未获文件写入权 |
+| `QuickPlayHistory.cs`、`QuickPlayHistoryTests.cs`、`QuickPlayWorlds.vb` 的模型／四历史方法及 Service | C006b 子代理已交付，主执行者接管 | 三文件冻结，父统一接线／审查／提交；其余流程不改，审查者只读 |
 
 续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
 
@@ -171,8 +175,8 @@ C006 按实际行为拆分；日志／历史与会话的清理顺序不同于 C0
 
 | 子任务 | 状态 | 依赖 | 实现与验收边界 |
 | --- | --- | --- | --- |
-| C006a | in_progress | C002、C003 | `QuickPlayWorldRules` 已接通原两个入口，16 组跨平台／另 1 组仅 Windows 生产样本；Linux 总矩阵 226／226 与 net48 编译零警告通过。现代 Windows 窄补原路径 ArgumentException 顺序，固定来源见兼容审计；待真实 Windows 门禁 |
-| C006b | todo | C006a | 日志解析和最近世界持久化：原 DTO／JSON、1 MiB、id 优先、时间与名称回退、去重比较、最多 40 条及有效最近 5 条，错误捕获边界／读写时机回归 |
+| C006a | done | C002、C003 | `046ed2d`：原两个入口、16 组跨平台／另 1 组仅 Windows 生产样本；Ubuntu 226／Windows 232 组总矩阵、net48 编译、独立终审、Windows 各 41 步与实际 41 字符 CLR4 oracle 全通过；现代 Windows 窄补边界见兼容审计 |
+| C006b | in_progress | C006a | `QuickPlayHistory`、双派生 DTO 和原四入口已接通；26 组新真实文件样本令 Linux 总矩阵 252／252 通过，net48 库及测试工程零警告／错误编译，独立生产初审通过；待 Windows 原类型／字段／UTC 消费者及双平台新矩阵 |
 | C006c | todo | C006b | 支持门槛／准备／跟踪／退出／恢复／隔离发现：惰性设置与实例、原 Gate、先改指定世界参数、尊重用户日志、Finish 的 finally 清理和 live recovery 仍读日志；原 VB 会话对象及生产启动消费者回归 |
 | C006d | blocked | C006c、C027、C029a | 最近世界页面／卡片 C# 后台与原动画／启动交接；等待可引用的控件／宿主，不能以核心转换代替真实页面迁移 |
 
@@ -192,8 +196,9 @@ C006 按实际行为拆分；日志／历史与会话的清理顺序不同于 C0
 | C005a | 已随 `a726586` 推送；Ubuntu 156／Windows 162 组与完整 Windows Debug／Release 各 41 步通过，same-value backup 原消费者断言、独立终审和 net48 编译通过 | 本批完成；不声称真实多线程竞态或游戏运行已实测，页面与读取后继继续 C005b／c |
 | C005b | 已随 `33a1c6a` 推送，Linux／Ubuntu 189、Windows 194 组及完整 Windows 各 41 步成功；原 VB 型／七字段／31 默认／实际 Meloong 标题和原消费者通过，独立终审及 net48 编译通过 | 本批完成；一项仅大小写不同文件 fixture 仅Linux执行，不声称所有文件系统一致或实际游戏／目录权限故障已验 |
 | C005c1 | 已随 `2f60f73` 推送；Ubuntu 210／Windows 215 组、完整 Windows Debug／Release 各 41 步与实际 KeybindingGroups 通过；net48 PCLCS／VB 泛型桥零警告／错误，独立终审通过，页面 BOM 与其余后台逐文本未变 | 本批完成；控件／Tag／Margin／文案和数值文化仍由原页面执行，不动捕获／Loader／KeyboardName，不替代 c2 整页迁移 |
-| C006a | 原 VB 两方法已转发生产 C#，16 组跨平台样本令 Linux 总矩阵 226／226 通过；net48 PCLCS 零警告／错误，工作流增加原 VB 路径触发，Windows 脚本增强真实 Prepare 参数金值／缺失世界及 CLR4 非法字符 oracle | 待完整 Windows Debug／Release、Ubuntu／Windows 新矩阵与 CLR4 oracle 实际结果；不改变支持版本／日志／会话／首页。现代只保留 BCL 异常类型／顺序，不复制系统所有本地化文案 |
+| C006a | 已随 `046ed2d` 推送；Ubuntu 226／Windows 232 组、完整 Windows Debug／Release 各 41 步、原 Prepare 和 41 字符 CLR4 oracle 通过；net48 PCLCS 零警告／错误、独立生产／测试／PS 终审通过 | 本批完成。不改变支持版本／日志／会话／首页；现代只保留 BCL 异常类型／顺序，不复制系统所有本地化文案 |
+| C006b | 历史／日志、原 JSON、40／5 上限、两次读取／早退、Gate／重入、原 per-entry IO 边界与双 DTO 已接通；26 组实际临时文件样本含 UTF16LE BOM 与逐项 mtime 完整性，Linux 252／252 通过，测试／net48 库零警告／错误，非本批方法逐字不变 | 待 Windows Debug／Release、Ubuntu／Windows 新矩阵和原 VB 会话／历史类型、4＋5 字段、ID32／实际 UTC 消费者；不是多线程竞态或真实 Minecraft 验证 |
 
-下次入口：核对分支、远端和 C006a 活动批次，先收尾路径／参数生产接线与真实检查；C005c1 已全通过，不重复提取或等待。其母项因 c2 缺 C027／独立 C029a 保持 blocked；继续 C006 子任务，不因整页暂阻而停止工程，也不将整页假标完成。
+下次入口：核对分支、远端和 C006b 活动批次，先收尾历史／日志生产接线与真实检查；C006a／C005c1 已全通过，不重复提取或等待。C005 因 c2 缺 C027／独立 C029a 保持 blocked；继续 C006 子任务，不因整页暂阻而停止工程，也不将整页假标完成。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

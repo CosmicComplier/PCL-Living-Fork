@@ -29,10 +29,17 @@ try{
  $settings['VersionArgumentIndieV2'].ValueCache[$instance.PathVersion]=$true
  [IO.Directory]::CreateDirectory((Join-Path $version 'PCL'))|Out-Null;[IO.File]::WriteAllText((Join-Path $version 'PCL/Setup.ini'),'VersionArgumentIndieV2:True')
  $arguments=[Collections.Generic.List[string]]::new();$session=Call $quick 'Prepare' @($instance,$null,$arguments,$false)
+ if($null -eq $session -or $session.GetType().FullName -cne 'PCL.QuickPlaySession'){throw 'Quick Play did not preserve the original VB session type'}
+ foreach($name in @('Id','VersionPath','GameFolder','LogFile')){if($null -eq $session.GetType().GetField($name,$flags)){throw ('Quick Play session field reflection contract changed: '+$name)}}
+ if($session.GetType().GetField('Id',$flags).GetValue($session) -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Quick Play session ID initialization changed'}
  $log=$session.GetType().GetField('LogFile',$flags).GetValue($session)
  [IO.File]::WriteAllText($log,'[{"type":"singleplayer","id":"Test world","name":"Test world","lastPlayedTime":"2026-10-24T00:00:00Z","gamemode":"survival"}]')
  Call $quick 'Finish' @($session)|Out-Null
  $recent=Call $quick 'Recent' @();$missing=$recent.Count -eq 0
+ if($recent.Count -ne 1 -or $recent[0].GetType().FullName -cne 'PCL.RecentWorld'){throw 'Recent worlds did not preserve the original VB row type'}
+ foreach($name in @('VersionPath','GameFolder','Identifier','Name','PlayedUtc')){if($null -eq $recent[0].GetType().GetField($name,$flags)){throw ('Recent world field reflection contract changed: '+$name)}}
+ $played=$recent[0].GetType().GetField('PlayedUtc',$flags).GetValue($recent[0].PSObject.BaseObject)
+ if($played.Kind -ne [DateTimeKind]::Utc -or $played -ne [DateTime]::new(2026,10,24,0,0,0,[DateTimeKind]::Utc)){throw 'Mojang Quick Play history lost its actual UTC timestamp'}
  [pscustomobject]@{FirstRunKeyPageBlank=$blank;MojangIdLogLost=$missing}|ConvertTo-Json -Compress
  if($blank -or $missing){throw 'Observed first-run/Quick Play failure reproduced'}
  $defaults=@($rows|Where-Object {$_.GetType().GetField('Saved',$flags).GetValue($_.PSObject.BaseObject) -eq $false})

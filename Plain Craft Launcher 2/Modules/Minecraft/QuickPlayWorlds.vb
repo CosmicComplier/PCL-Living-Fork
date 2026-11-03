@@ -1,23 +1,19 @@
 Imports System.IO
-Imports System.Globalization
 
 Friend Class QuickPlaySession
-    Friend Id As String = Guid.NewGuid().ToString("N")
-    Friend VersionPath As String
-    Friend GameFolder As String
-    Friend LogFile As String
+    Inherits PCLCS.QuickPlaySessionData
 End Class
 
 Friend Class RecentWorld
-    Friend VersionPath As String
-    Friend GameFolder As String
-    Friend Identifier As String
-    Friend Name As String
-    Friend PlayedUtc As Date
+    Inherits PCLCS.RecentWorldData
 End Class
 
 Friend Module QuickPlayWorlds
-    Private Const HistoryName As String = "recent-worlds.json"
+    Private ReadOnly HistoryService As New PCLCS.QuickPlayHistory(
+        LocalGameData.Service, LocalGameData.Gate, Function() Settings.Get(Of Boolean)("LaunchRecentWorlds"),
+        Sub(Root, FileName) InstanceResourceStore.EnsureWithin(Root, FileName),
+        Function(First, Second) PathUtils.IsSame(First, Second), Function(VersionPath) ModModpackMode.AllowsInstance(VersionPath),
+        Sub(ErrorValue, Message) Logger.Warn(ErrorValue, Message), Function() New RecentWorld)
     Friend Function Supported(Instance As McInstance) As Boolean
         Return Instance IsNot Nothing AndAlso Instance.Version.Valid AndAlso Instance.Version.Vanilla.Major >= 20 AndAlso
             (Not Instance.Version.IsSnapshot OrElse Instance.ReleaseTime.ToUniversalTime() >= New Date(2023, 4, 5, 0, 0, 0, DateTimeKind.Utc))
@@ -87,33 +83,10 @@ Friend Module QuickPlayWorlds
         End SyncLock
     End Sub
     Private Sub ReadSessionLog(Session As QuickPlaySession)
-        If Not Settings.Get(Of Boolean)("LaunchRecentWorlds") OrElse Not File.Exists(Session.LogFile) Then Return
-        InstanceResourceStore.EnsureWithin(LocalGameData.Address("quickplay-logs"), Session.LogFile)
-        If New FileInfo(Session.LogFile).Length > 1024 * 1024 Then Throw New IOException("Quick Play 记录过大。")
-        Dim Json = JToken.Parse(File.ReadAllText(Session.LogFile)), Container = TryCast(Json, JContainer)
-        If Container Is Nothing Then Return
-        Dim Objects = Container.Descendants().OfType(Of JObject)().ToList()
-        If TypeOf Container Is JObject Then Objects.Insert(0, DirectCast(Container, JObject))
-        For Each Entry In Objects.Where(Function(Item) String.Equals(Item("type")?.ToString(), "singleplayer", StringComparison.OrdinalIgnoreCase))
-            Dim Identifier = If(Entry("id")?.ToString(), Entry("identifier")?.ToString())
-            Try
-                WorldPath(Session.GameFolder, Identifier)
-                Dim Played = File.GetLastWriteTimeUtc(Session.LogFile), Parsed As DateTimeOffset
-                If DateTimeOffset.TryParse(Entry("lastPlayedTime")?.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, Parsed) Then Played = Parsed.UtcDateTime
-                Remember(New RecentWorld With {.VersionPath = Session.VersionPath, .GameFolder = Session.GameFolder, .Identifier = Identifier, .Name = If(Entry("name")?.ToString(), Identifier), .PlayedUtc = Played})
-            Catch ex As IOException
-                Logger.Warn(ex, "忽略不可用的最近存档记录")
-            End Try
-        Next
+        HistoryService.ReadSessionLog(Session)
     End Sub
     Friend Sub Remember(World As RecentWorld)
-        SyncLock LocalGameData.Gate
-            If ReadEntries().Any(Function(Item) PathUtils.IsSame(Item.VersionPath, World.VersionPath) AndAlso Item.Identifier = World.Identifier AndAlso (Item.PlayedUtc > World.PlayedUtc OrElse (Item.PlayedUtc = World.PlayedUtc AndAlso Item.Name = World.Name))) Then Return
-            Dim Existing = ReadEntries().Where(Function(Item) Not (PathUtils.IsSame(Item.VersionPath, World.VersionPath) AndAlso Item.Identifier = World.Identifier)).ToList()
-            Existing.Add(World)
-            Dim Values As New JArray(Existing.OrderByDescending(Function(Item) Item.PlayedUtc).Take(40).Select(Function(Item) New JObject(New JProperty("versionPath", Item.VersionPath), New JProperty("gameFolder", Item.GameFolder), New JProperty("identifier", Item.Identifier), New JProperty("name", Item.Name), New JProperty("playedUtc", Item.PlayedUtc))))
-            LocalGameData.WriteJson(HistoryName, New JObject(New JProperty("version", 1), New JProperty("worlds", Values)))
-        End SyncLock
+        HistoryService.Remember(World)
     End Sub
     Friend Sub DiscoverExistingWorlds(Instance As McInstance)
         If Not Settings.Get(Of Boolean)("LaunchRecentWorlds") OrElse Not Supported(Instance) Then Return
@@ -133,33 +106,10 @@ Friend Module QuickPlayWorlds
         Next
     End Sub
     Private Function ReadEntries() As List(Of RecentWorld)
-        Dim Values = TryCast(LocalGameData.ReadJson(HistoryName)("worlds"), JArray)
-        Dim Result As New List(Of RecentWorld)
-        For Each Item In If(Values, New JArray).OfType(Of JObject)()
-            Try
-                Result.Add(New RecentWorld With {.VersionPath = Item("versionPath").ToString(), .GameFolder = Item("gameFolder").ToString(), .Identifier = Item("identifier").ToString(), .Name = Item("name").ToString(), .PlayedUtc = Item("playedUtc").ToObject(Of Date)().ToUniversalTime()})
-            Catch
-                '单个旧记录无效时仍保留其他记录。
-            End Try
-        Next
-        Return Result
+        Return HistoryService.ReadEntries().Cast(Of RecentWorld)().ToList()
     End Function
     Friend Function Recent() As List(Of RecentWorld)
-        Dim Result As New List(Of RecentWorld)
-        If Not Settings.Get(Of Boolean)("LaunchRecentWorlds") Then Return Result
-        SyncLock LocalGameData.Gate
-            For Each World In ReadEntries().OrderByDescending(Function(Item) Item.PlayedUtc)
-                Try
-                    If Not Directory.Exists(World.VersionPath) OrElse Not ModModpackMode.AllowsInstance(World.VersionPath) Then Continue For
-                    WorldPath(World.GameFolder, World.Identifier)
-                    Result.Add(World)
-                Catch
-                    '删除或移动整合包后不报错，不创建缺失目录。
-                End Try
-                If Result.Count = 5 Then Exit For
-            Next
-        End SyncLock
-        Return Result
+        Return HistoryService.Recent().Cast(Of RecentWorld)().ToList()
     End Function
     Friend Sub RecoverExitedSessions()
         Dim Folder = LocalGameData.Address("quickplay-sessions")

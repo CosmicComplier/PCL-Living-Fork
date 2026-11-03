@@ -51,7 +51,8 @@ internal static class Program {
             .. InstanceKeybindingFileTests.Cases(),
             .. InstanceKeybindingReaderTests.Cases(),
             .. InstanceKeybindingViewTests.Cases(),
-            .. QuickPlayWorldRulesTests.Cases()
+            .. QuickPlayWorldRulesTests.Cases(),
+            .. QuickPlayHistoryTests.Cases()
         ];
         int failures = 0;
         foreach ((string name, Action run) in tests) {
