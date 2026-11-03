@@ -26,6 +26,11 @@ function Invoke-Store($name,[object[]]$arguments){
 function Kind([string]$name){return [Enum]::Parse($kindType,$name)}
 function Put([string]$path,[string]$text){[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null;[IO.File]::WriteAllText($path,$text)}
 function Assert-Rejected([scriptblock]$action,[string]$message){$rejected=$false;try{& $action|Out-Null}catch{$rejected=$true};if(-not $rejected){throw $message}}
+function Assert-StoreException([string]$name,[object[]]$values,[type]$expected){
+ $observed=$null
+ try{Invoke-Store $name $values|Out-Null}catch{$observed=$_.Exception;while($null -ne $observed.InnerException){$observed=$observed.InnerException}}
+ if($null -eq $observed -or $observed.GetType() -ne $expected){throw ('Unexpected resource mapping exception for '+$name+'; expected '+$expected.FullName)}
+}
 function New-Zip([string]$path,[hashtable]$items){
  $archive=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
  try{foreach($name in $items.Keys){$writer=[IO.StreamWriter]::new($archive.CreateEntry($name).Open());try{$writer.Write($items[$name])}finally{$writer.Dispose()}}}finally{$archive.Dispose()}
@@ -48,6 +53,22 @@ function Render-Png($element,[string]$path,[int]$width,[int]$height){
 }
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('LivingPCL-Resources-'+[Guid]::NewGuid().ToString('N'))
 try{
+ $kindNames=@('Saves','Screenshots','ResourcePacks','ShaderPacks','Schematics')
+ $kindTitles=@('存档','截图','资源包','光影包','投影/原理图')
+ $kindFolders=@('saves','screenshots','resourcepacks','shaderpacks','schematics')
+ if($kindType.FullName -cne 'PCL.InstanceResourceKind' -or [Enum]::GetUnderlyingType($kindType) -ne [int] -or ([Enum]::GetNames($kindType) -join '|') -cne ($kindNames -join '|')){throw 'Resource kind lost its original VB enum identity or five names'}
+ for($index=0;$index -lt $kindNames.Length;$index++){
+  $kind=[Enum]::ToObject($kindType,[int]$index)
+  if($kind.ToString() -cne $kindNames[$index] -or (Invoke-Store 'Title' @($kind)) -cne $kindTitles[$index] -or (Invoke-Store 'FolderName' @($kind)) -cne $kindFolders[$index]){throw 'Resource kind numeric values, title or folder mapping changed'}
+  $gameFolder='relative\mixed/slash'
+  if((Invoke-Store 'Root' @($gameFolder,$kind)) -cne [IO.Path]::Combine($gameFolder,$kindFolders[$index])){throw 'Resource Root changed its original Path.Combine behavior'}
+ }
+ foreach($invalid in @(-1,5,[int]::MinValue,[int]::MaxValue)){
+  $kind=[Enum]::ToObject($kindType,[int]$invalid)
+  foreach($method in @('Title','FolderName')){Assert-StoreException $method @($kind) ([IndexOutOfRangeException])}
+  Assert-StoreException 'Root' @($null,$kind) ([IndexOutOfRangeException])
+ }
+ Assert-StoreException 'Root' @($null,([Enum]::ToObject($kindType,0))) ([ArgumentNullException])
  $worldKind=Kind 'Saves';$imageKind=Kind 'Screenshots';$packKind=Kind 'ResourcePacks';$shaderKind=Kind 'ShaderPacks';$schematicKind=Kind 'Schematics'
  $missing=Join-Path $fixture 'absent'
  if((Scan $missing $worldKind).Count -ne 0 -or [IO.Directory]::Exists($missing)){throw 'Viewing resources created a missing folder'}
@@ -202,7 +223,7 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

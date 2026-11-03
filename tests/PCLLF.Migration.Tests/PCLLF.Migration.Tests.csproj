@@ -24,6 +24,7 @@
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePaths.cs" Link="Production/InstanceResourcePaths.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePathText.cs" Link="Production/InstanceResourcePathText.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePathCompatibility.cs" Link="Production/InstanceResourcePathCompatibility.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourceKindRules.cs" Link="Production/InstanceResourceKindRules.cs" />
     <Reference Include="Newtonsoft.Json">
       <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
       <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>

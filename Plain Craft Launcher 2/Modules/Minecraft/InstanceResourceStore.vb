@@ -20,13 +20,11 @@ End Class
 '只管理指定资源目录；读取不创建目录，写入不覆盖同名资源，删除可在本页恢复。
 Friend NotInheritable Class InstanceResourceStore
     Friend Shared Function Title(Kind As InstanceResourceKind) As String
-        Dim Names As String() = {"存档", "截图", "资源包", "光影包", "投影/原理图"}
-        Return Names(CInt(Kind))
+        Return PCLCS.InstanceResourceKindRules.Title(CInt(Kind))
     End Function
 
     Friend Shared Function FolderName(Kind As InstanceResourceKind) As String
-        Dim Folders As String() = {"saves", "screenshots", "resourcepacks", "shaderpacks", "schematics"}
-        Return Folders(CInt(Kind))
+        Return PCLCS.InstanceResourceKindRules.FolderName(CInt(Kind))
     End Function
 
     Friend Shared Function Root(GameFolder As String, Kind As InstanceResourceKind) As String
