@@ -4,11 +4,12 @@
 
 ## 当前状态
 
-- 目标状态：`paused`。2026-11-04按用户要求暂停goal与自动续跑；尚未完成整个迁移目标。保留全部已验进度，等待用户明确恢复后再从C007d2继续。
+- 目标状态：`paused`。2026-11-04按用户要求暂停goal与自动续跑；尚未完成整个迁移目标。保留全部已验进度，等待用户明确恢复后先完成G005测试分组／CI路由，再从C007d2推进资源功能链。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `476eb42bb00e85b7cf8d4f800d1264740b8373c6`：Windows各41步、Ubuntu367／Windows399组及 **RequireEquivalent** 397／56全通过（metadata101／解析位值34／格式72），C007d1b与d1完成；前两轮18／4差异及修复证据保留。主产品仍net48，非全部BCL／CRT／现代WPF验收。
-- 当前最早ready为C007d2：迁移ReadPackInfo的目录／ZIP I/O与同步Icon派发，保1MiB／4MiB、ZIP Share.ReadWrite|Delete、五类catch、Icon先于JSON/ref更新、原WPF LoadImage／DecodeImage继续宿主；扫描／取消／图片解码另批，不以本项关闭Store。C005c2／C006d界面母项仍blocked。
+- 当前恢复前置为G005测试分组／CI路由；随后内部起点C007d2：迁移ReadPackInfo的目录／ZIP I/O与同步Icon派发，保1MiB／4MiB、ZIP Share.ReadWrite|Delete、五类catch、Icon先于JSON/ref更新、原WPF LoadImage／DecodeImage继续宿主；扫描／取消／图片解码另批，不以本项关闭Store。C005c2／C006d界面母项仍blocked。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标继续paused。
+- 用户补充测试要求：按受影响模块／下游／功能链执行相关检查；跨链高影响或范围不明的框架／公共契约改动及发布前才全量回归，纯文档不跑产品测试。现有Main测试入口和CI仍默认全跑，尚未实施解耦，恢复后先完成G005；目标继续paused。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -169,6 +170,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G002 | done | G001 | LF／PCL／CE 模块映射、生产入口、依赖和逐组迁移边界；核对源清单覆盖，并记录 CE 参考位置及未查证处 |
 | G003 | done | 固定 LF 来源 | 初始 Windows Debug／Release 构建与既有自动化回归；证据为 run `41656492901`，GUI 对照仍归 R003 |
 | G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
+| G005 | todo | G004 | 按用户新要求为现有测试入口增加模块／功能链选择和变更依赖路由，保留兼容样本与整链／发布门禁；记录选择范围，空选择失败，文档不触发产品全测。恢复后的小前置，不新建大型测试框架，不算主体迁移完成 |
 | B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
 | C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
 | C002 | done | B001、C001 | 文件／gzip／详情文案已迁入 C#，原三个消费者经兼容入口接通；42 组双平台样本与 Windows Debug／Release 完整回归通过。最终删除类型映射／路径日志 VB 门面仍由 C006／C010／C029／C031、R001 验收，不声称页面后台已转换 |
@@ -293,6 +295,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：C007d2 ReadPackInfo目录／ZIP I/O，使用原Entry对象上的两个同步Icon动作保持WPF归属及单向依赖；不复用c4仅Share.Read的OpenRead替代原Share.ReadWrite|Delete。保metadata完整读取／icon先更新／最后JSON及原五类filter，目录LoadImage自吞FormatException与ZIP直DecodeImage外漏的区别保持。d1b／d1a／c4／c3／c2／c1／b2已通过，不重复前批或重建基线；后续再拆LoadImage／Scan及取消。C005／C006界面母项仍blocked。
+下次入口：先完成G005测试选择与CI路由，验证定向运行和必要的整链／发布门禁；随后从C007d2 ReadPackInfo目录／ZIP I/O推进资源功能链，使用原Entry对象上的两个同步Icon动作保持WPF归属及单向依赖；不复用c4仅Share.Read的OpenRead替代原Share.ReadWrite|Delete。保metadata完整读取／icon先更新／最后JSON及原五类filter，目录LoadImage自吞FormatException与ZIP直DecodeImage外漏的区别保持。d1b／d1a／c4／c3／c2／c1／b2已通过，不重复前批或重建基线；后续再拆LoadImage／Scan及取消。C005／C006界面母项仍blocked。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
