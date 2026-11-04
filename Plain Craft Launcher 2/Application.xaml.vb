@@ -228,6 +228,8 @@ RetryCacheCheck:
         Static LoadedAssemblies As New ConcurrentDictionary(Of String, Lazy(Of Assembly))(StringComparer.Ordinal) '缓存
         AddHandler AppDomain.CurrentDomain.AssemblyResolve,
         Function(sender As Object, Args As ResolveEventArgs) As Assembly
+            'Let ResourceManager fall back to the neutral embedded BAML when this optional satellite is absent.
+            If Args.Name = "PCLLF.Presentation.resources" OrElse Args.Name.StartsWith("PCLLF.Presentation.resources,", StringComparison.Ordinal) Then Return Nothing
             Dim Prefix As String = Prefixes.FirstOrDefault(Function(p) Args.Name.StartsWith(p, StringComparison.Ordinal))
             If Prefix Is Nothing Then Return Nothing
             Dim LazyAssembly = LoadedAssemblies.GetOrAdd(Prefix, Function(p) New Lazy(Of Assembly)(

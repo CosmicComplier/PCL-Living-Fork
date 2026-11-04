@@ -61,6 +61,8 @@ ee52902原生控件cold资源已PASS，Add-Type引用主EXE路径报0x80131047�
 
 cbf8063完整复验：Modern41812928568与Migration41812928614成功；旧Build41812928561两配置编译后在原InstanceResources PageGet真实创建MyCheckBox时XamlParseException（Debug126516483009／Release126516478251），非测试编译引用问题。新增族gate在末端因默认success未运行，仍无完整ctor内层原因。下一诊断保原assert，完整输出资源页异常链，并在已成功编译且未取消时让末端族gate即使前序消费者失败也执行，以取得独立cold构造／事件原始异常。不得把公共控件批次写成通过。
 
+aa72efd实际诊断（Build41813603772 Debug126518768470／Release126518767208）：原资源消费者及末端cold族Run均显示FileNotFoundException PCLLF.Presentation.resources→ResourceManager／ResourcePart→新view InitializeComponent。现原StartsWith白名单误把optional satellite当neutral DLL返回，阻断neutral BAML回退；修仅新库精确.resources simpleName／displayName返回Nothing，旧所有前缀／缓存／其它satellite策略不变。目前尚未到达完整构造／六族行为验收，后续仍须查实际新异常；不提前据框架源码推测通过或修改视觉。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
