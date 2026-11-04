@@ -113,6 +113,7 @@ jobs:
       run: dotnet restore PCLCS\PCLCS.csproj
 
     - name: Build
+      id: product_build
       env:
         PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
         PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
@@ -282,7 +283,7 @@ jobs:
       run: powershell -NoProfile -File scripts/Test-UpdateBridge.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify migrated controls and isolated release resources
-      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-MigratedControls')
+      if: ${{ !cancelled() && steps.product_build.outcome == 'success' && contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-MigratedControls') }}
       run: powershell -NoProfile -STA -File scripts/Test-MigratedControls.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Upload a Build Artifact

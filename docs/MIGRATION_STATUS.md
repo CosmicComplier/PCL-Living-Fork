@@ -59,6 +59,8 @@ C011／控件批次实际发布采用GitHub API正常fast-forward：Git smart pu
 
 ee52902原生控件cold资源已PASS，Add-Type引用主EXE路径报0x80131047（非生产DLL加载失败）；修为cold成功后将已加载EXE同字节另存compiler/<真实AssemblyName>.dll供编译，并核元数据MVID及verifier仍绑定原EXE实例。六组断言未改。新控件gate移到原所有消费者／旧桥之后，两配置不因另一cfg夹具失败取消，保完整独立证据；步骤命令／条件逐对象不变。这次涉及公共新控件未完成回归及C011b真实新页面，执行一个必要完整检查点，后续局部修复仍定向。
 
+cbf8063完整复验：Modern41812928568与Migration41812928614成功；旧Build41812928561两配置编译后在原InstanceResources PageGet真实创建MyCheckBox时XamlParseException（Debug126516483009／Release126516478251），非测试编译引用问题。新增族gate在末端因默认success未运行，仍无完整ctor内层原因。下一诊断保原assert，完整输出资源页异常链，并在已成功编译且未取消时让末端族gate即使前序消费者失败也执行，以取得独立cold构造／事件原始异常。不得把公共控件批次写成通过。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
