@@ -1,26 +1,37 @@
 Public Class PageSetupModpack
     Private Refreshing As Boolean
-
+    Private PageController As PCLCS.ModpackSetupPageController(Of MyCheckBox)
+    Private ReadOnly Property Controller As PCLCS.ModpackSetupPageController(Of MyCheckBox)
+        Get
+            If PageController Is Nothing Then PageController = New PCLCS.ModpackSetupPageController(Of MyCheckBox)(
+                New PCLCS.ModpackSetupPageHost(Of MyCheckBox) With {
+                    .Refreshing = Function() Refreshing,
+                    .SetRefreshing = Sub(Value) Refreshing = Value,
+                    .AdjustAnimation = Sub(Value) AniControlEnabled += Value,
+                    .Animation = Function() AniControlEnabled,
+                    .TouchTitle = AddressOf TouchTitle,
+                    .VersionText = LabVersion,
+                    .Brand = Function() LauncherDisplayName,
+                    .Version = Function() VersionBaseName,
+                    .RefreshSettings = Sub() SettingService.RefreshSettings(Me),
+                    .Enabled = Function() ModModpackMode.Enabled,
+                    .SetChecked = Sub(Value) CheckModpackMode.Checked = Value,
+                    .ScrollHome = Sub() PanBack.ScrollToHome(),
+                    .Toggle = Sub(Sender, User) ModModpackMode.Toggle(Sender, User),
+                    .HintWithoutLog = Sub(Message) Hint(Message, Log:=False)})
+            Return PageController
+        End Get
+    End Property
+    Private Sub TouchTitle()
+        Dim Title = CardLauncher.MainTextBlock
+    End Sub
     Private Sub PageLoaded() Handles Me.Loaded
-        Refreshing = True
-        AniControlEnabled += 1
-        Try
-            Dim Title = CardLauncher.MainTextBlock
-            LabVersion.Text = LauncherDisplayName & " " & VersionBaseName
-            SettingService.RefreshSettings(Me)
-            CheckModpackMode.Checked = ModModpackMode.Enabled
-            PanBack.ScrollToHome()
-        Finally
-            AniControlEnabled -= 1
-            Refreshing = False
-        End Try
+        Controller.Loaded()
     End Sub
-
     Private Sub ModeChanged(sender As Object, User As Boolean) Handles CheckModpackMode.Change
-        ModModpackMode.Toggle(CheckModpackMode, User)
+        Controller.ModeChanged(CheckModpackMode, User)
     End Sub
-
     Private Sub CacheChanged() Handles TextSystemCache.ValidatedTextChanged
-        If Not Refreshing AndAlso AniControlEnabled = 0 Then Hint("缓存文件夹将在重启启动器后生效。", Log:=False)
+        Controller.CacheChanged()
     End Sub
 End Class
