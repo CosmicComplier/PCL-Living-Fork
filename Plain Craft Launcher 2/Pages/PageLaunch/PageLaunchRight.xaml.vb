@@ -1,21 +1,68 @@
 Imports System.Windows.Threading
+Imports RecentWorldController = PCLCS.RecentWorldPageController(Of PCL.ModMinecraft.McInstance, PCL.RecentWorld, PCL.ModAnimation.AniData)
+Imports RecentWorldHost = PCLCS.RecentWorldPageHost(Of PCL.ModMinecraft.McInstance, PCL.RecentWorld)
+Imports RecentWorldAnimations = PCLCS.RecentWorldAnimationHost(Of PCL.ModAnimation.AniData)
 
 Public Class PageLaunchRight
     Implements IRefreshable, IDispatcherUnhandledException
-    Private RecentWorldRevision As Integer
-    Private LatestRecentWorld As Tuple(Of RecentWorld, ImageSource)
-    Private RecentWorldVisible As Boolean
-    Private RecentSessionRunning As Boolean
-    Private RecentLaunchPending As Boolean
+    Private RecentController As RecentWorldController
     Private DependencyChecksVisible As Boolean
     Private DependencyOptionsRefreshing As Boolean
+
+    Private ReadOnly Property RecentWorldService As RecentWorldController
+        Get
+            If RecentController Is Nothing Then
+                Dim View As New PCLCS.RecentWorldPageView With {
+                    .Root = Me, .Card = CardRecentWorlds, .Item = ItemRecentWorld, .Transform = TransRecentWorld,
+                    .PageId = Function() PageUuid.ToString(), .CardTitle = Function() CardRecentWorlds.MainTextBlock,
+                    .SetTitle = Sub(Value) ItemRecentWorld.Title = Value, .SetInfo = Sub(Value) ItemRecentWorld.Info = Value}
+                RecentController = New RecentWorldController(View, CreateRecentWorldHost(), CreateRecentWorldAnimations())
+            End If
+            Return RecentController
+        End Get
+    End Property
+    Private Function CreateRecentWorldHost() As RecentWorldHost
+        Return New RecentWorldHost With {
+            .SelectedInstance = Function() McInstanceSelected,
+            .RecoverExitedSessions = AddressOf QuickPlayWorlds.RecoverExitedSessions,
+            .DiscoverExistingWorlds = AddressOf QuickPlayWorlds.DiscoverExistingWorlds,
+            .HasRunningSessions = AddressOf QuickPlayWorlds.HasRunningSessions,
+            .Recent = AddressOf QuickPlayWorlds.Recent,
+            .WorldPath = AddressOf QuickPlayWorlds.WorldPath,
+            .LoadImage = Function(FileName, Width) DirectCast(InstanceResourceStore.LoadImage(FileName, Width), ImageSource),
+            .GrassImage = Function() CType(New MyBitmap(PathImage & "Blocks/Grass.png"), ImageSource),
+            .Background = Sub(Work, Name) RunInNewThread(Work, Name),
+            .Dispatch = Sub(Work) RunInUi(Work),
+            .Warn = Sub(ErrorValue, Message) Logger.Warn(ErrorValue, Message),
+            .Error = Sub(ErrorValue, Message) Logger.Error(ErrorValue, Message, LogBehavior.Toast),
+            .HasRunningGame = Function() HasRunningMinecraft,
+            .LaunchLoading = Function() McLaunchLoader.State = LoadState.Loading,
+            .AnimationEnabled = Function() AniControlEnabled = 0,
+            .Enabled = Function() Settings.Get(Of Boolean)("LaunchRecentWorlds"),
+            .ApplyDependencyOptionsState = AddressOf ApplyDependencyOptionsState,
+            .CreateInstance = Function(VersionPath) New McInstance(VersionPath),
+            .GameFolder = Function(Value) Value.PathIndie,
+            .SamePath = Function(Left, Right) PathUtils.IsSame(Left, Right),
+            .StartWorld = AddressOf QuickPlayWorlds.Start,
+            .HintError = Sub(Message) Hint(Message, HintType.Red)}
+    End Function
+    Private Shared Function CreateRecentWorldAnimations() As RecentWorldAnimations
+        Return New RecentWorldAnimations With {
+            .Opacity = Function(Target, Value, Time) AaOpacity(Target, Value, Time),
+            .TranslateX = AddressOf RecentWorldTranslateX,
+            .Code = Function(Work, Delay, After) AaCode(Sub() Work(), Delay, After),
+            .Start = Sub(Animations, Name) AniStart(Animations, Name),
+            .Stop = Sub(Name) AniStop(Name), .IsRunning = AddressOf AniIsRun}
+    End Function
+    Private Shared Function RecentWorldTranslateX(Target As FrameworkElement, Value As Double, Time As Integer, Ease As PCLCS.RecentWorldSlideEase) As AniData
+        If Ease = PCLCS.RecentWorldSlideEase.OutBackWeak Then Return AaTranslateX(Target, Value, Time, Ease:=New AniEaseOutBack(AniEasePower.Weak))
+        Return AaTranslateX(Target, Value, Time, Ease:=New AniEaseInFluent(AniEasePower.Weak))
+    End Function
 
     Private Sub InitRecentWorldCard() Handles Me.Initialized
         DisabledPageAnimControls.Add(CardRecentWorlds)
         DisabledPageAnimControls.Add(CardDependencyChecks)
-        Dim Title = CardRecentWorlds.MainTextBlock
-        Title.FontSize = 12
-        Title.Margin = New Thickness(12, 7, 12, 0)
+        RecentWorldService.InitializeCard()
         RefreshDependencyOptions()
     End Sub
     Private Sub RecentPageEntered() Handles Me.PageEnter
@@ -30,96 +77,16 @@ Public Class PageLaunchRight
         RefreshRecentWorlds()
     End Sub
     Friend Sub RefreshRecentWorlds()
-        Dim Revision = Interlocked.Increment(RecentWorldRevision)
-        Dim SelectedInstance = McInstanceSelected
-        RunInNewThread(Sub()
-                           Dim Item As Tuple(Of RecentWorld, ImageSource) = Nothing
-                           Dim SessionRunning As Boolean = False
-                           Try
-                               QuickPlayWorlds.RecoverExitedSessions()
-                               QuickPlayWorlds.DiscoverExistingWorlds(SelectedInstance)
-                               SessionRunning = QuickPlayWorlds.HasRunningSessions()
-                               Dim World = QuickPlayWorlds.Recent().FirstOrDefault()
-                               If World IsNot Nothing Then Item = Tuple.Create(World, DirectCast(InstanceResourceStore.LoadImage(IO.Path.Combine(QuickPlayWorlds.WorldPath(World.GameFolder, World.Identifier), "icon.png"), 64), ImageSource))
-                           Catch ex As Exception
-                               Logger.Warn(ex, "读取最近存档失败")
-                           End Try
-                           RunInUi(Sub()
-                                       If Revision <> RecentWorldRevision Then Return
-                                       RecentSessionRunning = SessionRunning
-                                       ShowRecentWorld(Item)
-                                   End Sub)
-                       End Sub, "Load Recent Worlds")
+        RecentWorldService.RefreshRecentWorlds()
     End Sub
     Friend Sub ShowRecentWorld(Item As Tuple(Of RecentWorld, ImageSource))
-        LatestRecentWorld = Item
-        If Item Is Nothing Then
-            ApplyRecentWorldState(RecentLaunchPending OrElse HasRunningMinecraft OrElse RecentSessionRunning OrElse McLaunchLoader.State = LoadState.Loading, IsLoaded AndAlso AniControlEnabled = 0)
-            Return
-        End If
-        Dim World = Item.Item1
-        ItemRecentWorld.Tag = World
-        ItemRecentWorld.Title = World.Name
-        Dim Played = World.PlayedUtc.ToLocalTime()
-        ItemRecentWorld.Info = If(Played.Date = Date.Today, Played.ToString("HH:mm"), Played.ToString("MM/dd")) & " · " & New IO.DirectoryInfo(World.VersionPath).Name
-        Dim Tip = TryCast(ItemRecentWorld.ToolTip, ToolTip)
-        If Tip Is Nothing Then
-            Tip = New ToolTip
-            ItemRecentWorld.ToolTip = Tip
-        End If
-        Tip.Content = World.Name & vbCrLf & New IO.DirectoryInfo(World.VersionPath).Name & " · " & Played.ToString("yyyy-MM-dd HH:mm")
-        Dim Icon = ItemRecentWorld.Children.OfType(Of Canvas)().FirstOrDefault(Function(Canvas) TypeOf Canvas.Background Is ImageBrush)
-        If Icon IsNot Nothing Then
-            Dim Picture = DirectCast(Icon.Background, ImageBrush).CloneCurrentValue()
-            Picture.Stretch = Stretch.Uniform
-            Picture.ImageSource = If(Item.Item2, CType(New MyBitmap(PathImage & "Blocks/Grass.png"), ImageSource))
-            Icon.Background = Picture
-            Icon.Width = 32
-            Icon.Height = 32
-            Icon.HorizontalAlignment = HorizontalAlignment.Center
-            Icon.VerticalAlignment = VerticalAlignment.Center
-            Icon.Clip = New RectangleGeometry(New Rect(0, 0, 32, 32), 6, 6)
-        End If
-        UpdateRecentWorldVisibility()
+        RecentWorldService.ShowRecentWorld(Item)
     End Sub
     Friend Sub UpdateRecentWorldVisibility()
-        If Not IsLoaded Then Return
-        ApplyRecentWorldState(RecentLaunchPending OrElse HasRunningMinecraft OrElse RecentSessionRunning OrElse McLaunchLoader.State = LoadState.Loading, AniControlEnabled = 0)
+        RecentWorldService.UpdateRecentWorldVisibility()
     End Sub
     Friend Sub ApplyRecentWorldState(GameActive As Boolean, Animate As Boolean)
-        Dim Visible = LatestRecentWorld IsNot Nothing AndAlso Not GameActive AndAlso Not RecentLaunchPending AndAlso Settings.Get(Of Boolean)("LaunchRecentWorlds")
-        ApplyDependencyOptionsState(GameActive OrElse RecentLaunchPending, Animate, Visible)
-        Dim AnimationName = "Recent World Card " & PageUuid
-        If RecentWorldVisible = Visible AndAlso (AniIsRun(AnimationName) OrElse CardRecentWorlds.Visibility = If(Visible, Visibility.Visible, Visibility.Collapsed)) Then Return
-        RecentWorldVisible = Visible
-        AniStop(AnimationName)
-        ToolTipService.SetIsEnabled(ItemRecentWorld, False)
-        Dim Tip = TryCast(ItemRecentWorld.ToolTip, ToolTip)
-        If Tip IsNot Nothing Then Tip.IsOpen = False
-        CardRecentWorlds.IsHitTestVisible = Visible
-        If Not Animate Then
-            CardRecentWorlds.Visibility = If(Visible, Visibility.Visible, Visibility.Collapsed)
-            CardRecentWorlds.Opacity = If(Visible, 1, 0)
-            TransRecentWorld.X = If(Visible, 0, -24)
-            ToolTipService.SetIsEnabled(ItemRecentWorld, Visible)
-        ElseIf Visible Then
-            If CardRecentWorlds.Visibility <> Visibility.Visible Then
-                CardRecentWorlds.Opacity = 0
-                TransRecentWorld.X = -24
-            End If
-            CardRecentWorlds.Visibility = Visibility.Visible
-            AniStart({
-                AaOpacity(CardRecentWorlds, 1 - CardRecentWorlds.Opacity, 180),
-                AaTranslateX(CardRecentWorlds, -TransRecentWorld.X, 280, Ease:=New AniEaseOutBack(AniEasePower.Weak)),
-                AaCode(Sub() ToolTipService.SetIsEnabled(ItemRecentWorld, RecentWorldVisible AndAlso Not RecentLaunchPending), After:=True)
-            }, AnimationName)
-        Else
-            AniStart({
-                AaOpacity(CardRecentWorlds, -CardRecentWorlds.Opacity, 100),
-                AaTranslateX(CardRecentWorlds, -24 - TransRecentWorld.X, 150, Ease:=New AniEaseInFluent(AniEasePower.Weak)),
-                AaCode(Sub() CardRecentWorlds.Visibility = Visibility.Collapsed, After:=True)
-            }, AnimationName)
-        End If
+        RecentWorldService.ApplyRecentWorldState(GameActive, Animate)
     End Sub
 
     Friend Sub RefreshDependencyOptions()
@@ -169,38 +136,10 @@ Public Class PageLaunchRight
         End If
     End Sub
     Private Sub RecentWorldClick(Sender As Object, e As MouseButtonEventArgs) Handles ItemRecentWorld.Click
-        e.Handled = True
-        Dim World = TryCast(ItemRecentWorld.Tag, RecentWorld)
-        If World Is Nothing Then Return
-        BeginRecentWorldLaunch(Function()
-                                   Dim Instance As New McInstance(World.VersionPath)
-                                   If Not PathUtils.IsSame(Instance.PathIndie, World.GameFolder) Then
-                                       Hint("此版本的游戏目录已经变化，请从存档管理页重新选择存档。", HintType.Red)
-                                       Return False
-                                   End If
-                                   Return QuickPlayWorlds.Start(Instance, World.Identifier)
-                               End Function, AniControlEnabled = 0)
+        RecentWorldService.RecentWorldClick(Sender, e)
     End Sub
     Friend Sub BeginRecentWorldLaunch(Start As Func(Of Boolean), Optional Animate As Boolean = True)
-        If RecentLaunchPending OrElse HasRunningMinecraft OrElse McLaunchLoader.State = LoadState.Loading Then Return
-        RecentLaunchPending = True
-        ApplyRecentWorldState(True, Animate)
-        Dim ContinueLaunch As Action = Sub()
-                                           Dim Accepted As Boolean
-                                           Try
-                                               Accepted = Start()
-                                           Catch ex As Exception
-                                               Logger.Error(ex, "启动最近游玩的存档失败", LogBehavior.Toast)
-                                           Finally
-                                               RecentLaunchPending = False
-                                               If Not Accepted Then ApplyRecentWorldState(False, Animate)
-                                           End Try
-                                       End Sub
-        If Animate Then
-            AniStart({AaCode(Sub() ContinueLaunch(), 180)}, "Recent World Launch " & PageUuid)
-        Else
-            ContinueLaunch()
-        End If
+        RecentWorldService.BeginRecentWorldLaunch(Start, Animate)
     End Sub
     Private Sub ReleaseRecentWorlds() Handles Me.Unloaded
         AniStop("Dependency Options " & PageUuid)
@@ -208,17 +147,7 @@ Public Class PageLaunchRight
         CardDependencyChecks.Visibility = Visibility.Collapsed
         CardDependencyChecks.Opacity = 0
         TransDependencyChecks.X = -24
-        Interlocked.Increment(RecentWorldRevision)
-        AniStop("Recent World Card " & PageUuid)
-        AniStop("Recent World Launch " & PageUuid)
-        RecentLaunchPending = False
-        ToolTipService.SetIsEnabled(ItemRecentWorld, False)
-        Dim Tip = TryCast(ItemRecentWorld.ToolTip, ToolTip)
-        If Tip IsNot Nothing Then Tip.IsOpen = False
-        RecentWorldVisible = False
-        CardRecentWorlds.Visibility = Visibility.Collapsed
-        CardRecentWorlds.Opacity = 0
-        TransRecentWorld.X = -24
+        RecentWorldService.ReleaseRecentWorlds()
     End Sub
 
 #Region "主页"

@@ -18,6 +18,15 @@ Friend Module QuickPlayWorlds
         HistoryService, LocalGameData.Service, LocalGameData.Gate, Function() Settings.Get(Of Boolean)("LaunchRecentWorlds"),
         Sub(Root, FileName) InstanceResourceStore.EnsureWithin(Root, FileName),
         Sub(ErrorValue, Message) Logger.Warn(ErrorValue, Message), Function() New QuickPlaySession, Function() New RecentWorld)
+    Private ReadOnly LaunchService As New PCLCS.RecentWorldQuickPlay(Of McInstance)(
+        New PCLCS.RecentWorldQuickPlayHost(Of McInstance) With {
+            .VersionPath = Function(Value) Value.PathVersion, .GameFolder = Function(Value) Value.PathIndie,
+            .AllowsInstance = Function(Value) ModModpackMode.AllowsInstance(Value),
+            .Load = Sub(Value) Value.Load(), .Supported = AddressOf Supported,
+            .WorldPath = AddressOf WorldPath, .HasRunningGame = Function() HasRunningMinecraft,
+            .NavigateLaunch = Sub() FrmMain.PageChange(FormMain.PageType.Launch),
+            .Launch = Function(Value, Identifier) McLaunchStart(New McLaunchOptions With {.Instance = Value, .ServerIp = "", .QuickPlayWorld = Identifier}),
+            .HintError = Sub(Message) Hint(Message, HintType.Red)})
     Friend Function Supported(Instance As McInstance) As Boolean
         Return FlowService.Supported(Adapt(Instance))
     End Function
@@ -25,18 +34,7 @@ Friend Module QuickPlayWorlds
         Return PCLCS.QuickPlayWorldRules.WorldPath(GameFolder, Identifier, Sub(Root, World) InstanceResourceStore.EnsureWithin(Root, World))
     End Function
     Friend Function Start(Instance As McInstance, Identifier As String) As Boolean
-        Try
-            If Instance Is Nothing OrElse Not ModModpackMode.AllowsInstance(Instance.PathVersion) Then Throw New IOException("请使用当前整合包目录中的游戏版本。")
-            Instance.Load()
-            If Not Supported(Instance) Then Throw New IOException("直接进入存档需要支持 Quick Play 的 Minecraft Java 1.20 或更新版本。")
-            WorldPath(Instance.PathIndie, Identifier)
-            If HasRunningMinecraft Then Throw New IOException("请先关闭正在运行的游戏，再直接进入存档。")
-            FrmMain.PageChange(FormMain.PageType.Launch)
-            Return McLaunchStart(New McLaunchOptions With {.Instance = Instance, .ServerIp = "", .QuickPlayWorld = Identifier})
-        Catch ex As Exception
-            Hint(ex.Message, HintType.Red)
-            Return False
-        End Try
+        Return LaunchService.Start(Instance, Identifier)
     End Function
     Friend Function Prepare(Instance As McInstance, Identifier As String, Arguments As List(Of String), SaveBatch As Boolean) As QuickPlaySession
         Return DirectCast(FlowService.Prepare(Adapt(Instance), Identifier, Arguments, SaveBatch), QuickPlaySession)
