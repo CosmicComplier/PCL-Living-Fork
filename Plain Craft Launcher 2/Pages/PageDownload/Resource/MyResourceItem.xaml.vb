@@ -1,211 +1,115 @@
-﻿Public Class MyResourceItem
+﻿Imports RowCore = PCLCS.ResourceItemController(Of PCL.ResourceProject, PCL.ResourceSearcher.SearchResult, PCL.ResourceSearcher.SearchRequest, PCL.ModMinecraft.McInstance, PCL.ModMinecraft.McInstance.McInstanceState, PCL.ModMinecraft.McInstanceCardType, PCL.ModAnimation.AniData)
 
-#Region "基础属性"
+Public Class MyResourceItem
     Public Uuid As Integer = GetUuid()
-
-    '标题
+    Private Controller As RowCore
+    Private ReadOnly Property Service As RowCore
+        Get
+            If Controller Is Nothing Then Controller = New RowCore(CreateHost(), CreateAnimations())
+            Return Controller
+        End Get
+    End Property
+    Private Function CreateHost() As PCLCS.ResourceItemHost(Of ResourceProject, ResourceSearcher.SearchRequest, McInstance)
+        Return New PCLCS.ResourceItemHost(Of ResourceProject, ResourceSearcher.SearchRequest, McInstance) With {
+            .View = Function() New PCLCS.ResourceItemView With {.Root = Me, .Title = LabTitle, .RawTitle = LabTitleRaw, .Info = LabInfo, .InfoToolTip = ToolTipInfo, .Tags = PanTags},
+            .Uuid = Function() Uuid, .CurrentPage = Function() CInt(FrmMain.PageCurrent.Page),
+            .DownloadPage = CInt(FormMain.PageType.Download), .ResourceDetailPage = CInt(FormMain.PageType.ResourceDetail), .InstanceSetupPage = CInt(FormMain.PageType.InstanceSetup),
+            .DetailAvailable = Function() FrmDownloadResourceDetail IsNot Nothing, .DownloadAvailable = Function() FrmDownloadLeft IsNot Nothing,
+            .ExpandedCards = Function() FrmDownloadResourceDetail.PanResults.Children.Cast(Of MyCard)().Select(Function(Card) (Card.Title, Card.IsSwapped)),
+            .CurrentSearch = AddressOf ReadCurrentSearch,
+            .CurrentArguments = Function() TryCast(FrmMain.PageCurrent.Additional, Object()),
+            .CurrentInstance = Function() PageInstanceLeft.Instance,
+            .OpenDetail = Sub(Arguments) FrmMain.PageChange(New FormMain.PageStackData With {.Page = FormMain.PageType.ResourceDetail, .Additional = Arguments}),
+            .RaiseClick = AddressOf RaiseNativeClick, .TextTrimmed = AddressOf IsTextTrimmed,
+            .Brush = Function(Color) New MyColor(Color), .PixelSize = Function(Value) GetWPFSize(Value)}
+    End Function
+    Private Function ReadCurrentSearch() As ResourceSearcher.SearchRequest
+        Dim ResourcePage = TryCast(FrmDownloadLeft.PageGet(FrmMain.PageCurrentSub).FindName("Content"), PageResource)
+        Return ResourcePage?.Loader?.Input
+    End Function
+    Private Sub RaiseNativeClick(Sender As Object, Args As MouseButtonEventArgs)
+        RaiseEvent Click(Sender, Args)
+    End Sub
     Public Property Title As String
         Get
-            Return LabTitle.Text
+            Return Service.Title
         End Get
         Set(value As String)
-            If LabTitle.Text = value Then Return
-            LabTitle.Text = value
+            Service.Title = value
         End Set
     End Property
-
-    '副标题
     Public Property SubTitle As String
         Get
-            Return If(LabTitleRaw?.Text, "")
+            Return Service.SubTitle
         End Get
         Set(value As String)
-            If LabTitleRaw.Text = value Then Return
-            LabTitleRaw.Text = value
-            LabTitleRaw.Visibility = If(value = "", Visibility.Collapsed, Visibility.Visible)
+            Service.SubTitle = value
         End Set
     End Property
-
-    '描述
     Public Property Description As String
         Get
-            Return LabInfo.Text
+            Return Service.Description
         End Get
         Set(value As String)
-            If LabInfo.Text = value Then Return
-            LabInfo.Text = value
+            Service.Description = value
         End Set
     End Property
-    '指向时扩展描述
     Private Sub LabInfo_MouseEnter(sender As Object, e As MouseEventArgs) Handles LabInfo.MouseEnter
-        ToolTipInfo.Content = LabInfo.Text
-        LabInfo.ToolTip = If(IsTextTrimmed(LabInfo), ToolTipInfo, Nothing)
+        Service.ShowDescriptionToolTip()
     End Sub
-
-    'Tag
     Public WriteOnly Property Tags As List(Of String)
         Set(Tags As List(Of String))
-            PanTags.Children.Clear()
-            PanTags.Visibility = If(Tags.Any(), Visibility.Visible, Visibility.Collapsed)
-            For Each TagText In Tags
-                Dim BorderTag As New Border With {
-                    .Background = New MyColor("#11000000"), .Padding = New Thickness(3, 1, 3, 1), .CornerRadius = New CornerRadius(3),
-                    .Margin = New Thickness(0, 0, 3, 0), .SnapsToDevicePixels = True, .UseLayoutRounding = False}
-                Dim LabTag As New TextBlock With {
-                    .Text = TagText, .Foreground = New MyColor("#868686"), .FontSize = 11}
-                BorderTag.Child = LabTag
-                PanTags.Children.Add(BorderTag)
-            Next
+            Service.SetTags(Tags)
         End Set
     End Property
-
-#End Region
-
-#Region "点击"
-
-    '触发点击事件
     Public Event Click(sender As Object, e As MouseButtonEventArgs)
     Private Sub Button_MouseUp(sender As Object, e As MouseButtonEventArgs) Handles Me.PreviewMouseLeftButtonUp
-        If IsMouseDown Then
-            RaiseEvent Click(sender, e)
-            If e.Handled Then Return
-            Logger.Info($"按下资源工程列表项：{LabTitle.Text}")
-        End If
+        Service.MouseUp(sender, e)
     End Sub
     Private Sub MyResourceItem_Click(sender As MyResourceItem, e As EventArgs) Handles Me.Click
-        '记录当前展开的卡片标题（#2712）
-        Dim Titles As New List(Of String)
-        If FrmMain.PageCurrent.Page = FormMain.PageType.ResourceDetail AndAlso FrmDownloadResourceDetail IsNot Nothing Then
-            For Each Card As MyCard In FrmDownloadResourceDetail.PanResults.Children
-                If Card.Title <> "" AndAlso Not Card.IsSwapped Then Titles.Add(Card.Title)
-            Next
-            Logger.Info($"记录当前已展开的卡片：{String.Join("、", Titles)}")
-        End If
-        '打开详情页
-        Dim Search As ResourceSearcher.SearchRequest = Nothing
-        If FrmMain.PageCurrent.Page = FormMain.PageType.Download AndAlso FrmDownloadLeft IsNot Nothing Then
-            Dim ResourcePage = TryCast(FrmDownloadLeft.PageGet(FrmMain.PageCurrentSub).FindName("Content"), PageResource)
-            Search = ResourcePage?.Loader?.Input
-        End If
-        Dim Arguments = BuildDetailArguments(TryCast(sender.Tag, ResourceProject), FrmMain.PageCurrent.Page, Search,
-            TryCast(FrmMain.PageCurrent.Additional, Object()), PageInstanceLeft.Instance)
-        Arguments(1) = Titles
-        FrmMain.PageChange(New FormMain.PageStackData With {.Page = FormMain.PageType.ResourceDetail, .Additional = Arguments})
+        Service.Click(sender)
     End Sub
-
-    Friend Shared Function BuildDetailArguments(Project As ResourceProject, Page As FormMain.PageType, Search As ResourceSearcher.SearchRequest,
-        Existing As Object(), Instance As McInstance) As Object()
-        Dim TargetType = If(Project Is Nothing, ResourceTypes.Any, Project.Types)
-        Dim TargetVersion As String = Nothing, TargetLoader As ModLoaders = ModLoaders.None
-        If Page = FormMain.PageType.Download AndAlso Search IsNot Nothing Then
-            TargetType = Search.Type
-            TargetVersion = Search.GameVersion
-            If TargetType = ResourceTypes.Mod Then TargetLoader = Search.ModLoaders
-        ElseIf Page = FormMain.PageType.ResourceDetail Then
-            TargetType = ResourceTypes.Any
-            If Existing IsNot Nothing AndAlso Existing.Length > 2 Then TargetVersion = TryCast(Existing(2), String)
-            If Existing IsNot Nothing AndAlso Existing.Length > 3 AndAlso TypeOf Existing(3) Is ModLoaders Then TargetLoader = CType(Existing(3), ModLoaders)
-        ElseIf Page = FormMain.PageType.InstanceSetup AndAlso Instance IsNot Nothing Then
-            TargetVersion = Instance.Version.VanillaName
-            If TargetType.HasFlagF(ResourceTypes.Mod) Then TargetLoader = Instance.Version.ModLoaders
-        End If
-        If TargetType = 0 Then TargetType = ResourceTypes.Any
-        Return {Project, New List(Of String), TargetVersion, TargetLoader, TargetType}
+    Friend Shared Function BuildDetailArguments(Project As ResourceProject, Page As FormMain.PageType, Search As ResourceSearcher.SearchRequest, Existing As Object(), Instance As McInstance) As Object()
+        Return RowCore.BuildDetailArguments(Project, CInt(Page), Search, Existing, Instance, CInt(FormMain.PageType.Download), CInt(FormMain.PageType.ResourceDetail), CInt(FormMain.PageType.InstanceSetup))
     End Function
-
-    Private IsMouseDown As Boolean = False
     Private Sub Button_MouseDown(sender As Object, e As MouseButtonEventArgs) Handles Me.PreviewMouseLeftButtonDown
-        If IsMouseOver AndAlso CanInteraction Then IsMouseDown = True
+        Service.MouseDown()
     End Sub
     Private Sub Button_MouseLeave(sender As Object, e As Object) Handles Me.MouseLeave, Me.PreviewMouseLeftButtonUp
-        IsMouseDown = False
+        Service.MouseLeave()
     End Sub
-
-#End Region
-
-#Region "后加载指向背景"
-
-    Private _RectBack As Border = Nothing
     Public ReadOnly Property RectBack As Border
         Get
-            If _RectBack Is Nothing Then
-                Dim Rect As New Border With {
-                    .Name = "RectBack",
-                    .CornerRadius = New CornerRadius(3),
-                    .RenderTransform = New ScaleTransform(0.8, 0.8),
-                    .RenderTransformOrigin = New Point(0.5, 0.5),
-                    .BorderThickness = New Thickness(GetWPFSize(1)),
-                    .SnapsToDevicePixels = True,
-                    .IsHitTestVisible = False,
-                    .Opacity = 0
-                }
-                Rect.SetResourceReference(Border.BackgroundProperty, "ColorBrush7")
-                Rect.SetResourceReference(Border.BorderBrushProperty, "ColorBrush6")
-                SetColumnSpan(Rect, 999)
-                SetRowSpan(Rect, 999)
-                Children.Insert(0, Rect)
-                _RectBack = Rect
-                '<!--<Border x:Name = "RectBack" CornerRadius="3" RenderTransformOrigin="0.5,0.5" SnapsToDevicePixels="True" 
-                'IsHitTestVisible = "False" Opacity="0" BorderThickness="1" 
-                'Grid.ColumnSpan = "4" Background="{DynamicResource ColorBrush7}" BorderBrush="{DynamicResource ColorBrush6}"/>-->
-            End If
-            Return _RectBack
+            Return Service.RectBack
         End Get
     End Property
-
-#End Region
-
-    Private StateLast As String
-    ''' <summary>
-    ''' 是否允许交互。目前仅用于 PageDownloadResourceDetail 的顶部栏展示：若关闭碰撞检测，则无法展开 Tooltip。
-    ''' </summary>
-    Public Property CanInteraction As Boolean = True
+    Public Property CanInteraction As Boolean
+        Get
+            Return Service.CanInteraction
+        End Get
+        Set(AutoPropertyValue As Boolean)
+            Service.CanInteraction = AutoPropertyValue
+        End Set
+    End Property
     Public Sub RefreshColor(sender As Object, e As EventArgs) Handles Me.MouseEnter, Me.MouseLeave, Me.MouseLeftButtonDown, Me.MouseLeftButtonUp
-        If Not CanInteraction Then Return
-        '判断当前颜色
-        Dim StateNew As String, Time As Integer
-        If IsMouseOver Then
-            If IsMouseDown Then
-                StateNew = "MouseDown"
-                Time = 120
-            Else
-                StateNew = "MouseOver"
-                Time = 120
-            End If
-        Else
-            StateNew = "Idle"
-            Time = 180
-        End If
-        If StateLast = StateNew Then Return
-        StateLast = StateNew
-        '触发颜色动画
-        If IsLoaded AndAlso AniControlEnabled = 0 Then '防止默认属性变更触发动画
-            '有动画
-            Dim Ani As New List(Of AniData)
-            If IsMouseOver Then
-                Ani.AddRange({
-                    AaColor(RectBack, Border.BackgroundProperty, If(IsMouseDown, "ColorBrush6", "ColorBrushBg1"), Time),
-                    AaOpacity(RectBack, 1 - RectBack.Opacity, Time,, New AniEaseOutFluent)
-                })
-                If IsMouseDown Then
-                    Ani.Add(AaScaleTransform(RectBack, 0.996 - CType(RectBack.RenderTransform, ScaleTransform).ScaleX, Time * 1.2,, New AniEaseOutFluent))
-                Else
-                    Ani.Add(AaScaleTransform(RectBack, 1 - CType(RectBack.RenderTransform, ScaleTransform).ScaleX, Time * 1.2,, New AniEaseOutFluent))
-                End If
-            Else
-                Ani.AddRange({
-                    AaOpacity(RectBack, -RectBack.Opacity, Time),
-                    AaColor(RectBack, Border.BackgroundProperty, If(IsMouseDown, "ColorBrush6", "ColorBrush7"), Time),
-                    AaScaleTransform(RectBack, 0.996 - CType(RectBack.RenderTransform, ScaleTransform).ScaleX, Time,, New AniEaseOutFluent),
-                    AaScaleTransform(RectBack, -0.196, 1,,, True)
-                })
-            End If
-            AniStart(Ani, "MyResourceItem Color " & Uuid)
-        Else
-            '无动画
-            AniStop("MyResourceItem Color " & Uuid)
-            If _RectBack IsNot Nothing Then RectBack.Opacity = 0
-        End If
+        Service.RefreshColor()
     End Sub
-
+    Private Shared Function CreateAnimations() As PCLCS.DownloadPageAnimationHost(Of AniData)
+        Return New PCLCS.DownloadPageAnimationHost(Of AniData) With {
+            .Disabled = Function() AniControlEnabled, .SetDisabled = Sub(Value) AniControlEnabled = Value,
+            .Opacity = Function(Target, Delta, Duration, Delay, Ease) AaOpacity(Target, Delta, Duration, Delay, ReadEase(Ease)),
+            .TranslateX = Function(Target, Delta, Duration, Delay, Ease) AaTranslateX(Target, Delta, Duration, Delay, ReadEase(Ease)),
+            .TranslateY = Function(Target, Delta, Duration, Delay, Ease) AaTranslateY(Target, Delta, Duration, Delay, ReadEase(Ease)),
+            .Scale = Function(Target, Delta, Duration, Delay, Ease, After) AaScaleTransform(Target, Delta, Duration, Delay, ReadEase(Ease), After),
+            .Color = Function(Target, [Property], Color, Duration, Delay, Ease) AaColor(Target, [Property], Color, Duration, Delay, ReadEase(Ease)),
+            .Code = Function(Work, Delay, After) AaCode(Sub() Work(), Delay, After),
+            .Start = Sub(Plan, Name, Refresh) AniStart(Plan.ToList(), Name, Refresh), .Stop = AddressOf AniStop}
+    End Function
+    Private Shared Function ReadEase(Value As PCLCS.DownloadPageEase) As AniEase
+        Select Case Value
+            Case PCLCS.DownloadPageEase.OutFluent : Return New AniEaseOutFluent()
+            Case PCLCS.DownloadPageEase.OutFluentExtraStrong : Return New AniEaseOutFluent(AniEasePower.ExtraStrong)
+            Case Else : Return Nothing
+        End Select
+    End Function
 End Class
