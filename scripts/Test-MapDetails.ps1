@@ -18,14 +18,18 @@ $detailType=$asm.GetType('PCL.PageDownloadResourceDetail');$page=[Runtime.Serial
 $loaderType=$detailType.GetField('ResourceFileLoader',$flags).FieldType;$loader=[Runtime.Serialization.FormatterServices]::GetUninitializedObject($loaderType)
 $loaderType.GetField('Output',$flags).SetValue($loader,$items.PSObject.BaseObject)
 $detailType.GetField('ResourceFileLoader',$flags).SetValue($page,$loader)
-$detailType.GetField('Project',$flags).SetValue($page,$project)
+# These original-name properties now forward to the actual C# controller's
+# single live state. Keep invoking the page adapter and real loader output.
+$projectState=$detailType.GetProperty('Project',$flags);$resourceTypeState=$detailType.GetProperty('TargetResourceType',$flags)
+if($null -eq $projectState -or $null -eq $resourceTypeState -or -not $projectState.CanWrite -or -not $resourceTypeState.CanWrite){throw 'The real detail-page state adapter is unavailable'}
+$projectState.SetValue($page,$project,$null)
 # 1.2.0's map navigation omitted its type and passed enum value zero. This reproduced an empty list.
-$detailType.GetField('TargetResourceType',$flags).SetValue($page,[Enum]::ToObject([PCLCS.ResourceTypes],0))
+$resourceTypeState.SetValue($page,[Enum]::ToObject([PCLCS.ResourceTypes],0),$null)
 $visible=$detailType.GetMethod('GetResults',$flags).Invoke($page,@())
 if($visible.Count -ne $items.Count){throw ('Map detail filtered '+$items.Count+' available versions to '+$visible.Count+' after map navigation')}
-$detailType.GetField('TargetResourceType',$flags).SetValue($page,[PCLCS.ResourceTypes]::Map)
+$resourceTypeState.SetValue($page,[PCLCS.ResourceTypes]::Map,$null)
 $visible=$detailType.GetMethod('GetResults',$flags).Invoke($page,@())
 if($visible.Count -ne $items.Count){throw 'Explicit map details lost map files'}
-$detailType.GetField('TargetResourceType',$flags).SetValue($page,[PCLCS.ResourceTypes]::ResourcePack)
+$resourceTypeState.SetValue($page,[PCLCS.ResourceTypes]::ResourcePack,$null)
 if($detailType.GetMethod('GetResults',$flags).Invoke($page,@()).Count -ne $items.Count){throw 'Resource-pack filter behavior changed'}
 Write-Output ('Map detail filter passed: '+$items.Count+' map files retained for map navigation and explicit type, preserving resource-pack behavior.')
