@@ -10,8 +10,80 @@ internal static class Program {
     private const string BudgetError = "存档元数据超过读取限制。";
     private const string KindError = "未知的存档元数据类型。";
 
-    private static int Main() {
-        (string Name, Action Run)[] tests = [
+    private static int Main(string[] args) {
+        // Factories keep unselected groups from constructing or enumerating cases.
+        // Canonical order matches the original all-tests runner; aliases only
+        // select groups, so overlapping/repeated selectors cannot duplicate cases.
+        (string Key, Func<IEnumerable<(string Name, Action Run)>> Cases)[] groups = [
+            ("world-metadata", () => WorldMetadataCases().Concat(WorldMetadataFileTests.Cases())),
+            ("local-data", LocalGameDataTests.Cases),
+            ("personal-options", () => PersonalOptionsRulesTests.Cases()
+                .Concat(PersonalOptionsFileTests.Cases()).Concat(PersonalOptionsFlowTests.Cases())),
+            ("keybindings", () => InstanceKeybindingFileTests.Cases()
+                .Concat(InstanceKeybindingReaderTests.Cases()).Concat(InstanceKeybindingViewTests.Cases())),
+            ("quick-play", () => QuickPlayWorldRulesTests.Cases()
+                .Concat(QuickPlayHistoryTests.Cases()).Concat(QuickPlayFlowTests.Cases())),
+            ("resource-entry", InstanceResourceEntryTests.Cases),
+            ("resource-paths", () => InstanceResourcePathTests.Cases()
+                .Concat(InstanceResourcePathTextTests.Cases()).Concat(InstanceResourcePathCompatibilityTests.Cases())),
+            ("resource-files", () => InstanceResourceKindRulesTests.Cases()
+                .Concat(InstanceResourceNameRulesTests.Cases()).Concat(InstanceResourceFileRulesTests.Cases())
+                .Concat(InstanceResourcePackageRulesTests.Cases())),
+            ("resource-metadata", () => InstanceResourceDetailsRulesTests.Cases()
+                .Concat(InstanceResourcePackMetadataTests.Cases()).Concat(InstanceResourceMetadataRuntimeTests.Cases()))
+        ];
+        if (args.Length == 1 && args[0] == "--list-groups") {
+            foreach (var group in groups) Console.WriteLine(group.Key);
+            Console.WriteLine("resources (alias for all resource-* groups)");
+            return 0;
+        }
+
+        HashSet<string> selected = new(StringComparer.Ordinal);
+        if (args.Length == 0) {
+            selected.UnionWith(groups.Select(group => group.Key));
+        } else {
+            for (int index = 0; index < args.Length; index++) {
+                if (args[index] != "--group" || ++index >= args.Length)
+                    return SelectionError("Expected --group <exact-key> or --list-groups.");
+                string key = args[index];
+                if (key == "resources") {
+                    selected.UnionWith(groups.Where(group => group.Key.StartsWith("resource-", StringComparison.Ordinal))
+                        .Select(group => group.Key));
+                } else if (groups.Any(group => group.Key == key)) {
+                    selected.Add(key);
+                } else {
+                    return SelectionError($"Unknown or empty migration group: [{key}].");
+                }
+            }
+        }
+
+        var selectedGroups = groups.Where(group => selected.Contains(group.Key)).ToArray();
+        (string Name, Action Run)[] tests = selectedGroups.SelectMany(group => group.Cases()).ToArray();
+        if (tests.Length == 0) return SelectionError("The migration test selection contains no cases.");
+        Console.WriteLine($"Selected migration groups ({selectedGroups.Length}/{groups.Length}): {string.Join(", ", selectedGroups.Select(group => group.Key))}.");
+        Console.WriteLine("Only selected groups are executed; unselected groups are not counted as passed.");
+        int failures = 0;
+        foreach ((string name, Action run) in tests) {
+            try {
+                run();
+                Console.WriteLine($"PASS {name}");
+            } catch (Exception exception) {
+                failures++;
+                Console.Error.WriteLine($"FAIL {name}: {exception}");
+            }
+        }
+        Console.WriteLine($"{tests.Length - failures}/{tests.Length} migration test groups passed.");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static int SelectionError(string message) {
+        Console.Error.WriteLine(message);
+        Console.Error.WriteLine("Use --list-groups to see exact keys; repeat --group to select multiple groups. No arguments runs all groups.");
+        return 2;
+    }
+
+    private static IEnumerable<(string Name, Action Run)> WorldMetadataCases() {
+        return [
             ("modern details match Test-WorldDetails.ps1", ModernDetails),
             ("basic modern metadata stops before details", ModernBasic),
             ("legacy details without LastPlayed", LegacyDetails),
@@ -40,44 +112,6 @@ internal static class Program {
             ("caller owns nonseekable stream on every outcome", StreamOwnership),
             ("null input contract", NullInput)
         ];
-
-        tests = [
-            .. tests,
-            .. WorldMetadataFileTests.Cases(),
-            .. LocalGameDataTests.Cases(),
-            .. PersonalOptionsRulesTests.Cases(),
-            .. PersonalOptionsFileTests.Cases(),
-            .. PersonalOptionsFlowTests.Cases(),
-            .. InstanceKeybindingFileTests.Cases(),
-            .. InstanceKeybindingReaderTests.Cases(),
-            .. InstanceKeybindingViewTests.Cases(),
-            .. QuickPlayWorldRulesTests.Cases(),
-            .. QuickPlayHistoryTests.Cases(),
-            .. QuickPlayFlowTests.Cases(),
-            .. InstanceResourceEntryTests.Cases(),
-            .. InstanceResourcePathTests.Cases(),
-            .. InstanceResourcePathTextTests.Cases(),
-            .. InstanceResourcePathCompatibilityTests.Cases(),
-            .. InstanceResourceKindRulesTests.Cases(),
-            .. InstanceResourceNameRulesTests.Cases(),
-            .. InstanceResourceFileRulesTests.Cases(),
-            .. InstanceResourcePackageRulesTests.Cases(),
-            .. InstanceResourceDetailsRulesTests.Cases(),
-            .. InstanceResourcePackMetadataTests.Cases(),
-            .. InstanceResourceMetadataRuntimeTests.Cases()
-        ];
-        int failures = 0;
-        foreach ((string name, Action run) in tests) {
-            try {
-                run();
-                Console.WriteLine($"PASS {name}");
-            } catch (Exception exception) {
-                failures++;
-                Console.Error.WriteLine($"FAIL {name}: {exception}");
-            }
-        }
-        Console.WriteLine($"{tests.Length - failures}/{tests.Length} migration test groups passed.");
-        return failures == 0 ? 0 : 1;
     }
 
     private static void ModernDetails() {

@@ -4,14 +4,14 @@
 
 ## 当前状态
 
-- 目标状态：`paused`。2026-11-04按用户要求暂停goal与自动续跑；尚未完成整个迁移目标。保留全部已验进度，等待用户明确恢复后先完成G005测试分组／CI路由，再从C007d2推进资源功能链。
+- 目标状态：`in_progress`。2026-11-04用户明确要求继续，已按更新后的整链路线恢复；G005实现及定向检查已完成，实际GitHub执行待本批推送，当前并行集成资源后端与截图交互C#实现。整个迁移目标未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `476eb42bb00e85b7cf8d4f800d1264740b8373c6`：Windows各41步、Ubuntu367／Windows399组及 **RequireEquivalent** 397／56全通过（metadata101／解析位值34／格式72），C007d1b与d1完成；前两轮18／4差异及修复证据保留。主产品仍net48，非全部BCL／CRT／现代WPF验收。
 - 当前恢复前置为G005测试分组／CI路由；随后内部起点C007d2：迁移ReadPackInfo的目录／ZIP I/O与同步Icon派发，保1MiB／4MiB、ZIP Share.ReadWrite|Delete、五类catch、Icon先于JSON/ref更新、原WPF LoadImage／DecodeImage继续宿主；扫描／取消／图片解码另批，不以本项关闭Store。C005c2／C006d界面母项仍blocked。
-- 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标继续paused。
-- 用户补充测试要求：按受影响模块／下游／功能链执行相关检查；跨链高影响或范围不明的框架／公共契约改动及发布前才全量回归，纯文档不跑产品测试。现有Main测试入口和CI仍默认全跑，尚未实施解耦，恢复后先完成G005；目标继续paused。
+- 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
+- 用户补充测试要求：按受影响模块／下游／功能链执行相关检查；跨链高影响或范围不明的框架／公共契约改动及发布前才全量回归，纯文档不跑产品测试。现有Main测试入口和CI仍默认全跑，尚未实施解耦，恢复后先完成G005；目标已按用户指令恢复。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
-- 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑继续paused。
+- 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
 
 ## 证据与基线
 
@@ -144,22 +144,18 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 初始基线固定不随迁移提交变化；当前清单用于与初始清单对照。工具只读指定 Git 提交树，未提交的转换不会反映在 `HEAD` 清单里。JSON 的项目条件、属性、导入和 Remove／Update 不执行求值；以实际 MSBuild 和 Windows 构建作为编译范围的最终证据。
 
-## 开始前已有改动与协作归属
+## 当前批次文件与协作归属
 
-首次进入本轮任务时已存在 `README.md` 修改和未跟踪的 `docs/MIGRATION.md`，不将其回滚或覆盖。后续出现的代码、测试和工作流改动属于当前并行批次；集成前核对实际差异和所有者，未知变更另行记录。
+2026-11-04恢复时本地与远端均为7beef22、工作树干净；以下为本批已知改动，禁止以reset／clean覆盖。代理均不提交或切换共享分支，主执行者统一集成；已冻结文件经主执行者确认后接管。
 
-| 范围 | 当前批次责任 | 集成约束 |
-| --- | --- | --- |
-| `docs/MIGRATION_GOAL.md`、`docs/MIGRATION_STATUS.md`、清单工具和初始 JSON | 目标与源码清单 | 集成者统一审查及提交 |
-| `docs/migration/MODULE_MAP.md` | 模块映射 | 不与目标账本互相覆盖 |
-| `.github/workflows/migration-validation.yml` | CI 基线核查 | 保留既有 `build.yml` 的 Windows 完整回归 |
-| `PCLCS/Minecraft/WorldMetadataReader.cs`、`tests/PCLLF.Migration.Tests/` | C# 生产解析器与样本 | 无 WPF 测试须连接生产源码 |
-| `WorldMetadata.vb` 适配、其余集成与远端操作 | 集成者 | 保持原生产入口；核实新代码实际调用和构建 |
-| `InstanceResourcePathCompatibility.cs`、其同名测试 | 路径适配子代理 | 只拥有两新文件，保 NETFRAMEWORK／非 Win 原 BCL；其余 Core／VB／oracle 不改，父统一接线 |
-| `InstanceResourcePathText.cs`、其测试、既有 oracle host／driver／脚本 | ordinal／oracle 子代理 | 局部 Win32 比较与新旧探针、扩展路径样本独占；Text 生产已冻结交父，父小修原 StartsWith 空值参数名为 value；路径 API 文件不改 |
-| Core 三比较／两路径 hook、主测试链接、工作流／文档／所有提交 | 主执行者 | 不覆盖两代理未交付文件；文本／接线独立审查通过，完整 helper／新 oracle 仍未验证 |
-
-续跑时重新检查此表和 `git status --short`；此处的所有权不代表未知新变更可被覆盖。
+| 范围 | 执行归属／状态 |
+| --- | --- |
+| runner Program.cs | 分组代理已冻结，主执行者定向CLI验证通过 |
+| Select-MigrationChecks.py、两workflow | CI代理已冻结，选择器/YAML静态通过，待远端运行 |
+| InstanceResourceCatalog.cs／Transactions.cs | 两后端代理已冻结，主执行者接原VB入口及真实测试 |
+| ResourceThumbnailController.cs／MyScreenshotItem.xaml.vb | 呈现代理已冻结，原XAML／Entry字段／Sender身份保留，真实WPF验收待运行 |
+| InstanceResourceStore.vb／WPF decoder／项目接线／docs | 主执行者；Store主体已转发C#，不据此关闭整页C007 |
+| InstanceResourcePipelineTests.cs | 测试代理独占写入中，主执行者等待冻结后注册与构建 |
 
 ## 任务依赖与验收
 
@@ -171,7 +167,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G002 | done | G001 | LF／PCL／CE 模块映射、生产入口、依赖和逐组迁移边界；核对源清单覆盖，并记录 CE 参考位置及未查证处 |
 | G003 | done | 固定 LF 来源 | 初始 Windows Debug／Release 构建与既有自动化回归；证据为 run `41656492901`，GUI 对照仍归 R003 |
 | G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
-| G005 | todo | G004 | 按用户新要求为现有测试入口增加模块／功能链选择和变更依赖路由，保留兼容样本与整链／发布门禁；记录选择范围，空选择失败，文档不触发产品全测。恢复后的小前置，不新建大型测试框架，不算主体迁移完成 |
+| G005 | in_progress | G004 | runner已支持9组／resources别名／去重／空选失败；选择器按变更与依赖路由两个CI，文档跳过，手动／未知／广影响保全量，保42原Windows脚本。CLI实测metadata28／resources84及坏参数exit2，选择器/YAML静态检查通过，实际GitHub执行待验证；不算主体迁移完成 |
 | B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
 | C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
 | C002 | done | B001、C001 | 文件／gzip／详情文案已迁入 C#，原三个消费者经兼容入口接通；42 组双平台样本与 Windows Debug／Release 完整回归通过。最终删除类型映射／路径日志 VB 门面仍由 C006／C010／C029／C031、R001 验收，不声称页面后台已转换 |

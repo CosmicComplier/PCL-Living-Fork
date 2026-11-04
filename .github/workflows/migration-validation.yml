@@ -5,47 +5,68 @@ on:
     branches:
       - migration/csharp-modern-dotnet
     paths:
-      - 'PCLCS/**'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/PersonalGameSettings.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/InstanceKeybindings.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/QuickPlayWorlds.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/InstanceResourceStore.vb'
-      - 'Plain Craft Launcher 2/Pages/PageInstance/PageInstanceKeybindings.xaml.vb'
-      - 'tests/**'
-      - 'scripts/Inventory-Migration.py'
-      - 'scripts/Test-MigrationInventory.py'
-      - 'scripts/Test-MigrationResourcePaths.ps1'
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!LICENCE'
+      - '!LICENSE'
+      - '!NOTICE.md'
       - 'docs/migration/source-inventory.baseline.json'
-      - '.github/workflows/migration-validation.yml'
   pull_request:
     branches:
       - migration/csharp-modern-dotnet
     paths:
-      - 'PCLCS/**'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/PersonalGameSettings.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/InstanceKeybindings.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/QuickPlayWorlds.vb'
-      - 'Plain Craft Launcher 2/Modules/Minecraft/InstanceResourceStore.vb'
-      - 'Plain Craft Launcher 2/Pages/PageInstance/PageInstanceKeybindings.xaml.vb'
-      - 'tests/**'
-      - 'scripts/Inventory-Migration.py'
-      - 'scripts/Test-MigrationInventory.py'
-      - 'scripts/Test-MigrationResourcePaths.ps1'
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!LICENCE'
+      - '!LICENSE'
+      - '!NOTICE.md'
       - 'docs/migration/source-inventory.baseline.json'
-      - '.github/workflows/migration-validation.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}
+  cancel-in-progress: true
+
 jobs:
-  validate:
-    name: .NET 10 pure C# and inventory (${{ matrix.os }})
+  select:
+    name: Select affected checks (manual dispatch runs all)
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/migration/csharp-modern-dotnet'
+    outputs:
+      product_build: ${{ steps.scope.outputs.product_build }}
+      migration_run: ${{ steps.scope.outputs.migration_run }}
+      groups: ${{ steps.scope.outputs.groups }}
+      windows_scripts: ${{ steps.scope.outputs.windows_scripts }}
+      world_checks: ${{ steps.scope.outputs.world_checks }}
+      engine_only: ${{ steps.scope.outputs.engine_only }}
+      oracle: ${{ steps.scope.outputs.oracle }}
+      inventory: ${{ steps.scope.outputs.inventory }}
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - name: Checkout selection source and diff history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select checks from changed paths and known dependencies
+        id: scope
+        run: python3 scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT" --report artifacts/migration/check-selection.json
+      - name: Upload selected scope
+        uses: actions/upload-artifact@v7
+        with:
+          name: migration-selected-checks
+          path: artifacts/migration/check-selection.json
+          if-no-files-found: error
+
+  validate:
+    needs: select
+    name: .NET 10 pure C# and inventory (${{ matrix.os }})
+    if: needs.select.outputs.migration_run == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -77,9 +98,11 @@ jobs:
           python-version: '3.13'
 
       - name: Generate the fixed LF source inventory
+        if: needs.select.outputs.inventory == 'true'
         run: python scripts/Inventory-Migration.py --ref f4aa0fae62c3ee8af24c81e61844c8fdd13c8983 --output artifacts/migration/source-inventory.baseline.json
 
       - name: Verify the committed inventory is reproducible
+        if: needs.select.outputs.inventory == 'true'
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -91,23 +114,37 @@ jobs:
           print('Source inventory matches the committed LF baseline.')
           PY
 
-      - name: Run pure C# migration regressions on .NET 10
-        run: dotnet run --project tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --configuration Release
+      - name: Run selected pure C# migration regressions on .NET 10
+        if: needs.select.outputs.groups != '[]'
+        env:
+          MIGRATION_GROUPS: ${{ needs.select.outputs.groups }}
+        run: |
+          python - <<'PYTHON'
+          import json, os, subprocess
+          groups = json.loads(os.environ['MIGRATION_GROUPS'])
+          if not groups or not all(isinstance(group, str) for group in groups):
+              raise SystemExit('Empty or malformed selected test groups.')
+          command = ['dotnet', 'run', '--project', 'tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj', '--configuration', 'Release', '--']
+          for group in groups:
+              command.extend(['--group', group])
+          print('Selected migration groups: ' + ', '.join(groups), flush=True)
+          subprocess.run(command, check=True)
+          PYTHON
 
       - name: Initialize the fixed Shared dependency for Windows path comparison
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && needs.select.outputs.oracle == 'true'
         run: |
           git submodule update --init MeloongCore
           test "$(git -C MeloongCore rev-parse HEAD)" = c774ae4c85fd94e0eaa171db21e78a65870df19b
 
       - name: Require fixed LF CLR4 and modern Windows resource I/O equivalence
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && needs.select.outputs.oracle == 'true'
         # Preserve the verified path cases and compare ZIP APIs with the independent LF-profile CLR4 process.
         shell: powershell
         run: ./scripts/Test-MigrationResourcePaths.ps1 -Mode RequireEquivalent -ReportPath artifacts/migration/resource-paths.json
 
       - name: Upload the Windows path comparison report
-        if: always() && matrix.os == 'windows-latest'
+        if: always() && matrix.os == 'windows-latest' && needs.select.outputs.oracle == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: migration-resource-path-comparison-windows
@@ -115,7 +152,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload the generated inventory
-        if: always()
+        if: always() && needs.select.outputs.inventory == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: migration-source-inventory-${{ matrix.os }}

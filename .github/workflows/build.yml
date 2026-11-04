@@ -1,29 +1,68 @@
 name: Build
+
 on:
   push:
     paths:
-      - 'Plain Craft Launcher 2/**'
-      - 'PCLCS/**'
-      - 'MeloongCore'
-      - '.gitmodules'
-      - '*.sln'
-      - '.github/workflows/**'
-      - 'scripts/**'
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!LICENCE'
+      - '!LICENSE'
+      - '!NOTICE.md'
   pull_request:
     paths:
-      - 'Plain Craft Launcher 2/**'
-      - 'PCLCS/**'
-      - 'MeloongCore'
-      - '.gitmodules'
-      - '*.sln'
-      - '.github/workflows/**'
-      - 'scripts/**'
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!LICENCE'
+      - '!LICENSE'
+      - '!NOTICE.md'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}
+  cancel-in-progress: true
+
 jobs:
+  select:
+    name: Select affected checks (manual dispatch runs all)
+    runs-on: ubuntu-latest
+    outputs:
+      product_build: ${{ steps.scope.outputs.product_build }}
+      migration_run: ${{ steps.scope.outputs.migration_run }}
+      groups: ${{ steps.scope.outputs.groups }}
+      windows_scripts: ${{ steps.scope.outputs.windows_scripts }}
+      world_checks: ${{ steps.scope.outputs.world_checks }}
+      engine_only: ${{ steps.scope.outputs.engine_only }}
+      oracle: ${{ steps.scope.outputs.oracle }}
+      inventory: ${{ steps.scope.outputs.inventory }}
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - name: Checkout selection source and diff history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select checks from changed paths and known dependencies
+        id: scope
+        run: python3 scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT" --report artifacts/migration/check-selection.json
+      - name: Upload selected scope
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-selected-checks
+          path: artifacts/migration/check-selection.json
+          if-no-files-found: error
+
   build:
+    needs: select
+    if: needs.select.outputs.product_build == 'true'
     name: Build
     runs-on: windows-latest
+    env:
+      MIGRATION_CHECKS: ${{ needs.select.outputs.windows_scripts }}
     strategy:  
        matrix:  
          configuration: [Debug, Release]
@@ -89,72 +128,107 @@ jobs:
       run: powershell -NoProfile -File scripts/Test-BuildCredentials.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify account migration and updater
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-Release')
       run: powershell -NoProfile -STA -File scripts/Test-Release.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify cancelled version scanning
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-VersionListCancellation')
       run: powershell -NoProfile -STA -File scripts/Test-VersionListCancellation.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify audit regressions
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-AuditFixes')
       run: powershell -NoProfile -STA -File scripts/Test-AuditFixes.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify launcher window activation
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-LauncherActivation')
       run: powershell -NoProfile -STA -File scripts/Test-LauncherActivation.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify toolbox operations
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-Toolbox')
       run: powershell -NoProfile -File scripts/Test-Toolbox.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify memory helper permissions
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ToolboxMemory')
       run: powershell -NoProfile -File scripts/Test-ToolboxMemory.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify native game resource management
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-InstanceResources')
       run: powershell -NoProfile -STA -File scripts/Test-InstanceResources.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify map installation, resource recycle bin and global backgrounds
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-MapInstallAndRecycle') || contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-BackgroundModes')
       run: |
-        powershell -NoProfile -STA -File scripts/Test-MapInstallAndRecycle.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Map installation and recycle bin checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-BackgroundModes.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Global background checks failed' }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-MapInstallAndRecycle') {
+          powershell -NoProfile -STA -File scripts/Test-MapInstallAndRecycle.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Map installation and recycle bin checks failed' }
+        }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-BackgroundModes') {
+          powershell -NoProfile -STA -File scripts/Test-BackgroundModes.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Global background checks failed' }
+        }
 
     - name: Verify resource update compatibility and replacement
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ResourceUpdates')
       run: powershell -NoProfile -STA -File scripts/Test-ResourceUpdates.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify personal game settings and Quick Play
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-LocalGameFeatures')
       run: powershell -NoProfile -STA -File scripts/Test-LocalGameFeatures.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify first-run keybindings and Mojang Quick Play records
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-GameFeatureRegressions')
       run: powershell -NoProfile -STA -File scripts/Test-GameFeatureRegressions.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify modpack updates and personal changes
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ModpackUpdate') || contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ModpackUpdateUx')
       run: |
-        powershell -NoProfile -STA -File scripts/Test-ModpackUpdate.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Modpack update checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-ModpackUpdateUx.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Modpack update UI and download progress checks failed' }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-ModpackUpdate') {
+          powershell -NoProfile -STA -File scripts/Test-ModpackUpdate.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Modpack update checks failed' }
+        }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-ModpackUpdateUx') {
+          powershell -NoProfile -STA -File scripts/Test-ModpackUpdateUx.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Modpack update UI and download progress checks failed' }
+        }
 
     - name: Verify file-operation cancellation, runtime recovery and redirect credentials
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ReviewFixes')
       run: powershell -NoProfile -STA -File scripts/Test-ReviewFixes.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify environment restore points
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-EnvironmentHistory') || contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-BackupRetention')
       run: |
-        powershell -NoProfile -STA -File scripts/Test-EnvironmentHistory.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Environment restore checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-BackupRetention.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Backup retention and manual protection checks failed' }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-EnvironmentHistory') {
+          powershell -NoProfile -STA -File scripts/Test-EnvironmentHistory.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Environment restore checks failed' }
+        }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-BackupRetention') {
+          powershell -NoProfile -STA -File scripts/Test-BackupRetention.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Backup retention and manual protection checks failed' }
+        }
 
     - name: Verify recent-world card animation and launch sequencing
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-RecentWorldCard')
       run: powershell -NoProfile -STA -File scripts/Test-RecentWorldCard.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify launch dependency switches, confirmation and automatic repair
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-LaunchDependencies') || contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-DependencyActivation') || contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-DependencyToggles')
       run: |
-        powershell -NoProfile -STA -File scripts/Test-LaunchDependencies.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Launch dependency checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-DependencyActivation.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Dependency activation checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-DependencyToggles.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Dependency toggle checks failed' }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-LaunchDependencies') {
+          powershell -NoProfile -STA -File scripts/Test-LaunchDependencies.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Launch dependency checks failed' }
+        }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-DependencyActivation') {
+          powershell -NoProfile -STA -File scripts/Test-DependencyActivation.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency activation checks failed' }
+        }
+        if ((@(ConvertFrom-Json $env:MIGRATION_CHECKS)) -contains 'Test-DependencyToggles') {
+          powershell -NoProfile -STA -File scripts/Test-DependencyToggles.ps1 -ExecutablePath "$env:PCL_EXE"
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency toggle checks failed' }
+        }
 
     - name: Verify world protection, dependency checks, clones and resource regressions
+      if: needs.select.outputs.world_checks == 'true'
       run: |
         $checks = @(
           'Test-WorldBackups', 'Test-WorldBackupGroups', 'Test-SaveBackupIntegration',
@@ -163,33 +237,41 @@ jobs:
           'Test-EnvironmentCoverage', 'Test-KeybindingGroups',
           'Test-MapDetails', 'Test-ResourceEntryPoints', 'Test-WorldDetails', 'Test-ScreenshotGallery'
         )
+        $selectedChecks = @(ConvertFrom-Json $env:MIGRATION_CHECKS)
         foreach ($check in $checks) {
+          if ($selectedChecks -notcontains $check) { continue }
           powershell -NoProfile -STA -File "scripts/$check.ps1" -ExecutablePath "$env:PCL_EXE"
           if ($LASTEXITCODE -ne 0) { throw "$check failed" }
         }
 
     - name: Verify isolated backup engine migration adapters
-      if: github.ref == 'refs/heads/migration/csharp-modern-dotnet' || github.base_ref == 'migration/csharp-modern-dotnet'
+      if: needs.select.outputs.engine_only == 'true' && (github.ref == 'refs/heads/migration/csharp-modern-dotnet' || github.base_ref == 'migration/csharp-modern-dotnet')
       run: |
         powershell -NoProfile -STA -File scripts/Test-WorldBackups.ps1 -EngineOnly
         if ($LASTEXITCODE -ne 0) { throw 'Isolated world backup engine checks failed' }
 
     - name: Verify custom download saves
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ToolboxDownload')
       run: powershell -NoProfile -File scripts/Test-ToolboxDownload.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify modpack mode
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ModpackMode')
       run: powershell -NoProfile -STA -File scripts/Test-ModpackMode.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify modpack folder isolation
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ModpackFolderScope')
       run: powershell -NoProfile -File scripts/Test-ModpackFolderScope.ps1
 
     - name: Verify shared version icons
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-IconCompatibility')
       run: powershell -NoProfile -STA -File scripts/Test-IconCompatibility.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify complete overview component loading
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-InstalledComponentLoading')
       run: powershell -NoProfile -STA -File scripts/Test-InstalledComponentLoading.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Verify exported version isolation
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ExportVersionIsolation')
       run: powershell -NoProfile -STA -File scripts/Test-ExportVersionIsolation.ps1 -ExecutablePath "$env:PCL_EXE"
 
     - name: Build legacy update bridge
