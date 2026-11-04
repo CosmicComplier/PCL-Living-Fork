@@ -55,6 +55,8 @@ C005c2首轮 `ebdb594dc8e6cd29fea654a8a4689eb9e5ff6090`：Build41799421556 Debug
 
 `3f04b63346a23dfeee4a9b301cc0778d7aec07fa` 实际复验：[Modern41804541772](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41804541772) Release126488197906／Debug126488198216各11步成功，全部Core／Shared／4资源／缩略图／按键options／image decoder检查通过。[旧Build41804541653](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41804541653) Release126488274011／Debug126488274095各18成功23跳过，只key／screenshot与常驻编译／凭据／旧桥，未跑其余组不记通过。Migration41804541868选择126488197829成功，验证126488318743按范围skipped。近期世界链使用b7493b8中两配置已成功的原Quick Play／recent-world animation步骤（后续因独立Key fixture导致job失败），git产品源码与3f无差异；C005／C006／C029a／N002a的当前边界可以关闭，完整主产品仍未现代化。
 
+C011／控件批次实际发布采用GitHub API正常fast-forward：Git smart push三次500，API逐树核验源码哈希不变后发布17270c60e88b9b47d8590030289c285c05d3b818（原未发布34db0f3，tree ec0895f13d94eeee4d24dca9f2382235c6930348）及ee5290299e3938d2ae61fbc1d0038af7d84da86e（原未发布1ca333b，tree 8b4f1adcb0c0b8ae1c6ba412e38fb6262b378746），详细消息原样；仅API作者／时间元数据不同。旧已发布历史不改、无force，local通过同树keep对齐且原未发布对象有本地bundle备份。ee52902 Modern41810651886两配置成功，Migration41810651783双平台成功；旧Build41810651741产品编译成功，cold子进程已实际通过新DLL嵌入SHA／空Location／identity／MVID，随后Add-Type把EXE路径当程序集名而失败（Debug126508834614／Release126508833994取消）。控件6组及此后消费者未执行，不记通过；下一批修compiler-only引用并完整重验未完成的公共控件／环境链。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -195,7 +197,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C010 | done | C002、C003、C007 | `8c706ee`完整备份／校验／保留／会话／恢复事务与UI命令接原入口，同一Gate／Busy／TestRoot／Changed；Windows各41步含原完整产品和EngineOnly真实门面／全部故障样本通过，388／439含5跨平台＋1Windows锁新增组；最终原控件／VB宿主移除与真实游戏仍归后续 |
 | C011 | in_progress | C003、C007、C010 | a完整历史／分析／Workflow后端已C#实现、原真实事务保LF Host，5／5真实记录／保留／守卫／分析测试、net48及现代编译通过；Windows旧恢复／回滚待验，b可视页面尚未迁，不关闭母项 |
 | C011a | in_progress | C003、C007、C010 | 五C#＋两typed VB接原Gate／Mutex／Store／coverage／Capture／Retain／Restore／Recent差异与UI命令；测试保真实提交前边界、不自造VB事务，独立审通过、5／5及两目标0警告错误；原Windows消费者待CI |
-| C011b | todo | C011a、C029a | 迁还原点／近期变更可视页面后台与原控件接线，保持全部选择／恢复／预览／原动画；不能以a后端完成代替整页 |
+| C011b | in_progress | C011a、C029a | 完整RestorePoints页面与共享row仅RestorePoint显示业务已迁typed C# controller／presenter，原XAML与非还原点row区段不变；net48／现代Core编译、独立源审通过，原BackupRetention仅三state写入支持同名property，Windows原页面／恢复链待验 |
 | C012 | todo | C003、C007 | 迁移实例测试副本、来源分组与导出版本隔离；克隆、路径、版本选择折叠和导出隔离回归 |
 | C013 | todo | B001 | 迁移本地模组声明解析与 `ModDependencyInspector`；可靠声明、内嵌 JAR、依赖和冲突样本回归 |
 | C014 | todo | C013 | 迁移在线依赖匹配与 `ModDependencyOnline`；精确平台匹配、超时、本地降级与缓存语义回归 |

@@ -13,6 +13,19 @@ $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Thr
 [Windows.Application]::ResourceAssembly=$asm
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclBackupRetention-'+[Guid]::NewGuid().ToString('N'));$none=[Threading.CancellationToken]::None
 function Call($target,$name,[object[]]$arguments){$values=[object[]]::new($arguments.Count);for($i=0;$i -lt $values.Length;$i++){if($null -ne $arguments[$i]){if($arguments[$i] -is [Newtonsoft.Json.Linq.JToken]){$values[$i]=$arguments[$i]}else{$values[$i]=$arguments[$i].PSObject.BaseObject}}};if($target -is [Type]){return ,$target.GetMethod($name,$flags).Invoke($null,$values)};return ,$target.GetType().GetMethod($name,$flags).Invoke($target,$values)}
+# Only these migrated page states may use a forwarding property; DTO field hooks remain strict.
+function Set-RestorePageState($page,[string]$name,$value){
+ $target=$page.PSObject.BaseObject;$pageType=$target.GetType()
+ if($pageType.FullName -cne 'PCL.PageInstanceRestorePoints' -or $name -cnotin @('Owner','RetentionDirty')){throw 'State hooks are limited to PageInstanceRestorePoints Owner/RetentionDirty'}
+ $member=$pageType.GetField($name,$flags)
+ if($null -eq $member){$member=$pageType.GetProperty($name,$flags)}
+ if($null -eq $member){throw [MissingMemberException]::new($pageType.FullName,$name)}
+ if($member -is [Reflection.FieldInfo]){$stateType=$member.FieldType}else{$stateType=$member.PropertyType}
+ $expectedType=if($name -ceq 'Owner'){$asm.GetType('PCL.ModMinecraft+McInstance',$true)}else{[bool]}
+ if($stateType -ne $expectedType){throw ('Unexpected migrated state type: '+$pageType.FullName+'.'+$name)}
+ if($null -ne $value){$value=$value.PSObject.BaseObject}
+ if($member -is [Reflection.FieldInfo]){$member.SetValue($target,$value)}else{$member.SetValue($target,$value,$null)}
+}
 function Put($path,$text){[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null;[IO.File]::WriteAllText($path,$text,[Text.UTF8Encoding]::new($false))}
 function Reject([scriptblock]$action,$message){$failed=$false;try{& $action|Out-Null}catch{$failed=$true};if(-not $failed){throw $message}}
 function Points{return (Call $history 'Points' @($instance.PathVersion))}
@@ -81,16 +94,16 @@ try{
  if((Points).Count -ne $count){throw 'Invalid references caused partial pruning'}
  [IO.File]::WriteAllText($record,$valid)
  # Settings are per instance, remain off by default, and never clean immediately when toggled.
- $page=[Activator]::CreateInstance($asm.GetType('PCL.PageInstanceRestorePoints'));$page.GetType().GetField('Owner',$flags).SetValue($page,$instance)
+ $page=[Activator]::CreateInstance($asm.GetType('PCL.PageInstanceRestorePoints'));Set-RestorePageState $page 'Owner' $instance
  $settings['VersionEnvironmentHistoryAutoCleanup'].ValueCache[$instance.PathVersion]=$false
  Call $page 'BindRetention' @()|Out-Null
  if($page.FindName('CheckAutoCleanup').Checked -or $page.FindName('PanRetention').Visibility.ToString() -ne 'Collapsed'){throw 'Cleanup opt-in UI is not collapsed when off'}
  $count=(Points).Count;$page.FindName('CheckAutoCleanup').Checked=$true
  Call $page 'AutoCleanupChanged' @($null,$true)|Out-Null
  if(-not $settings['VersionEnvironmentHistoryAutoCleanup'].ValueCache[$instance.PathVersion] -or $page.FindName('PanRetention').Visibility.ToString() -ne 'Visible' -or (Points).Count -ne $count){throw 'Opt-in did not persist or deleted points immediately'}
- $page.FindName('TextRetention').Text='3';$page.GetType().GetField('RetentionDirty',$flags).SetValue($page,$true)
+ $page.FindName('TextRetention').Text='3';Set-RestorePageState $page 'RetentionDirty' $true
  if(-not (Call $page 'CommitRetention' @()) -or $settings['VersionEnvironmentHistoryRetention'].ValueCache[$instance.PathVersion] -ne 3){throw 'Retention limit was not persisted for its instance'}
- $page.FindName('TextRetention').Text='0';$page.GetType().GetField('RetentionDirty',$flags).SetValue($page,$true)
+ $page.FindName('TextRetention').Text='0';Set-RestorePageState $page 'RetentionDirty' $true
  if((Call $page 'CommitRetention' @()) -or $page.FindName('TextRetention').Text -ne '3'){throw 'Invalid UI limit was persisted'}
  if($PreviewDirectory){$card=$page.FindName('CardRetention');$caption=$card.MainTextBlock;$card.Parent.Children.Remove($card);$card.Margin=[Windows.Thickness]::new(15);$card.VerticalAlignment=[Windows.VerticalAlignment]::Top;Render $card 'restore-point-retention.png' 740 175;$worldSettings=[Activator]::CreateInstance($asm.GetType('PCL.WorldBackupSettings'));Call $worldSettings 'BindOwner' @($instance)|Out-Null;$backupCard=$worldSettings.FindName('CardSettings');$caption=$backupCard.MainTextBlock;$backupCard.IsSwapped=$false;$backupCard.TriggerForceResize();$worldSettings.VerticalAlignment=[Windows.VerticalAlignment]::Top;Render $worldSettings 'manual-world-backup-protection.png' 740 155}
  Write-Output 'PASS: opt-in/per-instance limits, legacy manual exemption, newest-first automatic retention, shared-object cleanup, deleted-reference protection, cancellation, restore/undo, invalid metadata and native settings UI.'

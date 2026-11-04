@@ -1,27 +1,182 @@
-﻿Public Class PageInstanceRestorePoints
+﻿Imports HistoryController = PCLCS.EnvironmentHistoryPageController(Of PCL.ModMinecraft.McInstance)
+Imports HistoryView = PCLCS.EnvironmentHistoryPageView(Of PCL.ModMinecraft.McInstance)
+Imports HistoryHost = PCLCS.EnvironmentHistoryPageHost(Of PCL.ModMinecraft.McInstance)
+
+Public Class PageInstanceRestorePoints
     Implements IRefreshable
-    Private ReadOnly PointsLoader As New LoaderTask(Of String, List(Of JObject))("读取还原点", Sub(Task) Task.Output = EnvironmentHistory.Points(Task.Input))
-    Private Entries As New List(Of JObject)
-    Private ReadOnly SelectedIds As New HashSet(Of String)(StringComparer.Ordinal)
-    Private Rendering As Boolean
-    Private BarCount As Integer
-    Private HealthyOnly As Boolean
-    Private Owner As McInstance
-    Private PendingFocusId As String
-    Private BindingRetention As Boolean
-    Private RetentionDirty As Boolean
-    Friend Sub FocusPoint(Id As String)
-        PendingFocusId = Id
-        SearchBox.Text = ""
-        FilterAll.Checked = True
-        If Entries.Any(Function(Item) Item("id").ToString() = Id) Then
-            SelectedIds.Clear()
-            SelectedIds.Add(Id)
-            RenderList()
+    Private ReadOnly Controller As HistoryController
+    Private ReadOnly PointsLoader As LoaderTask(Of String, List(Of JObject))
+    Private ReadOnly HistoryChangedHandler As EnvironmentHistoryUi.ChangedEventHandler = AddressOf Refresh
+
+    Public Sub New()
+        InitializeComponent()
+        Controller = New HistoryController(CreateView(), CreateHost())
+        PointsLoader = New LoaderTask(Of String, List(Of JObject))("读取还原点", Sub(Task) Task.Output = EnvironmentHistory.Points(Task.Input))
+        Init()
+    End Sub
+    Private Function CreateView() As HistoryView
+        Return New HistoryView With {
+            .Root = Me, .CardRetention = CardRetention, .PanRetention = PanRetention, .CardList = CardList,
+            .RestoreButton = BtnRestore, .Entries = PanEntries, .Empty = LabEmpty, .Select = LabSelect,
+            .Search = Function() SearchBox.Text, .SetSearch = Sub(Value) SearchBox.Text = Value,
+            .RetentionText = Function() TextRetention.Text, .SetRetentionText = Sub(Value) TextRetention.Text = Value,
+            .SetAllText = Sub(Value) FilterAll.Text = Value, .SetHealthyText = Sub(Value) FilterHealthy.Text = Value,
+            .AutoCleanup = Function() CheckAutoCleanup.Checked, .SetAutoCleanup = Sub(Value) CheckAutoCleanup.Checked = Value,
+            .RetentionHasFocus = Function() TextRetention.IsKeyboardFocusWithin, .SearchHasFocus = Function() SearchBox.IsKeyboardFocusWithin,
+            .CheckAll = Sub() FilterAll.Checked = True, .ForceRetentionResize = Sub() CardRetention.TriggerForceResize(),
+            .ScrollHome = Sub() PanBack.ScrollToHome(),
+            .CreateRow = Function() New RowAdapter(New MyLocalModItem With {.SelectionBar = CardSelect}),
+            .AdaptRow = Function(Sender) New RowAdapter(DirectCast(Sender, MyLocalModItem)),
+            .CreateIcon = AddressOf CreateIcon,
+            .RestoreLogo = Logo.IconButtonRefresh, .DetailsLogo = Logo.IconButtonInfo,
+            .OpenLogo = Logo.IconButtonOpen, .DeleteLogo = Logo.IconButtonDelete,
+            .RefreshSelectionBar =
+                Function(Count, Previous, Animate)
+                    LocalResourceUi.RefreshSelectionBar(CardSelect, TransSelect, Count, Previous, "Restore Point Selection " & PageUuid, Animate)
+                    Return Previous
+                End Function}
+    End Function
+    Private Function CreateHost() As HistoryHost
+        Return New HistoryHost With {
+            .CurrentInstance = Function() PageInstanceLeft.Instance, .VersionPath = Function(Instance) Instance.PathVersion,
+            .AutoCleanup = Function(Instance) Settings.Get(Of Boolean)("VersionEnvironmentHistoryAutoCleanup", Instance:=Instance),
+            .Retention = Function(Instance) Settings.Get(Of Integer)("VersionEnvironmentHistoryRetention", Instance:=Instance),
+            .SetAutoCleanup = Sub(Instance, Value) Settings.Set("VersionEnvironmentHistoryAutoCleanup", Value, Instance:=Instance),
+            .SetRetention = Sub(Instance, Value) Settings.Set("VersionEnvironmentHistoryRetention", Value, Instance:=Instance),
+            .StartLoader = Sub(VersionFolder) PointsLoader.Start(VersionFolder, IsForceRestart:=True), .CancelLoader = Sub() PointsLoader.Cancel(),
+            .LoaderFailed = Function() PointsLoader.State = LoadState.Failed, .AnimationEnabled = Function() AniControlEnabled = 0,
+            .BindChanged = AddressOf BindChanged,
+            .Start = Sub(Instance, Restore, PointId, DeleteIds) EnvironmentHistoryUi.Start(Instance, Restore, PointId, DeleteIds),
+            .HintError = Sub(Message) Hint(Message, HintType.Red), .OpenFolder = Sub(VersionFolder) EnvironmentHistory.OpenFolder(VersionFolder),
+            .ShowDetails = Sub(Text, Title) MyMsgBox(Text, Title)}
+    End Function
+    Private Sub BindChanged(Attach As Boolean)
+        If Attach Then
+            AddHandler EnvironmentHistoryUi.Changed, HistoryChangedHandler
+        Else
+            RemoveHandler EnvironmentHistoryUi.Changed, HistoryChangedHandler
         End If
     End Sub
+    Private Shared Function CreateIcon(Logo As String, Scale As Double?, Tip As String) As PCLCS.EnvironmentHistoryPageIcon
+        Dim Button As New MyIconButton With {.Logo = Logo}
+        If Scale.HasValue Then Button.LogoScale = Scale.Value
+        Button.ToolTip = Tip
+        Return New PCLCS.EnvironmentHistoryPageIcon(Button,
+            Sub(Clicked)
+                AddHandler Button.Click, Sub() Clicked()
+            End Sub)
+    End Function
+    Private NotInheritable Class RowAdapter
+        Implements PCLCS.IEnvironmentHistoryPageRow
+        Private ReadOnly Row As MyLocalModItem
+        Public Sub New(Row As MyLocalModItem)
+            Me.Row = Row
+        End Sub
+        Public ReadOnly Property Element As FrameworkElement Implements PCLCS.IEnvironmentHistoryPageRow.Element
+            Get
+                Return Row
+            End Get
+        End Property
+        Public ReadOnly Property Point As JObject Implements PCLCS.IEnvironmentHistoryPageRow.Point
+            Get
+                Return Row.RestorePoint
+            End Get
+        End Property
+        Public Property Checked As Boolean Implements PCLCS.IEnvironmentHistoryPageRow.Checked
+            Get
+                Return Row.Checked
+            End Get
+            Set(Value As Boolean)
+                Row.Checked = Value
+            End Set
+        End Property
+        Public Sub Bind(Point As JObject) Implements PCLCS.IEnvironmentHistoryPageRow.Bind
+            Row.BindRestorePoint(Point)
+        End Sub
+        Public Sub SetButtons(Buttons As List(Of PCLCS.EnvironmentHistoryPageIcon)) Implements PCLCS.IEnvironmentHistoryPageRow.SetButtons
+            Row.Buttons = Buttons.Select(Function(Button) DirectCast(Button.Element, MyIconButton)).ToList()
+        End Sub
+        Public Sub Subscribe(Click As Action, Changed As Action(Of Object)) Implements PCLCS.IEnvironmentHistoryPageRow.Subscribe
+            AddHandler Row.Click, Sub() Click()
+            AddHandler Row.Changed, Sub(Sender, e) Changed(Sender)
+        End Sub
+    End Class
 
-    Private Sub Init() Handles Me.Initialized
+    '同名状态入口仅转发到控制器，原条目与选择集合没有页面副本。
+    Private Property Entries As List(Of JObject)
+        Get
+            Return Controller.Entries
+        End Get
+        Set(Value As List(Of JObject))
+            Controller.Entries = Value
+        End Set
+    End Property
+    Private ReadOnly Property SelectedIds As HashSet(Of String)
+        Get
+            Return Controller.SelectedIds
+        End Get
+    End Property
+    Private Property Rendering As Boolean
+        Get
+            Return Controller.Rendering
+        End Get
+        Set(Value As Boolean)
+            Controller.Rendering = Value
+        End Set
+    End Property
+    Private Property BarCount As Integer
+        Get
+            Return Controller.BarCount
+        End Get
+        Set(Value As Integer)
+            Controller.BarCount = Value
+        End Set
+    End Property
+    Private Property HealthyOnly As Boolean
+        Get
+            Return Controller.HealthyOnly
+        End Get
+        Set(Value As Boolean)
+            Controller.HealthyOnly = Value
+        End Set
+    End Property
+    Private Property Owner As McInstance
+        Get
+            Return Controller.Owner
+        End Get
+        Set(Value As McInstance)
+            Controller.Owner = Value
+        End Set
+    End Property
+    Private Property PendingFocusId As String
+        Get
+            Return Controller.PendingFocusId
+        End Get
+        Set(Value As String)
+            Controller.PendingFocusId = Value
+        End Set
+    End Property
+    Private Property BindingRetention As Boolean
+        Get
+            Return Controller.BindingRetention
+        End Get
+        Set(Value As Boolean)
+            Controller.BindingRetention = Value
+        End Set
+    End Property
+    Private Property RetentionDirty As Boolean
+        Get
+            Return Controller.RetentionDirty
+        End Get
+        Set(Value As Boolean)
+            Controller.RetentionDirty = Value
+        End Set
+    End Property
+
+    Friend Sub FocusPoint(Id As String)
+        Controller.FocusPoint(Id)
+    End Sub
+    Private Sub Init()
         DisabledPageAnimControls.Add(CardSelect)
         LocalResourceUi.ApplySelectionIcons(BtnRestore, BtnDelete, BtnDeselect)
         BtnRestore.Logo = Logo.IconButtonRefresh
@@ -30,170 +185,78 @@
         PageLoaderInit(Load, PanLoad, PanBack, Nothing, PointsLoader, AddressOf LoadedPoints, AutoRun:=False)
     End Sub
     Private Sub PageLoaded() Handles Me.Loaded
-        AddHandler EnvironmentHistoryUi.Changed, AddressOf Refresh
-        PanBack.ScrollToHome()
-        Refresh()
+        Controller.PageLoaded()
     End Sub
     Private Sub PageUnloaded() Handles Me.Unloaded
-        CommitRetention()
-        RemoveHandler EnvironmentHistoryUi.Changed, AddressOf Refresh
-        PointsLoader.Cancel()
+        Controller.PageUnloaded()
     End Sub
     Public Sub Refresh() Implements IRefreshable.Refresh
-        If Owner IsNot PageInstanceLeft.Instance Then CommitRetention()
-        Owner = PageInstanceLeft.Instance
-        BindRetention()
-        If Owner Is Nothing Then Return
-        SelectedIds.Clear()
-        BtnRestore.IsEnabled = False
-        PointsLoader.Start(Owner.PathVersion, IsForceRestart:=True)
+        Controller.Refresh()
     End Sub
-
     Private Sub BindRetention()
-        BindingRetention = True
-        Try
-            CardRetention.IsEnabled = Owner IsNot Nothing
-            CheckAutoCleanup.Checked = Owner IsNot Nothing AndAlso Settings.Get(Of Boolean)("VersionEnvironmentHistoryAutoCleanup", Instance:=Owner)
-            PanRetention.Visibility = If(CheckAutoCleanup.Checked, Visibility.Visible, Visibility.Collapsed)
-            If Not RetentionDirty OrElse Not TextRetention.IsKeyboardFocusWithin Then
-                TextRetention.Text = If(Owner Is Nothing, 10, Settings.Get(Of Integer)("VersionEnvironmentHistoryRetention", Instance:=Owner)).ToString()
-                RetentionDirty = False
-            End If
-        Finally
-            BindingRetention = False
-        End Try
+        Controller.BindRetention()
     End Sub
     Private Sub AutoCleanupChanged(Sender As Object, User As Boolean) Handles CheckAutoCleanup.Change
-        If BindingRetention Then Return
-        PanRetention.Visibility = If(CheckAutoCleanup.Checked, Visibility.Visible, Visibility.Collapsed)
-        CardRetention.TriggerForceResize()
-        If User AndAlso Owner IsNot Nothing Then Settings.Set("VersionEnvironmentHistoryAutoCleanup", CheckAutoCleanup.Checked, Instance:=Owner)
+        Controller?.AutoCleanupChanged(User)
     End Sub
     Private Sub RetentionEdited() Handles TextRetention.TextChanged
-        If Not BindingRetention AndAlso Owner IsNot Nothing AndAlso TextRetention.IsKeyboardFocusWithin Then RetentionDirty = True
+        Controller?.RetentionEdited()
     End Sub
     Private Sub RetentionLostFocus() Handles TextRetention.LostKeyboardFocus
-        CommitRetention()
+        Controller.CommitRetention()
     End Sub
     Private Sub RetentionKey(Sender As Object, e As KeyEventArgs) Handles TextRetention.PreviewKeyDown
-        If e.Key <> Key.Enter Then Return
-        CommitRetention() : e.Handled = True
+        Controller.RetentionKey(Sender, e)
     End Sub
     Friend Function CommitRetention() As Boolean
-        If BindingRetention OrElse Owner Is Nothing OrElse Not RetentionDirty Then Return True
-        RetentionDirty = False
-        Dim Count As Integer
-        Dim Valid = Integer.TryParse(TextRetention.Text, Count) AndAlso Count >= 1 AndAlso Count <= 100
-        Dim Previous = Settings.Get(Of Integer)("VersionEnvironmentHistoryRetention", Instance:=Owner)
-        If Valid AndAlso Count <> Previous Then Settings.Set("VersionEnvironmentHistoryRetention", Count, Instance:=Owner)
-        BindingRetention = True
-        Try
-            TextRetention.Text = If(Valid, Count, Previous).ToString()
-        Finally
-            BindingRetention = False
-        End Try
-        If Not Valid Then Hint("自动还原点保留数量必须为 1 到 100。", HintType.Red)
-        Return Valid
+        Return Controller.CommitRetention()
     End Function
     Private Sub LoadedPoints()
-        If Owner Is Nothing OrElse Owner IsNot PageInstanceLeft.Instance Then Return
-        Entries = PointsLoader.Output
-        If PendingFocusId IsNot Nothing AndAlso Entries.Any(Function(Item) Item("id").ToString() = PendingFocusId) Then
-            SelectedIds.Add(PendingFocusId)
-            PendingFocusId = Nothing
-        End If
-        RenderList()
+        Controller.LoadedPoints(Function() PointsLoader.Output)
     End Sub
     Private Sub SearchChanged() Handles SearchBox.TextChanged
-        RenderList()
+        Controller?.RenderList()
     End Sub
     Private Sub FilterChanged(Sender As MyRadioButton, User As Boolean) Handles FilterAll.Check, FilterHealthy.Check
-        HealthyOnly = Sender Is FilterHealthy
-        RenderList()
+        Controller?.FilterChanged(Sender Is FilterHealthy)
     End Sub
     Friend Sub RenderList()
-        If PanEntries Is Nothing Then Return
-        PanEntries.Children.Clear()
-        Rendering = True
-        BtnRestore.IsEnabled = False
-        Dim Query = SearchBox.Text.Trim()
-        Dim Matching = Entries.Where(Function(Item) (Item("label").ToString() & " " & Item("description")?.ToString() & " " & CDate(Item("created")).ToLocalTime().ToString("yyyy-MM-dd HH:mm")).IndexOf(Query, StringComparison.OrdinalIgnoreCase) >= 0).ToList()
-        FilterAll.Text = $"全部 ({Matching.Count})"
-        FilterHealthy.Text = $"正常运行 ({Matching.Where(Function(Item) CBool(Item("healthy"))).Count()})"
-        Dim Visible = Matching.Where(Function(Item) Not HealthyOnly OrElse CBool(Item("healthy"))).ToList()
-        SelectedIds.IntersectWith(Visible.Select(Function(Item) Item("id").ToString()))
-        LabEmpty.Visibility = If(Visible.Any(), Visibility.Collapsed, Visibility.Visible)
-        LabEmpty.Text = If(Entries.Any(), "没有找到符合条件的还原点。", "暂无还原点。更新前会自动保存，也可以手动创建。")
-        For Each Point In Visible
-            Dim Item As New MyLocalModItem With {.SelectionBar = CardSelect}
-            Item.BindRestorePoint(Point)
-            Item.Checked = SelectedIds.Contains(Point("id").ToString())
-            Item.Buttons = PointButtons(Point)
-            AddHandler Item.Click, Sub() Item.Checked = Not Item.Checked
-            AddHandler Item.Changed, AddressOf SelectionChanged
-            PanEntries.Children.Add(Item)
-        Next
-        Rendering = False
-        RefreshSelection()
+        Controller.RenderList()
     End Sub
     Private Function PointButtons(Point As JObject) As List(Of MyIconButton)
-        Dim Restore As New MyIconButton With {.Logo = Logo.IconButtonRefresh, .LogoScale = 0.85, .ToolTip = "恢复此还原点"}
-        Dim Details As New MyIconButton With {.Logo = Logo.IconButtonInfo, .ToolTip = "详情"}
-        Dim Open As New MyIconButton With {.Logo = Logo.IconButtonOpen, .LogoScale = 1.05, .ToolTip = "打开还原点文件夹"}
-        Dim Delete As New MyIconButton With {.Logo = Logo.IconButtonDelete, .ToolTip = "删除此还原点"}
-        AddHandler Restore.Click, Sub() EnvironmentHistoryUi.Start(Owner, True, Point("id").ToString())
-        AddHandler Details.Click, Sub() MyMsgBox(Point("label").ToString() & vbCrLf & CDate(Point("created")).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") & vbCrLf &
-            Point("description")?.ToString() & vbCrLf & If(CBool(Point("healthy")), "正常运行记录", "尚未标记正常运行") & vbCrLf &
-            $"包含 {If(TryCast(Point("files"), JObject)?.Count, 0)} 个环境文件", "还原点详情")
-        AddHandler Open.Click, Sub() OpenFolder()
-        AddHandler Delete.Click, Sub() EnvironmentHistoryUi.Start(Owner, False, DeleteIds:={Point("id").ToString()})
-        Return New List(Of MyIconButton) From {Restore, Details, Open, Delete}
+        Return Controller.PointButtons(Point).Select(Function(Button) DirectCast(Button.Element, MyIconButton)).ToList()
     End Function
     Private Sub SelectionChanged(Sender As Object, e As RouteEventArgs)
-        If Rendering Then Return
-        Dim Row = DirectCast(Sender, MyLocalModItem)
-        If Row.Checked Then SelectedIds.Add(Row.RestorePoint("id").ToString()) Else SelectedIds.Remove(Row.RestorePoint("id").ToString())
-        RefreshSelection()
+        Controller.SelectionChanged(Sender)
     End Sub
     Private Sub RefreshSelection()
-        BtnRestore.IsEnabled = SelectedIds.Count = 1
-        LabSelect.Text = $"已选择 {SelectedIds.Count} 个还原点"
-        CardList.Margin = New Thickness(0, 0, 0, If(SelectedIds.Count > 0, 95, 14))
-        LocalResourceUi.RefreshSelectionBar(CardSelect, TransSelect, SelectedIds.Count, BarCount, "Restore Point Selection " & PageUuid, IsLoaded AndAlso AniControlEnabled = 0)
+        Controller.RefreshSelection()
     End Sub
     Friend Sub ChangeAllSelected(Value As Boolean)
-        Rendering = True
-        SelectedIds.Clear()
-        For Each Row As MyLocalModItem In PanEntries.Children
-            Row.Checked = Value
-            If Value Then SelectedIds.Add(Row.RestorePoint("id").ToString())
-        Next
-        Rendering = False
-        RefreshSelection()
+        Controller.ChangeAllSelected(Value)
     End Sub
     Private Sub SelectAll() Handles BtnSelectAll.Click
-        ChangeAllSelected(SelectedIds.Count < PanEntries.Children.Count)
+        Controller.SelectAll()
     End Sub
     Private Sub Deselect() Handles BtnDeselect.Click
-        ChangeAllSelected(False)
+        Controller.Deselect()
     End Sub
     Private Sub SelectionKeys(Sender As Object, e As KeyEventArgs) Handles Me.PreviewKeyDown
-        If e.Key = Key.Escape AndAlso SelectedIds.Count > 0 Then ChangeAllSelected(False) : e.Handled = True
-        If e.Key = Key.A AndAlso Keyboard.Modifiers = ModifierKeys.Control AndAlso Not SearchBox.IsKeyboardFocusWithin Then ChangeAllSelected(True) : e.Handled = True
+        Controller.SelectionKeys(Sender, e)
     End Sub
     Private Sub DeleteSelected() Handles BtnDelete.Click
-        If SelectedIds.Count > 0 Then EnvironmentHistoryUi.Start(Owner, False, DeleteIds:=SelectedIds.ToArray())
+        Controller.DeleteSelected()
     End Sub
     Private Sub CreatePoint() Handles BtnCreate.Click
-        EnvironmentHistoryUi.Start(Owner, False)
+        Controller.CreatePoint()
     End Sub
     Private Sub RestorePoint() Handles BtnRestore.Click
-        If SelectedIds.Count = 1 Then EnvironmentHistoryUi.Start(Owner, True, SelectedIds.Single())
+        Controller.RestorePoint()
     End Sub
     Private Sub OpenFolder() Handles BtnFolder.Click
-        If Owner IsNot Nothing Then EnvironmentHistory.OpenFolder(Owner.PathVersion)
+        Controller.OpenFolder()
     End Sub
     Private Sub Retry() Handles Load.Click
-        If PointsLoader.State = LoadState.Failed Then Refresh()
+        Controller.Retry()
     End Sub
 End Class

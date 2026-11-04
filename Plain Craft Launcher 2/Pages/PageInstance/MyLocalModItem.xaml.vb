@@ -7,12 +7,23 @@ Public Class MyLocalModItem
     '游戏资源页复用此控件的排版、悬停、选择和滑动多选，不伪造 Mod 文件。
     Friend ResourceEntry As InstanceResourceEntry
     Friend RestorePoint As JObject
+    Private RestorePointDisplay As PCLCS.EnvironmentHistoryPagePointView
     Friend Sub BindRestorePoint(Value As JObject)
-        ResourceEntry = Nothing
-        Entry = Nothing
-        RestorePoint = Value
-        Refresh()
+        PCLCS.EnvironmentHistoryPagePointPresenter.Bind(Value, Sub() ResourceEntry = Nothing, Sub() Entry = Nothing,
+            Sub(Point) RestorePoint = Point, AddressOf Refresh)
     End Sub
+    Private Function RestorePointView() As PCLCS.EnvironmentHistoryPagePointView
+        If RestorePointDisplay Is Nothing Then
+            RestorePointDisplay = New PCLCS.EnvironmentHistoryPagePointView With {
+                .Root = Me, .UpdateButton = BtnUpdate, .ResourceLogo = ResourceLogo, .PathLogo = PathLogo,
+                .Point = Function() RestorePoint,
+                .SetTitle = Sub(Value) Title = Value, .SetSubTitle = Sub(Value) SubTitle = Value,
+                .SetDescription = Sub(Value) Description = Value, .SetTags = Sub(Value) Tags = Value,
+                .Title = Function() Title, .SubTitle = Function() SubTitle, .Description = Function() Description,
+                .SetPathLogo = Sub(Value) PathLogo.Source = Value, .ImageRoot = Function() PathImage}
+        End If
+        Return RestorePointDisplay
+    End Function
     Friend ResourceUpdateRequested As Action
     Friend ResourceDetailsRequested As Action
     Friend SelectionBar As FrameworkElement
@@ -387,15 +398,7 @@ Public Class MyLocalModItem
     End Sub
     Public Sub Refresh()
         If RestorePoint IsNot Nothing Then
-            Title = RestorePoint("label").ToString()
-            SubTitle = "  |  " & CDate(RestorePoint("created")).ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-            Description = RestorePoint("description")?.ToString()
-            Tags = If(CBool(RestorePoint("healthy")), New List(Of String) From {"正常运行"}, New List(Of String))
-            ToolTip = Title & SubTitle & vbCrLf & Description
-            BtnUpdate.Visibility = Visibility.Collapsed
-            ResourceLogo.Visibility = Visibility.Collapsed
-            PathLogo.Visibility = Visibility.Visible
-            PathLogo.Source = PathImage & "Icons/NoIcon.png"
+            PCLCS.EnvironmentHistoryPagePointPresenter.Refresh(RestorePointView())
             Return
         End If
         If ResourceEntry IsNot Nothing Then
