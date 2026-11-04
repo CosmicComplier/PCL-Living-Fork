@@ -25,6 +25,7 @@ try {
     & (Join-Path $PSScriptRoot 'Write-BuildCredentials.ps1') -OutputPath $generatedSource -SourceLanguage CSharp
     $intermediatePath = Join-Path $generatedFolder 'Intermediate/'
     $publishArgs = @('publish', $projectFile, '--configuration', $Configuration,
+        '--disable-build-servers', '-nodeReuse:false', '-m:1',
         "-p:GeneratedCredentialSource=$generatedSource", "-p:CredentialIntermediateOutputPath=$intermediatePath", '--verbosity', 'minimal', '--nologo')
     if ($NativePayload) {
         # Same fixed format as the production bounded native identity reader.

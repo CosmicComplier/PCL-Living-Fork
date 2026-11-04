@@ -13,7 +13,9 @@ internal static class Program
         ["registry-names"] = RegistryChecks.Run,
         ["registry-data"] = RegistryDataChecks.Run,
         ["theme"] = environment => ThemeScenarios.Run(Application.Current, Path.Combine(AppContext.BaseDirectory, "assets")),
-        ["file-tasks"] = FileTaskScenarios.Run
+        ["file-tasks"] = FileTaskScenarios.Run,
+        ["mod-dependencies"] = NativeDependencyChecks.Local,
+        ["mod-dependency-online"] = NativeDependencyChecks.Online
     };
     [STAThread]
     private static int Main(string[] args)
@@ -30,6 +32,8 @@ internal static class Program
             ValidateRoot(root);
             Native.Check(Native.Full(AppContext.BaseDirectory) == Native.Full(Path.Combine(root, "output")), "The child is not running from the complete GUID output directory.");
             using FixtureEnvironment environment = new(root);
+            if (args.Contains("--dependency-index-child", StringComparer.Ordinal))
+                return NativeDependencyChecks.IndexChild(environment, args);
             foreach (string group in selected)
             {
                 Cases[group](environment);

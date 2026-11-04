@@ -16,7 +16,11 @@ try{
  [IO.Directory]::CreateDirectory($temporary)|Out-Null
  $identity=$null
  try{$identity=[Reflection.AssemblyName]::GetAssemblyName($ExecutablePath)}catch{
-  if($_.Exception.GetBaseException() -isnot [BadImageFormatException]){throw}
+  # Preserve the API exception: its BadImageFormatException can contain a
+  # PEReader InvalidOperationException. GetBaseException would discard it.
+  $metadataError=$_.Exception
+  if($metadataError -is [Management.Automation.MethodInvocationException]){$metadataError=$metadataError.InnerException}
+  if($metadataError -isnot [BadImageFormatException]){throw}
  }
  if($null -ne $identity){
   # Preserve the original managed candidate's exact identity/product checks.

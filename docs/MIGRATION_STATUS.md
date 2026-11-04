@@ -93,6 +93,8 @@ C014本地集成：四C#完整pipeline／hash／匹配／HTTP与原50行typed VB
 
 f237cd6已推送LF50主要生产适配。随后原生发布/资源/验收接线：真实完整默认Main再次publish成功、Registry/Core/PF/Shared/JSON嵌入身份校验通过；18生成+18实际Main资源blob、vendor-only无VB/resx/vbproj和8CLI拒绝实际Linux运行通过，真实54 getter/Culture明确PENDING，Native Windows CI默认强制，不用生成替身。六个实际Main数据/主题/文件链＋真实Registry独立族宿主strict0W0E，只跨编；真实Windows冷启、54getter与Registry运行结果等待CI。路由保原范围并补50个真实CLI/Git样本通过，空diff/未知/三点PR/输出转义验证；不把未选产品样本算通过。
 
+cb07276首轮真实Native Windows [41905168597](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41905168597)：Debug126838001272／Release126838001476的完整C# Main构建、strict Core/PF/helpers、54个真实getter/Culture及18blob/vendor-only/8拒绝均success。后续package失败于PowerShell GetBaseException穿透BadImageFormatException、数据/Registry宿主在WPF禁止的ResourceAssembly setter处失败（尚未运行业务断言），原模式额外编译因已加载工具DLL的属性漂移/复用node锁失败；Cold/真实升级job未执行，不计通过。旧Build41905168130在Root误追加进ProjectReference的ItemGroup使GUID metadata无效时失败，已精确恢复3原GUID且5新增项仍各一次，actual AssignProjectConfiguration target成功；尚待Windows重编。Modern41905168459仅C027Hint旧fixture缺Info/Warning/Danger9角色导致空Background，原颜色/取消/动画断言保留补真Light资源，其他动画/像素/控件/setup/ABI组实际已过。Migration41905168311两平台success。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -321,8 +323,8 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF产品与当前LF50功能已接；默认false实际完整Release两阶段0E/80W，原LegacyLink=true补真条件/35typed部件/14事件与原UDP声明点初始化，正式LF50开启图0E/86W，未运行外部服务。资源生成已改显式现代18键/schema与57实际Main资产，不读VB/designer/vbproj/resx；manifest本机迁入。原生单文件实际publish成功（191484639bytes），bounded reader确认LivingPCL/PCL Living Fork/1.3.5-pre-3，凭据GUID清理0。Windows真实入口/主要交互仍待独立Native CI，未以跨编/旧CI验收 |
-| N004 | in_progress | N003、C022 | 真实Main设置/旧DES/实际Windows Registry适配器的registry-data独立族已接，sole/fresh hosted/GUID原子owner/unknown拒绝与只删本人标记边界；覆盖_LF隔离/旧格式升级退出/非MS迁移/原kind回滚/取消/INI与JSON保留。strict编译0W0E，实际Windows尚未执行；77内存平台隔离断言已在原settings族通过，不外推真实Registry |
+| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF产品与当前LF50功能已接；默认false实际完整Release两阶段0E/80W，原LegacyLink=true补真条件/35typed部件/14事件与原UDP声明点初始化，正式LF50开启图0E/86W，未运行外部服务。资源生成已改显式现代18键/schema与57实际Main资产，不读VB/designer/vbproj/resx；manifest本机迁入。原生单文件实际publish成功（191484639bytes），bounded reader确认LivingPCL/PCL Living Fork/1.3.5-pre-3，凭据GUID清理0。真实Windows Debug/Release完整Main与54资源运行已通过41905168597；打包/宿主基础设施失败已定位修复，真实入口/主要交互尚待重验，不据子步关闭整链 |
+| N004 | in_progress | N003、C022 | 真实Main设置/旧DES/实际Windows Registry适配器的registry-data独立族已接，sole/fresh hosted/GUID原子owner/unknown拒绝与只删本人标记边界；覆盖_LF隔离/旧格式升级退出/非MS迁移/原kind回滚/取消/INI与JSON保留。strict编译0W0E，首轮Windows在fixture非法ResourceAssembly setter处终止、Registry断言尚未运行；已改自然host资源所有权与真实Main component BAML/资源/style验证，等待复验；77内存平台隔离断言已在原settings族通过，不外推真实Registry |
 | N005 | in_progress | N003、N004 | 主程序复用唯一GUID凭据wrapper NativePayload发布；保持原VB默认生成及crypto片段/惰性工厂，临时源码/中间文件finally清理。默认原生EXE/ZIP+canonical managed旧桥/SHA+build-only角色索引，实际有界bundle身份读者、原四参程序不改。真实单文件与资源schema发布已成功/身份正确，桥完整打包/Windows交接与回滚待CI；无外部release发布。Native CI Debug/Release保Main警告可见、依赖/工具/验收宿主strict；Release冷启先于真实Registry/六族与原模式额外编译 |
 | R001 | in_progress | N003、N005 | 正式现代产品不编译/读取业务VB或vbproj；旧比较树仍留，最终产品VB文件退休/清单与必要旧脚本迁验未完成。原默认关闭联机的两页/条件/handles/UDP声明点语义已真正C#接线、开启/关闭图可编；不得靠开关关闭或源码统计认定功能验收。Native实际运行与旧版兼容通过后统一退役旧产品工程 |
 | R002 | todo | R001 | 迁移后的完整 Windows Debug／Release 自动化回归、现有 MMC 和普通整合包样本；每项保存真实命令、提交和 CI 结果 |

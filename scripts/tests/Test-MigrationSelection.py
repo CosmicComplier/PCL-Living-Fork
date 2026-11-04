@@ -70,7 +70,7 @@ def main() -> int:
         expect(cli([path]), "no-checks", True, "native-only: " + path, [path])
     for path in ("scripts/tests/Test-MigrationSelection.py", "scripts/tests/MigrationSelection.golden.json"):
         expect(cli([path]), "no-checks", False, "routing self-check only: " + path, [path])
-    for path in ("scripts/Test-NativeUpdateBridge.ps1", "scripts/native-upgrade/NativeUpdateFixture.cs"):
+    for path in ("scripts/Test-NativeUpdateBridge.ps1", "scripts/native-upgrade/NativeUpdateFixture.cs", "scripts/tests/Test-BridgePayloadIdentity.ps1"):
         expect(cli([path]), "no-checks", True, "real native upgrade acceptance only: " + path, [path])
     mixed = ["modern/Main/FormMain.xaml.cs", "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb"]
     expect(cli(mixed), "world-backups", True, "mixed native and legacy consumers", mixed)

@@ -84,11 +84,26 @@ internal static class CommonControlsAcceptance {
             ["ColorBrush7"] = new SolidColorBrush(Color.FromRgb(222, 236, 253)), ["ColorBrush8"] = new SolidColorBrush(Colors.White),
             ["ColorBrushBg1"] = new SolidColorBrush(Color.FromArgb(190, 222, 236, 253)),
             ["ColorBrushGray4"] = new SolidColorBrush(Color.FromRgb(90, 90, 90)), ["ColorBrushGray5"] = new SolidColorBrush(Color.FromRgb(130, 130, 130)),
+            // LF main50 (50b028da5fcad2226d74d901a41d8c43a249bfb2) Application.xaml
+            // and LegacyThemeService.Roles, light column. The standard component
+            // Application does not run Main's theme initializer; seed its real roles.
+            ["ColorBrushInfoBack"] = new SolidColorBrush(Color.FromRgb(0xD9, 0xEC, 0xFF)),
+            ["ColorBrushInfoBorder"] = new SolidColorBrush(Color.FromRgb(0x11, 0x72, 0xD4)),
+            ["ColorBrushInfoText"] = new SolidColorBrush(Color.FromRgb(0x0F, 0x64, 0xB8)),
+            ["ColorBrushWarningBack"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xEB, 0xD7)),
+            ["ColorBrushWarningBorder"] = new SolidColorBrush(Color.FromRgb(0xF5, 0x7A, 0x00)),
+            ["ColorBrushWarningText"] = new SolidColorBrush(Color.FromRgb(0xD8, 0x6C, 0x00)),
+            ["ColorBrushDangerBack"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xDD, 0xDF)),
+            ["ColorBrushDangerBorder"] = new SolidColorBrush(Color.FromRgb(0xD8, 0x29, 0x29)),
+            ["ColorBrushDangerText"] = new SolidColorBrush(Color.FromRgb(0xBF, 0x0B, 0x0B)),
             ["ColorObject1"] = Color.FromRgb(52, 61, 74), ["ColorObject4"] = Color.FromRgb(100, 145, 200)
         };
         Dictionary<string, object> saved = new();
         try {
             foreach (var pair in palette) { if (app.Resources.Contains(pair.Key)) saved[pair.Key] = app.Resources[pair.Key]; app.Resources[pair.Key] = pair.Value; }
+            foreach (string role in new[] { "InfoBack", "InfoBorder", "InfoText", "WarningBack", "WarningBorder", "WarningText", "DangerBack", "DangerBorder", "DangerText" })
+                Require(app.TryFindResource("ColorBrush" + role) is SolidColorBrush,
+                    "C027 fixture is missing the real LF light hint role: ColorBrush" + role);
 
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             window = new Window { Width = 520, Height = 360, Left = -20000, Top = -20000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
@@ -161,6 +176,7 @@ internal static class CommonControlsAcceptance {
         Dictionary<string, bool> settings = new(StringComparer.Ordinal); string key = "C027.Hint." + Guid.NewGuid().ToString("N");
         SettingHint hint = new(settings, key) { CanClose = true, Theme = MyHintView.Themes.Blue }; StackPanel panel = new(); panel.Children.Add(hint);
         SettingHint callbackHint = new(settings, key + ".callback"); panel.Children.Add(callbackHint); Display(window, panel);
+        Require(hint.Background is SolidColorBrush, "C027 hint did not resolve the configured ColorBrushInfoBack resource.");
         Require(hint.Reads == 1 && hint.Writes == 0 && hint.Visibility == Visibility.Visible && callbackHint.Reads == 0 &&
             ((SolidColorBrush)hint.Background).Color == (Color)ColorConverter.ConvertFromString("#d9ecff"), "Hint settings/CanClose or original LF palette changed.");
         int bodyClicks = 0; hint.Click += (_, _) => bodyClicks++;

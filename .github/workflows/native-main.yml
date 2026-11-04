@@ -74,6 +74,8 @@ jobs:
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       NATIVE_CONFIGURATION: ${{ matrix.configuration }}
+      MSBUILDDISABLENODEREUSE: '1'
+      DOTNET_CLI_USE_MSBUILD_SERVER: '0'
 
     steps:
       - name: Checkout LF and the pinned Shared dependency
@@ -109,7 +111,7 @@ jobs:
             credentials = 'Open-source keyless build; no release credential or external publication.'
             coldEntry = if ($env:NATIVE_CONFIGURATION -eq 'Release') { 'Required: genuine native startup, normal WM_CLOSE and reopen.' } else { 'Not executed: the current bounded smoke accepts LF BuildType 0/50; Debug BuildType 100 remains a separate runtime gap.' }
             mainWarningPolicy = 'Main conversion warnings remain visible; zero errors required. Core/Presentation/tools/facade tests keep warnings-as-errors.'
-            facade = 'Required in both configurations: four actual Main data/adapter groups, isolated offscreen theme and real file-task/cancellation/navigation groups; never product entry.'
+            facade = 'Required in both configurations: four actual Main data/adapter groups, isolated offscreen theme, real file-task/cancellation/navigation and local/online dependency groups; never product entry.'
           } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $logDirectory 'context.json')
 
       - name: Stamp only the original Main CommitHash constant
@@ -142,7 +144,7 @@ jobs:
             @{ Name = 'events'; Project = 'modern/BuildEvents/filter-task/Lf.Build.Tasks.csproj'; Configuration = 'Release' }
           )
           foreach ($build in $builds) {
-            & dotnet build $build.Project --configuration $build.Configuration --verbosity minimal -warnaserror -p:ContinuousIntegrationBuild=true 2>&1 |
+            & dotnet build $build.Project --configuration $build.Configuration --verbosity minimal -warnaserror -p:ContinuousIntegrationBuild=true --disable-build-servers -nodeReuse:false -m:1 2>&1 |
               Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY ("strict-" + $build.Name + '.log'))
             if ($LASTEXITCODE -ne 0) { throw ('Strict native dependency/helper compilation failed: ' + $build.Name) }
           }
@@ -152,7 +154,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
-          & dotnet build modern/Main/PCL-Living-Fork.Modern.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore --verbosity minimal -p:ContinuousIntegrationBuild=true 2>&1 |
+          & dotnet build modern/Main/PCL-Living-Fork.Modern.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore --verbosity minimal -p:ContinuousIntegrationBuild=true --disable-build-servers -nodeReuse:false -m:1 2>&1 |
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'main-build.log')
           if ($LASTEXITCODE -ne 0) { throw 'The complete native CSharp Main has build errors; warnings remain recorded for review.' }
 
@@ -174,7 +176,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
-          & dotnet build tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore --verbosity minimal -warnaserror -p:BuildProjectReferences=false -p:ContinuousIntegrationBuild=true 2>&1 |
+          & dotnet build tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore --verbosity minimal -warnaserror -p:BuildProjectReferences=false -p:ContinuousIntegrationBuild=true --disable-build-servers -nodeReuse:false -m:1 2>&1 |
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'facade-build.log')
           if ($LASTEXITCODE -ne 0) { throw 'The isolated real-Main facade test host did not build.' }
 
@@ -244,6 +246,13 @@ jobs:
             supportIndexIsReleaseAsset = $false
           } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $env:NATIVE_LOG_DIRECTORY 'package-roles.json')
 
+      - name: Verify managed and native bridge metadata exception routing
+        if: ${{ !cancelled() && steps.package_roles.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mainOutput = "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/win-x64"
+          & ./scripts/tests/Test-BridgePayloadIdentity.ps1 -BridgeBuildScript scripts/Build-UpdateBridge.ps1 -NativePayloadPath "$env:NATIVE_EXE" -ManagedPayloadPath "$mainOutput/LivingPCL.dll" -ForeignManagedPath "modern/BuildResources/bin/$env:NATIVE_CONFIGURATION/net10.0/ResourceGenerator.dll" -UnbundledAppHostPath "$mainOutput/LivingPCL.exe" -NativeInspectorProject scripts/native-update-inspector/NativeUpdateInspector.csproj -NativeUpdaterSource modern/Main/Modules/ModernBundleIdentity.cs -EvidenceRoot (Join-Path $env:NATIVE_LOG_DIRECTORY 'bridge-identity') -DotNetPath (Get-Command dotnet).Source
+
       - name: Require genuine native cold entry normal close and reopen
         # Run first, before any data-only host could affect the fresh CI profile.
         # Pending/unknown dialogs and forced cleanup remain nonzero failures.
@@ -265,7 +274,7 @@ jobs:
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'registry-data-runtime.log')
           if ($LASTEXITCODE -ne 0) { throw 'Real Native Registry migration failed or fresh-profile ownership was not established.' }
 
-      - name: Run all six actual Main facade theme and file-task groups in their isolated STA child
+      - name: Run all eight actual Main facade theme file-task and dependency groups in their isolated STA child
         # A package/cold-entry failure stays failed but must not hide this
         # independent, already-built data/adapter acceptance result.
         if: ${{ !cancelled() && steps.facade.outcome == 'success' }}
@@ -285,7 +294,7 @@ jobs:
           # The default-mode package/cold entry/facade checks are complete above.
           # Compile the preserved optional source graph only; never start a link
           # service or replace those already-published default-mode artifacts.
-          & dotnet build modern/Main/PCL-Living-Fork.Modern.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore -p:EnableLegacyLink=true -p:ContinuousIntegrationBuild=true --verbosity minimal 2>&1 |
+          & dotnet build modern/Main/PCL-Living-Fork.Modern.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore -p:EnableLegacyLink=true -p:ContinuousIntegrationBuild=true --verbosity minimal --disable-build-servers -nodeReuse:false -m:1 2>&1 |
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'legacy-link-build.log')
           if ($LASTEXITCODE -ne 0) { throw 'The original optional LegacyLink mode failed Windows compilation.' }
           Write-Output 'Compiled EnableLegacyLink=true only; optional network services were not executed. Main warnings remain in legacy-link-build.log.'

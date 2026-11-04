@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Reflection;
+using System.Resources;
 using System.Windows;
+using System.Windows.Media;
 using PCLCS;
 
 namespace PCLLF.Native.Facade.Tests;
@@ -23,7 +25,10 @@ internal sealed class FixtureEnvironment : IDisposable
             Native.Check(Application.Current is null, "A previous Application exists before fixture guards.");
             Native.Check(Assembly.GetEntryAssembly() == Assembly.GetExecutingAssembly() && Assembly.GetEntryAssembly() != Native.Main, "Facade host must retain its own EntryAssembly.");
             Native.Check(Native.Main.GetName().Name == "LivingPCL", "Reference is not the genuine LF Main assembly.");
-            Application.ResourceAssembly = Native.Main;
+            // WPF permits setting ResourceAssembly only when EntryAssembly is
+            // null. This executable keeps its genuine host EntryAssembly;
+            // Main's generated InitializeComponent uses its qualified component
+            // URI instead. Never change WPF's static fields or fake EntryAssembly.
             InstallIdentityPrimitives(); // Before constructing the real Application, never retrospectively after an App constructor.
             InstallSettingsGuardsAndCache();
             application = (Application)(Activator.CreateInstance(Native.Type("PCL.Application"), true) ?? throw new InvalidOperationException("Real Application constructor failed."));
@@ -35,7 +40,8 @@ internal sealed class FixtureEnvironment : IDisposable
             Remove("DispatcherUnhandledException", "Application_DispatcherUnhandledException");
             Remove("SessionEnding", "Application_SessionEnding");
             application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            Native.Check(ReferenceEquals(Application.ResourceAssembly, Native.Main) && application.StartupUri is null, "Main resource identity or disabled StartupUri was lost.");
+            Native.Check(ReferenceEquals(Application.ResourceAssembly, Assembly.GetEntryAssembly()) && application.StartupUri is null, "Hosted WPF resource identity or disabled StartupUri was lost.");
+            VerifyMainBaml();
             object info = Native.Property(application.GetType(), "Info").GetValue(application)!;
             Native.Check((string)Native.Property(info.GetType(), "AssemblyName").GetValue(info)! == Native.Main.GetName().Name, "My.Application.Info used the TestHost entry identity.");
             string[] keys = ["CacheCow.Client", "CacheCow.Client.FileStore", "CacheCow.Common", "ThrottleDebounce", "Custom", "ForgeInstaller", "Help", "Imazen.WebP", "libwebp64", "MeloongCore", "Microsoft.Win32.Registry", "NAudio", "Newtonsoft.Json", "Ookii.Dialogs.Wpf", "PCLCS", "PCLLF.Presentation", "System.Net.Http.Formatting", "Transformer"];
@@ -54,6 +60,32 @@ internal sealed class FixtureEnvironment : IDisposable
             Dispose();
             throw;
         }
+    }
+
+    private void VerifyMainBaml()
+    {
+        Native.Check(application!.GetType().Assembly == Native.Main, "The fixture did not construct the genuine Main Application.");
+        Uri component = new("/LivingPCL;component/application.xaml", UriKind.Relative);
+        var resource = Application.GetResourceStream(component) ?? throw new InvalidOperationException("The actual Main component BAML is unavailable.");
+        using Stream actual = resource.Stream;
+        using Stream embedded = Native.Main.GetManifestResourceStream("LivingPCL.g.resources") ?? throw new InvalidOperationException("The actual Main compiled resource container is unavailable.");
+        using ResourceReader reader = new(embedded);
+        byte[]? expected = null;
+        foreach (DictionaryEntry entry in reader)
+        {
+            if (!Equals(entry.Key, "application.baml")) continue;
+            using Stream baml = (Stream)entry.Value!;
+            using MemoryStream bytes = new();
+            baml.CopyTo(bytes);
+            expected = bytes.ToArray();
+            break;
+        }
+        using MemoryStream resolved = new();
+        actual.CopyTo(resolved);
+        Native.Check(expected is { Length: > 0 } && resolved.ToArray().SequenceEqual(expected), "The qualified Main BAML differs from the actual Main embedded component.");
+        Native.Check(application.Resources["ColorBrush1"] is SolidColorBrush role && role.Color == Color.FromRgb(52, 61, 74), "The real Main BAML role resources were not loaded.");
+        Type menu = Native.Type("PCL.MyMenuItem");
+        Native.Check(application.Resources[menu] is Style style && style.TargetType == menu, "The real Main BAML implicit control style was not loaded.");
     }
 
     private void Remove(string eventName, string methodName)
@@ -175,6 +207,9 @@ internal sealed class FixtureEnvironment : IDisposable
         }
         finally
         {
+            // ResourceAssembly naturally belongs to the executable host. WPF
+            // makes this process-static identity immutable; do not attempt a
+            // setter/restore in this dedicated GUID child process.
             while (restore.Count > 0)
                 restore.Pop()();
         }

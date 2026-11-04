@@ -42,7 +42,7 @@ NATIVE_ONLY_PATHS = {
     "scripts/Test-NativeLauncherSmoke.ps1",
 }
 
-NATIVE_ONLY_PATHS.add("scripts/Test-NativeUpdateBridge.ps1")
+NATIVE_ONLY_PATHS.update({"scripts/Test-NativeUpdateBridge.ps1", "scripts/tests/Test-BridgePayloadIdentity.ps1"})
 NATIVE_ONLY_PREFIXES += ("scripts/native-upgrade/",)
 SELECTION_CHECK_PATHS = {"scripts/tests/Test-MigrationSelection.py", "scripts/tests/MigrationSelection.golden.json"}
 # Exact existing scripts; workflows keep their original static invocations/options.

@@ -1007,42 +1007,15 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MeloongCore\Shared\MeloongCore.csproj">
-      <Project>{d22bbf3c-2177-0208-4e29-8466aa41ac6f}  <ItemGroup>
-    <Compile Include="Modules\Base\FileTaskProgress.vb" />
-    <Compile Include="Modules\Minecraft\ModDependencyIndex.vb" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Modules\ModTheme.vb" />
-    <Compile Include="Controls\ModernTooltipTheme.vb" />
-    <Resource Include="Images\Branding\DefaultBackgroundNight.png" />
-  </ItemGroup>
-</Project>
+      <Project>{d22bbf3c-2177-0208-4e29-8466aa41ac6f}</Project>
       <Name>MeloongCore</Name>
     </ProjectReference>
     <ProjectReference Include="..\MeloongCore\Wpf\MeloongCore.Wpf.csproj">
-      <Project>{2dffe2a0-1101-816b-d240-f644b2d74a68}  <ItemGroup>
-    <Compile Include="Modules\Base\FileTaskProgress.vb" />
-    <Compile Include="Modules\Minecraft\ModDependencyIndex.vb" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Modules\ModTheme.vb" />
-    <Compile Include="Controls\ModernTooltipTheme.vb" />
-    <Resource Include="Images\Branding\DefaultBackgroundNight.png" />
-  </ItemGroup>
-</Project>
+      <Project>{2dffe2a0-1101-816b-d240-f644b2d74a68}</Project>
       <Name>MeloongCore.Wpf</Name>
     </ProjectReference>
     <ProjectReference Include="..\PCLCS\PCLCS.csproj">
-      <Project>{32de4aaf-f4d6-42c5-9604-19236de96c69}  <ItemGroup>
-    <Compile Include="Modules\Base\FileTaskProgress.vb" />
-    <Compile Include="Modules\Minecraft\ModDependencyIndex.vb" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Modules\ModTheme.vb" />
-    <Compile Include="Controls\ModernTooltipTheme.vb" />
-    <Resource Include="Images\Branding\DefaultBackgroundNight.png" />
-  </ItemGroup>
-</Project>
+      <Project>{32de4aaf-f4d6-42c5-9604-19236de96c69}</Project>
       <Name>PCLCS</Name>
       <Private>True</Private>
     </ProjectReference>
