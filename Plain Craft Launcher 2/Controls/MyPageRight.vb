@@ -20,12 +20,12 @@ Public Class MyPageRight
         ContentExit
         PageExit
     End Enum
-    Public Shadows Property PageState As PageStates
+    Public Property PageState As PageStates
         Get
-            Return CType(CInt(MyBase.PageState), PageStates)
+            Return CType(CInt(MyBase.NativePageState), PageStates)
         End Get
         Set(value As PageStates)
-            MyBase.PageState = CType(CInt(value), MyPageRightView.PageStates)
+            MyBase.NativePageState = CType(CInt(value), MyPageRightView.PageStates)
         End Set
     End Property
     Public Shadows Event PageEnter()

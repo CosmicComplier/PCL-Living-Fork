@@ -80,6 +80,24 @@ try{
   $control.CommandBindings.Clear()
  }
  Write-Output 'PASS: old BAML clipboard owner shares the native DP and original false/true callback bindings; no clipboard command executed.'
+ # Preserve original name-only reflection across the native base-class boundary.
+ $legacyPageType=$asm.GetType('PCL.MyPageRight',$true)
+ $legacyStateType=$asm.GetType('PCL.MyPageRight+PageStates',$true)
+ foreach($typeName in @('PCL.MyPageRight','PCL.PageInstanceMod')){
+  $pageType=$asm.GetType($typeName,$true)
+  $property=$pageType.GetProperty('PageState');$getter=$pageType.GetMethod('get_PageState');$setter=$pageType.GetMethod('set_PageState')
+  if($null -eq $property -or $property.PropertyType -ne $legacyStateType -or $getter.ReturnType -ne $legacyStateType -or $setter.GetParameters()[0].ParameterType -ne $legacyStateType){throw 'Original page state name-only lookup lost its unique old enum contract'}
+ }
+ $page=[Activator]::CreateInstance($legacyPageType)
+ $originalState=$legacyPageType.GetProperty('PageState');$nativeState=[PCLLF.Presentation.Controls.MyPageRightView].GetProperty('NativePageState')
+ $savedState=$originalState.GetValue($page,$null)
+ try{
+  $originalState.SetValue($page,[Enum]::Parse($legacyStateType,'ContentStay'),$null)
+  if($nativeState.GetValue($page,$null).ToString() -cne 'ContentStay'){throw 'Legacy page state write did not reach the actual native store'}
+  $nativeState.SetValue($page,[Enum]::Parse($nativeState.PropertyType,'ContentExit'),$null)
+  if($originalState.GetValue($page,$null).ToString() -cne 'ContentExit'){throw 'Native page state write did not reach the original enum property'}
+ }finally{$originalState.SetValue($page,$savedState,$null)}
+ Write-Output 'PASS: original page property/getter/setter name-only reflection and bidirectional live native state remain unique.'
  $kindNames=@('Saves','Screenshots','ResourcePacks','ShaderPacks','Schematics')
  $kindTitles=@('存档','截图','资源包','光影包','投影/原理图')
  $kindFolders=@('saves','screenshots','resourcepacks','shaderpacks','schematics')

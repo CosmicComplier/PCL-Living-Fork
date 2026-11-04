@@ -18,7 +18,7 @@ public class MyPageRightView : AdornerDecorator {
     public static readonly DependencyProperty PanScrollProperty = DependencyProperty.Register(nameof(PanScroll), typeof(string), typeof(MyPageRightView), new PropertyMetadata(null));
     public enum PageStates { Empty, LoaderWait, LoaderEnter, LoaderStayForce, LoaderStay, LoaderExit, ContentEnter, ContentStay, ContentExit, PageExit }
     private PageStates pageState = PageStates.Empty;
-    public PageStates PageState { get => pageState; set { if (pageState == value) return; pageState = value; MeloongCore.Logger.Trace("页面状态切换为 " + value); } }
+    public PageStates NativePageState { get => pageState; set { if (pageState == value) return; pageState = value; MeloongCore.Logger.Trace("页面状态切换为 " + value); } }
     private static ControlAnimations Animations => ControlServices.Current.Animations;
     protected virtual void UiPost(Action work) { if (Dispatcher.CheckAccess()) work(); else Dispatcher.InvokeAsync(work); }
     protected virtual void UiWait(Action work) { if (Dispatcher.CheckAccess()) work(); else Dispatcher.Invoke(work); }
@@ -28,7 +28,7 @@ public class MyPageRightView : AdornerDecorator {
     public void InitializeLoader(PageLoaderBinding binding, FrameworkElement loadingPanel, FrameworkElement contentPanel, FrameworkElement? alwaysPanel, bool autoRun = true) {
         panLoader = loadingPanel; panContent = contentPanel; panAlways = alwaysPanel; loader = binding; this.autoRun = autoRun;
         if (binding.Finished is not null) binding.ConnectPreviewFinish(() => {
-            while (PageState is PageStates.PageExit or PageStates.ContentExit) Thread.Sleep(10);
+            while (NativePageState is PageStates.PageExit or PageStates.ContentExit) Thread.Sleep(10);
             UiWait(binding.Finished); Thread.Sleep(20);
         });
         binding.ConnectState((next, old) => UiPost(() => LoaderStateChanged(next, old)));
@@ -50,87 +50,87 @@ public class MyPageRightView : AdornerDecorator {
     private bool LoaderAllowsContent => loader is null || loader.ReadState() == PageLoaderState.Finished || loader.ReadState() == PageLoaderState.Waiting || loader.ReadState() == PageLoaderState.Canceled;
     public void PageOnEnter() {
         MeloongCore.Logger.Trace("已触发 PageOnEnter"); OnPageEnter();
-        switch (PageState) {
+        switch (NativePageState) {
             case PageStates.Empty:
-                if (LoaderAllowsContent) { PageState = PageStates.ContentEnter; TriggerEnterAnimation(panAlways, ContentElement); }
-                else if (loader!.ReadState() == PageLoaderState.Loading) { PageState = PageStates.LoaderWait; Animations.Start(Animations.Code(PageOnLoaderWaitFinished, 400), "PageRight PageChange " + PageUuid); }
-                else { PageState = PageStates.LoaderEnter; TriggerEnterAnimation(panAlways, panLoader); }
+                if (LoaderAllowsContent) { NativePageState = PageStates.ContentEnter; TriggerEnterAnimation(panAlways, ContentElement); }
+                else if (loader!.ReadState() == PageLoaderState.Loading) { NativePageState = PageStates.LoaderWait; Animations.Start(Animations.Code(PageOnLoaderWaitFinished, 400), "PageRight PageChange " + PageUuid); }
+                else { NativePageState = PageStates.LoaderEnter; TriggerEnterAnimation(panAlways, panLoader); }
                 break;
             case PageStates.ContentExit:
-                if (LoaderAllowsContent) { PageState = PageStates.ContentEnter; TriggerEnterAnimation(ContentElement); }
-                else if (loader!.ReadState() == PageLoaderState.Loading) { PageState = PageStates.LoaderWait; Animations.Start(Animations.Code(PageOnLoaderWaitFinished, 400), "PageRight PageChange " + PageUuid); }
-                else { PageState = PageStates.LoaderEnter; TriggerEnterAnimation(panLoader); }
+                if (LoaderAllowsContent) { NativePageState = PageStates.ContentEnter; TriggerEnterAnimation(ContentElement); }
+                else if (loader!.ReadState() == PageLoaderState.Loading) { NativePageState = PageStates.LoaderWait; Animations.Start(Animations.Code(PageOnLoaderWaitFinished, 400), "PageRight PageChange " + PageUuid); }
+                else { NativePageState = PageStates.LoaderEnter; TriggerEnterAnimation(panLoader); }
                 break;
             case PageStates.ContentEnter: break;
-            default: throw new Exception("在状态为 " + PageState + " 时触发了 PageOnEnter 事件。");
+            default: throw new Exception("在状态为 " + NativePageState + " 时触发了 PageOnEnter 事件。");
         }
     }
     public void PageOnExit() {
         MeloongCore.Logger.Trace("已触发 PageOnExit"); OnPageExit();
-        switch (PageState) {
-            case PageStates.ContentEnter: case PageStates.ContentStay: PageState = PageStates.PageExit; TriggerExitAnimation(panAlways, ContentElement); break;
-            case PageStates.LoaderEnter: case PageStates.LoaderStayForce: case PageStates.LoaderStay: PageState = PageStates.PageExit; TriggerExitAnimation(panAlways, panLoader); break;
-            case PageStates.LoaderWait: PageState = PageStates.PageExit; TriggerExitAnimation(panAlways); break;
-            case PageStates.LoaderExit: case PageStates.ContentExit: PageState = PageStates.PageExit; if (panAlways is not null) TriggerExitAnimation(panAlways, ContentElement); break;
+        switch (NativePageState) {
+            case PageStates.ContentEnter: case PageStates.ContentStay: NativePageState = PageStates.PageExit; TriggerExitAnimation(panAlways, ContentElement); break;
+            case PageStates.LoaderEnter: case PageStates.LoaderStayForce: case PageStates.LoaderStay: NativePageState = PageStates.PageExit; TriggerExitAnimation(panAlways, panLoader); break;
+            case PageStates.LoaderWait: NativePageState = PageStates.PageExit; TriggerExitAnimation(panAlways); break;
+            case PageStates.LoaderExit: case PageStates.ContentExit: NativePageState = PageStates.PageExit; if (panAlways is not null) TriggerExitAnimation(panAlways, ContentElement); break;
             case PageStates.PageExit: case PageStates.Empty: break;
         }
     }
     public void PageOnForceExit() {
-        if (PageState == PageStates.Empty) return; MeloongCore.Logger.Trace("已触发 PageOnForceExit"); PageState = PageStates.Empty; Animations.Stop("PageRight PageChange " + PageUuid);
+        if (NativePageState == PageStates.Empty) return; MeloongCore.Logger.Trace("已触发 PageOnForceExit"); NativePageState = PageStates.Empty; Animations.Stop("PageRight PageChange " + PageUuid);
         if (loader is null) Child!.Visibility = Visibility.Collapsed;
         else { panContent!.Visibility = Visibility.Collapsed; panLoader!.Visibility = Visibility.Collapsed; if (panAlways is not null) panAlways.Visibility = Visibility.Collapsed; }
     }
     public void PageOnContentExit() {
         MeloongCore.Logger.Trace("已触发 PageOnContentExit");
         if (loader is not null && loader.ReadState() == PageLoaderState.Loading) throw new Exception("在调用 PageOnContentExit 时，加载器不能为 Loading 状态");
-        switch (PageState) {
-            case PageStates.ContentEnter: case PageStates.ContentStay: PageState = PageStates.ContentExit; TriggerExitAnimation(panContent); break;
-            case PageStates.LoaderExit: PageState = PageStates.ContentExit; break;
-            case PageStates.LoaderEnter: case PageStates.LoaderStayForce: case PageStates.LoaderStay: PageState = PageStates.ContentExit; TriggerExitAnimation(panLoader); break;
+        switch (NativePageState) {
+            case PageStates.ContentEnter: case PageStates.ContentStay: NativePageState = PageStates.ContentExit; TriggerExitAnimation(panContent); break;
+            case PageStates.LoaderExit: NativePageState = PageStates.ContentExit; break;
+            case PageStates.LoaderEnter: case PageStates.LoaderStayForce: case PageStates.LoaderStay: NativePageState = PageStates.ContentExit; TriggerExitAnimation(panLoader); break;
             case PageStates.LoaderWait: PageOnEnter(); break;
             case PageStates.Empty: if (IsLoaded) PageOnEnter(); break;
         }
     }
     private void PageOnEnterAnimationFinished() {
         MeloongCore.Logger.Trace("已触发 PageOnEnterAnimationFinished");
-        switch (PageState) {
-            case PageStates.ContentEnter: PageState = PageStates.ContentStay; break;
-            case PageStates.LoaderEnter: PageState = PageStates.LoaderStayForce; Animations.Start(Animations.Code(PageOnLoaderStayFinished, 400), "PageRight PageChange " + PageUuid); break;
-            default: throw new Exception("在状态为 " + PageState + " 时触发了 PageOnEnterAnimationFinished 事件。");
+        switch (NativePageState) {
+            case PageStates.ContentEnter: NativePageState = PageStates.ContentStay; break;
+            case PageStates.LoaderEnter: NativePageState = PageStates.LoaderStayForce; Animations.Start(Animations.Code(PageOnLoaderStayFinished, 400), "PageRight PageChange " + PageUuid); break;
+            default: throw new Exception("在状态为 " + NativePageState + " 时触发了 PageOnEnterAnimationFinished 事件。");
         }
     }
     private void PageOnExitAnimationFinished() {
         MeloongCore.Logger.Trace("已触发 PageOnExitAnimationFinished");
-        switch (PageState) {
-            case PageStates.PageExit: PageState = PageStates.Empty; break;
+        switch (NativePageState) {
+            case PageStates.PageExit: NativePageState = PageStates.Empty; break;
             case PageStates.ContentExit: PageOnEnter(); break;
-            case PageStates.LoaderExit: PageState = PageStates.ContentEnter; TriggerEnterAnimation(panContent); break;
-            default: throw new Exception("在状态为 " + PageState + " 时触发了 PageOnExitAnimationFinished 事件。");
+            case PageStates.LoaderExit: NativePageState = PageStates.ContentEnter; TriggerEnterAnimation(panContent); break;
+            default: throw new Exception("在状态为 " + NativePageState + " 时触发了 PageOnExitAnimationFinished 事件。");
         }
     }
     private void PageOnLoaderWaitFinished() {
         MeloongCore.Logger.Trace("已触发 PageOnLoaderWaitFinished");
-        if (PageState != PageStates.LoaderWait) throw new Exception("在状态为 " + PageState + " 时触发了 PageOnLoaderWaitFinished 事件。");
-        PageState = PageStates.LoaderEnter;
+        if (NativePageState != PageStates.LoaderWait) throw new Exception("在状态为 " + NativePageState + " 时触发了 PageOnLoaderWaitFinished 事件。");
+        NativePageState = PageStates.LoaderEnter;
         if (panAlways is not null && panAlways.Visibility == Visibility.Collapsed) TriggerEnterAnimation(panAlways, panLoader); else TriggerEnterAnimation(panLoader);
     }
     private void PageOnLoaderStayFinished() {
         MeloongCore.Logger.Trace("已触发 PageOnLoaderStayFinished");
-        if (PageState != PageStates.LoaderStayForce) throw new Exception("在状态为 " + PageState + " 时触发了 PageOnLoaderWaitFinished 事件。");
-        if (loader!.ReadState() == PageLoaderState.Finished) { PageState = PageStates.LoaderExit; TriggerExitAnimation(panLoader); }
-        else PageState = PageStates.LoaderStay;
+        if (NativePageState != PageStates.LoaderStayForce) throw new Exception("在状态为 " + NativePageState + " 时触发了 PageOnLoaderWaitFinished 事件。");
+        if (loader!.ReadState() == PageLoaderState.Finished) { NativePageState = PageStates.LoaderExit; TriggerExitAnimation(panLoader); }
+        else NativePageState = PageStates.LoaderStay;
     }
     private void LoaderStateChanged(PageLoaderState next, PageLoaderState old) {
         switch (next) {
             case PageLoaderState.Failed: case PageLoaderState.Loading:
                 if (old is PageLoaderState.Failed or PageLoaderState.Loading) return; MeloongCore.Logger.Trace("已触发 PageLoaderState (Start/Refresh)");
-                if (PageState is PageStates.ContentEnter or PageStates.ContentStay) { PageState = PageStates.ContentExit; TriggerExitAnimation(panContent); }
-                else if (PageState == PageStates.LoaderExit) PageState = PageStates.ContentExit;
+                if (NativePageState is PageStates.ContentEnter or PageStates.ContentStay) { NativePageState = PageStates.ContentExit; TriggerExitAnimation(panContent); }
+                else if (NativePageState == PageStates.LoaderExit) NativePageState = PageStates.ContentExit;
                 break;
             case PageLoaderState.Finished: case PageLoaderState.Canceled: case PageLoaderState.Waiting:
                 if (old is not PageLoaderState.Failed and not PageLoaderState.Loading) return; MeloongCore.Logger.Trace("已触发 PageLoaderState (Stop/Canceled)");
-                if (PageState == PageStates.LoaderWait) { PageState = PageStates.ContentEnter; if (panAlways is not null && panAlways.Visibility == Visibility.Collapsed) TriggerEnterAnimation(panAlways, panContent); else TriggerEnterAnimation(panContent); }
-                else if (PageState == PageStates.LoaderStay) { PageState = PageStates.LoaderExit; TriggerExitAnimation(panLoader); }
+                if (NativePageState == PageStates.LoaderWait) { NativePageState = PageStates.ContentEnter; if (panAlways is not null && panAlways.Visibility == Visibility.Collapsed) TriggerEnterAnimation(panAlways, panContent); else TriggerEnterAnimation(panContent); }
+                else if (NativePageState == PageStates.LoaderStay) { NativePageState = PageStates.LoaderExit; TriggerExitAnimation(panLoader); }
                 break;
         }
     }
