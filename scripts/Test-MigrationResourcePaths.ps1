@@ -88,12 +88,13 @@ try {
     $sourceText = [IO.File]::ReadAllText($oldSource, $utf8)
     $normalize = [regex]::Matches($sourceText, '(?ms)^    Private Shared Function Normalize\(Value As String\) As String\r?\n.*?^    End Function\r?$')
     $ensure = [regex]::Matches($sourceText, '(?ms)^    Friend Shared Sub EnsureWithin\(Root As String, FileName As String, Optional AllowRoot As Boolean = False\)\r?\n.*?^    End Sub\r?$')
-    if ($normalize.Count -ne 1 -or $ensure.Count -ne 1) { throw 'Fixed LF method extraction did not match exactly one Normalize and EnsureWithin.' }
+    $formatSize = [regex]::Matches($sourceText, '(?ms)^    Private Shared Function FormatSize\(Size As Long\) As String\r?\n.*?^    End Function\r?$')
+    if ($normalize.Count -ne 1 -or $ensure.Count -ne 1 -or $formatSize.Count -ne 1) { throw 'Fixed LF method extraction did not match exactly one Normalize, EnsureWithin and FormatSize.' }
     $driverTemplate = [IO.File]::ReadAllText((Join-Path $repo 'tests/PCLLF.PathOracle/LegacyDriver.vb'), $utf8)
     $methodMarker = '__LF_METHODS__'
     # The explanatory comment also names the marker; replace only its entire line.
     if ([regex]::Matches($driverTemplate, '(?m)^' + $methodMarker + '\r?$').Count -ne 1) { throw 'Baseline driver method marker is missing or repeated.' }
-    $driver = [regex]::Replace($driverTemplate, '(?m)^' + $methodMarker + '\r?$', [Text.RegularExpressions.MatchEvaluator]{param($match) $normalize[0].Value + [Environment]::NewLine + $ensure[0].Value})
+    $driver = [regex]::Replace($driverTemplate, '(?m)^' + $methodMarker + '\r?$', [Text.RegularExpressions.MatchEvaluator]{param($match) $normalize[0].Value + [Environment]::NewLine + $ensure[0].Value + [Environment]::NewLine + $formatSize[0].Value})
     $driverPath = Join-Path $baselineDirectory 'LegacyDriver.vb'
     [IO.File]::WriteAllText($driverPath, $driver, $utf8)
     foreach ($dependency in (Get-ChildItem -LiteralPath $sharedOutput -Filter '*.dll' -File)) {
@@ -127,6 +128,7 @@ try {
         modernPathTextSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathText.cs') -Algorithm SHA256).Hash
         modernPathCompatibilitySourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathCompatibility.cs') -Algorithm SHA256).Hash
         modernPackageRulesSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePackageRules.cs') -Algorithm SHA256).Hash
+        modernDetailsRulesSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourceDetailsRules.cs') -Algorithm SHA256).Hash
         modernLegacyPathCharactersSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/LegacyPathCharacters.cs') -Algorithm SHA256).Hash
     }
     [IO.File]::WriteAllText((Join-Path $baselineDirectory 'provenance.json'), ($provenance | ConvertTo-Json -Depth 5), $utf8)

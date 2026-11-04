@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `a89bc041412b4382eb68e1ea4053127ec973874a`：Windows 各 41 步、Ubuntu 339／Windows 371 组与 **RequireEquivalent** 150／56 全通过；ZIP 解码及异常解包后继修复已由真实报告／原消费者证实，C007c4 完成。首次失败保留，见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)。主产品仍 net48，非全部 BCL／现代 WPF 验收。
-- 下一最早 ready 批次 C007d1：资源大小与 pack JSON→Detail 纯规则；磁盘／ZIP／Icon 仍原宿主，保 ref 部分赋值／Meloong 换行与原捕获边界，先按现有方法拆分。C005c2／C006d 的界面母项保持 blocked。
+- 当前推进 C007d1a 资源大小显示，原 FormatSize／6 组文化边界样本已接，本地 345／345 与三个工程零警告编译通过；v4 三原方法 VB 驱动预编译通过，新增 40 个文化数值样本令 190／56 对照待 Windows。d1b JSON→Detail 独立后继，IO／Icon与捕获仍原宿主；C005c2／C006d 的界面母项保持 blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -243,7 +243,9 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c2 | done | C007c1 | `2d111e1`：SafeName 原顺序／三文案／平台规则，8 组新增令 Ubuntu 319／Windows 347、严格 137／52、Windows 各 41 步及原消费者全通过；独立终审／零警告编译通过，不扩大保留名策略 |
 | C007c3 | done | C007c2 | `70f2545`：原 AcceptFile／9 白名单／null 先后、原 C6 字符共享与消费者接通，8 Unix／9 Windows 组令 327／356、严格 137／52、Windows 各 41 步全通过；独立终审／零警告编译通过，ZIP 内容校验未在本批迁 |
 | C007c4 | done | C007c3、C007b2 | `dfb81b8`／`a89bc04`：原包校验／Using／原两文案与 Shader 前缀、真实 ZIP／惰性／句柄／共享只读及原消费者接通；339／371、严格 150／56、Windows 各 41 步全通过；首次编码与测试解包失败保留，不扩大扫描／导入策略 |
-| C007d1 | todo | C007c4 | 迁 FormatSize 与 ReadPackInfo 末段 JSON→Detail 纯规则；保 CurrentCulture／GB上限／ref Detail部分更新／原Meloong换行两次调用，IO／Icon和精确Catch仍在原VB；先核大小格式真实Frame与现代差异再验收 |
+| C007d1 | in_progress | C007c4 | 大小显示与 pack JSON→Detail 拆成独立 a／b；保 CurrentCulture／GB上限／ref Detail部分更新／原Meloong换行两次调用，IO／Icon和精确Catch仍在原VB，不以a完成关闭b |
+| C007d1a | in_progress | C007c4 | 仅原 FormatSize／C#真入口，保 long当前culture／Log→Floor→Min3／四单位及0.#；6组令本地345／345，三个工程零警告／原VB v4预编译通过。固定f4完整旧方法注入，追加20值×两culture，190／56待真实Windows，不凭现代结果伪写极端旧gold |
+| C007d1b | todo | C007d1a | 只迁 ReadPackInfo 末段 JSON→Detail 规则；保 ref partial更新、description原类型处理／180 UTF16和换行两次求值，Meloong显式绑定，原过滤器不含InvalidData／Format，不扩大捕获或替换磁盘／Icon |
 
 ## 当前批次与下一步
 
@@ -271,7 +273,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c2 | `2d111e1` 已推送；319／347 单元、严格 137／52、Windows 各 41 步／真实旧入口与原资源回归全通过，独立终审与零警告编译通过 | 本批完成，所有写入事务和原取消仍由既有流程执行；不以单规则关闭 Store |
 | C007c3 | `70f2545` 已推送；327／356、严格 137／52、Windows 各 41 步与原私有桥／null-device／资源和 Quick Play 消费者全通过；独立终审／零警告编译通过 | 本批完成，筛选不做 SafeName／完整路径归约；更多 ZIP 和扫描语义仍属后继 |
 | C007c4 | `dfb81b8`／`a89bc04` 已推送；首次失败及修复记录齐全，339／371、严格 150／56／12 ZIP API、Windows 各 41 步和真实原消费者全通过；独立终审／零警告编译通过，未全局注册编码 | 本批完成，OpenRead 快照与未知 kind 业务惰性分别验收，不外推所有 raw BCL I/O 或现代 WPF；包名/条件/数据/事务范围保留 |
+| C007d1a | C#原式／VB private桥、6 组生产金值及 PS 10值×两culture已接，本地345／345、net48／tests／host零警告与注入三原方法的v4 VB预编译通过；Core／桥／PS及四oracle文件独立终审通过 | 待Windows377单元／原消费者与严格190／56；JSON／IO／Icon未迁，不将其他阶段的通过外推本批 |
 
-下次入口：C007d1 资源大小与 pack JSON→Detail 纯规则；c4／c3／c2／c1／b2 已全通过，不重复前批或重建基线。继续保持原 IO／Icon／捕获位置，再按依赖迁扫描；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
+下次入口：先收尾 C007d1a 大小显示及完整原方法 Frame 对照，再 d1b JSON→Detail；c4／c3／c2／c1／b2 已全通过，不重复前批或重建基线。保持原 IO／Icon／捕获位置，再按依赖迁扫描；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

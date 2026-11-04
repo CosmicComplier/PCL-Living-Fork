@@ -95,4 +95,12 @@ v3 保留上述 137 例／52 比较，追加 12 个实际 ZIP API 请求及 1 �
 
 同提交 [Windows Build 41745161847](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41745161847)：Debug job `126296202166`、Release job `126296202385` 各 41 步 success，原 package／lazy-directory／handle 消费者和完整资源／更新／旧桥通过；异常 helper 仅剥调用包装，保留真实业务顶层后原坏 ZIP 验证通过。C007c4 完成，首次 failure／cancelled 证据保留；这些仍不代表整 Store／现代 WPF 或全部代码页均已跨系统实测。
 
+## C007d1a 的原资源大小方法待验证
+
+v4 保留原 150／56／12 ZIP 请求，追加 20 个 Int64 值×`en-US`／`fr-FR` 两种文化，共 190 例／56 比较。脚本从同一固定 f4 文件唯一提取完整 `FormatSize(Size As Long)`，作为第三原方法注入旧驱动；方法体不转译，薄包装仍传 Long。现代端链接实际 `InstanceResourceDetailsRules.FormatSize`，provenance 加实际新源哈希。
+
+primitive 使用 Invariant Int64 文本传输，只有当前 format-size case 在 try／finally 内临时改变 CurrentCulture；UICulture、DefaultThreadCulture 与其他路径／ZIP case 不改。简单 B／1 KB／1.5 单位有独立字面合同，其余边界／极端只要求旧进程成功，但 **之后仍逐字符串严格比较实际 Frame 与现代结果**，不使用现代结果生成旧 gold，未标为忽略差异。
+
+当前本地 345／345、三个工程零警告编译及 v4 旧驱动预编译通过；独立 Core／桥／PS 审查通过。190／56 与 Windows 377 单元／原消费者尚待执行，不以此前 150／56 证据替代。
+
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。

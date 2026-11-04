@@ -86,6 +86,19 @@ try{
  $reserved=@('CON','PRN','AUX','NUL')+@(1..9|ForEach-Object {'COM'+$_;'LPT'+$_})
  foreach($name in $reserved){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $systemName;Assert-StoreException 'SafeName' @($name.ToLowerInvariant()+'.txt') ([IO.IOException]) $systemName}
  foreach($name in @('.pcl-','.PCL-test')){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $launcherName}
+ $sizeSamples=@(
+  @{Value=[long]-1;Text='-1 B'},@{Value=[long]0;Text='0 B'},@{Value=[long]1023;Text='1023 B'},
+  @{Value=[long]1024;Text='1 KB'},@{Value=[long]1536;Text='1.5 KB'},@{Value=[long]1048576;Text='1 MB'},
+  @{Value=[long]1073741824;Text='1 GB'},@{Value=[long]1099511627776;Text='1024 GB'},
+  @{Value=[long]::MinValue;Text='-9223372036854775808 B'},@{Value=[long]::MaxValue;Text='8589934592 GB'}
+ )
+ $sizeCulture=[Threading.Thread]::CurrentThread.CurrentCulture
+ try{
+  foreach($culture in @('en-US','fr-FR')){
+   [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo($culture)
+   foreach($sample in $sizeSamples){$expected=$sample.Text;if($culture -eq 'fr-FR'){$expected=$expected.Replace('.',',')};if((Invoke-Store 'FormatSize' @($sample.Value)) -cne $expected){throw 'Resource size units, boundary or current-culture formatting changed'}}
+  }
+ }finally{[Threading.Thread]::CurrentThread.CurrentCulture=$sizeCulture}
  $fileExtensions=@('.png','.jpg','.jpeg','.bmp','.zip','.litematic','.schem','.schematic','.nbt')
  $acceptedExtensions=@{0=@();1=@('.png','.jpg','.jpeg','.bmp');2=@('.zip');3=@('.zip');4=@('.litematic','.schem','.schematic','.nbt')}
  for($index=0;$index -lt 5;$index++){
@@ -299,7 +312,7 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message, extension-filter/null/device and package/lazy-directory/handle contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message, size/current-culture, extension-filter/null/device and package/lazy-directory/handle contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

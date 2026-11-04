@@ -61,7 +61,8 @@ internal static class Program {
             .. InstanceResourceKindRulesTests.Cases(),
             .. InstanceResourceNameRulesTests.Cases(),
             .. InstanceResourceFileRulesTests.Cases(),
-            .. InstanceResourcePackageRulesTests.Cases()
+            .. InstanceResourcePackageRulesTests.Cases(),
+            .. InstanceResourceDetailsRulesTests.Cases()
         ];
         int failures = 0;
         foreach ((string name, Action run) in tests) {

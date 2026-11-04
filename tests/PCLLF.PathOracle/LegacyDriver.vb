@@ -1,7 +1,7 @@
 ' Driver only. The script replaces __LF_METHODS__ with verbatim methods from
 ' LF f4aa0fae62c3ee8af24c81e61844c8fdd13c8983 (repository LICENCE/NOTICE.md).
 ' Prefix handling comes from the actual Shared c774ae4c85fd94e0eaa171db21e78a65870df19b DLL.
-' This file deliberately does not contain a second implementation of the guard.
+' Original path and size-format methods are injected; this driver does not translate them.
 Imports System
 Imports System.ComponentModel
 Imports System.Globalization
@@ -21,6 +21,10 @@ __LF_METHODS__
 
     Friend Shared Function InvokeNormalize(Value As String) As String
         Return Normalize(Value)
+    End Function
+
+    Friend Shared Function InvokeFormatSize(Value As Long) As String
+        Return FormatSize(Value)
     End Function
 End Class
 
@@ -44,7 +48,7 @@ Friend NotInheritable Class NativeOrdinalProbe
 End Class
 
 Friend Module OracleProgram
-    Private Const Protocol As String = "pcllf-resource-paths-v3"
+    Private Const Protocol As String = "pcllf-resource-paths-v4"
     Private Const Lf As String = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983"
     Private Const SharedRevision As String = "c774ae4c85fd94e0eaa171db21e78a65870df19b"
     Private ReadOnly Utf8 As New UTF8Encoding(False, True)
@@ -118,6 +122,16 @@ Friend Module OracleProgram
                     End Try
                 Case "get-directory-name"
                     Result = Ok(Path.GetDirectoryName(Value))
+                Case "format-size"
+                    Dim Size = Long.Parse(Value, NumberStyles.Integer, CultureInfo.InvariantCulture)
+                    Dim PreviousCulture = CultureInfo.CurrentCulture
+                    Try
+                        Dim RequestedCulture = Text(Item("culture"))
+                        If RequestedCulture IsNot Nothing Then CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(RequestedCulture)
+                        Result = Ok(LegacyResourcePaths.InvokeFormatSize(Size))
+                    Finally
+                        CultureInfo.CurrentCulture = PreviousCulture
+                    End Try
                 Case "zip-open-read"
                     ' Real Framework API, not a translated/copied ValidatePackage business method.
                     Using Archive = ZipFile.OpenRead(Value)

@@ -12,9 +12,9 @@ using PCLCS;
 
 // LF source/behaviour: f4aa0fae62c3ee8af24c81e61844c8fdd13c8983, LICENCE/NOTICE.md.
 // Prefix implementation: real MeloongCore c774ae4c85fd94e0eaa171db21e78a65870df19b.
-// The old guard is compiled from git, not reimplemented in this driver.
+// Original path/size methods are compiled from git, not reimplemented in this driver.
 internal static class Program {
-    internal const string Protocol = "pcllf-resource-paths-v3";
+    internal const string Protocol = "pcllf-resource-paths-v4";
     private const string Lf = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983";
     private const string Shared = "c774ae4c85fd94e0eaa171db21e78a65870df19b";
     private const string Outside = "资源路径超出了当前目录。";
@@ -276,6 +276,32 @@ internal static class Program {
         Add("zip.bad", "zip-open-read", badZip, Error("System.IO.InvalidDataException"));
         Add("zip.missing", "zip-open-read", Path.Combine(fixture, "missing.zip"), Error("System.IO.FileNotFoundException"));
 
+        // Primitive Int64 text travels invariantly; only formatting runs under
+        // the per-case culture. Unknown rounding/extrema use real CLR4 output,
+        // never modern formatting as a generated baseline expectation.
+        long[] sizeSamples = {
+            long.MinValue, -1, 0, 1023, 1024, 1025, 1075, 1076, 1280, 1536,
+            1048575, 1048576, 1048577, 1073741823, 1073741824, 1073741825,
+            1099511627776, 1099511627777, 1610612736, long.MaxValue
+        };
+        foreach (string culture in new[] { "en-US", "fr-FR" }) {
+            foreach (long size in sizeSamples) {
+                string? expected = size switch {
+                    long.MinValue => "-9223372036854775808 B",
+                    -1 => "-1 B",
+                    0 => "0 B",
+                    1023 => "1023 B",
+                    1024 or 1025 => "1 KB",
+                    1536 => culture == "fr-FR" ? "1,5 KB" : "1.5 KB",
+                    1610612736 => culture == "fr-FR" ? "1,5 GB" : "1.5 GB",
+                    _ => null
+                };
+                string text = size.ToString(CultureInfo.InvariantCulture);
+                Add("format-size." + culture + "." + text, "format-size", text, expected is null ? SystemOutcome("ok") : Ok(expected));
+                ((JObject)cases[cases.Count - 1]!)["culture"] = culture;
+            }
+        }
+
         Save(Path.Combine(fixture, "cases.json"), new JObject(new JProperty("protocol", Protocol), new JProperty("fixture", fixture),
             new JProperty("cwd", cwd), new JProperty("profile", "LF-default"), new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("cases", cases)));
         Console.WriteLine($"Prepared {cases.Count} path cases and {links.Count} real owned symbolic links.");
@@ -290,6 +316,7 @@ internal static class Program {
                 case "prefix": result = Ok(PathUtils.RemoveExtendedPrefix(value!)); break;
                 case "ensure": InstanceResourcePaths.EnsureWithin(Text(item["root"])!, value!, (bool)item["allowRoot"]!, PathUtils.RemoveExtendedPrefix); result = Ok(); break;
                 case "get-directory-name": result = Ok(InstanceResourcePathCompatibility.GetDirectoryName(value)); break;
+                case "format-size": result = Ok(FormatSize(item)); break;
                 case "zip-open-read":
                     using (ZipArchive archive = InstanceResourcePackageRules.OpenRead(value!)) result = Ok(ZipSnapshot(archive));
                     break;
@@ -315,6 +342,16 @@ internal static class Program {
         using FileStream output = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         using ZipArchive archive = new(output, ZipArchiveMode.Create, leaveOpen: false, entryNameEncoding: Encoding.UTF8);
         using Stream entry = archive.CreateEntry(entryName, CompressionLevel.NoCompression).Open();
+    }
+
+    private static string FormatSize(JObject item) {
+        long size = long.Parse(Text(item["value"])!, NumberStyles.Integer, CultureInfo.InvariantCulture);
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        try {
+            string? culture = Text(item["culture"]);
+            if (culture is not null) CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            return InstanceResourceDetailsRules.FormatSize(size);
+        } finally { CultureInfo.CurrentCulture = previous; }
     }
 
     private static void ClearFixtureEfs(string source, string destination) {
@@ -397,8 +434,15 @@ internal static class Program {
             JObject old = oldResults[index] as JObject ?? throw new InvalidDataException("Invalid result object.");
             string id = (string?)item["id"] ?? throw new InvalidDataException("Missing case id.");
             if (!ids.Add(id) || (string?)old["id"] != id) throw new InvalidDataException("Duplicate or reordered oracle case id.");
-            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read") || item["allowRoot"]?.Type != JTokenType.Boolean)
+            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read" or "format-size") || item["allowRoot"]?.Type != JTokenType.Boolean)
                 throw new InvalidDataException("Unknown operation or malformed request.");
+            if ((string?)item["operation"] == "format-size") {
+                if (item["value"]?.Type != JTokenType.String || !long.TryParse(Text(item["value"]), NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ||
+                    item["culture"] is JToken culture && culture.Type is not (JTokenType.String or JTokenType.Null))
+                    throw new InvalidDataException("Malformed invariant Int64 or culture in size request.");
+                string? cultureName = Text(item["culture"]);
+                if (cultureName is not null) CultureInfo.GetCultureInfo(cultureName);
+            }
             ValidateOutcome(old, (string)item["operation"]!);
             if ((string?)item["operation"] == "ordinal") {
                 // Decode before executing either side, so malformed protocol cannot be
@@ -441,6 +485,8 @@ internal static class Program {
             new JProperty("nativeComparisonCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "ordinal") * 4),
             new JProperty("zipApiProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "zip-open-read")),
             new JProperty("zipApiProbeScope", "Original CLR4 ZipFile.OpenRead plus entry snapshot; modern production InstanceResourcePackageRules.OpenRead plus entry snapshot. This is not the old ValidatePackage business function."),
+            new JProperty("sizeFormattingProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "format-size")),
+            new JProperty("sizeFormattingProbeScope", "Original fixed LF FormatSize method, injected verbatim into CLR4; modern production InstanceResourceDetailsRules.FormatSize. CurrentCulture is scoped and restored per request."),
             new JProperty("requests", cases.DeepClone()),
             new JProperty("baseline", baseline), new JProperty("modern", new JObject(new JProperty("context", Context()), new JProperty("results", modern))),
             new JProperty("contractFailures", failures), new JProperty("nativeCandidateFailures", nativeFailures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
@@ -457,7 +503,7 @@ internal static class Program {
         if ((string?)result["status"] == "ok") {
             if (result.Property("value") is null || result.Property("type") is not null) throw new InvalidDataException("Malformed successful baseline result.");
             JTokenType valueType = result["value"]!.Type;
-            if (operation == "ensure" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation == "zip-open-read" ? valueType != JTokenType.Object : valueType is not (JTokenType.String or JTokenType.Null))
+            if (operation == "ensure" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation == "zip-open-read" ? valueType != JTokenType.Object : operation == "format-size" ? valueType != JTokenType.String : valueType is not (JTokenType.String or JTokenType.Null))
                 throw new InvalidDataException("Baseline returned a value incompatible with the requested operation.");
             if (operation == "zip-open-read") {
                 JArray entries = result["value"]?["entries"] as JArray ?? throw new InvalidDataException("Missing structured ZIP baseline entries.");

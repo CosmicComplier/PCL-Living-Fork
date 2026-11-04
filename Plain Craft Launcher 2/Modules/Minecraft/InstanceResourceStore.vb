@@ -98,10 +98,7 @@ Friend NotInheritable Class InstanceResourceStore
     End Function
 
     Private Shared Function FormatSize(Size As Long) As String
-        If Size < 1024 Then Return Size & " B"
-        Dim Unit As Integer = Math.Min(3, CInt(Math.Floor(Math.Log(Size, 1024))))
-        Dim Units As String() = {" B", " KB", " MB", " GB"}
-        Return (Size / Math.Pow(1024, Unit)).ToString("0.#") & Units(Unit)
+        Return PCLCS.InstanceResourceDetailsRules.FormatSize(Size)
     End Function
 
     Private Shared Sub ReadPackInfo(Entry As InstanceResourceEntry, ByRef Detail As String)
