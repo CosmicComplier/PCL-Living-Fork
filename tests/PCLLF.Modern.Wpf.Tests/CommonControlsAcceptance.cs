@@ -87,15 +87,26 @@ internal static class CommonControlsAcceptance {
         Dictionary<string, object> saved = new();
         try {
             foreach (var pair in palette) { if (app.Resources.Contains(pair.Key)) saved[pair.Key] = app.Resources[pair.Key]; app.Resources[pair.Key] = pair.Value; }
-            ControlServices.Configure(session.Runtime.CreateControlServices(kind => session.Runtime.Host.ReadColor(palette[kind switch {
-                ControlThemeColor.Gray4 => "ColorBrushGray4", ControlThemeColor.Gray5 => "ColorBrushGray5", ControlThemeColor.Accent8 => "ColorBrush8", _ => "ColorBrushSemiTransparent"
-            }]), _ => { }, (error, _) => session.Faults.Add(error), (error, _) => session.Faults.Add(error), value => session.CustomEvents.Add(value)));
-            Require(ControlServices.Current.Animations is ControlAnimationHost<AnimationData>, "C027 used a replacement/no-op animation host.");
+
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             window = new Window { Width = 520, Height = 360, Left = -20000, Top = -20000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
             app.MainWindow = window; window.Show();
-            Card(window, session); Hint(window, session); Icon(window, session, palette); ListItems(window, session); Virtualization(window, session); Shadow(window, session);
-            session.Healthy();
+            var failures = new List<Exception>();
+            (string Name, Action<Window, Session> Run)[] checks = {
+                ("card", Card), ("hint", Hint), ("icon", (host, state) => Icon(host, state, palette)),
+                ("list", ListItems), ("virtualization", Virtualization), ("shadow", Shadow)
+            };
+            foreach (var check in checks) {
+                session = new Session();
+                ControlServices.Configure(session.Runtime.CreateControlServices(kind => session.Runtime.Host.ReadColor(palette[kind switch {
+                    ControlThemeColor.Gray4 => "ColorBrushGray4", ControlThemeColor.Gray5 => "ColorBrushGray5", ControlThemeColor.Accent8 => "ColorBrush8", _ => "ColorBrushSemiTransparent"
+                }]), _ => { }, (error, _) => session.Faults.Add(error), (error, _) => session.Faults.Add(error), value => session.CustomEvents.Add(value)));
+                Require(ControlServices.Current.Animations is ControlAnimationHost<AnimationData>, "C027 used a replacement/no-op animation host.");
+                try { check.Run(window, session); session.Healthy(); }
+                catch (Exception error) { Console.Error.WriteLine("FAIL C027 " + check.Name + ": " + error); failures.Add(error); }
+                finally { window.Content = null; session.Stop(); }
+            }
+            if (failures.Count != 0) throw new AggregateException("Common controls acceptance failed.", failures);
         } finally {
             try { if (window != null) window.Close(); }
             finally {

@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Diagnostics;
+using System.Text.Json;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -25,11 +27,18 @@ internal static class BitmapFoundationAcceptance {
 
     internal static void Run(string repositoryRoot, string fixtureRoot) {
         Require(Application.Current != null && Application.Current.Dispatcher.CheckAccess(), "Bitmap checks require the real STA application dispatcher.");
-        ColorAndRect();
-        Conversions();
-        Transforms();
-        FilesAndResources(fixtureRoot);
-        WebP(repositoryRoot, fixtureRoot);
+        Directory.CreateDirectory(fixtureRoot);
+        var failures = new System.Collections.Generic.List<Exception>();
+        void Check(string name, Action action) {
+            try { action(); }
+            catch (Exception error) { Console.Error.WriteLine("FAIL bitmap foundation " + name + ": " + error); failures.Add(error); }
+        }
+        Check("color/rect", ColorAndRect);
+        Check("conversions", Conversions);
+        Check("transforms", Transforms);
+        Check("files/resources", () => FilesAndResources(fixtureRoot));
+        Check("native WebP", () => WebP(repositoryRoot, fixtureRoot));
+        if (failures.Count != 0) throw new AggregateException("Bitmap foundation acceptance failed.", failures);
     }
 
     private static void ColorAndRect() {
@@ -92,6 +101,30 @@ internal static class BitmapFoundationAcceptance {
         Console.WriteLine("PASS bitmap foundation: actual GDI aliases, WPF BGRA/alpha/DPI/freeze and PNG/BMP conversion routes.");
     }
 
+    private static JsonDocument FixedClr4Transforms() {
+        string shell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+        ProcessStartInfo start = new(shell) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+        foreach (string value in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-File", Path.Combine(AppContext.BaseDirectory, "Fixtures", "Measure-BitmapTransforms.ps1") }) start.ArgumentList.Add(value);
+        using Process child = Process.Start(start) ?? throw new InvalidOperationException("The independent CLR4 bitmap baseline did not start.");
+        var output = child.StandardOutput.ReadToEndAsync(); var errors = child.StandardError.ReadToEndAsync();
+        if (!child.WaitForExit(20000)) { child.Kill(entireProcessTree: true); Require(child.WaitForExit(3000), "CLR4 bitmap baseline remained alive after termination."); throw new TimeoutException("The CLR4 bitmap baseline did not finish."); }
+        string text = output.GetAwaiter().GetResult(), error = errors.GetAwaiter().GetResult();
+        Require(child.ExitCode == 0 && string.IsNullOrWhiteSpace(error), "Independent fixed LF CLR4 transform baseline failed: " + error + text);
+        JsonDocument result = JsonDocument.Parse(text);
+        Require(result.RootElement.GetProperty("Runtime").GetString().StartsWith("v4.", StringComparison.Ordinal) &&
+            result.RootElement.GetProperty("SourceHash").GetString() == "c6c07cb555bfe24ed69053dde74af0ccdfd9822e12da6d6b9109664a5c68a3af", "Bitmap baseline runtime or fixed source identity changed.");
+        return result;
+    }
+    private static void CompareTransform(JsonElement expected, DrawingBitmap actual, string name) {
+        Require(expected.GetProperty("Width").GetInt32() == actual.Width && expected.GetProperty("Height").GetInt32() == actual.Height, name + " dimensions differ from fixed LF CLR4.");
+        Near(expected.GetProperty("DpiX").GetDouble(), actual.HorizontalResolution, name + " horizontal DPI differs from fixed LF CLR4.");
+        Near(expected.GetProperty("DpiY").GetDouble(), actual.VerticalResolution, name + " vertical DPI differs from fixed LF CLR4.");
+        var pixels = expected.GetProperty("Pixels").EnumerateArray().Select(value => value.GetInt32()).ToArray();
+        int index = 0;
+        for (int y = 0; y < actual.Height; y++) for (int x = 0; x < actual.Width; x++) Require(index < pixels.Length && pixels[index++] == actual.GetPixel(x, y).ToArgb(), name + " pixels differ from fixed LF CLR4.");
+        Require(index == pixels.Length, name + " pixel count differs from fixed LF CLR4.");
+    }
+
     private static void Transforms() {
         using DrawingBitmap source = new(3, 2, DrawingPixelFormat.Format32bppArgb); source.SetResolution(144, 120);
         for (int y = 0; y < 2; y++) for (int x = 0; x < 3; x++) source.SetPixel(x, y, DrawingColor.FromArgb(255, x * 40, y * 50, x + y));
@@ -100,10 +133,15 @@ internal static class BitmapFoundationAcceptance {
             Require(!ReferenceEquals(crop.Pic, source) && !ReferenceEquals(rotate.Pic, source) && crop.Pic!.Width == 1 && crop.Pic!.Height == 2 && rotate.Pic!.Width == 2 && rotate.Pic!.Height == 3,
                 "Crop or rotation lost independent output dimensions.");
             Pixel(crop.Pic!, 0, 0, source.GetPixel(1, 0)); Pixel(crop.Pic!, 0, 1, source.GetPixel(1, 1)); Pixel(rotate.Pic!, 1, 0, source.GetPixel(0, 0));
-            Near(source.HorizontalResolution, crop.Pic!.HorizontalResolution, "Crop DPI changed."); Near(source.VerticalResolution, rotate.Pic!.VerticalResolution, "Rotate DPI changed.");
+            // GDI+ may exchange DPI axes during a quarter turn. Compare both axes
+            // and every pixel to the actual fixed LF VB method on independent CLR4.
+            using (JsonDocument baseline = FixedClr4Transforms()) {
+                CompareTransform(baseline.RootElement.GetProperty("Crop"), crop.Pic!, "Crop");
+                CompareTransform(baseline.RootElement.GetProperty("Rotate"), rotate.Pic!, "Rotate");
+            }
             crop.Pic!.SetPixel(0, 0, DrawingColor.White); Require(source.GetPixel(1, 0).ToArgb() != DrawingColor.White.ToArgb(), "Editing crop changed source pixels.");
         } finally { crop.Pic?.Dispose(); rotate.Pic?.Dispose(); }
-        Console.WriteLine("PASS bitmap foundation: actual independent nearest-neighbor crop and rotate outputs with original DPI.");
+        Console.WriteLine("PASS bitmap foundation: actual independent crop and rotation compared to fixed LF CLR4 dimensions, both DPI axes and every pixel.");
     }
 
     private static void FilesAndResources(string fixtureRoot) {

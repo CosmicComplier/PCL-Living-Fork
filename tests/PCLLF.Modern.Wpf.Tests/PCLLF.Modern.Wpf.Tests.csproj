@@ -17,5 +17,6 @@
     <Compile Include="../PCLLF.Windows.Tests/ResourceThumbnailControllerChecks.cs" Link="Acceptance/ResourceThumbnailControllerChecks.cs" />
     <Compile Include="../PCLLF.Windows.Tests/KeybindingControllerChecks.cs" Link="Acceptance/KeybindingControllerChecks.cs" />
     <Resource Include="../../Plain Craft Launcher 2/Images/Blocks/Grass.png" Link="Images/Blocks/Grass.png" />
+    <None Update="Fixtures/MyBitmapTransforms.Legacy.vb;Fixtures/Measure-BitmapTransforms.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

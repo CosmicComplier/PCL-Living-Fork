@@ -73,8 +73,12 @@ internal static class Program {
             CheckImageDecoding(Path.Combine(fixture, "images"));
             AnimationTests.Run();
             AnimationTests.RunThreadDriverProcess(repositoryRoot);
-            BitmapFoundationAcceptance.Run(repositoryRoot, Path.Combine(fixture, "bitmap-foundation"));
-            CommonControlsAcceptance.Run();
+            var failures = new System.Collections.Generic.List<Exception>();
+            try { BitmapFoundationAcceptance.Run(repositoryRoot, Path.Combine(fixture, "bitmap-foundation")); }
+            catch (Exception error) { Console.Error.WriteLine("FAIL bitmap acceptance: " + error); failures.Add(error); }
+            try { CommonControlsAcceptance.Run(); }
+            catch (Exception error) { Console.Error.WriteLine("FAIL common controls acceptance: " + error); failures.Add(error); }
+            if (failures.Count != 0) throw new AggregateException("Modern foundation/control acceptance failed.", failures);
             Require(!AppDomain.CurrentDomain.GetAssemblies().Any(assembly => IsLegacyWpf(assembly.GetName())),
                 "The modern runtime loaded the historical Meloong WPF assembly.");
         } finally {
