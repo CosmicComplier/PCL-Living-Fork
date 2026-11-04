@@ -58,6 +58,7 @@
     <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.Files.cs" Link="Production/ModDependencyOnlinePipeline.Files.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.Matches.cs" Link="Production/ModDependencyOnlinePipeline.Matches.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyTransport.cs" Link="Production/ModDependencyTransport.cs" />
+    <Compile Include="../../PCLCS/Startup/*.cs" Link="Production/Startup/%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Foundation/*.cs" Link="Production/Foundation/%(Filename)%(Extension)" />
     <!-- Complete settings and loader engines: storage/UI remain controlled host boundaries. -->
     <Compile Include="../../PCLCS/Settings/*.cs" Link="Production/Settings/%(Filename)%(Extension)" />

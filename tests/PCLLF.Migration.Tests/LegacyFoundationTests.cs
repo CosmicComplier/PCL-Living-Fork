@@ -7,9 +7,64 @@ using PCLCS;
 // including partial writes and VB conversions, remains the compatibility contract.
 internal static class LegacyFoundationTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
+        yield return ("startup singleton retains real mutex exclusion partial rollback and Windows abandonment", StartupMutex);
+        yield return ("startup activation retains original captions message order failure and bounded retry", StartupActivation);
         yield return ("foundation preserves actual UUID Task timeout exceptions and process parameters", () => InFixture(Tasks));
         yield return ("foundation search retains in-place partial failure tie order and lazy random enumeration", () => InFixture(Search));
         yield return ("foundation reads real legacy INI encodings and preserves resource bytes without global providers", () => InFixture(Files));
+    }
+    private static void StartupActivation() {
+        List<string> order = new(); int pauses = 0, searches = 0;
+        bool Request(Func<string, IntPtr> lookup, Func<IntPtr, uint, bool>? queue = null) =>
+            PCLCS.Startup.LauncherWindowActivation.RequestActivation(lookup,
+                queue ?? ((window, message) => { Assert(window == new IntPtr(17) && message == 6402U, "actual original activation protocol"); order.Add("queue"); return true; }),
+                _ => order.Add("foreground"), ms => { Assert(ms == 200, "bounded pause interval"); pauses++; });
+        Assert(Request(caption => caption == "Plain Craft Launcher　" ? new IntPtr(17) : IntPtr.Zero), "official caption activation");
+        Assert(order.SequenceEqual(new[] { "queue", "foreground" }) && pauses == 0, "queue before foreground");
+        order.Clear();
+        Assert(Request(caption => pauses == 2 && caption == "LivingPCL　" ? new IntPtr(17) : IntPtr.Zero) && pauses == 2, "delayed LF caption retry");
+        order.Clear(); pauses = 0;
+        Assert(!Request(_ => { searches++; return IntPtr.Zero; }) && searches == 30 && pauses == 9 && order.Count == 0, "missing window bounds");
+        Assert(!Request(_ => new IntPtr(17), (_, _) => false) && order.SequenceEqual(new[] { "foreground" }), "failed post still requests foreground and reports false");
+        var expected = new InvalidOperationException("lookup failure");
+        try { Request(_ => throw expected); throw new Exception("Expected lookup failure"); }
+        catch (InvalidOperationException ex) { Assert(ReferenceEquals(ex, expected), "activation exception identity"); }
+    }
+    private static void StartupMutex() {
+        string primary = "LivingPCL-Mutex-" + Guid.NewGuid().ToString("N"), secondary = primary + "-secondary";
+        WithOwnedMutex(primary, () => Assert(PCLCS.Startup.LauncherSessionLease.TryAcquire(new[] { primary }, 0) is null, "existing official owner blocks"));
+        using (var lease = PCLCS.Startup.LauncherSessionLease.TryAcquire(new[] { primary, secondary }, 0)) {
+            Assert(lease is not null, "free ordered pair acquired");
+            bool available = true;
+            Thread probe = new(() => { using Mutex gate = new(false, primary); available = gate.WaitOne(0); if (available) gate.ReleaseMutex(); });
+            probe.Start(); Assert(probe.Join(3000) && !available, "held lease excludes actual other thread");
+        }
+        WithOwnedMutex(secondary, () => {
+            Assert(PCLCS.Startup.LauncherSessionLease.TryAcquire(new[] { primary, secondary }, 0) is null, "secondary owner rejects whole lease");
+            bool available = false;
+            Thread probe = new(() => { using Mutex gate = new(false, primary); available = gate.WaitOne(0); if (available) gate.ReleaseMutex(); });
+            probe.Start(); Assert(probe.Join(3000) && available, "partial primary acquisition actually rolled back for other thread");
+        });
+        // Windows thread-abandonment semantics are also exercised by the original
+        // product audit; keep the platform case explicit instead of claiming it on Linux.
+        if (OperatingSystem.IsWindows()) {
+            Mutex? abandoned = null;
+            Thread owner = new(() => { abandoned = new Mutex(false, primary); abandoned.WaitOne(); });
+            owner.Start(); Assert(owner.Join(3000), "abandoned owner completed");
+            try { using var lease = PCLCS.Startup.LauncherSessionLease.TryAcquire(new[] { primary }, 0); Assert(lease is not null, "actual abandoned lease recovered"); }
+            finally { abandoned?.Dispose(); }
+        }
+    }
+    private static void WithOwnedMutex(string name, Action sample) {
+        using ManualResetEventSlim ready = new(), release = new(); Exception? failure = null;
+        Thread owner = new(() => {
+            try { using Mutex gate = new(false, name); gate.WaitOne(); try { ready.Set(); release.Wait(); } finally { gate.ReleaseMutex(); } }
+            catch (Exception error) { failure = error; ready.Set(); }
+        }) { IsBackground = true };
+        owner.Start();
+        try { Assert(ready.Wait(3000), "mutex owner ready"); if (failure is not null) throw failure; sample(); }
+        finally { release.Set(); Assert(owner.Join(3000), "mutex fixture owner exits"); }
+        if (failure is not null) throw failure;
     }
     private static void InFixture(Action<string> sample) {
         string root = Path.Combine(Path.GetTempPath(), "LivingPCL-Foundation-" + Guid.NewGuid().ToString("N"));
