@@ -8,7 +8,7 @@ $ExecutablePath=[IO.Path]::GetFullPath($ExecutablePath)
 Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Xaml,System.Net.Http
 $references=@($ExecutablePath,'System.dll','System.Core.dll','System.Net.Http.dll','System.Xaml.dll',
  [Windows.Application].Assembly.Location,[Windows.Media.Brushes].Assembly.Location,[Windows.Threading.DispatcherObject].Assembly.Location)
-foreach($file in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')){
+foreach($file in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','presentation/bin/PCLLF.Presentation.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')){
  $path=Join-Path $root $file;[Reflection.Assembly]::LoadFrom($path)|Out-Null;$references+=$path
 }
 $facade=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8/Facades/netstandard.dll'
