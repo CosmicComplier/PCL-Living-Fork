@@ -7,16 +7,26 @@ Public Class PageDownloadResourceDetail
     ''' 当前页面应展示的内容类别。
     ''' 若当前页面是在查看前置时进入，则为 Any；这也能用于指示当前是否在查看前置。
     ''' </summary>
+    Friend Shared Function ChooseModDownloadFolder(Target As McInstance, Selected As McInstance, Cached As String, Suitable As Func(Of McInstance, Boolean)) As String
+        For Each Instance In {Target, Selected}
+            If Instance IsNot Nothing AndAlso Suitable(Instance) Then Return IO.Path.Combine(Instance.PathIndie, "mods") & IO.Path.DirectorySeparatorChar
+        Next
+        Return If(String.IsNullOrWhiteSpace(Cached), Nothing, Cached)
+    End Function
+
     Private TargetResourceType As ResourceTypes
     Private Project As ResourceProject
     Private TargetVersion As String
     Private TargetLoaders As ModLoaders
+    Private DownloadTargetInstance As McInstance
     Public Sub LoadPageArguments() Handles Me.Loaded
         Project = FrmMain.PageCurrent.Additional(0)
         TargetVersion = FrmMain.PageCurrent.Additional(2)
         TargetLoaders = CType(FrmMain.PageCurrent.Additional(3), ModLoaders)
         If TargetLoaders <> ModLoaders.None AndAlso Not TargetLoaders.Flags.IsSingle Then TargetLoaders = TargetLoaders.Flags.First() '强制取第一个
         TargetResourceType = FrmMain.PageCurrent.Additional(4)
+        Dim Arguments = TryCast(FrmMain.PageCurrent.Additional, Object())
+        DownloadTargetInstance = If(Arguments IsNot Nothing AndAlso Arguments.Length > 5, TryCast(Arguments(5), McInstance), Nothing)
     End Sub
 
 #Region "加载器"
@@ -456,7 +466,13 @@ GroupDone:
                         Return AllowedLoaders = ModLoaders.None OrElse AllowedLoaders.Flags.Intersect(Instance.Version.ModLoaders.Flags).Any
                     End Function
                     '获取常规资源默认下载位置
-                    If File.ResourceType <> ResourceTypes.Map AndAlso CachedFolder.ContainsKey(File.ResourceType) Then
+                    If File.ResourceType = ResourceTypes.Mod Then
+                        DefaultFolder = ChooseModDownloadFolder(DownloadTargetInstance, McInstanceSelected, If(CachedFolder.ContainsKey(ResourceTypes.Mod), CachedFolder(ResourceTypes.Mod), Nothing), IsInstanceSuitable)
+                        If DefaultFolder IsNot Nothing Then DirectoryUtils.Create(DefaultFolder)
+                    End If
+                    If DefaultFolder IsNot Nothing Then
+                        Logger.Info($"使用目标版本的 Mod 文件夹：{DefaultFolder}")
+                    ElseIf File.ResourceType <> ResourceTypes.Map AndAlso CachedFolder.ContainsKey(File.ResourceType) Then
                         DefaultFolder = CachedFolder(File.ResourceType)
                         Logger.Info($"使用上次下载时的文件夹作为默认下载位置：{DefaultFolder}")
                     ElseIf McInstanceSelected IsNot Nothing AndAlso IsInstanceSuitable(McInstanceSelected) Then

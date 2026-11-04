@@ -3,6 +3,9 @@ Public Class MyScrollBar
 
     '基础
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Public Uuid As Integer = GetUuid()
 
     '指向动画

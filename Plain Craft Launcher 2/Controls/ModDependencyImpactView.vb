@@ -49,7 +49,7 @@ Friend NotInheritable Class ModDependencyImpactView
         Height = Math.Min(440, 55 + Math.Ceiling(Items.Count / 2.0) * 100)
         RowDefinitions.Add(New RowDefinition With {.Height = GridLength.Auto})
         RowDefinitions.Add(New RowDefinition With {.Height = New GridLength(1, GridUnitType.Star)})
-        Children.Add(New TextBlock With {.Text = "以下 " & Items.Count & " 个模组可能受影响。仍然" & ActionName & "所选模组吗？", .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(4, 0, 4, 10), .FontSize = 13, .Foreground = Brushes.DimGray})
+        Children.Add(New TextBlock With {.Text = "以下 " & Items.Count & " 个模组可能受影响。仍然" & ActionName & "所选模组吗？", .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(4, 0, 4, 10), .FontSize = 13, .Foreground = ThemeBrush("ColorBrushTextSecondary")})
         Cards.ColumnDefinitions.Add(New ColumnDefinition()) : Cards.ColumnDefinitions.Add(New ColumnDefinition())
         Dim Scroll As New ScrollViewer With {.Content = Cards, .VerticalScrollBarVisibility = ScrollBarVisibility.Auto, .HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled}
         Grid.SetRow(Scroll, 1) : Children.Add(Scroll)
@@ -62,11 +62,13 @@ Friend NotInheritable Class ModDependencyImpactView
             Content.Children.Add(New Image With {.Source = If(Entry.Icon, CType(New MyBitmap(PathImage & "Icons/NoIcon.png"), ImageSource)),
                 .Width = 28, .Height = 28, .Stretch = Stretch.Uniform, .VerticalAlignment = VerticalAlignment.Top, .Clip = New RectangleGeometry(New Rect(0, 0, 28, 28), 5, 5)})
             Dim Text As New StackPanel
-            Text.Children.Add(New TextBlock With {.Text = Entry.Name, .TextWrapping = TextWrapping.Wrap, .FontSize = 13, .FontWeight = FontWeights.SemiBold, .Foreground = Brushes.DimGray})
-            Text.Children.Add(New TextBlock With {.Text = String.Join(vbCrLf, Entry.Reasons), .TextWrapping = TextWrapping.Wrap, .FontSize = 11, .Foreground = Brushes.Firebrick, .Margin = New Thickness(0, 5, 0, 0)})
+            Text.Children.Add(New TextBlock With {.Text = Entry.Name, .TextWrapping = TextWrapping.Wrap, .FontSize = 13, .FontWeight = FontWeights.SemiBold, .Foreground = ThemeBrush("ColorBrushTextSecondary")})
+            Dim Reason As New TextBlock With {.Text = String.Join(vbCrLf, Entry.Reasons), .TextWrapping = TextWrapping.Wrap, .FontSize = 11, .Margin = New Thickness(0, 5, 0, 0)}
+            Reason.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushRedDark") : Text.Children.Add(Reason)
             Grid.SetColumn(Text, 2) : Content.Children.Add(Text)
-            Dim Box As New Border With {.Child = Content, .BorderBrush = Brushes.LightCoral, .BorderThickness = New Thickness(1), .CornerRadius = New CornerRadius(6),
-                .Background = Brushes.White, .Padding = New Thickness(9), .Margin = New Thickness(4), .MinHeight = 64, .Tag = Entry, .ToolTip = Entry.FileName}
+            Dim Box As New Border With {.Child = Content, .BorderThickness = New Thickness(1), .CornerRadius = New CornerRadius(6),
+                .Background = ThemeBrush("ColorBrushWhite"), .Padding = New Thickness(9), .Margin = New Thickness(4), .MinHeight = 64, .Tag = Entry, .ToolTip = Entry.FileName}
+            Box.SetResourceReference(Border.BorderBrushProperty, "ColorBrushRedLight")
             Grid.SetColumn(Box, Index Mod 2) : Grid.SetRow(Box, Index \ 2) : Cards.Children.Add(Box)
         Next
     End Sub

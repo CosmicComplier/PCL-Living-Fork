@@ -4,6 +4,9 @@ Imports System.Windows.Markup
 Public Class MyListItem
     Implements IMyRadio
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor(Nothing, EventArgs.Empty))
+    End Sub
     Public Event Click(sender As Object, e As MouseButtonEventArgs)
     Public Event LogoClick(sender As Object, e As MouseButtonEventArgs)
     Public Event Check(sender As Object, e As RouteEventArgs) Implements IMyRadio.Check

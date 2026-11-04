@@ -174,7 +174,7 @@ try {
  if($system.FindName('CheckModpackMode').Visibility -ne 'Collapsed' -or $system.FindName('LabModpackMode').Visibility -ne 'Collapsed'){throw 'Unmarked launcher exposed the mode switch'}
  $marker.ValueCache['']=$true
  $system.GetType().GetMethod('RefreshModpackSwitch',[Reflection.BindingFlags]'NonPublic,Instance').Invoke($system,@()) | Out-Null
- if(-not $system.FindName('LabLauncherVersion').Text.StartsWith($brand+' ') -or [Windows.Controls.Grid]::GetRow($system.FindName('LabLauncherVersion')) -ne 2){throw 'Normal launcher version line must follow the update source'}
+ if(-not $system.FindName('LabLauncherVersion').Text.StartsWith($brand+' ') -or [Windows.Controls.Grid]::GetRow($system.FindName('LabLauncherVersion')) -ne 0){throw 'Normal launcher version line must precede the update source'}
  foreach($key in $preferences.Keys){if($preferences[$key] -ne $entries[$key].ValueCache['']){throw 'Mode altered existing hidden preferences'}}
  $export=[Activator]::CreateInstance($asm.GetType('PCL.PageInstanceExport'))
  $packOption=$export.FindName('CheckOptionsModpackMode')

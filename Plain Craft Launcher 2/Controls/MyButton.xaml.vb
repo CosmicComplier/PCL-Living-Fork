@@ -4,6 +4,9 @@ Imports System.Windows.Markup
 Public Class MyButton
 
     '声明
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Public Event Click(sender As Object, e As MouseButtonEventArgs) '自定义事件
 
     '自定义属性

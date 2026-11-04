@@ -5,6 +5,9 @@ Public Class MyIconTextButton
 
     '基础
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Public Uuid As Integer = GetUuid()
     Public Event Check(sender As Object, raiseByMouse As Boolean)
     Public Event Change(sender As Object, raiseByMouse As Boolean)

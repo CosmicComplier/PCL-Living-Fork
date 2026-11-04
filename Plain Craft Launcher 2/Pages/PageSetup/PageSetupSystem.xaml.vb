@@ -1,11 +1,34 @@
 Public Class PageSetupSystem
+    Private RefreshingUpdateChannel As Boolean = True
+    Friend ConfirmPrereleaseUpdates As Func(Of Boolean) = Function() MyMsgBox(
+        "预发布版本可能存在尚未发现的问题，稳定性不及正式发布版。" & vbCrLf & vbCrLf & "启用后将同时接收正式发布版和预发布版的启动器更新。是否继续？",
+        "接收预发布版更新", "启用预发布更新", "取消", IsWarn:=True) = 1
 
     Private Sub InitLauncherUpdateSource() Handles Me.Initialized
         AniControlEnabled += 1
         Try
             SettingService.RefreshSettings(ComboLauncherUpdateSource)
+            RefreshUpdateChannel()
         Finally
             AniControlEnabled -= 1
+        End Try
+    End Sub
+
+    Private Sub RefreshUpdateChannel()
+        RefreshingUpdateChannel = True
+        Try
+            ComboLauncherUpdateChannel.SelectedIndex = CInt(ModLauncherUpdate.PreferredUpdateChannel())
+        Finally
+            RefreshingUpdateChannel = False
+        End Try
+    End Sub
+    Private Sub UpdateChannelChanged() Handles ComboLauncherUpdateChannel.SelectionChanged
+        If RefreshingUpdateChannel OrElse AniControlEnabled <> 0 OrElse ComboLauncherUpdateChannel.SelectedIndex < 0 Then Return
+        Try
+            If Not ModLauncherUpdate.ChangeUpdateChannel(ComboLauncherUpdateChannel.SelectedIndex, ConfirmPrereleaseUpdates) Then RefreshUpdateChannel()
+        Catch ex As Exception
+            RefreshUpdateChannel()
+            Logger.Error(ex, "切换启动器更新通道失败", LogBehavior.Toast)
         End Try
     End Sub
 
@@ -29,6 +52,7 @@ Public Class PageSetupSystem
     End Sub
     Public Sub Reload()
         SettingService.RefreshSettings(Me)
+        RefreshUpdateChannel()
         RefreshModpackSwitch()
         LabLauncherVersion.Text = LauncherDisplayName & " " & VersionBaseName
     End Sub
@@ -43,6 +67,7 @@ Public Class PageSetupSystem
     Public Sub Reset()
         Try
             SettingService.ResetSettings(Me)
+            Settings.Reset("ToolLauncherUpdateChannel")
             Logger.Info("已初始化启动器页设置")
             Hint("已初始化启动器页设置！", HintType.Green, False)
         Catch ex As Exception

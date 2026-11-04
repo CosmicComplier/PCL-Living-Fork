@@ -16,7 +16,7 @@ import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-from ReleaseSyncState import receipt_for, valid_tag, validate_release
+from ReleaseSyncState import receipt_for, valid_tag, validate_release, release_version_key
 
 GITHUB_REPO = "DDZmumo/PCL-Living-Fork"
 CNB_REPO = "ddzmumo/PCL-Living-Fork"
@@ -205,6 +205,18 @@ def publish_index(git, repository, index, directory, bootstrap, latest=True, rec
     version_index = "releases/" + tag + ".json"
     (control / version_index).write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     files = [version_index]
+    # The opt-in channel receives both stable and prerelease updates. Never downgrade its head.
+    preview_path = control / "latest-preview.json"
+    preview = None
+    if preview_path.exists():
+        try:
+            preview = json.loads(preview_path.read_text(encoding="utf-8"))
+            validate_release(preview)
+        except (ValueError, RuntimeError, AttributeError):
+            preview = None
+    if preview is None or release_version_key(tag) >= release_version_key(preview["tag_name"]):
+        preview_path.write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        files.append("latest-preview.json")
     if latest:
         files.append("latest.json")
         (control / "latest.json").write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -220,7 +232,7 @@ def publish_index(git, repository, index, directory, bootstrap, latest=True, rec
         (control / "mirror.py").write_bytes(Path(__file__).read_bytes())
         (control / "ReleaseSyncState.py").write_bytes(Path(__file__).with_name("ReleaseSyncState.py").read_bytes())
         (control / ".cnb.yml").write_text(pipeline(repository), encoding="utf-8")
-        (control / "README.md").write_text("# PCL Living Fork 更新清单\n\n`latest.json` 仅用于正式版更新；`releases/<tag>.json` 保存各正式版、预发布版的独立清单。同步按内容指纹去重，发布时校验 GitHub SHA256，流水线使用 CNB 临时令牌。\n\n" + attribution(), encoding="utf-8")
+        (control / "README.md").write_text("# PCL Living Fork 更新清单\n\n`latest.json` 仅用于正式版更新；`latest-preview.json` 用于主动选择接收正式版与预发布版的通道；`releases/<tag>.json` 保存各版本的独立清单。同步按内容指纹去重，发布时校验 GitHub SHA256，流水线使用 CNB 临时令牌。\n\n" + attribution(), encoding="utf-8")
         files += ["mirror.py", "ReleaseSyncState.py", ".cnb.yml", "README.md"]
     git.run("add", "--", *files, cwd=control)
     if git.run("diff", "--cached", "--quiet", cwd=control, optional=True).returncode == 0:

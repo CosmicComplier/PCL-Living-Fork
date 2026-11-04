@@ -16,6 +16,7 @@ Friend NotInheritable Class ModDependencyGraphView
         Public IsConflict As Boolean
         Public IsCandidate As Boolean
         Public IsPlatformRequirement As Boolean
+        Public IsEmbedded As Boolean
         Public NeedsAttention As Boolean
         Public NeedsVersionReview As Boolean
         Public FileName As String
@@ -131,11 +132,25 @@ Friend NotInheritable Class ModDependencyGraphView
         If Not UseLocal Then
             RightNodes.Clear()
         End If
+        Dim EmbeddedNodes = Inspector.EmbeddedModsForDisplay(Report, FullPath).Select(Function(Item) New GraphNode With {
+            .Identity = "nested:" & Item.Key, .Title = Item.Name, .Condition = Item.Version, .IsEmbedded = True,
+            .Details = "随 " & If(Primary?.Name, IO.Path.GetFileName(FullPath)) & " 内嵌提供。版本是否兼容仍按各模组的依赖声明检查。"}).ToList()
         For Each Requirement In PlatformRequirements
             Dim Local = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Requirement.EnabledPaths.Any(Function(Path) Inspector.SameFilePath(Path, Item.RootPath)))
             If Local Is Nothing Then Local = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Requirement.MatchedPaths.Any(Function(Path) Inspector.SameFilePath(Path, Item.RootPath)))
             If Local Is Nothing Then Local = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Requirement.ProjectPaths.Any(Function(Path) Inspector.SameFilePath(Path, Item.RootPath)))
             Dim VersionReview = Requirement.ProjectPaths.Count > 0 AndAlso Requirement.MatchedPaths.Count = 0 AndAlso Not String.IsNullOrEmpty(Requirement.VersionId)
+            Dim Providers = Inspector.RuntimeProvidersForPlatformDependency(Report, FullPath, Requirement)
+            Dim Nested = Providers.Where(Function(Item) Item.IsNested).ToList()
+            Dim RuntimeText As String = Nothing
+            If Providers.Count > 0 AndAlso Nested.Count = Providers.Count AndAlso Providers.All(Function(Item) Inspector.SameFilePath(Item.RootPath, Providers(0).RootPath)) Then
+                Dim Names = String.Join("、", Providers.Select(Function(Item) Item.Name & " " & Item.Version).Distinct())
+                If Inspector.SameFilePath(Providers(0).RootPath, FullPath) Then
+                    Continue For
+                End If
+                Local = ContainerMod(Report, Providers(0))
+                RuntimeText = "内嵌提供 " & Names & " · 已满足"
+            End If
             If Local IsNot Nothing AndAlso Inspector.SameFilePath(Local.RootPath, FullPath) Then Continue For
             Dim PlatformKey = If(Not String.IsNullOrEmpty(Requirement.ProjectId), Requirement.ProjectId,
                 If(Not String.IsNullOrEmpty(Requirement.VersionId), "version:" & Requirement.VersionId, "file:" & Requirement.DisplayName))
@@ -150,10 +165,11 @@ Friend NotInheritable Class ModDependencyGraphView
                 Existing.NeedsAttention = Existing.NeedsAttention OrElse (Local IsNot Nothing AndAlso Not Local.Enabled)
                 Existing.NeedsVersionReview = Existing.NeedsVersionReview OrElse VersionReview
                 Existing.IsCandidate = Existing.IsCandidate OrElse Local Is Nothing OrElse VersionReview
-                Existing.Details &= vbCrLf & Detail & vbCrLf & Requirement.Status
+                If RuntimeText IsNot Nothing AndAlso Not Existing.Condition.Contains(RuntimeText) Then Existing.Condition &= vbCrLf & RuntimeText
+                Existing.Details &= vbCrLf & Detail & vbCrLf & If(RuntimeText, Requirement.Status)
             Else
                 RightNodes.Add(New GraphNode With {.Identity = Key, .Title = If(Local?.Name, Requirement.DisplayName),
-                    .Condition = If(Local Is Nothing, "安装状态待确认", If(Local.Enabled, Local.Version, "已禁用 · " & Local.Version)), .Details = Detail & vbCrLf & Requirement.Status,
+                    .Condition = If(RuntimeText, If(Local Is Nothing, "安装状态待确认", If(Local.Enabled, Local.Version, "已禁用 · " & Local.Version))), .Details = Detail & vbCrLf & If(RuntimeText, Requirement.Status),
                     .NeedsAttention = Local IsNot Nothing AndAlso Not Local.Enabled, .NeedsVersionReview = VersionReview, .IsCandidate = Local Is Nothing OrElse VersionReview,
                     .IsPlatformRequirement = True, .FileName = Local?.RootPath, .IconPath = Local?.IconPath})
             End If
@@ -212,9 +228,19 @@ Friend NotInheritable Class ModDependencyGraphView
         Dim RightX = CenterX + 228
         GraphCanvas.Width = RightX + NodeWidth + 4
         Dim Center As New GraphNode With {.Title = If(Primary?.Name, IO.Path.GetFileName(FullPath)),
-            .Condition = If(Primary Is Nothing, "未识别本地声明", Primary.Version),
+            .Condition = If(Primary Is Nothing, "未识别本地声明", If(Primary.Enabled, "", "已禁用 · ") & Primary.Version), .IsCandidate = Primary IsNot Nothing AndAlso Not Primary.Enabled,
             .FileName = Primary?.RootPath, .IconPath = Primary?.IconPath}
-        For Each Node In LeftNodes.Concat(RightNodes).Concat(ConflictNodes).Concat({Center})
+        Dim Alternatives As New List(Of String)
+        If Primary IsNot Nothing AndAlso Not Primary.Enabled Then
+            Dim Ids = Inspector.Identities(Primary).Keys.ToList()
+            For Each Provider In Report.Mods.Where(Function(Item) Item.Enabled AndAlso Not Item.IsMetadataOnly AndAlso Not Item.IsCandidate AndAlso Not Item.IncompatibleLoader AndAlso Ids.Intersect(Inspector.Identities(Item).Keys).Any())
+                Dim Container = ContainerMod(Report, Provider)
+                Dim Description = Provider.Name & " " & Provider.Version & If(Provider.IsNested, "（由 " & Container.Name & " 内嵌提供）", "（已启用）")
+                If Not Alternatives.Contains(Description) Then Alternatives.Add(Description)
+            Next
+            If Alternatives.Count > 0 Then Center.Details = "此文件已禁用。当前可用的同类前置：" & vbCrLf & String.Join(vbCrLf, Alternatives)
+        End If
+        For Each Node In LeftNodes.Concat(RightNodes).Concat(EmbeddedNodes).Concat(ConflictNodes).Concat({Center})
             Dim Content = NodeContent(Node)
             Content.Measure(New Size(NodeWidth - 20, Double.PositiveInfinity))
             Node.Height = Math.Max(50, Math.Ceiling(Content.DesiredSize.Height) + 16)
@@ -238,6 +264,17 @@ Friend NotInheritable Class ModDependencyGraphView
             Y += Node.Height + RowGap
         Next
         Dim ConflictTop = Middle + Center.Height + If(LeftNodes.Count = 0, 44, 22)
+        If EmbeddedNodes.Count > 0 Then
+            Dim EmbeddedTop = Middle + Center.Height + 32
+            Connector(New Point(CenterX + NodeWidth / 2, Middle + Center.Height), New Point(CenterX + NodeWidth / 2, EmbeddedTop - 6), False, Down:=True)
+            Header("已内嵌模组（" & EmbeddedNodes.Count & "）", CenterX, EmbeddedTop)
+            Y = EmbeddedTop + 25
+            For Each Node In EmbeddedNodes
+                AddNode(Node, CenterX, Y)
+                Y += Node.Height + RowGap
+            Next
+            ConflictTop = Y + 12
+        End If
         Header("存在冲突", CenterX, ConflictTop)
         Y = ConflictTop + 25
         For Each Node In ConflictNodes
@@ -246,18 +283,20 @@ Friend NotInheritable Class ModDependencyGraphView
             Y += Node.Height + RowGap
         Next
         AddNode(Center, CenterX, Middle, True)
-        If LeftNodes.Count = 0 Then EmptyLabel("被依赖：暂无", CenterX, Middle + Center.Height + 10)
+        If LeftNodes.Count = 0 AndAlso EmbeddedNodes.Count = 0 Then EmptyLabel("被依赖：暂无", CenterX, Middle + Center.Height + 10)
         If RightNodes.Count = 0 Then EmptyLabel("暂无", RightX, 34)
         If ConflictNodes.Count = 0 Then EmptyLabel("未发现", CenterX, ConflictTop + 25)
         GraphCanvas.Height = Math.Max(Math.Max(LeftTop + LeftHeight, 34 + RightHeight),
             ConflictTop + 25 + Math.Max(20, StackHeight(ConflictNodes))) + 12
         Height = Math.Min(480, GraphCanvas.Height + 55)
         Dim CandidateCount = LeftNodes.Where(Function(Item) Item.IsCandidate).Count()
-        Dim Summary As New TextBlock With {.FontSize = 12, .Foreground = Brushes.Gray, .Margin = New Thickness(4, 8, 4, 0), .TextWrapping = TextWrapping.Wrap,
+        Dim Summary As New TextBlock With {.FontSize = 12, .Foreground = ThemeBrush("ColorBrushGray2"), .Margin = New Thickness(4, 8, 4, 0), .TextWrapping = TextWrapping.Wrap,
             .Text = "需要 " & NeededCount & " 项 · 被依赖 " & (LeftNodes.Count - CandidateCount) & " 项 · 冲突 " & ConflictNodes.Count & " 项"}
         If CandidateCount > 0 Then Summary.Text &= " · 候选关联 " & CandidateCount & " 项"
+        If EmbeddedNodes.Count > 0 Then Summary.Text &= " · 已内嵌 " & EmbeddedNodes.Count & " 项"
+        If Alternatives.Count > 0 Then Summary.Text &= vbCrLf & "此文件已禁用，当前可用：" & String.Join("、", Alternatives)
         If CandidateCount > 0 OrElse RightNodes.Any(Function(Item) Item.IsCandidate) Then Summary.Text &= vbCrLf & "灰色虚线表示提供方待确认。"
-        If RightNodes.Any(Function(Item) Item.IsPlatformRequirement) Then Summary.Text &= vbCrLf & "平台前置来自精确版本声明，不用于启动拦截。"
+        If RightNodes.Any(Function(Item) Item.IsPlatformRequirement) Then Summary.Text &= vbCrLf & "依赖是否满足按本地加载声明核对，平台信息作为补充。"
         If Report.OnlineAttempted AndAlso Not HasPlatform Then Summary.Text &= vbCrLf & "未查到精确的平台声明，当前以本地声明作为参考。"
         If Report.OnlineTimedOut Then Summary.Text &= vbCrLf & "网络查询超时，当前以本地声明作为主要参考。"
         If Report.OnlineTimedOut OrElse Report.OnlineCancelled Then Summary.Text &= vbCrLf & "平台查询未完成，已显示的结果可能不全。"
@@ -278,16 +317,16 @@ Friend NotInheritable Class ModDependencyGraphView
         Return If(String.IsNullOrWhiteSpace(Range) OrElse Range = "*", "", Range)
     End Function
     Private Sub Header(Text As String, X As Double, Y As Double)
-        Dim Label As New TextBlock With {.Text = Text, .FontSize = 12, .FontWeight = FontWeights.SemiBold, .Foreground = Brushes.Gray}
+        Dim Label As New TextBlock With {.Text = Text, .FontSize = 12, .FontWeight = FontWeights.SemiBold, .Foreground = ThemeBrush("ColorBrushGray2")}
         Canvas.SetLeft(Label, X) : Canvas.SetTop(Label, Y) : GraphCanvas.Children.Add(Label)
     End Sub
     Private Sub EmptyLabel(Text As String, X As Double, Y As Double)
-        Dim Label As New TextBlock With {.Text = Text, .FontSize = 12, .Foreground = Brushes.Gray}
+        Dim Label As New TextBlock With {.Text = Text, .FontSize = 12, .Foreground = ThemeBrush("ColorBrushGray2")}
         Canvas.SetLeft(Label, X) : Canvas.SetTop(Label, Y) : GraphCanvas.Children.Add(Label)
     End Sub
     Private Shared Function Accent(Conflict As Boolean, Optional Possible As Boolean = False) As Brush
-        If Conflict Then Return New SolidColorBrush(Color.FromRgb(207, 71, 71))
-        If Possible Then Return New SolidColorBrush(Color.FromRgb(139, 147, 161))
+        If Conflict Then Return ThemeBrush("ColorBrushRedDark")
+        If Possible Then Return ThemeBrush("ColorBrushGray3")
         Return If(TryCast(Application.Current.TryFindResource("ColorBrush3"), Brush), Brushes.RoyalBlue)
     End Function
 
@@ -312,7 +351,7 @@ Friend NotInheritable Class ModDependencyGraphView
         RenderOptions.SetBitmapScalingMode(Icon, BitmapScalingMode.HighQuality)
         Content.Children.Add(Icon)
         Dim Text As New StackPanel With {.VerticalAlignment = VerticalAlignment.Center}
-        Text.Children.Add(New TextBlock With {.Text = Node.Title, .FontSize = 13, .FontWeight = FontWeights.SemiBold, .TextWrapping = TextWrapping.Wrap, .Foreground = Brushes.DimGray})
+        Text.Children.Add(New TextBlock With {.Text = Node.Title, .FontSize = 13, .FontWeight = FontWeights.SemiBold, .TextWrapping = TextWrapping.Wrap, .Foreground = ThemeBrush("ColorBrushTextSecondary")})
         Text.Children.Add(New TextBlock With {.Text = Node.Condition, .FontSize = 11, .Foreground = Accent(Node.IsConflict OrElse Node.NeedsAttention, Node.IsCandidate),
             .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(0, 3, 0, 0), .Visibility = If(Node.Condition = "", Visibility.Collapsed, Visibility.Visible)})
         Grid.SetColumn(Text, 2) : Content.Children.Add(Text)
@@ -322,7 +361,7 @@ Friend NotInheritable Class ModDependencyGraphView
     Private Sub AddNode(Node As GraphNode, X As Double, Y As Double, Optional Focus As Boolean = False)
         Dim Content = NodeContent(Node)
         Dim Box As New Border With {.Width = NodeWidth, .Height = Node.Height, .CornerRadius = New CornerRadius(7), .BorderThickness = New Thickness(If(Focus, 2, 1)),
-            .BorderBrush = Accent(Node.IsConflict OrElse Node.NeedsAttention, Node.IsCandidate), .Background = Brushes.White, .Padding = New Thickness(8, 5, 8, 5), .Tag = Node,
+            .BorderBrush = Accent(Node.IsConflict OrElse Node.NeedsAttention, Node.IsCandidate), .Background = ThemeBrush("ColorBrushWhite"), .Padding = New Thickness(8, 5, 8, 5), .Tag = Node,
             .ToolTip = Node.Title & If(Node.Condition = "", "", vbCrLf & Node.Condition) & If(String.IsNullOrEmpty(Node.Details), "", vbCrLf & Node.Details),
             .Child = Content}
         If Focus Then Box.SetResourceReference(Border.BackgroundProperty, "ColorBrush8")
@@ -380,14 +419,19 @@ Friend NotInheritable Class ModDependencyGraphView
         Next
     End Sub
 
-    Private Sub Connector(From As Point, Target As Point, Conflict As Boolean, Optional Possible As Boolean = False)
+    Private Sub Connector(From As Point, Target As Point, Conflict As Boolean, Optional Possible As Boolean = False, Optional Down As Boolean = False)
         Dim Figure As New PathFigure With {.StartPoint = From}
         Dim Half = (Target.X - From.X) / 2
-        Figure.Segments.Add(New BezierSegment(New Point(From.X + If(Conflict, 26, Half), From.Y), New Point(Target.X + If(Conflict, 26, -Half), Target.Y), Target, True))
+        If Down Then
+            Figure.Segments.Add(New LineSegment(Target, True))
+        Else
+            Figure.Segments.Add(New BezierSegment(New Point(From.X + If(Conflict, 26, Half), From.Y), New Point(Target.X + If(Conflict, 26, -Half), Target.Y), Target, True))
+        End If
         Dim Line As New Shapes.Path With {.Data = New PathGeometry({Figure}), .Stroke = Accent(Conflict, Possible), .StrokeThickness = 1.5, .IsHitTestVisible = False}
         If Conflict OrElse Possible Then Line.StrokeDashArray = New DoubleCollection({4.0, 3.0})
         GraphCanvas.Children.Add(Line)
-        GraphCanvas.Children.Add(New Polygon With {.Points = New PointCollection({Target, New Point(Target.X + If(Conflict, 6, -6), Target.Y - 4), New Point(Target.X + If(Conflict, 6, -6), Target.Y + 4)}),
+        GraphCanvas.Children.Add(New Polygon With {.Points = New PointCollection(If(Down, {Target, New Point(Target.X - 4, Target.Y - 6), New Point(Target.X + 4, Target.Y - 6)},
+            {Target, New Point(Target.X + If(Conflict, 6, -6), Target.Y - 4), New Point(Target.X + If(Conflict, 6, -6), Target.Y + 4)})),
             .Fill = Accent(Conflict, Possible), .IsHitTestVisible = False})
     End Sub
 End Class

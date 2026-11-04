@@ -6,13 +6,30 @@ Public Module ModLauncherUpdate
     Private Const CompatibilityRepository As String = "DDZmumo/LivingPCL2-Re"
     Private Const ReleasePage As String = LauncherReleasesUrl & "/latest"
     Friend Const CnbManifestUrl As String = LauncherCnbUrl & "/-/git/raw/updates/latest.json"
+    Friend Const CnbPreviewManifestUrl As String = LauncherCnbUrl & "/-/git/raw/updates/latest-preview.json"
     Friend Const GitHubLatestUrl As String = "https://api.github.com/repos/" & Repository & "/releases/latest"
+    Friend Const GitHubReleaseListUrl As String = "https://api.github.com/repos/" & Repository & "/releases?per_page=30"
     Private CheckRunning As Integer
 
     Friend Enum UpdateSource
         Cnb = 0
         GitHub = 1
     End Enum
+
+    Friend Enum UpdateChannel
+        Stable = 0
+        StableAndPrerelease = 1
+    End Enum
+    Friend Function PreferredUpdateChannel() As UpdateChannel
+        Return If(Settings.Get(Of Integer)("ToolLauncherUpdateChannel") = 1, UpdateChannel.StableAndPrerelease, UpdateChannel.Stable)
+    End Function
+    Friend Function ChangeUpdateChannel(Value As Integer, Confirm As Func(Of Boolean)) As Boolean
+        If Value <> 0 AndAlso Value <> 1 Then Return False
+        If Value = CInt(PreferredUpdateChannel()) Then Return True
+        If Value = 1 AndAlso (Confirm Is Nothing OrElse Not Confirm()) Then Return False
+        Settings.Set("ToolLauncherUpdateChannel", Value)
+        Return True
+    End Function
 
     Friend Function PreferredUpdateSource() As UpdateSource
         Return If(Settings.Get(Of Integer)("ToolLauncherUpdateSource") = CInt(UpdateSource.GitHub), UpdateSource.GitHub, UpdateSource.Cnb)
@@ -32,7 +49,7 @@ Public Module ModLauncherUpdate
             End Get
         End Property
         Friend Sub New(Tag As String, Source As UpdateSource)
-            Children.Add(New TextBlock With {.Text = "当前版本：" & VersionBaseName & vbCrLf & "最新正式版：" & Tag, .Margin = New Thickness(2, 0, 2, 18), .LineHeight = 24})
+            Children.Add(New TextBlock With {.Text = "当前版本：" & VersionBaseName & vbCrLf & If(Tag.Contains("-"), "最新预发布版：", "最新正式版：") & Tag, .Margin = New Thickness(2, 0, 2, 18), .LineHeight = 24})
             SourcePicker.Items.Add(New MyComboBoxItem With {.Content = "CNB（国内）"})
             SourcePicker.Items.Add(New MyComboBoxItem With {.Content = "GitHub Releases"})
             SourcePicker.SelectedIndex = CInt(Source)
@@ -46,19 +63,50 @@ Public Module ModLauncherUpdate
 
     Friend NotInheritable Class UpdateTransport
         Friend ReadJson As Func(Of String, JObject) = Function(Url) JObject.Parse(NetRequestByClient(Url, Accept:="application/json", Timeout:=5000, RequireJson:=True))
+        Friend ReadReleaseList As Func(Of String, JArray) = Function(Url) JArray.Parse(NetRequestByClient(Url, Accept:="application/json", Timeout:=5000, RequireJson:=True))
         Friend ReadText As Func(Of String, String) = Function(Url) NetRequestByClient(Url, Timeout:=8000)
         Friend Download As Action(Of String, String, FileChecker) = AddressOf DownloadWithTask
     End Class
 
     Friend Function NewerRelease(Tag As String, Current As String) As Boolean
-        Dim LatestVersion As System.Version = Nothing, CurrentVersion As System.Version = Nothing
-        'Update sources offer stable releases. A stable release also supersedes its own prereleases.
-        Dim CurrentMatch = System.Text.RegularExpressions.Regex.Match(If(Current, ""), "\A(\d+\.\d+\.\d+(?:\.\d+)?)(-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\z")
-        If Not CurrentMatch.Success OrElse Not System.Version.TryParse(Tag?.TrimStart("v"c, "V"c), LatestVersion) OrElse
-            Not System.Version.TryParse(CurrentMatch.Groups(1).Value, CurrentVersion) Then Return False
-        LatestVersion = New System.Version(LatestVersion.Major, LatestVersion.Minor, Math.Max(0, LatestVersion.Build), Math.Max(0, LatestVersion.Revision))
-        CurrentVersion = New System.Version(CurrentVersion.Major, CurrentVersion.Minor, Math.Max(0, CurrentVersion.Build), Math.Max(0, CurrentVersion.Revision))
-        Return LatestVersion > CurrentVersion OrElse (LatestVersion = CurrentVersion AndAlso CurrentMatch.Groups(2).Success)
+        Return NewerReleaseForChannel(Tag, Current, UpdateChannel.Stable)
+    End Function
+
+    Private Function ParseReleaseVersion(Value As String, ByRef Core As System.Version, ByRef Preview As String) As Boolean
+        Dim Match = System.Text.RegularExpressions.Regex.Match(If(Value, ""), "\A[vV]?(\d+\.\d+\.\d+(?:\.\d+)?)(?:-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*))?\z")
+        If Not Match.Success OrElse Not System.Version.TryParse(Match.Groups(1).Value, Core) Then Return False
+        Core = New System.Version(Core.Major, Core.Minor, Math.Max(0, Core.Build), Math.Max(0, Core.Revision))
+        Preview = Match.Groups(2).Value
+        Return True
+    End Function
+    Friend Function CompareReleaseVersions(First As String, Second As String) As Integer
+        Dim A As System.Version = Nothing, B As System.Version = Nothing, AP As String = Nothing, BP As String = Nothing
+        If Not ParseReleaseVersion(First, A, AP) OrElse Not ParseReleaseVersion(Second, B, BP) Then Throw New ArgumentException("发布版本号无效。")
+        Dim Result = A.CompareTo(B)
+        If Result <> 0 Then Return Result
+        If AP = "" OrElse BP = "" Then Return If(AP = BP, 0, If(AP = "", 1, -1))
+        Dim AT = System.Text.RegularExpressions.Regex.Matches(AP.ToLowerInvariant(), "[0-9]+|[a-z]+").Cast(Of System.Text.RegularExpressions.Match)().Select(Function(Item) Item.Value).ToArray()
+        Dim BT = System.Text.RegularExpressions.Regex.Matches(BP.ToLowerInvariant(), "[0-9]+|[a-z]+").Cast(Of System.Text.RegularExpressions.Match)().Select(Function(Item) Item.Value).ToArray()
+        For Index = 0 To Math.Min(AT.Length, BT.Length) - 1
+            Dim AN = Char.IsDigit(AT(Index)(0)), BN = Char.IsDigit(BT(Index)(0))
+            If AN AndAlso BN Then
+                Dim AV = AT(Index).TrimStart("0"c), BV = BT(Index).TrimStart("0"c)
+                Result = AV.Length.CompareTo(BV.Length)
+                If Result = 0 Then Result = String.CompareOrdinal(AV, BV)
+            ElseIf AN <> BN Then
+                Result = If(AN, -1, 1)
+            Else
+                Result = String.CompareOrdinal(AT(Index), BT(Index))
+            End If
+            If Result <> 0 Then Return Result
+        Next
+        Return AT.Length.CompareTo(BT.Length)
+    End Function
+    Friend Function NewerReleaseForChannel(Tag As String, Current As String, Channel As UpdateChannel) As Boolean
+        Dim Core As System.Version = Nothing, Preview As String = Nothing
+        If Not ParseReleaseVersion(Tag, Core, Preview) OrElse (Preview <> "" AndAlso Channel = UpdateChannel.Stable) Then Return False
+        If Not ParseReleaseVersion(Current, Core, Preview) Then Return False
+        Return CompareReleaseVersions(Tag, Current) > 0
     End Function
 
     Friend Function ValidAssetUrl(Value As String) As Boolean
@@ -72,7 +120,7 @@ Public Module ModLauncherUpdate
     End Function
 
     Friend Function ShouldPromptForUpdate(Tag As String, Current As String, IgnoredTag As String) As Boolean
-        Return NewerRelease(Tag, Current) AndAlso Not String.Equals(Tag, IgnoredTag, StringComparison.Ordinal)
+        Return NewerReleaseForChannel(Tag, Current, PreferredUpdateChannel()) AndAlso Not String.Equals(Tag, IgnoredTag, StringComparison.Ordinal)
     End Function
 
     Friend Function IgnoreTagAfterChoice(IgnoredTag As String, Tag As String, Choice As Integer) As String
@@ -110,13 +158,14 @@ Public Module ModLauncherUpdate
         Return Asset
     End Function
 
-    Private Sub ValidateReleaseInfo(Info As JObject, Cnb As Boolean)
-        If Info Is Nothing OrElse Not System.Text.RegularExpressions.Regex.IsMatch(If(Info("tag_name")?.ToString(), ""), "\A[vV]?\d+\.\d+\.\d+(?:\.\d+)?\z") Then Throw New Exception("发布标签不是可识别的版本号。")
-        Dim Parsed As System.Version = Nothing
-        If Not System.Version.TryParse(Info("tag_name").ToString().TrimStart("v"c, "V"c), Parsed) Then Throw New Exception("发布版本号无效。")
+    Private Sub ValidateReleaseInfo(Info As JObject, Cnb As Boolean, Channel As UpdateChannel)
+        Dim Parsed As System.Version = Nothing, Preview As String = Nothing
+        If Info Is Nothing OrElse Not ParseReleaseVersion(Info("tag_name")?.ToString(), Parsed, Preview) Then Throw New Exception("发布标签不是可识别的版本号。")
         For Each Field In {"draft", "prerelease"}
-            If Info(Field) Is Nothing OrElse Info(Field).Type <> JTokenType.Boolean OrElse CBool(Info(Field)) Then Throw New Exception("更新源尚无可用的正式发布。")
+            If Info(Field) Is Nothing OrElse Info(Field).Type <> JTokenType.Boolean Then Throw New Exception("更新源的发布状态无效。")
         Next
+        If CBool(Info("draft")) OrElse (Channel = UpdateChannel.Stable AndAlso CBool(Info("prerelease"))) Then Throw New Exception("更新源尚无符合当前通道的发布。")
+        If CBool(Info("prerelease")) <> (Preview <> "") Then Throw New Exception("发布标记与版本号不一致。")
         Dim Executable = ReleaseExecutable(Info), Manifest = HashAsset(Info)
         If Executable("size")?.Type <> JTokenType.Integer OrElse CLng(Executable("size")) <= 0 OrElse CLng(Executable("size")) > 1024L * 1024 * 1024 Then Throw New Exception("更新附件大小无效。")
         For Each Asset In {Executable, Manifest}
@@ -133,20 +182,39 @@ Public Module ModLauncherUpdate
     End Function
 
     Friend Function FindLatestReleaseForSource(Current As String, Source As UpdateSource, Optional Transport As UpdateTransport = Nothing) As JObject
+        Return FindLatestReleaseForChannel(Current, Source, PreferredUpdateChannel(), Transport)
+    End Function
+    Friend Function FindLatestReleaseForChannel(Current As String, Source As UpdateSource, Channel As UpdateChannel, Optional Transport As UpdateTransport = Nothing) As JObject
         If Transport Is Nothing Then Transport = New UpdateTransport
         Dim Best As JObject = Nothing, Failure As Exception = Nothing
-        Dim Endpoints = If(Source = UpdateSource.GitHub, {GitHubLatestUrl, CnbManifestUrl}, {CnbManifestUrl, GitHubLatestUrl})
+        Dim Endpoints = If(Channel = UpdateChannel.Stable,
+            If(Source = UpdateSource.GitHub, {GitHubLatestUrl, CnbManifestUrl}, {CnbManifestUrl, GitHubLatestUrl}),
+            If(Source = UpdateSource.GitHub, {GitHubReleaseListUrl, CnbPreviewManifestUrl, GitHubLatestUrl, CnbManifestUrl}, {CnbPreviewManifestUrl, GitHubReleaseListUrl, CnbManifestUrl, GitHubLatestUrl}))
         For Each Endpoint In Endpoints
             Try
-                Dim Info = Transport.ReadJson(Endpoint)
-                ValidateReleaseInfo(Info, Endpoint = CnbManifestUrl)
-                If Best Is Nothing OrElse NewerRelease(Info("tag_name").ToString(), Best("tag_name").ToString()) Then Best = Info
-                If Source = UpdateSource.GitHub AndAlso Endpoint = GitHubLatestUrl Then Return Info
-                If NewerRelease(Info("tag_name").ToString(), Current) Then Return Info
+                Dim Cnb = Endpoint = CnbManifestUrl OrElse Endpoint = CnbPreviewManifestUrl
+                Dim Info As JObject = Nothing
+                If Endpoint = GitHubReleaseListUrl Then
+                    For Each Candidate In Transport.ReadReleaseList(Endpoint).OfType(Of JObject)().Take(30)
+                        Try
+                            ValidateReleaseInfo(Candidate, False, Channel)
+                            If Info Is Nothing OrElse CompareReleaseVersions(Candidate("tag_name").ToString(), Info("tag_name").ToString()) > 0 Then Info = Candidate
+                        Catch ex As Exception
+                            ex.ThrowIfCanceled()
+                        End Try
+                    Next
+                    If Info Is Nothing Then Throw New Exception("GitHub 尚无符合当前通道的完整发布。")
+                Else
+                    Info = Transport.ReadJson(Endpoint)
+                    ValidateReleaseInfo(Info, Cnb, Channel)
+                End If
+                If Best Is Nothing OrElse CompareReleaseVersions(Info("tag_name").ToString(), Best("tag_name").ToString()) > 0 Then Best = Info
+                If Source = UpdateSource.GitHub AndAlso Not Cnb Then Return Info
+                If NewerReleaseForChannel(Info("tag_name").ToString(), Current, Channel) Then Return Info
             Catch ex As Exception
                 ex.ThrowIfCanceled()
                 Failure = ex
-                Logger.Info("更新源暂不可用：" & If(Endpoint = CnbManifestUrl, "CNB", "GitHub"))
+                Logger.Info("更新源暂不可用：" & If(Endpoint = CnbManifestUrl OrElse Endpoint = CnbPreviewManifestUrl, "CNB", "GitHub"))
             End Try
         Next
         If Best IsNot Nothing Then Return Best
@@ -156,7 +224,7 @@ Public Module ModLauncherUpdate
     Friend Function DownloadUpdate(Info As JObject, Staged As String, Optional Transport As UpdateTransport = Nothing) As String
         If Transport Is Nothing Then Transport = New UpdateTransport
         Dim Cnb = (New Uri(ReleaseExecutable(Info)("browser_download_url").ToString())).Host = "cnb.cool"
-        ValidateReleaseInfo(Info, Cnb)
+        ValidateReleaseInfo(Info, Cnb, UpdateChannel.StableAndPrerelease)
         Dim ExpectedHash As String = Nothing
         Try
             ExpectedHash = ManifestHash(Transport.ReadText(HashAsset(Info)("browser_download_url").ToString()), ReleaseExecutable(Info)("name").ToString())
@@ -176,7 +244,7 @@ Public Module ModLauncherUpdate
     Friend Function ReleaseForDownloadSource(Info As JObject, Source As UpdateSource, Optional Transport As UpdateTransport = Nothing) As JObject
         If Transport Is Nothing Then Transport = New UpdateTransport
         Dim Cnb = (New Uri(ReleaseExecutable(Info)("browser_download_url").ToString())).Host = "cnb.cool"
-        ValidateReleaseInfo(Info, Cnb)
+        ValidateReleaseInfo(Info, Cnb, UpdateChannel.StableAndPrerelease)
         If Cnb = (Source = UpdateSource.Cnb) Then Return DirectCast(Info.DeepClone(), JObject)
         Dim Selected As JObject
         If Source = UpdateSource.GitHub Then
@@ -189,14 +257,14 @@ Public Module ModLauncherUpdate
                 Asset("browser_download_url") = LauncherCnbUrl & "/-/releases/download/" & Uri.EscapeDataString(Selected("tag_name").ToString()) & "/" & Uri.EscapeDataString(Name)
             Next
         End If
-        ValidateReleaseInfo(Selected, Source = UpdateSource.Cnb)
+        ValidateReleaseInfo(Selected, Source = UpdateSource.Cnb, UpdateChannel.StableAndPrerelease)
         If Selected("tag_name").ToString() <> Info("tag_name").ToString() Then Throw New Exception("所选源的发布版本与已确认版本不一致。")
         Return Selected
     End Function
 
     Friend Function CreateUpdateDownloadTask(Url As String, Target As String, Check As FileChecker) As LoaderCombo(Of Integer)
         Dim Source = If((New Uri(Url)).Host = "cnb.cool", "CNB", "GitHub")
-        Dim Version = System.Text.RegularExpressions.Regex.Match(Url, "/(v[0-9.]+)/", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups(1).Value
+        Dim Version = System.Text.RegularExpressions.Regex.Match(Url, "/(v[0-9.]+(?:-[0-9A-Za-z.-]+)?)/", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups(1).Value
         Dim Download As New LoaderDownload("下载启动器更新", {New NetFile({Url}, Target, Check)}) With {.ProgressWeight = 1}
         Return New LoaderCombo(Of Integer)("下载启动器更新：" & Version & "（" & Source & "）", New List(Of LoaderBase) From {Download}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
     End Function
@@ -233,11 +301,8 @@ Public Module ModLauncherUpdate
             Try
                 Dim Info As JObject = FindLatestReleaseForSource(VersionBaseName, Source)
                 Dim Tag = Info("tag_name")?.ToString()
-                Dim ParsedVersion As System.Version = Nothing
-                If String.IsNullOrWhiteSpace(Tag) OrElse Not System.Version.TryParse(Tag.TrimStart("v"c, "V"c), ParsedVersion) Then Throw New Exception("发布标签不是可识别的版本号。")
-                If CBool(If(Info("draft"), False)) OrElse CBool(If(Info("prerelease"), False)) Then Return
-                If Not NewerRelease(Tag, VersionBaseName) Then
-                    If Not Startup Then MyMsgBox($"当前版本：{VersionBaseName}{vbCrLf}最新正式版：{Tag}{vbCrLf}{vbCrLf}当前没有更新的正式版本。", "PCL Living Fork 更新")
+                If Not NewerReleaseForChannel(Tag, VersionBaseName, PreferredUpdateChannel()) Then
+                    If Not Startup Then MyMsgBox($"当前版本：{VersionBaseName}{vbCrLf}当前通道最新版本：{Tag}{vbCrLf}{vbCrLf}当前没有更新的版本。", "PCL Living Fork 更新")
                     Return
                 End If
                 Dim IgnoredTag = Settings.Get(Of String)("ToolLauncherUpdateIgnoredTag")

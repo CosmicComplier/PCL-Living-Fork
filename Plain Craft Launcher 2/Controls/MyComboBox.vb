@@ -1,6 +1,9 @@
 Public Class MyComboBox
     Inherits ComboBox
     Implements ISettingControl
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Public Event TextChanged(sender As Object, e As TextChangedEventArgs)
 
     '基础

@@ -377,7 +377,7 @@ Public Class FormMain
     Public Sub UpdateBackgroundAndTitleBar()
         Logger.Info("从设置更新背景图片与标题栏样式")
         '背景图片透明度
-        ImgBack.Opacity = Settings.Get(Of Integer)("UiBackgroundOpacity") / 1000
+        ImgBack.Opacity = Settings.Get(Of Integer)("UiBackgroundOpacity") / 1000 * BackgroundThemeOpacityFactor(ImgBack)
         '背景图片模糊
         Dim BlurRadius As Double = Settings.Get(Of Integer)("UiBackgroundBlur") + 1
         If BlurRadius = 1 Then

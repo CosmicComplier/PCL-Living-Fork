@@ -6,6 +6,9 @@ Public Class MyCheckBox
 
     '基础
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() Checkbox_IsEnabledChanged())
+    End Sub
     Public Uuid As Integer = GetUuid()
     ''' <summary>
     ''' 复选框勾选状态改变。

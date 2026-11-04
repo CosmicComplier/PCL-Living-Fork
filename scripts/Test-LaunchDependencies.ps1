@@ -114,7 +114,9 @@ try{
  if($script:FallbackAttempts -ne 2 -or (Scan).HasErrors -or [IO.File]::Exists((Join-Path $mods 'lib-newer.jar'))){throw 'Actual JAR ranges did not select an older common-compatible candidate'}
  [IO.File]::Delete((Join-Path $mods 'libproj1.jar'));[IO.File]::Delete((Join-Path $mods 'basepr01.jar'));[IO.File]::WriteAllBytes($source,$sourceBytes);$script:VersionMap=$savedMap;$script:FallbackData=$null
  $plan=Plan;Jar (Join-Path $mods 'new.jar') 'new_mod' @{};Reject {Call $service 'Install' @($plan,$none,$download)} 'Stale repair plan accepted changed mods';[IO.File]::Delete((Join-Path $mods 'new.jar'))
- [IO.File]::Copy($library,(Join-Path $mods 'libproj1.jar.disabled'));if(-not @((Plan).Notes|Where-Object {$_ -like '*已安装但被禁用*'}).Count){throw 'Disabled existing dependency is not distinguished from missing files'};[IO.File]::Delete((Join-Path $mods 'libproj1.jar.disabled'))
+ [IO.File]::Copy($library,(Join-Path $mods 'libproj1.jar.disabled'));$disabledPlan=Plan;if(-not @($disabledPlan.Notes|Where-Object {$_ -like '*已安装但被禁用*'}).Count){throw 'Disabled existing dependency is not distinguished from missing files'}
+ if(($disabledPlan.Notes -join ' ') -match 'libproj1 已安装'){throw 'An opaque platform project ID was shown instead of the dependency name'}
+ [IO.File]::Delete((Join-Path $mods 'libproj1.jar.disabled'))
  Write-Output 'PASS: exact-platform required/transitive repair, no-op complete set, optional/loader/disabled guards, checksum/cancel/collision/stale checks and rollback.'
 
  $asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null

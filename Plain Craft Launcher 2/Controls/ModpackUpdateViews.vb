@@ -59,7 +59,7 @@ Friend MustInherit Class ModpackDialogView
 
     Protected Shared Function Frame(Child As UIElement) As Border
         Dim Box As New Border With {.Child = Child, .CornerRadius = New CornerRadius(5), .BorderThickness = New Thickness(1),
-            .Padding = New Thickness(12, 10, 12, 10), .Margin = New Thickness(3, 0, 7, 8), .Background = Brushes.White}
+            .Padding = New Thickness(12, 10, 12, 10), .Margin = New Thickness(3, 0, 7, 8), .Background = ThemeBrush("ColorBrushWhite")}
         Box.SetResourceReference(Border.BorderBrushProperty, "ColorBrushGray5")
         Return Box
     End Function
@@ -117,7 +117,7 @@ Friend NotInheritable Class ModpackVersionSelectView
             Dim LoaderText = If(Version.ModLoaders = ModLoaders.None, "", " · " & Version.ModLoaders.ToString())
             Dim Item As New MyListItem With {.Title = Version.Display, .Info = "Minecraft " & GameText & LoaderText & " · " & Version.ReleaseDate.ToString("yyyy-MM-dd"),
                 .Type = MyListItem.CheckType.RadioBox, .Height = 64, .PaddingLeft = 14, .MinPaddingRight = 12, .Margin = New Thickness(3, 0, 7, 8), .Tag = Version,
-                .Background = Brushes.White, .ToolTip = Version.Display & vbCrLf & "Minecraft " & String.Join("、", Games) & LoaderText}
+                .Background = ThemeBrush("ColorBrushWhite"), .ToolTip = Version.Display & vbCrLf & "Minecraft " & String.Join("、", Games) & LoaderText}
             Dim Outline As New Border With {.CornerRadius = New CornerRadius(5), .BorderThickness = New Thickness(1), .IsHitTestVisible = False}
             Outline.SetResourceReference(Border.BorderBrushProperty, "ColorBrushGray5")
             Grid.SetColumnSpan(Outline, 999) : Grid.SetRowSpan(Outline, 999) : Item.Children.Insert(0, Outline)

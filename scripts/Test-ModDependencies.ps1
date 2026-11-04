@@ -337,6 +337,39 @@ versionRange="[1,2)"
  $null=New-Jar (Join-Path $folder 'quilt-parent.jar') @{'quilt.mod.json'=$quiltData;'META-INF/jars/quilt.jar'=[IO.File]::ReadAllBytes($quiltNested)}
  $report=Scan $folder (Context 'quilt_loader' '0.28')
  Assert (@($report.Mods|Where-Object Id -eq 'quilt_inner').Count -eq 1) 'Quilt string nested-jar declaration was not read.'
+ $displayEmbedded=$inspector.GetMethod('EmbeddedModsForDisplay',$flags)
+ Assert (@($displayEmbedded.Invoke($null,@($report,[string](Join-Path $folder 'quilt-parent.jar')))).Count -eq 1) 'An independent Quilt nested mod was hidden.'
+
+ # Arbitrary project IDs: display grouping must come from metadata, never a mod-name list.
+ $folder=Folder 'embedded-display'
+ $parts=@{
+  source_part=@{contact=@{sources='https://source.example/team/toolkit.git'}}
+  object_part=@{custom=@{modmenu=@{parent=@{id='toolkit_alias'}}}}
+  string_part=@{custom=@{modmenu=@{parent='toolkit'}}}
+  generated_part=@{custom=@{'fabric-loom:generated'=$true}}
+  independent_library=@{contact=@{sources='https://source.example/team/library';homepage='https://team.example'}}
+  toolkit_independent=@{contact=@{homepage='https://team.example'}}
+  invalid_hint=@{custom=@{modmenu=@{parent=123};'fabric-loom:generated'='true'};contact=@{sources='not a URL'}}
+ }
+ $entries=@{};$jars=@();$requires=@{}
+ foreach($id in $parts.Keys){
+  $inner=Fabric $embeddedFolder ($id+'.jar') $id '1.0' $parts[$id]
+  $path='META-INF/jars/'+$id+'.jar';$entries[$path]=[IO.File]::ReadAllBytes($inner);$jars+=@{file=$path};$requires[$id]='>=1'
+ }
+ $entries['fabric.mod.json']=(@{schemaVersion=1;id='toolkit';version='1';provides=@('toolkit_alias');contact=@{sources='https://source.example/team/toolkit/';homepage='https://team.example'};depends=$requires;jars=$jars}|ConvertTo-Json -Depth 15 -Compress)
+ $toolkit=New-Jar (Join-Path $folder 'toolkit.jar') $entries
+ $report=Scan $folder
+ $shown=@($displayEmbedded.Invoke($null,@($report,[string]$toolkit)))
+ Assert (-not $report.HasErrors -and $shown.Count -eq 3 -and 'independent_library' -in $shown.Id -and 'toolkit_independent' -in $shown.Id -and 'invalid_hint' -in $shown.Id) 'Internal parents, same-project modules or generated libraries leaked into the embedded display, or an unrelated library was hidden.'
+ Assert (@($report.Mods|Where-Object {$_.Id -eq 'generated_part' -and $_.IsGeneratedLibrary}).Count -eq 1 -and @($report.Mods|Where-Object {$_.Id -eq 'object_part' -and $_.DisplayParentId -eq 'toolkit_alias'}).Count -eq 1) 'Display hints were not parsed from actual nested metadata.'
+ $indexType.GetMethod('ClearMemory',$flags).Invoke($null,@())|Out-Null
+ $cached=Scan $folder
+ Assert ($cached.GetType().GetField('IndexHit',$flags).GetValue($cached) -and @($displayEmbedded.Invoke($null,@($cached,[string]$toolkit))).Count -eq 3) 'Persistent indexes lost embedded display ownership.'
+ # Hiding internal components is presentation only: their dependency errors remain real.
+ $null=Fabric $folder 'bad-consumer.jar' 'bad_consumer' '1' @{depends=@{source_part='>=2'}}
+ $broken=Scan $folder
+ Assert ($broken.HasErrors -and (Issues $broken 'VersionMismatch' 'bad_consumer').Count -eq 1) 'A grouped internal module stopped participating in version checks.'
+
  $folder=Folder 'unused-nested'
  $unusedFile=Fabric $embeddedFolder 'unused.jar' 'unused' '1.0' @{depends=@{candidate_missing='*'}}
  $unusedData=@{schemaVersion=1;id='candidate_parent';version='1.0';breaks=@{unused='*'};jars=@(@{file='META-INF/jars/unused.jar'})}|ConvertTo-Json -Depth 10 -Compress
@@ -357,6 +390,13 @@ version="1.0"
  $null=New-Jar (Join-Path $folder 'outer.jar') @{'META-INF/neoforge.mods.toml'=$outerNeo;'META-INF/jarjar/metadata.json'='{"jars":[{"path":"META-INF/jarjar/library.jar"}]}';'META-INF/jarjar/library.jar'=[IO.File]::ReadAllBytes($inner)}
  $report=Scan $folder (Context 'neoforge' '21.1.1')
  Assert (-not $report.HasErrors -and @($report.Mods|Where-Object Id -eq 'jarjar_library').Count -eq 1) 'NeoForge JarJar metadata was not read.'
+ Assert (@($displayEmbedded.Invoke($null,@($report,[string](Join-Path $folder 'outer.jar')))).Count -eq 1) 'A real NeoForge JarJar mod was hidden with loader internals.'
+ $folder=Folder 'forge-jarjar-display'
+ $forgeInner=New-Jar (Join-Path $embeddedFolder 'forge-display.jar') @{'META-INF/mods.toml'=$innerToml.Replace('[4,)','[47,)')}
+ $forgeOuter=$outerNeo.Replace('modId="neo"','modId="forge_host"').Replace('dependencies.neo','dependencies.forge_host').Replace('modId="neoforge"','modId="forge"').Replace('[21.1,22)','[47,)').Replace('[4,)','[47,)')
+ $forgeJar=New-Jar (Join-Path $folder 'outer.jar') @{'META-INF/mods.toml'=$forgeOuter;'META-INF/jarjar/metadata.json'='{"jars":[{"path":"META-INF/jarjar/library.jar"}]}';'META-INF/jarjar/library.jar'=[IO.File]::ReadAllBytes($forgeInner)}
+ $report=Scan $folder (Context 'forge' '47.1.0')
+ Assert (@($displayEmbedded.Invoke($null,@($report,[string]$forgeJar))).Count -eq 1 -and @($report.Mods|Where-Object IsNested).Count -eq 1) 'A real Forge JarJar mod was hidden or a language-loader component was listed as an embedded mod.'
 
  $folder=Folder 'uncertain'
  $null=Fabric $folder 'consumer.jar' 'consumer' '1.0' @{depends=@{missing='*'}}

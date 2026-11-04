@@ -72,6 +72,7 @@ Public Class PageResource
     ''' 在切换到页面时，应自动将筛选项设置为与该目标 MC 版本和加载器相同。
     ''' </summary>
     Public Shared TargetInstance As McInstance = Nothing
+    Friend Property DownloadTargetInstance As McInstance
     ''' <summary>
     ''' 在切换到该页面时自动设置的搜索框内的内容。
     ''' </summary>
@@ -86,6 +87,7 @@ Public Class PageResource
         If TargetInstance IsNot Nothing Then
             '设置目标
             ResetFilter() '重置筛选器
+            DownloadTargetInstance = TargetInstance
             TextSearchVersion.Text = TargetInstance.Version.VanillaName
             Dim GetTargetItemByName =
             Function(Name As String) As MyComboBoxItem
@@ -235,6 +237,7 @@ Public Class PageResource
 
     '重置按钮
     Private Sub ResetFilter() Handles BtnSearchReset.Click
+        DownloadTargetInstance = Nothing
         TextSearchName.Text = ""
         TextSearchVersion.Text = "全部 (也可自行输入)"
         TextSearchVersion.SelectedIndex = 0

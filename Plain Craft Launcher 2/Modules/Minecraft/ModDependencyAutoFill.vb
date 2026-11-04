@@ -164,7 +164,9 @@ Friend NotInheritable Class ModDependencyAutoFill
                 If Legacy AndAlso Not Missing.Any(Function(Value) Value.IsError) Then Continue For
                 Dim LocalRanges = Missing.Count > 0 AndAlso Missing.All(Function(Issue) Issue.Requirement IsNot Nothing AndAlso Not Issue.Requirement.IsUnknown AndAlso Issue.Requirement.Children.Count = 0 AndAlso IsRange(Issue.Requirement.Versions))
                 For Each Dependency In Match.Dependencies.Where(Function(Value) Value.Kind = "required")
-                    Pending.Enqueue(New Requirement With {.Platform = Dependency.Platform, .Project = Dependency.ProjectId, .Version = Dependency.VersionId, .Owner = Match.ProjectName})
+                    If Inspector.RuntimeProvidersForPlatformDependency(Report, File.FullPath, Dependency).Count > 0 Then Continue For
+                    Dim Owner = Report.Mods.FirstOrDefault(Function(Value) Not Value.IsNested AndAlso Inspector.SameFilePath(Value.RootPath, File.FullPath))
+                    Pending.Enqueue(New Requirement With {.Platform = Dependency.Platform, .Project = Dependency.ProjectId, .Version = Dependency.VersionId, .Owner = If(Owner?.Name, Match.ProjectName)})
                     If LocalRanges OrElse String.IsNullOrEmpty(Dependency.VersionId) Then FlexibleProjects.Add(Key(Dependency.Platform, Dependency.ProjectId))
                 Next
             Next
@@ -197,7 +199,14 @@ Friend NotInheritable Class ModDependencyAutoFill
                     Dim FixedVersion = If(FlexibleProjects.Contains(Identity), "", Need.Version)
                     If Existing.Contains(Identity) Then Continue While
                     If Disabled.Contains(Identity) Then
-                        Result.Notes.Add(Need.Project & " 已安装但被禁用，请在模组管理中启用。") : Continue While
+                        Dim Files = Report.OnlineFiles.Where(Function(Value) Not Value.Enabled AndAlso Value.Matches.Any(Function(Match) Match.IsExact AndAlso Match.Platform = Need.Platform AndAlso Match.ProjectId = Need.Project)).ToList()
+                        If Files.Any(Function(Value) Result.Enables.Any(Function(EnableItem) Inspector.SameFilePath(EnableItem.Source, Value.FullPath))) Then Continue While
+                        Dim Owner = Report.Mods.FirstOrDefault(Function(Value) Not Value.IsNested AndAlso Files.Any(Function(File) Inspector.SameFilePath(File.FullPath, Value.RootPath)))
+                        Dim Name = If(Owner IsNot Nothing AndAlso Owner.Name <> Owner.Id, Owner.Name, Nothing)
+                        If String.IsNullOrWhiteSpace(Name) Then Name = Files.SelectMany(Function(File) File.Matches).Select(Function(Value) Value.ProjectName).FirstOrDefault(Function(Value) Not String.IsNullOrWhiteSpace(Value) AndAlso Value <> Need.Project)
+                        If String.IsNullOrWhiteSpace(Name) Then Name = Owner?.Name
+                        If String.IsNullOrWhiteSpace(Name) Then Name = If(Files.FirstOrDefault() Is Nothing, "前置模组", Path.GetFileName(Files(0).FullPath))
+                        Result.Notes.Add(Name & " 已安装但被禁用，请在模组管理中选择兼容版本后启用。") : Continue While
                     End If
                     Dim Entry As Item = Nothing
                     If Selected.TryGetValue(Identity, Entry) Then

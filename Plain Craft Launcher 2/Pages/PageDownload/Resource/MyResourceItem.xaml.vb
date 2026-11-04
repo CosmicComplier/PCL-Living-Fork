@@ -83,12 +83,14 @@
         End If
         '打开详情页
         Dim Search As ResourceSearcher.SearchRequest = Nothing
+        Dim DownloadTarget As McInstance = PageInstanceLeft.Instance
         If FrmMain.PageCurrent.Page = FormMain.PageType.Download AndAlso FrmDownloadLeft IsNot Nothing Then
             Dim ResourcePage = TryCast(FrmDownloadLeft.PageGet(FrmMain.PageCurrentSub).FindName("Content"), PageResource)
             Search = ResourcePage?.Loader?.Input
+            DownloadTarget = ResourcePage?.DownloadTargetInstance
         End If
         Dim Arguments = BuildDetailArguments(TryCast(sender.Tag, ResourceProject), FrmMain.PageCurrent.Page, Search,
-            TryCast(FrmMain.PageCurrent.Additional, Object()), PageInstanceLeft.Instance)
+            TryCast(FrmMain.PageCurrent.Additional, Object()), DownloadTarget)
         Arguments(1) = Titles
         FrmMain.PageChange(New FormMain.PageStackData With {.Page = FormMain.PageType.ResourceDetail, .Additional = Arguments})
     End Sub
@@ -97,20 +99,24 @@
         Existing As Object(), Instance As McInstance) As Object()
         Dim TargetType = If(Project Is Nothing, ResourceTypes.Any, Project.Types)
         Dim TargetVersion As String = Nothing, TargetLoader As ModLoaders = ModLoaders.None
+        Dim DownloadTarget As McInstance = Nothing
         If Page = FormMain.PageType.Download AndAlso Search IsNot Nothing Then
             TargetType = Search.Type
             TargetVersion = Search.GameVersion
             If TargetType = ResourceTypes.Mod Then TargetLoader = Search.ModLoaders
+            If Instance IsNot Nothing AndAlso Search.GameVersion = Instance.Version.VanillaName Then DownloadTarget = Instance
         ElseIf Page = FormMain.PageType.ResourceDetail Then
             TargetType = ResourceTypes.Any
             If Existing IsNot Nothing AndAlso Existing.Length > 2 Then TargetVersion = TryCast(Existing(2), String)
             If Existing IsNot Nothing AndAlso Existing.Length > 3 AndAlso TypeOf Existing(3) Is ModLoaders Then TargetLoader = CType(Existing(3), ModLoaders)
+            If Existing IsNot Nothing AndAlso Existing.Length > 5 Then DownloadTarget = TryCast(Existing(5), McInstance)
         ElseIf Page = FormMain.PageType.InstanceSetup AndAlso Instance IsNot Nothing Then
             TargetVersion = Instance.Version.VanillaName
             If TargetType.HasFlagF(ResourceTypes.Mod) Then TargetLoader = Instance.Version.ModLoaders
+            DownloadTarget = Instance
         End If
         If TargetType = 0 Then TargetType = ResourceTypes.Any
-        Return {Project, New List(Of String), TargetVersion, TargetLoader, TargetType}
+        Return {Project, New List(Of String), TargetVersion, TargetLoader, TargetType, DownloadTarget}
     End Function
 
     Private IsMouseDown As Boolean = False

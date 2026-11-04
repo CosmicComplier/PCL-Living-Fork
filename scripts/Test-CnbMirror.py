@@ -24,8 +24,9 @@ class Response(io.BytesIO):
 class FakeGit:
     stable = b'{"tag_name":"v1.3.4","prerelease":false}\n'
 
-    def __init__(self):
+    def __init__(self, preview=None):
         self.staged = []
+        self.preview = preview
 
     def run(self, *arguments, cwd=None, optional=False):
         if arguments[0] == "ls-remote":
@@ -34,6 +35,8 @@ class FakeGit:
             folder = Path(arguments[-1])
             folder.mkdir()
             (folder / "latest.json").write_bytes(self.stable)
+            if self.preview:
+                (folder / "latest-preview.json").write_text(json.dumps(self.preview), encoding="utf-8")
         if arguments[0] == "add":
             self.staged = list(arguments[2:])
         return SimpleNamespace(stdout="", returncode=1 if arguments[0] == "diff" else 0)
@@ -155,9 +158,23 @@ class MirrorTests(unittest.TestCase):
             self.assertEqual(json.loads((control / "releases/v1.3.5-pre-1.json").read_text()), index)
             self.assertEqual(json.loads((control / "receipts/v1.3.5-pre-1.json").read_text()), mirror.receipt_for(http.source))
             self.assertNotIn("latest.json", git.staged)
+            self.assertEqual(json.loads((control / "latest-preview.json").read_text()), index)
         with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
             with self.assertRaisesRegex(RuntimeError, "cannot replace"):
                 mirror.publish_index(None, mirror.CNB_REPO, index, directory, False, latest=True)
+
+    def test_opt_in_feed_orders_prereleases_and_stable_without_downgrades(self):
+        ordered = ("v1.3.4", "v1.3.5-pre-1", "v1.3.5-pre-2", "v1.3.5-pre-10", "v1.3.5", "v1.3.6-pre-1")
+        self.assertEqual(sorted(reversed(ordered), key=mirror.release_version_key), list(ordered))
+        preview = {"tag_name": "v1.3.5-pre-10", "draft": False, "prerelease": True, "assets": []}
+        for tag, prerelease, advances in (("v1.3.4", False, False), ("v1.3.5-pre-2", True, False), ("v1.3.5", False, True)):
+            git = FakeGit(preview)
+            index = {"tag_name": tag, "name": "release", "draft": False, "prerelease": prerelease, "assets": []}
+            with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+                mirror.publish_index(git, mirror.CNB_REPO, index, directory, False, latest=False)
+                result = json.loads((Path(directory) / "control/latest-preview.json").read_text())
+                self.assertEqual(result, index if advances else preview)
+                self.assertEqual((Path(directory) / "control/latest.json").read_bytes(), git.stable)
 
     def test_prerelease_note_edits_do_not_retransfer_or_promote(self):
         http = FakeHttp("v1.3.5-rc.2", True)

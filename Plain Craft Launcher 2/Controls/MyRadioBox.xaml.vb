@@ -7,6 +7,9 @@ Public Class MyRadioBox
 
     '基础
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() Radiobox_IsEnabledChanged())
+    End Sub
     Public Uuid As Integer = GetUuid()
     Public Event PreviewCheck(sender As Object, e As RouteEventArgs)
     Public Event PreviewChange(sender As Object, e As RouteEventArgs)

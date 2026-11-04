@@ -2,7 +2,7 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.3.5-pre-1](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-1) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-1) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.3.5-pre-2](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-2) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-2) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
@@ -24,7 +24,7 @@
 
 升级时保留原有 `PCL`、`.minecraft` 和游戏目录。程序内更新保留原文件名。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 
-可与官方 PCL 共用兼容的账号和设置；同目录运行时共用 `PCL\Setup.ini`，修改共享配置也会影响另一边。保留固定默认配色，可在“设置 → 个性化 → 背景图片”切换原生白底与现有背景；自定义及其他颜色主题请[赞助原作者](https://meloong.com/afd/a/LTCat)，获取官方快照版。
+可与官方 PCL 共用兼容的账号和设置；同目录运行时共用 `PCL\Setup.ini`，修改共享配置也会影响另一边。保留默认强调色，支持浅色、深色外观，可在“设置 → 个性化 → 背景图片”切换随主题的纯色背景与现有背景；自定义及其他颜色主题请[赞助原作者](https://meloong.com/afd/a/LTCat)，获取官方快照版。
 
 地图 ZIP 默认保存到当前版本的 `saves\PCLLFWorldDownload`，文件夹不存在时自动创建；存档解压到 `saves`，保留原压缩包并避免覆盖同名存档。
 
@@ -40,13 +40,19 @@ dotnet restore .\PCLCS\PCLCS.csproj
 .\scripts\Build-Release.ps1
 ```
 
-输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.5-pre-1.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.5-pre-2.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
 ## 国内发布同步
 
 国内下载入口：[CNB Releases](https://cnb.cool/ddzmumo/PCL-Living-Fork/-/releases)。后续包含同步工作流的标签发布或编辑正式版、预发布版 Release 后，Actions 立即触发 CNB 同步并等待结果；CNB 每 30 分钟的定时检查作为正式版补偿。
 
 启动器更新默认使用 CNB，可在设置中保存 GitHub 偏好；更新提示中也可临时切换本次下载源。更新下载使用 PCL 原生任务界面。CNB 同步预发布附件并标记为预发布版，独立清单保存在 `updates` 分支的 `releases/<tag>.json`；正式版的 `latest.json` 不会被预发布版覆盖。
+
+更新通道默认“仅接收正式发布版更新”。切换到“接收正式发布版和预发布版更新”时，确认警告后才保存。可选通道使用独立的 `latest-preview.json`，接收其中较新的正式版或预发布版，包含预发布序号与正式版本的正确排序。
+
+在“设置 → 个性化 → 基础”可切换浅色、深色外观，即时生效并保留选择。深色配色覆盖顶栏、启动器卡片、菜单、输入与选择控件、滑块气泡、悬停提示和弹窗。内置角色背景随主题切换白天与夜晚图，夜间版使用不同动作；自定义背景保留并按主题调暗。游戏图标、皮肤和截图保留原始颜色。
+
+“窗口不透明度”与“面板不透明度”分别控制整体窗口和侧栏、卡片底色；背景图片沿用独立的不透明度设置。调整面板不会淡化文字和图标。从实例的模组页进入下载时，下载目标沿用该实例的 `mods` 目录，优先于上次手动选择的文件夹。
 
 同步按版本、说明和附件内容指纹去重。已完成且内容相同时直接跳过，不启动 CNB 任务，也不重复上传附件。旧标签若不含该工作流，可用手动补同步。
 

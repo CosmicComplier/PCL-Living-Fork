@@ -1,6 +1,9 @@
 Public Class MyMenuItem
     Inherits MenuItem
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Private Sub MyMenuItem_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
         If Icon IsNot Nothing Then
             Dim IconControl As Shapes.Path = GetTemplateChild("Icon")

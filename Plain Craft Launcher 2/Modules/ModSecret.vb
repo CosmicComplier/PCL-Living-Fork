@@ -79,7 +79,12 @@ Friend Module ModSecret
     Public ColorHue As Integer = DefaultThemeHue, ColorSat As Integer = DefaultThemeSat, ColorLightAdjust As Integer = DefaultThemeLight - 20, ColorHueTopbarDelta As OneOf(Of Integer, Integer()) = DefaultThemeDelta - 90
 
     Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
+        If Application.Current Is Nothing Then Return
+        If Not Application.Current.Dispatcher.CheckAccess() Then
+            RunInUiWait(Sub() ThemeRefresh(NewTheme)) : Return
+        End If
         Try
+            PrepareThemeTones(Settings.Get(Of Integer)("UiLauncherColorMode") = 1)
             ColorHue = DefaultThemeHue
             ColorSat = DefaultThemeSat
             ColorLightAdjust = DefaultThemeLight - 20
@@ -96,63 +101,49 @@ Friend Module ModSecret
             ColorBg0 = Color4 * 0.4 + Color5 * 0.4 + ColorGray4 * 0.2
             ColorBg1 = New MyColor(190, Color7)
 
-            ColorSemiTransparent = New MyColor(1, Color8)
-            Application.Current.Resources("ColorBrush1") = New SolidColorBrush(Color1)
-            Application.Current.Resources("ColorBrush2") = New SolidColorBrush(Color2)
-            Application.Current.Resources("ColorBrush3") = New SolidColorBrush(Color3)
-            Application.Current.Resources("ColorBrush4") = New SolidColorBrush(Color4)
-            Application.Current.Resources("ColorBrush5") = New SolidColorBrush(Color5)
-            Application.Current.Resources("ColorBrush6") = New SolidColorBrush(Color6)
-            Application.Current.Resources("ColorBrush7") = New SolidColorBrush(Color7)
-            Application.Current.Resources("ColorBrush8") = New SolidColorBrush(Color8)
-            Application.Current.Resources("ColorBrushBg0") = New SolidColorBrush(ColorBg0)
-            Application.Current.Resources("ColorBrushBg1") = New SolidColorBrush(ColorBg1)
-            Application.Current.Resources("ColorObject1") = CType(Color1, Color)
-            Application.Current.Resources("ColorObject2") = CType(Color2, Color)
-            Application.Current.Resources("ColorObject3") = CType(Color3, Color)
-            Application.Current.Resources("ColorObject4") = CType(Color4, Color)
-            Application.Current.Resources("ColorObject5") = CType(Color5, Color)
-            Application.Current.Resources("ColorObject6") = CType(Color6, Color)
-            Application.Current.Resources("ColorObject7") = CType(Color7, Color)
-            Application.Current.Resources("ColorObject8") = CType(Color8, Color)
-            Application.Current.Resources("ColorObjectBg0") = CType(ColorBg0, Color)
-            Application.Current.Resources("ColorObjectBg1") = CType(ColorBg1, Color)
+            ApplyThemePalette()
             ThemeRefreshMain()
+            NotifyThemeChanged()
         Catch ex As Exception
             Logger.Error(ex, "刷新主题颜色失败", LogBehavior.Toast)
         End Try
     End Sub
+    Friend Function CreateTitleBackground() As Brush
+        Dim Result = New LinearGradientBrush With {.EndPoint = New Point(1, 0), .StartPoint = New Point(0, 0)}
+        Dim Deltas = ColorHueTopbarDelta.Switch(Function(d) New Integer() {-d, 0, d}, Function(d) d)
+        Dim Saturation = If(IsDarkTheme, 72, ColorSat), HueScale = If(IsDarkTheme, 0.5, 1.0)
+        Result.GradientStops.Add(New GradientStop With {.Offset = 0, .Color = New MyColor().FromHSL2(ColorHue + Deltas(0) * HueScale, Saturation, If(IsDarkTheme, 20, 48 + ColorLightAdjust))})
+        Result.GradientStops.Add(New GradientStop With {.Offset = 0.5, .Color = New MyColor().FromHSL2(ColorHue + Deltas(1) * HueScale, Saturation, If(IsDarkTheme, 24, 54 + ColorLightAdjust))})
+        Result.GradientStops.Add(New GradientStop With {.Offset = 1, .Color = New MyColor().FromHSL2(ColorHue + Deltas(2) * HueScale, Saturation, If(IsDarkTheme, 20, 48 + ColorLightAdjust))})
+        Result.Freeze()
+        Return Result
+    End Function
     Public Sub ThemeRefreshMain()
         RunInUi(
         Sub()
             If FrmMain Is Nothing OrElse Not FrmMain.IsLoaded Then Return
             '顶部条背景
-            Dim Brush = New LinearGradientBrush With {.EndPoint = New Point(1, 0), .StartPoint = New Point(0, 0)}
-            Dim Deltas = ColorHueTopbarDelta.Switch(Function(d) New Integer() {-d, 0, d}, Function(d) d)
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0, .Color = New MyColor().FromHSL2(ColorHue + Deltas(0), ColorSat, 48 + ColorLightAdjust)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.5, .Color = New MyColor().FromHSL2(ColorHue + Deltas(1), ColorSat, 54 + ColorLightAdjust)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 1, .Color = New MyColor().FromHSL2(ColorHue + Deltas(2), ColorSat, 48 + ColorLightAdjust)})
-            FrmMain.PanTitle.Background = Brush
-            FrmMain.PanTitle.Background.Freeze()
+            FrmMain.PanTitle.Background = CreateTitleBackground()
             ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
         End Sub)
     End Sub
 
     Friend Sub ApplyMainBackground(Panel As Panel, Image As UIElement)
         Dim Plain = Settings.Get(Of Integer)("UiBackgroundMode") = 1
+        If TypeOf Image Is Panel Then RefreshDefaultBackground(DirectCast(Image, Panel))
         Image.Visibility = If(Plain, Visibility.Collapsed, Visibility.Visible)
+        Image.Opacity = Settings.Get(Of Integer)("UiBackgroundOpacity") / 1000 * BackgroundThemeOpacityFactor(Image)
         If Plain Then
-            Panel.Background = Brushes.White
+            Panel.Background = ThemeBrush(If(IsDarkTheme, "ColorBrushBackground", "ColorBrushWhite"))
         ElseIf Settings.Get(Of Boolean)("UiBackgroundColorful") Then
             Dim Brush As New LinearGradientBrush With {.EndPoint = New Point(0.1, 1), .StartPoint = New Point(0.9, 0)}
-            Brush.GradientStops.Add(New GradientStop With {.Offset = -0.1, .Color = New MyColor().FromHSL2(ColorHue - 15, ColorSat * 0.8, 91)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.4, .Color = New MyColor().FromHSL2(ColorHue, ColorSat * 0.8, 91)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 1.1, .Color = New MyColor().FromHSL2(ColorHue + 15, ColorSat * 0.8, 91)})
+            Brush.GradientStops.Add(New GradientStop With {.Offset = -0.1, .Color = New MyColor().FromHSL2(ColorHue - 15, If(IsDarkTheme, 15, ColorSat * 0.8), If(IsDarkTheme, 11, 91))})
+            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.4, .Color = New MyColor().FromHSL2(ColorHue, If(IsDarkTheme, 15, ColorSat * 0.8), If(IsDarkTheme, 14, 91))})
+            Brush.GradientStops.Add(New GradientStop With {.Offset = 1.1, .Color = New MyColor().FromHSL2(ColorHue + 15, If(IsDarkTheme, 15, ColorSat * 0.8), If(IsDarkTheme, 11, 91))})
             Panel.Background = Brush
         Else
-            Panel.Background = New MyColor(245, 245, 245)
+            Panel.Background = ThemeBrush("ColorBrushBackground")
         End If
-        Panel.Background.Freeze()
     End Sub
 
 #End Region

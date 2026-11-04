@@ -15,7 +15,7 @@ Friend NotInheritable Class ModDependencyIndex
     Private Sub New()
     End Sub
 
-    Private Const Schema As Integer = 2
+    Private Const Schema As Integer = 3
     Private Const MaxBytes As Long = 32L * 1024 * 1024
     Friend Shared Property CacheDirectory As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PCLLivingFork", "Cache", "ModDependencyIndex")
     Private Shared ReadOnly Gates As New ConcurrentDictionary(Of String, SemaphoreSlim)(StringComparer.Ordinal)

@@ -65,9 +65,10 @@ Public Class MyCard
     Public Sub New()
         MainChrome = New MyDropShadow With {
             .Margin = New Thickness(-3, -3, -3, -3 - GetWPFSize(1)), .ShadowRadius = 3, .Opacity = DropShadowIdleOpacity, .CornerRadius = New CornerRadius(5)}
-        MainChrome.SetResourceReference(MyDropShadow.ColorProperty, "ColorObject1")
+        MainChrome.SetResourceReference(MyDropShadow.ColorProperty, "ColorObjectShadow")
         Children.Insert(0, MainChrome)
-        MainBorder = New Border With {.Background = New SolidColorBrush(Color.FromArgb(245, 255, 255, 255)), .CornerRadius = New CornerRadius(5), .IsHitTestVisible = False}
+        MainBorder = New Border With {.CornerRadius = New CornerRadius(5), .IsHitTestVisible = False}
+        MainBorder.SetResourceReference(Border.BackgroundProperty, "ColorBrushCard")
         Children.Insert(1, MainBorder)
         MainGrid = New Grid
         Children.Add(MainGrid)
@@ -155,7 +156,7 @@ Public Class MyCard
         If Not IsNothing(MainTextBlock) Then AniList.Add(AaColor(MainTextBlock, TextBlock.ForegroundProperty, "ColorBrush1", 90))
         If Not IsNothing(MainSwap) Then AniList.Add(AaColor(MainSwap, Shapes.Path.FillProperty, "ColorBrush1", 90))
         AniList.AddRange({
-            AaColor(MainChrome, MyDropShadow.ColorProperty, "ColorObject1", 90),
+            AaColor(MainChrome, MyDropShadow.ColorProperty, "ColorObjectShadow", 90),
             AaOpacity(MainChrome, DropShadowIdleOpacity - MainChrome.Opacity, 90)
         })
         AniStart(AniList, "MyCard Mouse " & Uuid)

@@ -2,6 +2,9 @@ Imports System.Windows.Markup
 
 <ContentProperty("Inlines")>
 Public Class MyHint
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() UpdateUI())
+    End Sub
     Public Uuid As Integer = GetUuid()
 
     '边框
@@ -35,23 +38,11 @@ Public Class MyHint
     End Property
     Private _ColorType As Themes = Themes.Red
     Private Sub UpdateUI() Handles Me.Loaded
-        Select Case Theme
-            Case Themes.Blue
-                Background = New MyColor("#d9ecff")
-                BorderBrush = New MyColor("#1172D4")
-                LabText.Foreground = New MyColor("#0F64B8")
-                BtnClose.Foreground = New MyColor("#0F64B8")
-            Case Themes.Red
-                Background = New MyColor("#ffdddf")
-                BorderBrush = New MyColor("#d82929")
-                LabText.Foreground = New MyColor("#bf0b0b")
-                BtnClose.Foreground = New MyColor("#bf0b0b")
-            Case Themes.Yellow
-                Background = New MyColor("#ffebd7")
-                BorderBrush = New MyColor("#f57a00")
-                LabText.Foreground = New MyColor("#d86c00")
-                BtnClose.Foreground = New MyColor("#d86c00")
-        End Select
+        Dim Role = If(Theme = Themes.Blue, "Info", If(Theme = Themes.Yellow, "Warning", "Danger"))
+        SetResourceReference(BackgroundProperty, "ColorBrush" & Role & "Back")
+        SetResourceReference(BorderBrushProperty, "ColorBrush" & Role & "Border")
+        LabText.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush" & Role & "Text")
+        BtnClose.Foreground = ThemeBrush("ColorBrush" & Role & "Text")
     End Sub
     <Obsolete("IsWarn 已过时。请换用 Theme 属性。")>
     Public Property IsWarn As Boolean

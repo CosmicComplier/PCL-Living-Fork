@@ -15,11 +15,13 @@ function Call($name,[object[]]$arguments){$values=[object[]]::new($arguments.Cou
 function Json($value){return ,([Newtonsoft.Json.Linq.JObject]::Parse(($value|ConvertTo-Json -Depth 10 -Compress)))}
 function Release($platform,$v){
  $name='PCL-Living-Fork-'+$v+'.exe';$base=if($platform -eq 'CNB'){'https://cnb.cool/ddzmumo/PCL-Living-Fork/-/releases/download/v'}else{'https://github.com/DDZmumo/PCL-Living-Fork/releases/download/v'}
- return ,(Json @{tag_name=('v'+$v);draft=$false;prerelease=$false;assets=@(@{name=$name;size=$size;browser_download_url=($base+$v+'/'+$name)},@{name='SHA256SUMS.txt';size=200;browser_download_url=($base+$v+'/SHA256SUMS.txt')})})
+ return ,(Json @{tag_name=('v'+$v);draft=$false;prerelease=$v.Contains('-');assets=@(@{name=$name;size=$size;browser_download_url=($base+$v+'/'+$name)},@{name='SHA256SUMS.txt';size=200;browser_download_url=($base+$v+'/SHA256SUMS.txt')})})
 }
-function Transport($request,$text=$null,$download=$null){
+function Transport($request,$text=$null,$download=$null,$catalog=$null){
  $value=[Activator]::CreateInstance($asm.GetType('PCL.ModLauncherUpdate+UpdateTransport'),$true)
  $value.GetType().GetField('ReadJson',$flags).SetValue($value,([Func[string,Newtonsoft.Json.Linq.JObject]]$request))
+ $listReader=if($catalog){$catalog}else{{param($url) throw 'Unexpected catalog request; live HTTP is disabled in this fixture'}}
+ $value.GetType().GetField('ReadReleaseList',$flags).SetValue($value,([Func[string,Newtonsoft.Json.Linq.JArray]]$listReader))
  if($text){$value.GetType().GetField('ReadText',$flags).SetValue($value,([Func[string,string]]$text))}
  if($download){$value.GetType().GetField('Download',$flags).SetValue($value,([Action[string,string,MeloongCore.FileChecker]]$download))}
  return $value
@@ -88,7 +90,33 @@ try{
  if(-not $chosen['assets'][0]['browser_download_url'].ToString().StartsWith('https://cnb.cool/') -or (Call 'PreferredUpdateSource' @()).ToString() -ne 'GitHub'){throw 'Temporary CNB selection was ignored or saved permanently'}
  $transport=Transport {param($url) return ,(Release 'GitHub' '9.9.9')}
  Reject {Call 'ReleaseForDownloadSource' @($cnbRelease,$githubChoice,$transport)} 'Temporary source selection silently changed the confirmed version'
- Write-Output 'PASS: saved/default source preference, temporary per-attempt choice pinned to the confirmed version, CNB/GitHub priority and failure fallback, bidirectional downloads, foreign URL rejection, checksum agreement and cancellation.'
+ $channel=$settings['ToolLauncherUpdateChannel'];if($channel.DefaultValue -ne 0 -or $channel.Source.ToString() -ne 'Normal' -or (Call 'PreferredUpdateChannel' @()).ToString() -ne 'Stable'){throw 'Update channel is not stable-only by default'}
+ $channelType=$asm.GetType('PCL.ModLauncherUpdate+UpdateChannel');$both=[Enum]::ToObject($channelType,1);$stableOnly=[Enum]::ToObject($channelType,0)
+ foreach($case in @(@('v1.3.5-pre-2','1.3.5-pre-1',1),@('v1.3.5-pre-10','1.3.5-pre-2',1),@('v1.3.5','1.3.5-pre-10',1),@('v1.3.6-pre-1','1.3.5',1),@('v1.3.5-pre-1','1.3.5-pre-1',0),@('v1.3.4','1.3.5-pre-1',-1),@('v1.3.5.0','1.3.5',0))){
+  $actual=[Math]::Sign([int](Call 'CompareReleaseVersions' @($case[0],$case[1])));if($actual -ne $case[2]){throw ('Release ordering failed: '+$case[0]+' / '+$case[1])}
+ }
+ if(Call 'NewerReleaseForChannel' @('v1.3.5-pre-2','1.3.4',$stableOnly)){throw 'Stable channel offered a prerelease'}
+ if(-not (Call 'NewerReleaseForChannel' @('v1.3.5-pre-2','1.3.4',$both))){throw 'Opt-in channel rejected a newer prerelease'}
+ $preview=$type.GetField('CnbPreviewManifestUrl',$flags).GetRawConstantValue();$catalogUrl=$type.GetField('GitHubReleaseListUrl',$flags).GetRawConstantValue();$channel.ValueCache['']=1;$preference.ValueCache['']=0;$requests.Clear()
+ $transport=Transport {param($url) $requests.Add($url);if($url -ne $preview){throw 'Unexpected metadata endpoint'};return ,(Release 'CNB' '1.3.5-pre-10')}
+ $selected=Call 'FindLatestRelease' @('1.3.4',$transport)
+ if($selected['tag_name'].ToString() -ne 'v1.3.5-pre-10' -or $requests.Count -ne 1 -or $requests[0] -eq $cnb){throw 'Opt-in CNB checks did not use the isolated preview feed'}
+ $items=[Newtonsoft.Json.Linq.JArray]::new();foreach($v in @('1.3.5-pre-1','1.3.5-pre-10','1.3.5-pre-2')){$items.Add((Release 'GitHub' $v))}
+ $draft=Release 'GitHub' '99.0.0';$draft['draft']=[Newtonsoft.Json.Linq.JValue]::new($true);$items.Add($draft)
+ $requests.Clear();$preference.ValueCache['']=1
+ $transport=Transport {param($url) throw 'A complete GitHub catalog must not read other endpoints'} $null $null {param($url) $requests.Add($url);return ,$items}
+ $selected=Call 'FindLatestRelease' @('1.3.5-pre-1',$transport)
+ if($selected['tag_name'].ToString() -ne 'v1.3.5-pre-10' -or $requests.Count -ne 1 -or $requests[0] -ne $catalogUrl){throw 'GitHub opt-in catalog ordering or draft filtering failed'}
+ $items.Add((Release 'GitHub' '1.3.5'));$selected=Call 'FindLatestRelease' @('1.3.5-pre-10',$transport)
+ if($selected['tag_name'].ToString() -ne 'v1.3.5'){throw 'A stable release did not supersede its prereleases'}
+ $channel.ValueCache['']=0;$preference.ValueCache['']=0;$requests.Clear()
+ $transport=Transport {param($url) $requests.Add($url);if($url -ne $cnb){throw 'Stable channel reached the preview feed'};return ,(Release 'CNB' '1.3.4')}
+ $selected=Call 'FindLatestRelease' @('1.3.3',$transport)
+ if($selected['tag_name'].ToString() -ne 'v1.3.4' -or $requests.Count -ne 1){throw 'Returning to stable did not restore the stable endpoint'}
+ $pre=Release 'GitHub' '1.3.5-pre-2';$transport=Transport {param($url) throw 'Source conversion must not look for another version'}
+ $pinned=Call 'ReleaseForDownloadSource' @($pre,$cnbChoice,$transport)
+ if($pinned['tag_name'].ToString() -ne 'v1.3.5-pre-2' -or -not $pinned['assets'][0]['browser_download_url'].ToString().Contains('/v1.3.5-pre-2/')){throw 'A confirmed prerelease was lost when selecting a one-time source'}
+ Write-Output 'PASS: persistent/default update sources and channels; stable-only filtering; natural prerelease ordering; isolated CNB preview feed; GitHub catalog/draft filtering; stable promotion; per-attempt same-version fallback, checksums and cancellation. No live HTTP.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '^PclUpdateSources-[a-f0-9]{32}$'){throw 'Unsafe updater fixture cleanup'}

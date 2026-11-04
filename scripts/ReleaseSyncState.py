@@ -11,6 +11,17 @@ def valid_tag(tag):
     return isinstance(tag, str) and re.fullmatch(TAG_PATTERN, tag) is not None
 
 
+def release_version_key(tag):
+    if not valid_tag(tag):
+        raise RuntimeError("Invalid release tag")
+    core, _, preview = tag[1:].partition("-")
+    version = tuple(int(value) for value in core.split("."))
+    version += (0,) * (4 - len(version))
+    tokens = tuple((0, int(value)) if value.isdigit() else (1, value.lower())
+                   for value in re.findall(r"[0-9]+|[A-Za-z]+", preview))
+    return version, not preview, tokens
+
+
 def validate_release(release):
     tag = release.get("tag_name", "")
     if not valid_tag(tag) or release.get("draft") is not False or type(release.get("prerelease")) is not bool:

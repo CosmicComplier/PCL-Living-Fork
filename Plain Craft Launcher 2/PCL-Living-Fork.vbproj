@@ -270,6 +270,8 @@
     <Compile Include="Modules\ModDevelop.vb" />
     <Compile Include="Modules\Minecraft\ModWatcher.vb" />
     <Compile Include="Modules\ModSecret.vb" />
+    <Compile Include="Modules\ModTheme.vb" />
+    <Compile Include="Controls\ModernTooltipTheme.vb" />
     <Compile Include="Modules\Base\BuildCredentials.vb" />
     <Compile Include="Modules\Base\NativeMemoryOptimizer.vb" />
     <Compile Include="Modules\Base\GameGarbageCleaner.vb" />
@@ -1068,6 +1070,7 @@
     <Resource Include="Images\Heads\HerobrineXia.png" />
     <Resource Include="Images\Heads\DDZmumo.png" />
     <Resource Include="Images\Branding\DefaultBackground.png" />
+    <Resource Include="Images\Branding\DefaultBackgroundNight.png" />
     <Resource Include="Images\Branding\LivingPCL-256.png" />
     <Resource Include="Images\Branding\LivingPCL.ico" />
 

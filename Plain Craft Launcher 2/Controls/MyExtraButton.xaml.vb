@@ -1,6 +1,9 @@
 Public Class MyExtraButton
 
     '声明
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Public Event Click(sender As Object, e As MouseButtonEventArgs) '自定义事件
     Public Event RightClick(sender As Object, e As MouseButtonEventArgs)
 

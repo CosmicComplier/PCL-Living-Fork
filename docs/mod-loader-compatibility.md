@@ -22,7 +22,12 @@ NeoForge 的规则依据[旧声明格式](https://docs.neoforged.net/docs/1.20.4
 - 与当前加载器不匹配的启用文件，在检查弹窗单独分组，并在 Mod 列表中显示红框；悬停显示原因与处理方法。
 - `javafml`、`lowcodefml` 等加载器内部组件合并到所属加载器。提示更新或调整加载器，不将它们作为独立 Mod 展示或下载。
 - 已识别的 Fabric API 等外层 JAR 所提供的内嵌模块，合并到外层文件；启用和补全按外层文件处理。
+- 精确平台项目通过其匹配文件中的实际 Mod ID，与本地求解结果关联。兼容的内嵌前置可满足其他模组，关系图说明提供它的外层文件；当前文件选中的独立内嵌前置，显示在当前节点下方的“已内嵌模组”区域，用向下箭头连接，并列出名称和版本。不再把已禁用的外部副本误标为缺失。内嵌版本不满足约束或没有可用提供方时仍提示启动问题，不因外部副本被禁用额外询问可选启用。
+- 内部组件按声明归组，不维护模组名称或 ID 特例表：Fabric/Quilt 读取 Mod Menu 的父级声明（支持字符串、对象及父级别名），也将明确声明与其包内祖先具有相同源码项目地址的模块归入该项目；不以同作者、相同主页或名称前缀推断。Loom 为普通 Java 库生成的占位模组不单列。Forge/NeoForge 根据 Jar-in-Jar 声明读取实际模组元数据，同一声明中的多个内部 ID 仍归属外层文件。信息不足时不猜测组件身份，未选中的内嵌候选不标作已提供的独立前置。归组只影响展示，组件的提供关系、版本检查和启动错误保留。
+- 启动提示优先显示模组名称和明确操作；已列入启用计划的文件不再以平台项目 ID 重复出现在说明中。
 - 禁用文件不报启用错误。文件或加载器变化后，旧标记失效；刷新或检查后重新生成。
+
+展示归组参考 [Mod Menu 的父子模块规范](https://github.com/TerraformersMC/ModMenu/blob/26.4/README.md#parents-parent-mod_id-or-)、[Fabric 嵌套 JAR 与 Loom 生成元数据](https://docs.fabricmc.net/develop/loom/)、[Forge Jar-in-Jar](https://docs.minecraftforge.net/en/fg-6.x/dependencies/jarinjar/) 和 [NeoForge Jar-in-Jar](https://docs.neoforged.net/toolchain/docs/dependencies/jarinjar/)。源码项目地址相同是本启动器的展示归组依据，不是加载器定义的独立模组判定，也不会改变加载选择。
 
 ## 依赖树索引
 

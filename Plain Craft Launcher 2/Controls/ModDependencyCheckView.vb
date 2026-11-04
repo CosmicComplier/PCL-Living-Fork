@@ -34,8 +34,8 @@ Friend NotInheritable Class ModDependencyCheckView
             Groups.Children.Add(New MyHint With {.Text = "暂不能自动补全：" & Reason, .Theme = MyHint.Themes.Yellow, .Margin = New Thickness(3, 3, 7, 10)})
         End If
         If Plan.Enables.Count > 0 Then
-            Dim Entries = Plan.Enables.Select(Function(Item) Tuple.Create(Item.Name & "（已禁用）", "将启用：" & IO.Path.GetFileName(Item.Destination) & vbCrLf &
-                "需要它：" & Referrers(Item.RequiredBy) & vbCrLf & "提供 " & Item.Requirements.Count & " 项依赖（含内嵌组件）", Item.Owner)).ToList()
+            Dim Entries = Plan.Enables.Select(Function(Item) Tuple.Create(Item.Name & "（已安装，当前禁用）", "这些模组需要它：" & Referrers(Item.RequiredBy) & vbCrLf &
+                "点击「启用并启动」即可恢复使用。", Item.Owner)).ToList()
             AddGroup("可启用的必需前置（" & Entries.Count & " 个文件）", Entries, False)
         End If
         If Plan IsNot Nothing AndAlso Plan.Items.Count > 0 Then
@@ -73,7 +73,7 @@ Friend NotInheritable Class ModDependencyCheckView
         If Notes.Count > 0 OrElse Report.MetadataIncomplete OrElse Report.OnlineNotes.Count > 0 Then
             Notes.AddRange(Report.OnlineNotes)
             If Report.MetadataIncomplete Then Notes.Insert(0, "部分模组声明未读完整，无法确认的项目不会自动安装。")
-            Details = New MyCard With {.Title = "读取说明（" & Notes.Count & "）", .CanSwap = True, .Margin = New Thickness(3, 3, 7, 8)}
+            Details = New MyCard With {.Title = "检查说明（" & Notes.Count & "）", .CanSwap = True, .Margin = New Thickness(3, 3, 7, 8)}
             Dim Text As New TextBlock With {.Text = String.Join(vbCrLf & vbCrLf, Notes), .Margin = New Thickness(15, 40, 15, 15), .TextWrapping = TextWrapping.Wrap, .FontSize = 12}
             Text.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3")
             Details.Children.Add(Text) : Details.SwapControl = Text : Details.IsSwapped = True
@@ -119,7 +119,7 @@ Friend NotInheritable Class ModDependencyCheckView
             Dim Reason As New TextBlock With {.Text = Entry.Item2, .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(0, 5, 0, 0), .FontSize = 12}
             Reason.SetResourceReference(TextBlock.ForegroundProperty, If(Warning, "ColorBrushRedLight", "ColorBrush3")) : Text.Children.Add(Reason)
             Grid.SetColumn(Text, 1) : Content.Children.Add(Text)
-            Dim Box As New Border With {.Child = Content, .BorderThickness = New Thickness(1), .CornerRadius = New CornerRadius(5), .Padding = New Thickness(10), .Margin = New Thickness(4), .Background = Brushes.White, .ToolTip = Entry.Item3?.RootPath}
+            Dim Box As New Border With {.Child = Content, .BorderThickness = New Thickness(1), .CornerRadius = New CornerRadius(5), .Padding = New Thickness(10), .Margin = New Thickness(4), .Background = ThemeBrush("ColorBrushWhite"), .ToolTip = Entry.Item3?.RootPath}
             Box.SetResourceReference(Border.BorderBrushProperty, If(Warning, "ColorBrushRedLight", "ColorBrush5"))
             Rows.Children.Add(Box)
         Next

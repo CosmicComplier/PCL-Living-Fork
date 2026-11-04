@@ -1,6 +1,9 @@
 Public Class MyTextButton
     Inherits Label
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub() RefreshColor())
+    End Sub
     Public Event Click(sender As Object, e As EventArgs)
 
     '基础

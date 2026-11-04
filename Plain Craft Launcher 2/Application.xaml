@@ -64,9 +64,33 @@
             <SolidColorBrush x:Key="ColorBrushTransparent" Color="Transparent" />
             <SolidColorBrush x:Key="ColorBrushSemiTransparent">#01eaf2fe</SolidColorBrush>
             <SolidColorBrush x:Key="ColorBrushBackgroundTransparentSidebar" Color="#F1FFFFFF" />
+            <SolidColorBrush x:Key="ColorBrushCard" Color="#F5FFFFFF" />
+            <SolidColorBrush x:Key="ColorBrushDialog" Color="#FBFBFB" />
+            <SolidColorBrush x:Key="ColorBrushPopup" Color="White" />
+            <SolidColorBrush x:Key="ColorBrushBackground" Color="#F5F5F5" />
+            <SolidColorBrush x:Key="ColorBrushTextSecondary" Color="#5C5C5C" />
+            <SolidColorBrush x:Key="ColorBrushOnAccent" Color="White" />
+            <SolidColorBrush x:Key="ColorBrushTitleForeground" Color="White" />
+            <SolidColorBrush x:Key="ColorBrushTitleSelected" Color="White" />
+            <Color x:Key="ColorObjectShadow">#343D4A</Color>
+            <SolidColorBrush x:Key="ColorBrushInfoBack" Color="#D9ECFF" />
+            <SolidColorBrush x:Key="ColorBrushInfoBorder" Color="#1172D4" />
+            <SolidColorBrush x:Key="ColorBrushInfoText" Color="#0F64B8" />
+            <SolidColorBrush x:Key="ColorBrushWarningBack" Color="#FFEBD7" />
+            <SolidColorBrush x:Key="ColorBrushWarningBorder" Color="#F57A00" />
+            <SolidColorBrush x:Key="ColorBrushWarningText" Color="#D86C00" />
+            <SolidColorBrush x:Key="ColorBrushDangerBack" Color="#FFDDDF" />
+            <SolidColorBrush x:Key="ColorBrushDangerBorder" Color="#D82929" />
+            <SolidColorBrush x:Key="ColorBrushDangerText" Color="#BF0B0B" />
+            <SolidColorBrush x:Key="ColorBrushSuccessText" Color="#218A43" />
 
             <!-- Window -->
+            <Style TargetType="Window">
+                <Setter Property="Background" Value="{DynamicResource ColorBrushBackground}" />
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrush1}" />
+            </Style>
             <Style TargetType="{x:Type Window}" x:Key="MyWindow">
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrush1}" />
                 <Setter Property="OverridesDefaultStyle" Value="True"/>
                 <Setter Property="Template">
                     <Setter.Value>
@@ -79,6 +103,7 @@
 
             <!-- Label -->
             <Style TargetType="Label">
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrush1}" />
                 <Setter Property="OverridesDefaultStyle" Value="True"/>
                 <Setter Property="Padding" Value="0"/>
                 <Setter Property="Template">
@@ -116,6 +141,36 @@
                 </Setter>
             </Style>
             
+            <Style TargetType="ToolTip">
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrush1}" />
+                <Setter Property="Background" Value="{DynamicResource ColorBrushPopup}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource ColorBrushGray5}" />
+                <Setter Property="Padding" Value="10,7" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToolTip">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style TargetType="TextBox">
+                <Setter Property="Background" Value="{DynamicResource ColorBrushWhite}" />
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrushGray1}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource ColorBrushGray5}" />
+                <Setter Property="CaretBrush" Value="{DynamicResource ColorBrush1}" />
+                <Setter Property="SelectionBrush" Value="{DynamicResource ColorBrush3}" />
+            </Style>
+            <Style TargetType="RichTextBox">
+                <Setter Property="Background" Value="{DynamicResource ColorBrushWhite}" />
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrushGray1}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource ColorBrushGray5}" />
+                <Setter Property="CaretBrush" Value="{DynamicResource ColorBrush1}" />
+                <Setter Property="SelectionBrush" Value="{DynamicResource ColorBrush3}" />
+            </Style>
+
             <!-- TextBlock -->
             <Style TargetType="TextBlock">
                 <Setter Property="OverridesDefaultStyle" Value="True" />
@@ -138,7 +193,7 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Thumb">
-                            <Border Background="{StaticResource ColorBrushSemiTransparent}" SnapsToDevicePixels="True">
+                            <Border Background="{DynamicResource ColorBrushSemiTransparent}" SnapsToDevicePixels="True">
                                 <Border Background="{TemplateBinding Foreground}" CornerRadius="3" Margin="2" />
                             </Border>
                         </ControlTemplate>
@@ -178,6 +233,51 @@
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
+            </Style>
+            <Style TargetType="ScrollBar">
+                <Setter Property="OverridesDefaultStyle" Value="True" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Width" Value="10" />
+                <Setter Property="Background" Value="{DynamicResource ColorBrushSemiTransparent}" />
+                <Setter Property="Foreground" Value="{DynamicResource ColorBrushGray4}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="3">
+                                <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="True">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton x:Name="Decrease" Command="{x:Static ScrollBar.PageUpCommand}" Opacity="0" Focusable="False" />
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton x:Name="Increase" Command="{x:Static ScrollBar.PageDownCommand}" Opacity="0" Focusable="False" />
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource MyThumb}" Foreground="{TemplateBinding Foreground}" />
+                                    </Track.Thumb>
+                                </Track>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                    <Setter TargetName="Decrease" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}" />
+                                    <Setter TargetName="Increase" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="Orientation" Value="Horizontal">
+                        <Setter Property="Width" Value="Auto" />
+                        <Setter Property="Height" Value="10" />
+                    </Trigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource ColorBrush3}" />
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Foreground" Value="{DynamicResource ColorBrushGray6}" />
+                    </Trigger>
+                </Style.Triggers>
             </Style>
             <Style TargetType="local:MyScrollViewer" x:Name="StyleMyScrollViewer">
                 <Setter Property="OverridesDefaultStyle" Value="True" />
@@ -240,7 +340,7 @@
             <!-- TextBox -->
             <Style TargetType="local:MyTextBox">
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="Background" Value="{StaticResource ColorBrushHalfWhite}" />
+                <Setter Property="Background" Value="{DynamicResource ColorBrushHalfWhite}" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="SelectionBrush" Value="{DynamicResource ColorBrush3}" />
                 <Setter Property="Foreground" Value="{DynamicResource ColorBrush1}" />
@@ -271,7 +371,7 @@
                                     <!-- 由于未知原因，TextView 会有 2,0 的 Margin -->
                                 </Border>
                                 <Border Margin="{TemplateBinding Padding}" IsHitTestVisible="False" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" BorderThickness="0">
-                                    <TextBlock x:Name="labHint" Foreground="{StaticResource ColorBrushGray4}" Margin="7,0,0,0" Padding="{TemplateBinding BorderThickness}" FontSize="{TemplateBinding FontSize}" FontFamily="Resources/#PCL English, Microsoft YaHei UI" />
+                                    <TextBlock x:Name="labHint" Foreground="{DynamicResource ColorBrushGray4}" Margin="7,0,0,0" Padding="{TemplateBinding BorderThickness}" FontSize="{TemplateBinding FontSize}" FontFamily="Resources/#PCL English, Microsoft YaHei UI" />
                                 </Border>
                                 <TextBlock Grid.Row="1" x:Name="labWrong" Height="0" Foreground="{TemplateBinding BorderBrush}" Padding="0,4,0,0" Margin="0,0,0,-3" />
                             </Grid>
@@ -285,7 +385,7 @@
                 <Setter Property="VerticalContentAlignment" Value="Top" />
                 <Setter Property="SelectionBrush" Value="{DynamicResource ColorBrush3}" />
                 <Setter Property="Foreground" Value="{DynamicResource ColorBrush1}" />
-                <Setter Property="Background" Value="{StaticResource ColorBrushHalfWhite}" />
+                <Setter Property="Background" Value="{DynamicResource ColorBrushHalfWhite}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource ColorBrushBg0}" />
                 <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -300,8 +400,8 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Trigger.Setters>
-                                        <Setter Property="BorderBrush" Value="{StaticResource ColorBrushGray5}" />
-                                        <Setter Property="Background" Value="{StaticResource ColorBrushGray6}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource ColorBrushGray5}" />
+                                        <Setter Property="Background" Value="{DynamicResource ColorBrushGray6}" />
                                     </Trigger.Setters>
                                 </Trigger>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -337,7 +437,7 @@
                 <Setter Property="OverridesDefaultStyle" Value="True" />
                 <Setter Property="SnapsToDevicePixels" Value="True" />
                 <Setter Property="Foreground" Value="{DynamicResource ColorBrushBg0}" />
-                <Setter Property="Background" Value="{StaticResource ColorBrushHalfWhite}" />
+                <Setter Property="Background" Value="{DynamicResource ColorBrushHalfWhite}" />
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="MaxDropDownHeight" Value="320" />
@@ -353,7 +453,7 @@
                                                   ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" />
                                 <Popup x:Name="PART_Popup" SnapsToDevicePixels="True" VerticalOffset="-1.5" AllowsTransparency="True" IsOpen="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" Placement="Bottom" PopupAnimation="Fade">
                                     <Grid x:Name="PanPopup">
-                                        <Border Background="White" CornerRadius="3" />
+                                        <Border Background="{DynamicResource ColorBrushPopup}" CornerRadius="3" />
                                         <Border x:Name="dropDownBorder" CornerRadius="3" BorderBrush="{TemplateBinding Foreground}" BorderThickness="1" Width="{TemplateBinding Width}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
                                             <local:MyScrollViewer x:Name="DropDownScrollViewer" PanningMode="VerticalOnly" SnapsToDevicePixels="False" Style="{StaticResource ScrollViewerFullMargin}" ScrollViewer.CanContentScroll="False" VerticalScrollBarVisibility="Auto">
                                                 <ItemsPresenter x:Name="ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Contained" />
@@ -383,7 +483,7 @@
                                         <local:MyTextBox x:Name="PART_EditableTextBox" BorderThickness="0" Margin="1.5,0,21.5,0" Padding="0" Background="{x:Null}" />
                                         <Popup x:Name="PART_Popup" SnapsToDevicePixels="True" VerticalOffset="-1.5" AllowsTransparency="True" IsOpen="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" Placement="Bottom" PopupAnimation="Fade">
                                             <Grid x:Name="PanPopup">
-                                                <Border Background="White" CornerRadius="3" />
+                                                <Border Background="{DynamicResource ColorBrushPopup}" CornerRadius="3" />
                                                 <Border x:Name="dropDownBorder" SnapsToDevicePixels="False" CornerRadius="3" BorderBrush="{TemplateBinding Foreground}" BorderThickness="1" Width="{TemplateBinding Width}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
                                                     <local:MyScrollViewer x:Name="DropDownScrollViewer" Style="{StaticResource ScrollViewerFullMargin}" ScrollViewer.CanContentScroll="False" VerticalScrollBarVisibility="Auto">
                                                         <ItemsPresenter x:Name="ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Contained" />
@@ -407,7 +507,7 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ToggleButton">
-                            <Border Background="{StaticResource ColorBrushSemiTransparent}">
+                            <Border Background="{DynamicResource ColorBrushSemiTransparent}">
                                 <Path x:Name="path" Width="15" RenderTransformOrigin="0.3,0.5" HorizontalAlignment="Right" Data="M1,1L4.5,4.5L8,1" StrokeThickness="1.5" Stroke="{TemplateBinding Foreground}" VerticalAlignment="Center">
                                     <Path.RenderTransform>
                                         <RotateTransform />
@@ -447,7 +547,7 @@
             <Style TargetType="ComboBoxItem" x:Key="MyComboBoxItem">
                 <Setter Property="OverridesDefaultStyle" Value="True" />
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                <Setter Property="Background" Value="{StaticResource ColorBrushTransparent}" />
+                <Setter Property="Background" Value="{DynamicResource ColorBrushTransparent}" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ComboBoxItem">
@@ -482,7 +582,7 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ContextMenu">
-                            <Border BorderBrush="{DynamicResource ColorBrush1}" BorderThickness="1" CornerRadius="3" Background="White" Margin="0,0,4,4" SnapsToDevicePixels="True">
+                            <Border BorderBrush="{DynamicResource ColorBrush1}" BorderThickness="1" CornerRadius="3" Background="{DynamicResource ColorBrushPopup}" Margin="0,0,4,4" SnapsToDevicePixels="True">
                                 <Border.Effect>
                                     <DropShadowEffect Opacity="0.4" BlurRadius="4" ShadowDepth="2" />
                                 </Border.Effect>

@@ -1,4 +1,12 @@
 Public Class PageSetupUI
+    Private Sub InitLauncherColorMode() Handles Me.Initialized
+        AniControlEnabled += 1
+        Try
+            SettingService.RefreshSettings(ComboLauncherColorMode)
+        Finally
+            AniControlEnabled -= 1
+        End Try
+    End Sub
 
     Private Sub PageSetupUI_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
         '重复加载部分
@@ -103,7 +111,7 @@ Public Class PageSetupUI
             '加载
             If Not Pic.Any() Then
                 If Refresh Then
-                    FrmMain.ImgBack.Background = New MyBitmap(PathImage & "Branding/DefaultBackground.png")
+                    UseDefaultBackground(FrmMain.ImgBack)
                     ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
                     FrmMain.UpdateBackgroundAndTitleBar()
                     If IsHint Then Hint("已恢复默认角色背景！", HintType.Green)
@@ -115,6 +123,7 @@ Public Class PageSetupUI
                     Try
                         Logger.Info($"加载背景图片：{Address}")
                         FrmMain.ImgBack.Background = New MyBitmap(Address)
+                        MarkCustomBackground(FrmMain.ImgBack)
                         ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
                         FrmMain.UpdateBackgroundAndTitleBar()
                         If IsHint Then Hint("背景图片已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
@@ -490,6 +499,7 @@ Refresh:
     Private Sub SliderLoad()
         SliderMusicVolume.GetHintText = Function(v) Math.Ceiling(v * 0.1) & "%"
         SliderLauncherTransparent.GetHintText = Function(v) Math.Round(40 + v * 0.1) & "%"
+        SliderPanelOpacity.GetHintText = Function(v) Math.Round(v * 0.1) & "%"
         SliderBackgroundOpacity.GetHintText = Function(v) Math.Round(v * 0.1) & "%"
         SliderBackgroundBlur.GetHintText = Function(v) v & " 像素"
     End Sub

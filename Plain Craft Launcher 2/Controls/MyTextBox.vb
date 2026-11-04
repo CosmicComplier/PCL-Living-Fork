@@ -4,6 +4,12 @@ Public Class MyTextBox
 
     '自定义属性
 
+    Private Sub ThemeInitialized() Handles Me.Initialized
+        WatchTheme(Me, Sub()
+            RefreshColor()
+            RefreshTextColor()
+        End Sub)
+    End Sub
     Public Property HasBackground As Boolean = True
     Public Property ShowValidateResult As Boolean = True
     Public Property CornerRadius As CornerRadius

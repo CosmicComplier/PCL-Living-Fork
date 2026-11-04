@@ -67,6 +67,10 @@ Friend NotInheritable Class ModDependencyInspector
         Public MetadataPath As String
         Public IconPath As String
         Public Format As String
+        'Display ownership only; these hints never remove providers from dependency resolution.
+        Public DisplayParentId As String
+        Public SourceProject As String
+        Public IsGeneratedLibrary As Boolean
         Public Side As String = "*"
         Public Enabled As Boolean
         Public IsNested As Boolean
@@ -550,6 +554,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Item.Side = ReadSide(Json(If(Schema = "0", "side", "environment")))
                 If Schema = "0" AndAlso Item.Side = "universal" Then Item.Side = "*"
                 Item.IconPath = ReadIconPath(Json("icon"))
+                ReadDisplayOwnership(Item, TryCast(Json("custom"), JObject), TryCast(Json("contact"), JObject))
                 For Each AliasId In If(Schema = "1", ArrayValues(Json("provides")), Enumerable.Empty(Of JToken)())
                     If AliasId.Type = JTokenType.String Then Item.Provides(Text(AliasId)) = Item.Version
                 Next
@@ -569,6 +574,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Dim Item = NewMod(Loader("id"), Loader("metadata")?("name"), Loader("version"), RootPath, NestedPath & Metadata.FullName, "Quilt", Enabled, Nested)
                 Item.Group = Text(Loader("group"))
                 Item.IconPath = ReadIconPath(Loader("metadata")?("icon"))
+                ReadDisplayOwnership(Item, Json, TryCast(Loader("metadata")?("contact"), JObject))
                 Item.Side = ReadSide(Json("minecraft")?("environment"))
                 For Each AliasValue In ArrayValues(Loader("provides"))
                     Dim AliasId = If(AliasValue.Type = JTokenType.String, Text(AliasValue), Text(AliasValue("id")))
@@ -683,6 +689,40 @@ Friend NotInheritable Class ModDependencyInspector
         If Not Regex.IsMatch(ModId, "^[A-Za-z0-9_.-]+$") Then Throw New FormatException("模组 ID 无效")
         Return New ModInfo With {.Id = ModId, .Name = If(Text(Name) = "", ModId, Text(Name)), .Version = Text(Version),
             .RootPath = RootPath, .MetadataPath = MetadataPath, .Format = Format, .Enabled = Enabled, .IsNested = Nested}
+    End Function
+
+    Private Shared Sub ReadDisplayOwnership(Item As ModInfo, Custom As JObject, Contact As JObject)
+        Dim Parent = TryCast(Custom?("modmenu"), JObject)?("parent")
+        If TypeOf Parent Is JObject Then Parent = Parent("id")
+        If Parent?.Type = JTokenType.String Then Item.DisplayParentId = Text(Parent)
+        Dim Generated = Custom?("fabric-loom:generated")
+        Item.IsGeneratedLibrary = Generated IsNot Nothing AndAlso Generated.Type = JTokenType.Boolean AndAlso Generated.Value(Of Boolean)()
+        Dim Source = Contact?("sources"), Address As Uri = Nothing
+        If Source Is Nothing OrElse Source.Type <> JTokenType.String OrElse Not Uri.TryCreate(Text(Source), UriKind.Absolute, Address) OrElse
+            Not {"http", "https"}.Contains(Address.Scheme) OrElse Address.AbsolutePath = "/" Then Return
+        'Compare the declared project path, never a shared homepage, author or mod-name prefix.
+        Item.SourceProject = Address.IdnHost.ToLowerInvariant() & If(Address.IsDefaultPort, "", ":" & Address.Port) & Address.AbsolutePath.TrimEnd("/"c)
+        If Item.SourceProject.EndsWith(".git", StringComparison.Ordinal) Then Item.SourceProject = Item.SourceProject.Substring(0, Item.SourceProject.Length - 4)
+    End Sub
+
+    Friend Shared Function EmbeddedModsForDisplay(Report As InspectionReport, FullPath As String) As List(Of ModInfo)
+        Dim FileMods = Report.Mods.Where(Function(Item) SameFilePath(Item.RootPath, FullPath) AndAlso Not Item.IsMetadataOnly).ToList()
+        Return FileMods.Where(Function(Item) Item.IsNested AndAlso Item.Enabled AndAlso Not Item.IsBuiltin AndAlso Not Item.IsCandidate AndAlso
+            Not Item.IncompatibleLoader AndAlso SideApplies(Item.Side, Report.Context) AndAlso Not IsInternalDisplayModule(Item, FileMods)).ToList()
+    End Function
+
+    Private Shared Function IsInternalDisplayModule(Item As ModInfo, FileMods As List(Of ModInfo)) As Boolean
+        If Item.IsGeneratedLibrary OrElse IsInternalLoaderId(Item.Id) Then Return True
+        Dim Prefix = ArchivePrefix(Item)
+        Dim Ancestors = FileMods.Where(Function(Parent) Parent IsNot Item AndAlso (Not Parent.IsNested OrElse
+            (ArchivePrefix(Parent).Length < Prefix.Length AndAlso Prefix.StartsWith(ArchivePrefix(Parent), StringComparison.Ordinal))))
+        Return Ancestors.Any(Function(Parent) (Not String.IsNullOrEmpty(Item.DisplayParentId) AndAlso Identities(Parent).ContainsKey(Item.DisplayParentId)) OrElse
+            (Not String.IsNullOrEmpty(Item.SourceProject) AndAlso String.Equals(Item.SourceProject, Parent.SourceProject, StringComparison.Ordinal)))
+    End Function
+
+    Private Shared Function ArchivePrefix(Item As ModInfo) As String
+        Dim Metadata = If(Item.MetadataPath, "")
+        Return Metadata.Substring(0, Metadata.LastIndexOf("!"c) + 1)
     End Function
 
     Private Shared Function Text(Value As JToken) As String
@@ -1416,6 +1456,17 @@ Friend NotInheritable Class ModDependencyInspector
     Private Shared Function ActiveMods(Report As InspectionReport) As List(Of ModInfo)
         Return Report.Mods.Where(Function(Item) Item.Enabled AndAlso Not Item.IsMetadataOnly AndAlso Not Item.IncompatibleLoader AndAlso SideApplies(Item.Side, Report.Context)).ToList()
     End Function
+    'Bridge platform identity to a loader ID only through an exactly matched local file.
+    'The solved loader edges then decide whether a selected nested/standalone provider satisfies it.
+    Friend Shared Function RuntimeProvidersForPlatformDependency(Report As InspectionReport, OwnerPath As String, Requirement As OnlineDependency) As List(Of ModInfo)
+        Dim Paths As New HashSet(Of String)(Requirement.EnabledPaths.Concat(Requirement.MatchedPaths).Concat(Requirement.ProjectPaths).Select(AddressOf FilePathKey), StringComparer.OrdinalIgnoreCase)
+        Dim Ids As New HashSet(Of String)(Report.Mods.Where(Function(Item) Not Item.IsMetadataOnly AndAlso Paths.Contains(FilePathKey(Item.RootPath))).SelectMany(Function(Item) Identities(Item).Keys), StringComparer.Ordinal)
+        If Ids.Count = 0 Then Return New List(Of ModInfo)
+        Return Report.Edges.Where(Function(Edge) Edge.Owner.Enabled AndAlso SameFilePath(Edge.Owner.RootPath, OwnerPath) AndAlso Edge.Evaluated AndAlso Not Edge.ConditionBypassed AndAlso
+            Edge.State = MatchState.Satisfied AndAlso Edge.Requirement.Children.Count = 0 AndAlso Edge.Requirement.Kind <> DependencyKind.Conflict AndAlso Edge.Requirement.Kind <> DependencyKind.Incompatible AndAlso Ids.Contains(Edge.Requirement.Id)).
+            SelectMany(Function(Edge) Edge.Providers).Where(Function(Item) Item.Enabled AndAlso Not Item.IsBuiltin AndAlso Not Item.IsMetadataOnly AndAlso Not Item.IsCandidate AndAlso Not Item.IncompatibleLoader).Distinct().ToList()
+    End Function
+
     Friend Shared Function FileSatisfiesDependency(Report As InspectionReport, FullPath As String, Requirement As Dependency) As Boolean
         Dim Modules = Report.Mods.Where(Function(Item) SameFilePath(Item.RootPath, FullPath) AndAlso SideApplies(Item.Side, Report.Context))
         Return Resolve(Requirement, ProviderMap(Modules), Report.Context).State = MatchState.Satisfied
