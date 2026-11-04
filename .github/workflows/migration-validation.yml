@@ -114,6 +114,12 @@ jobs:
           print('Source inventory matches the committed LF baseline.')
           PY
 
+      - name: Initialize the fixed Shared dependency for migration tests and path comparison
+        if: needs.select.outputs.groups != '[]' || (matrix.os == 'windows-latest' && needs.select.outputs.oracle == 'true')
+        run: |
+          git submodule update --init MeloongCore
+          test "$(git -C MeloongCore rev-parse HEAD)" = c774ae4c85fd94e0eaa171db21e78a65870df19b
+
       - name: Run selected pure C# migration regressions on .NET 10
         if: needs.select.outputs.groups != '[]'
         env:
@@ -130,12 +136,6 @@ jobs:
           print('Selected migration groups: ' + ', '.join(groups), flush=True)
           subprocess.run(command, check=True)
           PYTHON
-
-      - name: Initialize the fixed Shared dependency for Windows path comparison
-        if: matrix.os == 'windows-latest' && needs.select.outputs.oracle == 'true'
-        run: |
-          git submodule update --init MeloongCore
-          test "$(git -C MeloongCore rev-parse HEAD)" = c774ae4c85fd94e0eaa171db21e78a65870df19b
 
       - name: Require fixed LF CLR4 and modern Windows resource I/O equivalence
         if: matrix.os == 'windows-latest' && needs.select.outputs.oracle == 'true'
