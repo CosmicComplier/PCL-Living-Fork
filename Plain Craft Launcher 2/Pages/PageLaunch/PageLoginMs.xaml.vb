@@ -1,107 +1,46 @@
-﻿Public Class PageLoginMs
+﻿Imports PCLLF.Presentation.Accounts
 
-    ''' <summary>
-    ''' 刷新页面显示的所有信息。
-    ''' </summary>
+Public Class PageLoginMs
+    Private ReadOnly Native As LegacyMicrosoftLoginPage(Of McLoginLegacy, McLoginMs, McLoginServer)
+    Public Sub New()
+        Native = CreateController(Me)
+        InitializeComponent()
+    End Sub
+    Private Shared Function CreateController(Page As PageLoginMs) As LegacyMicrosoftLoginPage(Of McLoginLegacy, McLoginMs, McLoginServer)
+        Return New LegacyMicrosoftLoginPage(Of McLoginLegacy, McLoginMs, McLoginServer)(LoginPageRuntime.Accounts, New LegacyMicrosoftLoginView With {
+            .SelectedIndex = Function() Page.ComboAccounts.SelectedIndex, .SelectIndex = Sub(Value) Page.ComboAccounts.SelectedIndex = Value,
+            .ClearItems = Sub() Page.ComboAccounts.Items.Clear(), .AddNewAccount = Sub() Page.ComboAccounts.Items.Add(New MyComboBoxItem With {.Content = "添加新账号"}),
+            .AddAccount = Sub(Name, Token) Page.AddAccount(Name, Token),
+            .SelectedItem = Function() Page.ComboAccounts.SelectedItem, .HasPresenter = Function() Page.ComboAccounts.ContentPresenter IsNot Nothing,
+            .IsAccountItem = Function(Item) TypeOf Item Is MyListItem, .IsNewAccountItem = Function(Item) TypeOf Item Is MyComboBoxItem,
+            .AccountName = Function(Item) CType(Item, MyListItem).Title, .AccountToken = Function(Item) CStr(CType(Item, MyListItem).Tag),
+            .NewAccountContent = Function(Item) CType(Item, MyComboBoxItem).Content, .SetPresenterContent = Sub(Value) Page.ComboAccounts.ContentPresenter.Content = Value,
+            .EnableAccounts = Sub(Value) Page.ComboAccounts.IsEnabled = Value, .EnableLogin = Sub(Value) Page.BtnLogin.IsEnabled = Value,
+            .SetLoginText = Sub(Value) Page.BtnLogin.Text = Value})
+    End Function
+    Private Sub AddAccount(Name As String, Token As Func(Of String))
+        Dim Item As MyListItem = CType(FindResource("ComboBoxItemTemplateWithDelete"), DataTemplate).LoadContent()
+        Item.Tag = Token()
+        Item.Title = Name
+        CType(Item.Buttons(0), MyIconButton).Tag = Name
+        ComboAccounts.Items.Add(Item)
+    End Sub
     Public Sub Reload(KeepInput As Boolean)
-        Dim IndexBefore = ComboAccounts.SelectedIndex
-        '刷新下拉框列表
-        ComboAccounts.Items.Clear()
-        ComboAccounts.Items.Add(New MyComboBoxItem With {.Content = "添加新账号"})
-        Try
-            Dim MsJson As JObject = JObject.Parse(Settings.Get(Of String)("LoginMsJson"))
-            For Each Account In MsJson
-                Dim Item As MyListItem = CType(FindResource("ComboBoxItemTemplateWithDelete"), DataTemplate).LoadContent()
-                Item.Tag = Account.Value.ToString
-                Item.Title = Account.Key
-                CType(Item.Buttons(0), MyIconButton).Tag = Account.Key
-                ComboAccounts.Items.Add(Item)
-            Next
-        Catch ex As Exception
-            Logger.Error("微软账号列表暂时无法读取，原始数据已保留。", LogBehavior.Toast)
-        End Try
-        '如果不保留输入，刷新列表后自动选择第一项
-        ComboAccounts.SelectedIndex = If(KeepInput, Math.Max(0, IndexBefore), 0)
+        Native.Reload(KeepInput)
     End Sub
     Private Sub ComboAccounts_SelectionChanged(sender As Object, e As SelectionChangedEventArgs) Handles ComboAccounts.SelectionChanged
-        If AniControlEnabled <> 0 OrElse ComboAccounts.SelectedItem Is Nothing OrElse ComboAccounts.ContentPresenter Is Nothing Then Return
-        If TypeOf ComboAccounts.SelectedItem Is MyListItem Then
-            ComboAccounts.ContentPresenter.Content = CType(ComboAccounts.SelectedItem, MyListItem).Title
-        ElseIf TypeOf ComboAccounts.SelectedItem Is MyComboBoxItem Then
-            ComboAccounts.ContentPresenter.Content = CType(ComboAccounts.SelectedItem, MyComboBoxItem).Content
-        End If
+        Native.SelectionChanged()
     End Sub
-
-    ''' <summary>
-    ''' 获取当前页面的登录信息。
-    ''' </summary>
     Public Shared Function GetLoginData() As McLoginMs
-        If FrmLoginMs Is Nothing Then Return New McLoginMs With {.OAuthRefreshToken = Settings.Get(Of String)("CacheMsV2OAuthRefresh"), .UserName = Settings.Get(Of String)("CacheMsV2Name")}
-        Dim Result As McLoginMs = Nothing
-        RunInUiWait(
-        Sub()
-            If FrmLoginMs.ComboAccounts.SelectedIndex = 0 Then
-                Result = New McLoginMs
-            Else
-                Dim Item As MyListItem = FrmLoginMs.ComboAccounts.SelectedItem
-                Result = New McLoginMs With {.OAuthRefreshToken = Item.Tag, .UserName = Item.Title}
-            End If
-        End Sub)
-        Return Result
+        Return CreateController(FrmLoginMs).GetLoginData(FrmLoginMs IsNot Nothing)
     End Function
-    ''' <summary>
-    ''' 当前页面的登录信息是否有效。
-    ''' </summary>
     Public Shared Function IsVaild(LoginData As McLoginMs) As String
-        If LoginData.OAuthRefreshToken = "" Then
-            Return "请在登录账号后再启动游戏！"
-        Else
-            Return ""
-        End If
+        Return CreateController(FrmLoginMs).IsVaild(LoginData)
     End Function
     Public Function IsVaild() As String
         Return IsVaild(GetLoginData())
     End Function
-
     Private Sub BtnLogin_Click(sender As Object, e As EventArgs) Handles BtnLogin.Click
-        ComboAccounts.IsEnabled = False
-        BtnLogin.IsEnabled = False
-        BtnLogin.Text = "0%"
-        RunInNewThread(
-        Sub()
-            Try
-                McLoginMsLoader.Start(GetLoginData(), IsForceRestart:=True)
-                Do While McLoginMsLoader.State = LoadState.Loading
-                    RunInUi(Sub() BtnLogin.Text = Math.Round(McLoginMsLoader.Progress * 100) & "%")
-                    Thread.Sleep(50)
-                Loop
-                If McLoginMsLoader.State = LoadState.Finished Then
-                    RunInUi(Sub() FrmLaunchLeft.RefreshPage(False, True))
-                ElseIf McLoginMsLoader.State = LoadState.Canceled Then
-                    Throw New OperationCanceledException
-                ElseIf McLoginMsLoader.Error Is Nothing Then
-                    Throw New Exception("未知错误！")
-                Else
-                    Throw New Exception(McLoginMsLoader.Error.Message, McLoginMsLoader.Error)
-                End If
-            Catch ex As Exception
-                If ex.IsCanceled Then
-                ElseIf ex.Message.StartsWithF("$") Then
-                    Hint(ex.Message.TrimStart("$"), HintType.Red)
-                ElseIf TypeOf ex Is Security.Authentication.AuthenticationException AndAlso ex.Message.Contains("SSL/TLS") Then
-                    Logger.Error(ex, $"正版登录验证失败，请考虑在 [设置 → 其他] 中关闭 [在正版登录时验证 SSL 证书]，然后再试。{vbCrLf}{vbCrLf}原始错误信息：", LogBehavior.Alert)
-                Else
-                    Logger.Error(ex, "正版登录尝试失败", LogBehavior.Alert)
-                End If
-            Finally
-                RunInUi(
-                Sub()
-                    ComboAccounts.IsEnabled = True
-                    BtnLogin.IsEnabled = True
-                    BtnLogin.Text = "登录"
-                End Sub)
-            End Try
-        End Sub, "Ms Login")
+        Native.LoginClick(AddressOf GetLoginData)
     End Sub
-
 End Class

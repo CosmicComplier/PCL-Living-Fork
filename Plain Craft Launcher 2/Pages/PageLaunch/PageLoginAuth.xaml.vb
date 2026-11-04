@@ -1,86 +1,50 @@
+Imports PCLLF.Presentation.Accounts
+
 Public Class PageLoginAuth
-    Private IsFirstLoad As Boolean = True
-    ''' <summary>
-    ''' 刷新页面显示的所有信息。
-    ''' </summary>
-    Public Sub Reload(KeepInput As Boolean)
-        '记住密码
-        CheckRemember.Checked = Settings.Get(Of Boolean)("LoginRemember")
-        If KeepInput AndAlso Not IsFirstLoad Then '避免第一次就以 KeepInput 的方式加载，导致文本框里没东西
-            '保留输入，只刷新下拉框列表
-            Dim Input As String = ComboName.Text
-            ComboName.ItemsSource = If(Settings.Get(Of String)("LoginAuthEmail") = "", Nothing, Settings.Get(Of String)("LoginAuthEmail").Split("¨"))
-            ComboName.Text = Input
-        Else
-            '不保留输入，刷新列表后自动选择第一项
-            If Settings.Get(Of String)("LoginAuthEmail") = "" Then
-                ComboName.ItemsSource = Nothing
-            Else
-                ComboName.ItemsSource = Settings.Get(Of String)("LoginAuthEmail").Split("¨")
-                ComboName.Text = Settings.Get(Of String)("LoginAuthEmail").BeforeFirst("¨")
-                If Settings.Get(Of Boolean)("LoginRemember") Then TextPass.Password = Settings.Get(Of String)("LoginAuthPass").BeforeFirst("¨").Trim
-            End If
-        End If
-        IsFirstLoad = False
+    Private ReadOnly Native As LegacyServerLoginPage(Of McLoginLegacy, McLoginMs, McLoginServer)
+    Public Sub New()
+        Native = CreateController(Me)
+        InitializeComponent()
     End Sub
-    ''' <summary>
-    ''' 获取当前页面的登录信息。
-    ''' </summary>
-    Public Shared Function GetLoginData() As McLoginServer
-        Dim Server As String = If(IsNothing(McInstanceSelected), Settings.Get(Of String)("CacheAuthServerServer"), Settings.Get(Of String)("VersionServerAuthServer", Instance:=McInstanceSelected)) & "/authserver"
-        If FrmLoginAuth Is Nothing Then
-            Return New McLoginServer(McLoginType.Auth) With {.Token = "Auth", .BaseUrl = Server, .UserName = "", .Password = "", .Description = "Authlib-Injector", .Type = McLoginType.Auth}
-        Else
-            Return New McLoginServer(McLoginType.Auth) With {.Token = "Auth", .BaseUrl = Server, .UserName = FrmLoginAuth.ComboName.Text.Replace("¨", "").Trim, .Password = FrmLoginAuth.TextPass.Password.Replace("¨", "").Trim, .Description = "Authlib-Injector", .Type = McLoginType.Auth}
-        End If
+    Private Shared Function CreateController(Page As PageLoginAuth) As LegacyServerLoginPage(Of McLoginLegacy, McLoginMs, McLoginServer)
+        Return New LegacyServerLoginPage(Of McLoginLegacy, McLoginMs, McLoginServer)(LoginPageRuntime.Accounts, New LegacyServerLoginView With {
+            .Name = Function() Page.ComboName.Text, .Password = Function() Page.TextPass.Password,
+            .SetName = Sub(Value) Page.ComboName.Text = Value, .SetPassword = Sub(Value) Page.TextPass.Password = Value,
+            .SetNames = Sub(Value) Page.ComboName.ItemsSource = Value, .SetRemember = Sub(Value) Page.CheckRemember.Checked = Value,
+            .LinkContent = Function() Page.BtnLink.Content, .SetLinkContent = Sub(Value) Page.BtnLink.Content = Value,
+            .ShowRegister = Sub(Value) Page.BtnLink.Visibility = If(Value, Visibility.Visible, Visibility.Collapsed)}, True)
     End Function
-    ''' <summary>
-    ''' 当前页面的登录信息是否有效。
-    ''' </summary>
+    Public Sub Reload(KeepInput As Boolean)
+        Native.Reload(KeepInput)
+    End Sub
+    Public Shared Function GetLoginData() As McLoginServer
+        Return CreateController(FrmLoginAuth).GetLoginData(Function() FrmLoginAuth IsNot Nothing, Function() FrmLoginAuth.ComboName.Text, Function() FrmLoginAuth.TextPass.Password)
+    End Function
     Public Shared Function IsVaild(LoginData As McLoginServer) As String
-        If LoginData.UserName = "" Then Return "账号不能为空！"
-        If LoginData.Password = "" Then Return "密码不能为空！"
-        Return ""
+        Return CreateController(FrmLoginAuth).IsVaild(LoginData)
     End Function
     Public Function IsVaild() As String
         Return IsVaild(GetLoginData())
     End Function
-
-    '保存输入信息
     Private Sub ComboName_TextChanged(sender As Object, e As TextChangedEventArgs) Handles ComboName.TextChanged
-        If sender.Text = "" Then TextPass.Password = ""
-        If AniControlEnabled = 0 Then Settings.Set("CacheAuthAccess", "")  '迫使其不进行 Validate
+        Native.NameChanged(sender.Text)
     End Sub
     Private Sub TextPass_PasswordChanged(sender As Object, e As RoutedEventArgs) Handles TextPass.PasswordChanged
-        If AniControlEnabled = 0 Then Settings.Set("CacheAuthAccess", "")
+        Native.PasswordChanged()
     End Sub
     Private Sub ComboName_SelectionChanged(sender As MyComboBox, e As SelectionChangedEventArgs) Handles ComboName.SelectionChanged
-        If sender.SelectedIndex = -1 OrElse Not Settings.Get(Of Boolean)("LoginRemember") Then
-            TextPass.Password = ""
-        Else
-            TextPass.Password = Settings.Get(Of String)("LoginAuthPass").ToString.Split("¨")(sender.SelectedIndex).Trim
-        End If
+        Native.SelectionChanged(sender.SelectedIndex)
     End Sub
     Private Sub CheckBoxChange(sender As MyCheckBox, e As Object) Handles CheckRemember.Change
-        If AniControlEnabled = 0 Then Settings.Set(sender.Tag, sender.Checked)
+        Native.RememberChanged(sender.Tag, sender.Checked)
     End Sub
-
-    '链接处理
     Private Sub ComboName_TextChanged() Handles ComboName.TextChanged
-        BtnLink.Content = If(ComboName.Text = "", "注册账号", "找回密码")
+        Native.UpdateLinkText()
     End Sub
     Private Sub Btn_Click(sender As Object, e As EventArgs) Handles BtnLink.Click
-        If BtnLink.Content = "注册账号" Then
-            OpenWebsite(If(McInstanceSelected IsNot Nothing, Settings.Get(Of String)("VersionServerAuthRegister", Instance:=McInstanceSelected), Settings.Get(Of String)("CacheAuthServerRegister")))
-        Else
-            Dim Website As String = If(McInstanceSelected IsNot Nothing, Settings.Get(Of String)("VersionServerAuthRegister", Instance:=McInstanceSelected), Settings.Get(Of String)("CacheAuthServerRegister"))
-            OpenWebsite(Website.Replace("/auth/register", "/auth/forgot"))
-        End If
+        Native.LinkClick()
     End Sub
-    '切换注册按钮可见性
     Private Sub ReloadRegisterButton() Handles Me.Loaded
-        Dim Address As String = If(McInstanceSelected IsNot Nothing, Settings.Get(Of String)("VersionServerAuthRegister", Instance:=McInstanceSelected), Settings.Get(Of String)("CacheAuthServerRegister"))
-        BtnLink.Visibility = If(String.IsNullOrEmpty(New ValidateHttp().Validate(Address)), Visibility.Visible, Visibility.Collapsed)
+        Native.ReloadRegisterButton()
     End Sub
-
 End Class
