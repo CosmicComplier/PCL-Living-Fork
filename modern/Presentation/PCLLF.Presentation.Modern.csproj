@@ -30,12 +30,17 @@
     <Compile Include="../../presentation/Launch/**/*.cs" Link="Launch/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Pages/**/*.cs" Link="Pages/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Mods/**/*.cs" Link="Mods/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Shell/**/*.cs" Link="Shell/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Accounts/**/*.cs" Link="Accounts/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Foundation/**/*.cs" Link="Foundation/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Foundation/LegacyPackMetadataNumberFormatting.cs" />
     <Page Include="../../presentation/Controls/*.xaml" Link="Controls/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="NAudio">
+      <HintPath>../../Plain Craft Launcher 2/Resources/NAudio.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <PackageReference Include="PolySharp" Version="1.15.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

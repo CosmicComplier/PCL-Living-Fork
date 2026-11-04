@@ -26,6 +26,10 @@
     <Reference Include="System.Numerics" />
     <Reference Include="System.Net.Http" />
     <Compile Include="../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Foundation/LegacyPackMetadataNumberFormatting.cs" />
+    <Reference Include="NAudio">
+      <HintPath>../Plain Craft Launcher 2/Resources/NAudio.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <PackageReference Include="PolySharp" Version="1.15.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
