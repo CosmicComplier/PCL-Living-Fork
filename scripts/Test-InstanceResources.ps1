@@ -62,6 +62,24 @@ function Render-Png($element,[string]$path,[int]$width,[int]$height){
 }
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('LivingPCL-Resources-'+[Guid]::NewGuid().ToString('N'))
 try{
+ # Old BAML names the non-inheriting attached-property owner. It must resolve the
+ # same native DP and original callback, without touching the system clipboard.
+ $clipboardOwner=$asm.GetType('PCL.Controls.Behaviors.ClipboardInterceptor',$true)
+ $clipboardProperty=$clipboardOwner.GetField('EnableSafeClipboardProperty',$flags).GetValue($null)
+ $nativeClipboard=[PCLLF.Presentation.Controls.ClipboardInterceptorView]::EnableSafeClipboardProperty
+ if(-not [object]::ReferenceEquals($clipboardProperty,$nativeClipboard)){throw 'Legacy clipboard owner created a duplicate DP'}
+ foreach($item in @(@([Windows.Controls.TextBox]::new(),3),@([Windows.Controls.RichTextBox]::new(),3),@([Windows.Controls.DataGrid]::new(),1))){
+  $control=$item[0];$added=[int]$item[1];$before=$control.CommandBindings.Count
+  if([bool]$control.GetValue($clipboardProperty)){throw 'Clipboard attached property default changed'}
+  $control.SetValue($clipboardProperty,$true)
+  if($control.CommandBindings.Count -ne $before+$added){throw 'Actual clipboard callback did not add original command bindings'}
+  $control.SetValue($clipboardProperty,$true)
+  if($control.CommandBindings.Count -ne $before+$added){throw 'Same clipboard property value repeated the change callback'}
+  $control.SetValue($clipboardProperty,$false);$control.SetValue($clipboardProperty,$true)
+  if($control.CommandBindings.Count -ne $before+2*$added){throw 'Clipboard false-to-true transition lost original binding accumulation'}
+  $control.CommandBindings.Clear()
+ }
+ Write-Output 'PASS: old BAML clipboard owner shares the native DP and original false/true callback bindings; no clipboard command executed.'
  $kindNames=@('Saves','Screenshots','ResourcePacks','ShaderPacks','Schematics')
  $kindTitles=@('存档','截图','资源包','光影包','投影/原理图')
  $kindFolders=@('saves','screenshots','resourcepacks','shaderpacks','schematics')

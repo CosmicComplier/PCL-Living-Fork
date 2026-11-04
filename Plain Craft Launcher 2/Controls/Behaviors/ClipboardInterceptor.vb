@@ -16,7 +16,7 @@ Namespace Controls.Behaviors
                                                           End If
                                                       End Sub)
         End Sub
-        Public Shared ReadOnly EnableSafeClipboardProperty As DependencyProperty = ClipboardInterceptorView.EnableSafeClipboardProperty
+        Public Shared ReadOnly EnableSafeClipboardProperty As DependencyProperty = ClipboardInterceptorView.EnableSafeClipboardProperty.AddOwner(GetType(ClipboardInterceptor))
         Public Shared Sub SetEnableSafeClipboard(Element As DependencyObject, Value As Boolean)
             ClipboardInterceptorView.SetEnableSafeClipboard(Element, Value)
         End Sub
