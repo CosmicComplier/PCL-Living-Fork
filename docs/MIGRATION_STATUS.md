@@ -6,8 +6,8 @@
 
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 最新已验收检查点 `70f254528e70f4b62aeb4c1514861b20fb458665`：Windows 各 41 步、Ubuntu 327／Windows 356 组与 **RequireEquivalent** 137／52 全通过，原私有 AcceptFile／9 白名单／36 字符／null-device 及 Quick Play 消费者通过，C007c3 完成。此前 c2／c1／b2 已关闭；见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)。主产品仍 net48，非全部 BCL／现代 WPF 验收。
-- 当前 C007c4 `dfb81b8`：339／371 单元通过，真实 150／56 发现 1 项未置 EFS 的 ZIP 解码差异，原消费者还暴露异常解包问题；两处后继修复已落、待 Windows 复验，未把失败写为通过。C005c2／C006d 的界面母项保持 blocked。
+- 最新已验收检查点 `a89bc041412b4382eb68e1ea4053127ec973874a`：Windows 各 41 步、Ubuntu 339／Windows 371 组与 **RequireEquivalent** 150／56 全通过；ZIP 解码及异常解包后继修复已由真实报告／原消费者证实，C007c4 完成。首次失败保留，见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)。主产品仍 net48，非全部 BCL／现代 WPF 验收。
+- 下一最早 ready 批次 C007d1：资源大小与 pack JSON→Detail 纯规则；磁盘／ZIP／Icon 仍原宿主，保 ref 部分赋值／Meloong 换行与原捕获边界，先按现有方法拆分。C005c2／C006d 的界面母项保持 blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -33,6 +33,7 @@
 | C007c1 当前清单 | `--ref 8734df5707aed5e30944a4609ef516ffaac5c6c2`：285 个源文件，其中产品 265、测试 19、工具 1；产品 VB 仍为 168 文件／55,261 行 | 历史驱动仍只计测试；枚举与门面未删除，固定初始清单不改写，不据此计算完成率 |
 | C007c2 当前清单 | `--ref 2d111e141fec34d6f284c1060884bf1ac02290dc`：287 个源文件，其中产品 266、测试 20、工具 1；产品 VB 仍为 168 文件／55,258 行 | 原门面和绝大部分业务仍待转换；新增测试／C# 行数不算完成率，原固定基线保留 |
 | C007c3 当前清单 | `--ref 70f254528e70f4b62aeb4c1514861b20fb458665`：290 个源文件，其中产品 268、测试 21、工具 1；产品 VB 仍为 168 文件／55,248 行 | 只迁资源筛选及共享已验证的原字符检查；所有门面仍计产品，固定基线不变，非完成率 |
+| C007c4 当前清单 | `--ref a89bc041412b4382eb68e1ea4053127ec973874a`：292 个源文件，其中产品 269、测试 22、工具 1；产品 VB 仍为 168 文件／55,245 行 | 原历史测试驱动只计测试，C#／测试增量不作为完成率；主工程／界面与其余业务仍待转换 |
 
 本轮已推送的实现与验证检查点：
 
@@ -69,8 +70,11 @@
 | `2d111e1` | C007c2 SafeName 单函数／原门面、8 组平台规则及真实旧入口三文案／41 字符／22 保留名／120 UTF16 验证已推送；319／347 单元、严格 137／52、Windows 各 41 步全通过，C007c2 完成 |
 | `70f2545` | C007c3 原私有筛选／CInt 桥与 9 白名单、原 C6 字符共享、8／9 平台组及真实旧入口样本已推送；327／356、严格 137／52 和 Windows 各 41 步全通过，C007c3 完成 |
 | `dfb81b8` | C007c4 原包校验／Using／两消息、真实 ZIP 测试与 v3 150／56 对照已推送；Linux 339／Windows 371 单元通过，严格对照实测 1 项未置 EFS 解码差异、完整 Build 原消费者失败，c4 不提前关闭 |
+| `a89bc04` | 依据真实 v3 报告恢复现代 Win 未置 EFS 的系统代码页解码，且 PS 只拆调用包装器保留业务异常；后继 339／371、严格 150／56、Windows 各 41 步及原 package／lazy-directory／handle 消费者全通过，C007c4 完成 |
 | [C007c4 首次 Migration validation 41743920173](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41743920173) | Ubuntu job `126292044914` success、Windows job `126292045184` failure：339／371 单元均通过，150 例／56 候选实跑，contract／native／text 失败全 0，仅 zip.utf8-no-efs-long-s 一项名字解码不同，严格退出 2；artifact `13282837230` 及哈希见对照记录 |
 | [C007c4 首次 Windows Build 41743920174](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41743920174) | Release job `126292045363` failure，原 PS 资源消费者在期待 InvalidData 时失败；Debug job `126292044964` 因矩阵 fail-fast cancelled，不能写为通过。检查发现测试 helper 递归拆所有 InnerException 会丢失业务异常顶层，后继只拆调用包装器并增加 observed 类型诊断 |
+| [C007c4 修复后 Migration validation 41745161924](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41745161924) | `a89bc04`：Ubuntu job `126296201993` 339／339、Windows job `126296202455` 371／371，均 success；严格 150／56／12 ZIP API 请求四失败数组均空、equivalent=true。下载核对 artifact `13283825558`，ZIP SHA256 `ec55afa9a51c681a6ede106be2c0dc3e073b2416e33c8293a250fc85ad027c78`；Frame default1252／modern default65001／modern ZIP1252已实证 |
+| [C007c4 修复后 Windows Build 41745161847](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41745161847) | `a89bc04`：Debug job `126296202166`、Release job `126296202385` 各 41 步 success；原 package／lazy-directory／handle、两消息、既有资源／更新／取消恢复／旧桥消费者通过。源码及数据格式未更换为CE，原捕获／Using／事务范围不变 |
 | [C007b2 首批 Windows Build 41736377697](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377697) | 提交 `8c64fcc`：Debug job `126266518133`、Release job `126266518659` 各 41 步 success；原资源／备份还原／更新／取消恢复、账号合成迁移、旧更新桥及发布产物检查通过，仍是旧 net48 产品，非现代 WPF 运行证据 |
 | [C007b2 首批 Migration validation 41736377415](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377415) | Ubuntu job `126266516885` 308／308、Windows job `126266516510` 331／331，均 success；124-case 独立 CLR4／现代对照、52 项候选实跑，基线／候选失败 0、文本差异 0、新路径差异 9。Diagnostic 成功保留残差，不代表 RequireEquivalent，通过报告与 artifact 摘要可续接 |
 | [C007b2 后继 Migration validation 41737707302](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707302) | Ubuntu job `126271080274` 308／308、Windows job `126271080675` 336／336，均 success；137-case／52 候选真实实跑，基线／候选／path／text 失败均 0、equivalent=true。新增长度、NT 父 NUL、canonical 根旧 NRE 均由真实 CLR4 证实；artifact `13280505603` 及哈希见摘要 |
@@ -238,7 +242,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c1 | done | C007a | `8734df5`：两原入口／CInt 桥／原 enum／Root 保持，三组新金值，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及实际类型／入口／Root 异常顺序全通过 |
 | C007c2 | done | C007c1 | `2d111e1`：SafeName 原顺序／三文案／平台规则，8 组新增令 Ubuntu 319／Windows 347、严格 137／52、Windows 各 41 步及原消费者全通过；独立终审／零警告编译通过，不扩大保留名策略 |
 | C007c3 | done | C007c2 | `70f2545`：原 AcceptFile／9 白名单／null 先后、原 C6 字符共享与消费者接通，8 Unix／9 Windows 组令 327／356、严格 137／52、Windows 各 41 步全通过；独立终审／零警告编译通过，ZIP 内容校验未在本批迁 |
-| C007c4 | in_progress | C007c3、C007b2 | ValidatePackage 原入口／内部 OpenRead／Using、两消息与旧 Shader Prefix 已接通；保未知 kind 先打开且不读 central，Frame／Unix 原 API，现代 Win 原串检查后旧完整归约。真实 ZIP 共通 11＋Win4／Unix1，本地 339／339、零警告编译；v3 150 例／56 原 String→Win32及 ZIP API 待 Windows，不顺带改扫描／导入策略 |
+| C007c4 | done | C007c3、C007b2 | `dfb81b8`／`a89bc04`：原包校验／Using／原两文案与 Shader 前缀、真实 ZIP／惰性／句柄／共享只读及原消费者接通；339／371、严格 150／56、Windows 各 41 步全通过；首次编码与测试解包失败保留，不扩大扫描／导入策略 |
+| C007d1 | todo | C007c4 | 迁 FormatSize 与 ReadPackInfo 末段 JSON→Detail 纯规则；保 CurrentCulture／GB上限／ref Detail部分更新／原Meloong换行两次调用，IO／Icon和精确Catch仍在原VB；先核大小格式真实Frame与现代差异再验收 |
 
 ## 当前批次与下一步
 
@@ -265,8 +270,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c1 | `8734df5` 已推送，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及真实 VB enum／入口／Root 原异常顺序全部通过；独立终审／零警告编译通过，脚本 BOM 保留 | 本批完成，不以字符串映射完成关闭整个 Store；Root 仍原 BCL Combine，更多现代 API 边界按实际消费另验 |
 | C007c2 | `2d111e1` 已推送；319／347 单元、严格 137／52、Windows 各 41 步／真实旧入口与原资源回归全通过，独立终审与零警告编译通过 | 本批完成，所有写入事务和原取消仍由既有流程执行；不以单规则关闭 Store |
 | C007c3 | `70f2545` 已推送；327／356、严格 137／52、Windows 各 41 步与原私有桥／null-device／资源和 Quick Play 消费者全通过；独立终审／零警告编译通过 | 本批完成，筛选不做 SafeName／完整路径归约；更多 ZIP 和扫描语义仍属后继 |
-| C007c4 | `dfb81b8` 首次 339／371 单元通过，150／56 测得 1 个未置 EFS 编码差异；后继现代 Win 只为该 API 显式传实际 Windows ACP encoding、不全局 Register，Frame／Unix仍原 API。PS 只拆反射／调用包装器，保顶层 InvalidData 及其 inner IO | 待修复提交的 Windows／完整消费者／严格 150／56；首次 failure／cancelled 已保留，不改变原期望或弱化Strict。OpenRead 快照不能代替未知 kind 业务惰性验收，产品仍 net48 |
+| C007c4 | `dfb81b8`／`a89bc04` 已推送；首次失败及修复记录齐全，339／371、严格 150／56／12 ZIP API、Windows 各 41 步和真实原消费者全通过；独立终审／零警告编译通过，未全局注册编码 | 本批完成，OpenRead 快照与未知 kind 业务惰性分别验收，不外推所有 raw BCL I/O 或现代 WPF；包名/条件/数据/事务范围保留 |
 
-下次入口：先收尾 C007c4 终审／提交与 Windows CI，核实 150／56 ZIP／路径报告，若有真实差异按证据适配；c3／c2／c1／b2 已全通过，不重复前批或重建基线。之后再拆扫描等；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
+下次入口：C007d1 资源大小与 pack JSON→Detail 纯规则；c4／c3／c2／c1／b2 已全通过，不重复前批或重建基线。继续保持原 IO／Icon／捕获位置，再按依赖迁扫描；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
