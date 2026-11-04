@@ -57,6 +57,8 @@ C005c2首轮 `ebdb594dc8e6cd29fea654a8a4689eb9e5ff6090`：Build41799421556 Debug
 
 C011／控件批次实际发布采用GitHub API正常fast-forward：Git smart push三次500，API逐树核验源码哈希不变后发布17270c60e88b9b47d8590030289c285c05d3b818（原未发布34db0f3，tree ec0895f13d94eeee4d24dca9f2382235c6930348）及ee5290299e3938d2ae61fbc1d0038af7d84da86e（原未发布1ca333b，tree 8b4f1adcb0c0b8ae1c6ba412e38fb6262b378746），详细消息原样；仅API作者／时间元数据不同。旧已发布历史不改、无force，local通过同树keep对齐且原未发布对象有本地bundle备份。ee52902 Modern41810651886两配置成功，Migration41810651783双平台成功；旧Build41810651741产品编译成功，cold子进程已实际通过新DLL嵌入SHA／空Location／identity／MVID，随后Add-Type把EXE路径当程序集名而失败（Debug126508834614／Release126508833994取消）。控件6组及此后消费者未执行，不记通过；下一批修compiler-only引用并完整重验未完成的公共控件／环境链。
 
+ee52902原生控件cold资源已PASS，Add-Type引用主EXE路径报0x80131047（非生产DLL加载失败）；修为cold成功后将已加载EXE同字节另存compiler/<真实AssemblyName>.dll供编译，并核元数据MVID及verifier仍绑定原EXE实例。六组断言未改。新控件gate移到原所有消费者／旧桥之后，两配置不因另一cfg夹具失败取消，保完整独立证据；步骤命令／条件逐对象不变。这次涉及公共新控件未完成回归及C011b真实新页面，执行一个必要完整检查点，后续局部修复仍定向。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |

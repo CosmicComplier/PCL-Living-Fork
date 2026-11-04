@@ -290,13 +290,19 @@ try{
  $local=$asm.GetType('PCL.LocalGameData',$true);$testRoot=$local.GetProperty('TestRoot',$flags);$previousRoot=$testRoot.GetValue($null,$null)
  $testRoot.SetValue($null,(Join-Path $fixture 'profile'),$null)
  $asm.GetType('PCL.ModSecret',$true).GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
- # Add-Type needs a file reference; extract the already-resolved bytes under a non-probing subdirectory.
- # The child never LoadFroms this compiler reference, and static API checks require the same runtime types.
+ # Supply DLL file references so Windows PowerShell Add-Type does not parse the copied EXE path as an assembly name.
+ # These exact bytes are compiler inputs under a non-probing subdirectory; never LoadFrom either file.
  $compiler=Join-Path $fixture 'compiler';[IO.Directory]::CreateDirectory($compiler)|Out-Null
  $reference=Join-Path $compiler 'PCLLF.Presentation.dll';[IO.File]::WriteAllBytes($reference,$presentationBytes)
+ $mainReference=Join-Path $compiler ($asm.GetName().Name+'.dll');$mainBytes=[IO.File]::ReadAllBytes($asm.Location)
+ [IO.File]::WriteAllBytes($mainReference,$mainBytes)
+ $mainMetadata=[Reflection.Assembly]::ReflectionOnlyLoad([IO.File]::ReadAllBytes($mainReference))
+ if($mainMetadata.FullName -cne $asm.FullName -or $mainMetadata.ManifestModule.ModuleVersionId -ne $asm.ManifestModule.ModuleVersionId){throw 'The compiler main-assembly reference differs from the loaded standalone EXE'}
  Add-Type -TypeDefinition $checks -ReferencedAssemblies @('System.dll','System.Core.dll','System.Xaml.dll',
   [Windows.FrameworkElement].Assembly.Location,[Windows.UIElement].Assembly.Location,[Windows.Point].Assembly.Location,
-  $asm.Location,$reference)
+  $mainReference,$reference)
+ $boundMain=[PclMigratedControlChecks].GetField('LastTick',[Reflection.BindingFlags]'NonPublic,Static').GetValue($null).DeclaringType.Assembly
+ if(-not [object]::ReferenceEquals($boundMain,$asm) -or $boundMain.Location -ine $executable){throw 'The compiled verifier rebound its main types away from the original standalone EXE'}
  try{[PclMigratedControlChecks]::Run()}catch{throw ($_.Exception.GetBaseException().ToString())}
  Write-Output 'Migrated native controls passed six targeted groups in a fresh standalone-EXE process using the real LF Application/theme/AniTimer and original setting/preview contracts. Pointer hover, focus navigation and visual feel still require manual interaction; no private WPF mouse cache was changed.'
 }finally{
