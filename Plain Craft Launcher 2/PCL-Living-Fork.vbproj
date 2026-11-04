@@ -390,6 +390,7 @@
     <Compile Include="Pages\PageInstance\PageInstanceLeft.xaml.vb">
       <DependentUpon>PageInstanceLeft.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageInstance\LocalModPageRuntime.vb" />
     <Compile Include="Pages\PageInstance\PageInstanceMod.xaml.vb">
       <DependentUpon>PageInstanceMod.xaml</DependentUpon>
     </Compile>

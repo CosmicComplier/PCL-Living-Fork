@@ -1,17 +1,50 @@
 ﻿Imports System.Windows.Forms
+Imports PCLLF.Presentation.Mods
+Imports PCLLF.Presentation.Controls
+Imports NativeItem = PCLLF.Presentation.Mods.LegacyLocalModItem(Of PCL.LocalResourceFile, PCL.ResourceProject, PCL.ResourceVersion, PCL.InstanceResourceEntry, PCL.InstanceResourceOnlineInfo, PCL.MyIconButton)
+Imports NativeHost = PCLLF.Presentation.Mods.LegacyLocalModItemHost(Of PCL.LocalResourceFile, PCL.ResourceProject, PCL.ResourceVersion, PCL.InstanceResourceEntry, PCL.InstanceResourceOnlineInfo, PCL.MyIconButton)
 
 Public Class MyLocalModItem
-
-#Region "基础属性"
     Public Uuid As Integer = GetUuid()
-    '游戏资源页复用此控件的排版、悬停、选择和滑动多选，不伪造 Mod 文件。
     Friend ResourceEntry As InstanceResourceEntry
     Friend RestorePoint As JObject
     Private RestorePointDisplay As PCLCS.EnvironmentHistoryPagePointView
-    Friend Sub BindRestorePoint(Value As JObject)
-        PCLCS.EnvironmentHistoryPagePointPresenter.Bind(Value, Sub() ResourceEntry = Nothing, Sub() Entry = Nothing,
-            Sub(Point) RestorePoint = Point, AddressOf Refresh)
+    Friend ResourceUpdateRequested As Action
+    Friend ResourceDetailsRequested As Action
+    Friend SelectionBar As FrameworkElement
+    Public ButtonHandler As Action(Of MyLocalModItem, EventArgs)
+    Public ButtonStack As FrameworkElement
+    Friend ReadOnly Controller As NativeItem
+    Public Sub New()
+        PresentationRuntime.EnsureConfigured()
+        Controller = New NativeItem(CreateView(), CreateHost(), ControlServices.Current.Animations)
+        InitializeComponent()
+        LazyLoadBehavior.OnFirstEnterScrollViewerViewport(Me, AddressOf FirstEnterScrollViewerViewport)
     End Sub
+    Private Function CreateView() As LegacyLocalModItemView
+        Return New LegacyLocalModItemView With {
+            .Root = Function() Me, .Title = Function() LabTitle, .Subtitle = Function() LabSubtitle, .Description = Function() LabInfo,
+            .Tags = Function() PanTags, .UpdateButton = Function() BtnUpdate, .ResourceLogoElement = Function() ResourceLogo,
+            .PathLogoElement = Function() PathLogo, .ResourceLogo = Function() ResourceLogo,
+            .PaddingRight = Function() ColumnPaddingRight, .TitleColumn = Function() ColumnTitle, .SubtitleColumn = Function() ColumnSubtitle, .ExtendColumn = Function() ColumnExtend,
+            .SetPathLogo = Sub(Value) PathLogo.Source = Value, .SetPathFallback = Sub(Value) PathLogo.FallbackSource = Value}
+    End Function
+    Private Function CreateHost() As NativeHost
+        Return New NativeHost With {
+            .Uuid = Function() Uuid, .NameStyle = Function() Settings.Get(Of Integer)("ToolModLocalNameStyle"),
+            .Entry = Function() Entry, .SetEntry = Sub(Value) Entry = Value, .Resource = Function() ResourceEntry, .SetResource = Sub(Value) ResourceEntry = Value,
+            .Point = Function() RestorePoint, .SetPoint = Sub(Value) RestorePoint = Value, .PointView = AddressOf RestorePointView,
+            .Icon = Function(Value) Value.Icon, .ImagePath = Function() PathImage, .Bitmap = Function(Address) CType(New MyBitmap(Address), ImageSource), .WpfSize = Function(Value) GetWPFSize(Value),
+            .VisibleInForm = Function() IsVisibleInForm(), .IsLocalItemDirectlyOver = Function() TypeOf Mouse.DirectlyOver Is MyLocalModItem,
+            .TitleTrimmed = Function() LabTitle.IsTextTrimmed, .SubtitleTrimmed = Function() LabSubtitle.IsTextTrimmed,
+            .RaiseChanged = AddressOf RaiseChanged, .RaiseCheck = AddressOf RaiseCheck, .RaiseClick = AddressOf RaiseClick,
+            .ButtonStack = Function() ButtonStack, .SetButtonStack = Sub(Value) ButtonStack = Value, .SelectionBar = Function() SelectionBar, .DefaultSelectionBar = Function() FrmInstanceMod?.CardSelect,
+            .HasButtonHandler = Function() ButtonHandler IsNot Nothing, .InvokeButtonHandler = Sub(Sender, Args) ButtonHandler(CType(Sender, MyLocalModItem), Args), .ClearButtonHandler = Sub() ButtonHandler = Nothing,
+            .ResourceDetails = Sub() ResourceDetailsRequested?.Invoke(), .ResourceUpdate = Sub() ResourceUpdateRequested?.Invoke(),
+            .Controller = Function(Element) CType(Element, MyLocalModItem).Controller, .UpdateMods = Sub(Values) FrmInstanceMod.UpdateMods(Values), .Website = AddressOf OpenWebsite,
+            .Message = Function(Text, Caption, Button1, Button2, Button3) MyMsgBox(Text, Caption, Button1, Button2, Button3),
+            .FormatTime = AddressOf StringUtils.FormatTimeSpan}
+    End Function
     Private Function RestorePointView() As PCLCS.EnvironmentHistoryPagePointView
         If RestorePointDisplay Is Nothing Then
             RestorePointDisplay = New PCLCS.EnvironmentHistoryPagePointView With {
@@ -24,108 +57,42 @@ Public Class MyLocalModItem
         End If
         Return RestorePointDisplay
     End Function
-    Friend ResourceUpdateRequested As Action
-    Friend ResourceDetailsRequested As Action
-    Friend SelectionBar As FrameworkElement
-    Private ResourceInfo As InstanceResourceOnlineInfo
-    Private ReadOnly Property ItemEnabled As Boolean
-        Get
-            Return Entry Is Nothing OrElse Entry.IsEnabled
-        End Get
-    End Property
 
+    Friend Sub BindRestorePoint(Value As JObject)
+        Controller.BindRestorePoint(Value)
+    End Sub
     Friend Sub BindResource(Value As InstanceResourceEntry, Info As InstanceResourceOnlineInfo)
-        RestorePoint = Nothing
-        ResourceEntry = Value
-        ResourceInfo = Info
-        RefreshResource()
+        Controller.BindResource(Value, Info)
     End Sub
-    Private Sub RefreshResource()
-        Dim LocalName = If(ResourceEntry.IsDirectory, ResourceEntry.Name, IO.Path.GetFileNameWithoutExtension(ResourceEntry.Name))
-        Title = If(String.IsNullOrWhiteSpace(ResourceInfo?.ProjectName), LocalName, ResourceInfo.ProjectName)
-        SubTitle = If(ResourceInfo?.CurrentVersion Is Nothing, "", "  |  " & If(ResourceInfo.CurrentVersion.Version, ResourceInfo.CurrentVersion.Display))
-        Description = LocalName & ": " & ResourceEntry.Description
-        ToolTip = ResourceEntry.Name & vbCrLf & ResourceEntry.Description & If(ResourceInfo Is Nothing, "", vbCrLf & ResourceInfo.Status)
-        BtnUpdate.Visibility = If(ResourceInfo IsNot Nothing AndAlso ResourceInfo.HasUpdate, Visibility.Visible, Visibility.Collapsed)
-        BtnUpdate.ToolTip = If(ResourceInfo Is Nothing, "", ResourceInfo.Status & vbCrLf & "点击以更新，右键查看资源详情。")
-        Tags = If(ResourceInfo?.Tags, New List(Of String))
-        LabTitle.SetResourceReference(TextBlock.ForegroundProperty, If(Checked, "ColorBrush2", "ColorBrush1"))
-        Dim Address As Uri = Nothing
-        Dim HasRemoteLogo = Uri.TryCreate(ResourceInfo?.IconUrl, UriKind.Absolute, Address) AndAlso Address.Scheme = "https" AndAlso Address.UserInfo = ""
-        '和模组页一样，仅为进入视口的条目请求网络图标。
-        If HasRemoteLogo AndAlso HasEnteredViewport Then
-            ResourceLogo.Visibility = Visibility.Collapsed
-            ResourceLogo.Source = Nothing
-            PathLogo.Visibility = Visibility.Visible
-            PathLogo.Source = Address.AbsoluteUri
-        ElseIf ResourceEntry.Icon IsNot Nothing Then
-            PathLogo.Visibility = Visibility.Collapsed
-            ResourceLogo.Visibility = Visibility.Visible
-            ResourceLogo.Source = ResourceEntry.Icon
-        Else
-            ResourceLogo.Visibility = Visibility.Collapsed
-            ResourceLogo.Source = Nothing
-            PathLogo.Visibility = Visibility.Visible
-            PathLogo.Source = PathImage & "Icons/NoIcon.png"
-        End If
-    End Sub
-
-    '标题
-    Private _Title As String
     Public Property Title As String
         Get
-            Return _Title
+            Return Controller.Title
         End Get
         Set(value As String)
-            Dim RawValue = value
-            LabTitle.TextDecorations = If(ItemEnabled, Nothing, TextDecorations.Strikethrough)
-            If LabTitle.Text = value Then Return
-            LabTitle.Text = value
-            _Title = RawValue
+            Controller.Title = value
         End Set
     End Property
-
-    '副标题
     Public Property SubTitle As String
         Get
-            Return If(LabSubtitle?.Text, "")
+            Return Controller.SubTitle
         End Get
         Set(value As String)
-            If LabSubtitle.Text = value Then Return
-            LabSubtitle.Text = value
-            LabSubtitle.Visibility = If(value = "", Visibility.Collapsed, Visibility.Visible)
+            Controller.SubTitle = value
         End Set
     End Property
-
-    '描述
     Public Property Description As String
         Get
-            Return LabInfo.Text
+            Return Controller.Description
         End Get
         Set(value As String)
-            If LabInfo.Text = value Then Return
-            LabInfo.Text = value
+            Controller.Description = value
         End Set
     End Property
-
-    'Tag
     Public WriteOnly Property Tags As List(Of String)
         Set(Tags As List(Of String))
-            PanTags.Children.Clear()
-            PanTags.Visibility = If(Tags.Any(), Visibility.Visible, Visibility.Collapsed)
-            For Each TagText In Tags
-                Dim BorderTag As New Border With {
-                    .Background = New MyColor("#0A000000"), .Padding = New Thickness(3, 1, 3, 1), .CornerRadius = New CornerRadius(3),
-                    .Margin = New Thickness(0, 0, 3, 0), .SnapsToDevicePixels = True, .UseLayoutRounding = False}
-                Dim LabTag As New TextBlock With {
-                    .Text = TagText, .Foreground = New MyColor("#B0B0B0"), .FontSize = 11}
-                BorderTag.Child = LabTag
-                PanTags.Children.Add(BorderTag)
-            Next
+            Controller.SetTags(Tags)
         End Set
     End Property
-
-    '相关联的 Mod
     Public Property Entry As LocalResourceFile
         Get
             Return Tag
@@ -134,488 +101,92 @@ Public Class MyLocalModItem
             Tag = value
         End Set
     End Property
-
-#End Region
-
-#Region "点击与勾选"
-
-    '触发点击事件
     Public Event Click(sender As Object, e As MouseButtonEventArgs)
-    Private Sub Button_MouseUp(sender As Object, e As MouseButtonEventArgs) Handles Me.PreviewMouseLeftButtonUp
-        If IsMouseDown Then
-            RaiseEvent Click(sender, e)
-            If e.Handled Then Return
-            Logger.Info($"按下本地 Mod 列表项：{LabTitle.Text}")
-        End If
-    End Sub
-
-    '鼠标点击判定
-    Private IsMouseDown As Boolean = False
-    Private Sub Button_MouseDown(sender As Object, e As MouseButtonEventArgs) Handles Me.PreviewMouseLeftButtonDown
-        If Not IsMouseDirectlyOver Then Return
-        IsMouseDown = True
-        If ButtonStack IsNot Nothing Then ButtonStack.IsHitTestVisible = False
-    End Sub
-    Private Sub Button_MouseLeave(sender As Object, e As Object) Handles Me.MouseLeave, Me.PreviewMouseLeftButtonUp
-        IsMouseDown = False
-        If ButtonStack IsNot Nothing Then ButtonStack.IsHitTestVisible = True
-    End Sub
-
-    '滑动选中
-    Private Shared SwipeStart As Integer, SwipeEnd As Integer
-    Private Shared _Swiping As Boolean = False
-    Private Shared SwipePanel As StackPanel
-    Private Shared SwipeBar As FrameworkElement
-    Private Shared Property Swiping As Boolean
-        Get
-            Return _Swiping
-        End Get
-        Set(value As Boolean)
-            _Swiping = value
-            If SwipeBar IsNot Nothing Then SwipeBar.IsHitTestVisible = Not value
-        End Set
-    End Property
-    Private Shared SwipToState As Boolean '被滑动到的目标应将 Checked 改为此值
-    Private Sub Button_MouseSwipeStart(sender As Object, e As Object) Handles Me.MouseLeftButtonDown
-        If Parent Is Nothing Then Return 'Mod 可能已被删除（#3824）
-        '开始滑动
-        If SwipeBar IsNot Nothing Then SwipeBar.IsHitTestVisible = True
-        SwipePanel = TryCast(Parent, StackPanel)
-        SwipeBar = If(SelectionBar, FrmInstanceMod?.CardSelect)
-        Dim Index = CType(Parent, StackPanel).Children.IndexOf(Me)
-        SwipeStart = Index
-        SwipeEnd = Index
-        Swiping = True
-        SwipToState = Not Checked
-    End Sub
-    Private Sub Button_MouseSwipe(sender As Object, e As Object) Handles Me.MouseEnter, Me.MouseLeave, Me.MouseLeftButtonUp
-        If Parent Is Nothing OrElse Parent IsNot SwipePanel Then Return '限制在当前资源列表内。
-        '结束滑动
-        If Mouse.LeftButton <> MouseButtonState.Pressed OrElse
-           TypeOf Mouse.DirectlyOver IsNot MyLocalModItem Then '#5771
-            Swiping = False
-            Return
-        End If
-        If Not Swiping Then Return
-        '计算滑动范围
-        Dim Elements = CType(Parent, StackPanel).Children
-        Dim Index As Integer = Elements.IndexOf(Me)
-        SwipeStart = Math.Min(SwipeStart, Index).Clamp(0, Elements.Count - 1)
-        SwipeEnd = Math.Max(SwipeEnd, Index).Clamp(0, Elements.Count - 1)
-        '勾选所有范围中的项
-        If SwipeStart = SwipeEnd Then Return
-        For i = SwipeStart To SwipeEnd
-            Dim Item As MyLocalModItem = Elements(i)
-            Item.InitLate(Item, e)
-            Item.Checked = SwipToState
-        Next
-    End Sub
-
-    '勾选状态
     Public Event Check(sender As Object, e As RouteEventArgs)
     Public Event Changed(sender As Object, e As RouteEventArgs)
-    Private _Checked As Boolean = False
+    Private Sub RaiseClick(sender As Object, e As MouseButtonEventArgs)
+        RaiseEvent Click(sender, e)
+    End Sub
+    Private Function RaiseCheck() As Boolean
+        Dim Args As New RouteEventArgs(False)
+        RaiseEvent Check(Me, Args)
+        Return Args.Handled
+    End Function
+    Private Function RaiseChanged() As Boolean
+        Dim Args As New RouteEventArgs(False)
+        RaiseEvent Changed(Me, Args)
+        Return Args.Handled
+    End Function
+    Private Sub Button_MouseUp(sender As Object, e As MouseButtonEventArgs) Handles Me.PreviewMouseLeftButtonUp
+        Controller.MouseUp(sender, e)
+    End Sub
+    Private Sub Button_MouseDown(sender As Object, e As MouseButtonEventArgs) Handles Me.PreviewMouseLeftButtonDown
+        Controller.MouseDown()
+    End Sub
+    Private Sub Button_MouseLeave(sender As Object, e As Object) Handles Me.MouseLeave, Me.PreviewMouseLeftButtonUp
+        Controller.MouseLeave()
+    End Sub
+    Private Sub Button_MouseSwipeStart(sender As Object, e As Object) Handles Me.MouseLeftButtonDown
+        Controller.SwipeStart()
+    End Sub
+    Private Sub Button_MouseSwipe(sender As Object, e As Object) Handles Me.MouseEnter, Me.MouseLeave, Me.MouseLeftButtonUp
+        Controller.Swipe(e)
+    End Sub
     Public Property Checked As Boolean
         Get
-            Return _Checked
+            Return Controller.Checked
         End Get
         Set(value As Boolean)
-            Try
-                '触发属性值修改
-                Dim RawValue = _Checked
-                If value = _Checked Then Return
-                _Checked = value
-                Dim ChangedEventArgs As New RouteEventArgs(False)
-                If IsInitialized Then
-                    RaiseEvent Changed(Me, ChangedEventArgs)
-                    If ChangedEventArgs.Handled Then
-                        _Checked = RawValue
-                        Return
-                    End If
-                End If
-                If value Then
-                    Dim CheckEventArgs As New RouteEventArgs(False)
-                    RaiseEvent Check(Me, CheckEventArgs)
-                    If CheckEventArgs.Handled Then Return
-                End If
-                '更改动画
-                If IsVisibleInForm() Then
-                    Dim Anim As New List(Of AniData)
-                    If Checked Then
-                        '由无变有
-                        Dim Delta = 32 - RectCheck.ActualHeight
-                        Anim.Add(AaHeight(RectCheck, Delta * 0.4, 200,, New AniEaseOutFluent(AniEasePower.Weak)))
-                        Anim.Add(AaHeight(RectCheck, Delta * 0.6, 300,, New AniEaseOutBack(AniEasePower.Weak)))
-                        Anim.Add(AaOpacity(RectCheck, 1 - RectCheck.Opacity, 30))
-                        RectCheck.VerticalAlignment = VerticalAlignment.Center
-                        RectCheck.Margin = New Thickness(-3, 0, 0, 0)
-                        Anim.Add(AaColor(LabTitle, TextBlock.ForegroundProperty, If(ItemEnabled, "ColorBrush2", "ColorBrush5"), 200))
-                    Else
-                        '由有变无
-                        Anim.Add(AaHeight(RectCheck, -RectCheck.ActualHeight, 120,, New AniEaseInFluent(AniEasePower.Weak)))
-                        Anim.Add(AaOpacity(RectCheck, -RectCheck.Opacity, 70, 40))
-                        RectCheck.VerticalAlignment = VerticalAlignment.Center
-                        Anim.Add(AaColor(LabTitle, TextBlock.ForegroundProperty, If(LabTitle.TextDecorations Is Nothing, "ColorBrush1", "ColorBrushGray4"), 120))
-                    End If
-                    AniStart(Anim, "MyLocalModItem Checked " & Uuid)
-                Else
-                    '不在窗口上时直接设置
-                    RectCheck.VerticalAlignment = VerticalAlignment.Center
-                    RectCheck.Margin = New Thickness(-3, 0, 0, 0)
-                    If Checked Then
-                        RectCheck.Height = 32
-                        RectCheck.Opacity = 1
-                        LabTitle.SetResourceReference(TextBlock.ForegroundProperty, If(ItemEnabled, "ColorBrush2", "ColorBrush5"))
-                    Else
-                        RectCheck.Height = 0
-                        RectCheck.Opacity = 0
-                        LabTitle.SetResourceReference(TextBlock.ForegroundProperty, If(ItemEnabled, "ColorBrush1", "ColorBrushGray4"))
-                    End If
-                    AniStop("MyLocalModItem Checked " & Uuid)
-                End If
-            Catch ex As Exception
-                Logger.Warn(ex, "设置 Checked 失败")
-            End Try
+            Controller.Checked = value
         End Set
     End Property
-
-
-#End Region
-
-#Region "后加载内容"
-
-    '右下角状态指示图标
-    Private ImgState As Image
-
-    '指向背景
-    Private _RectBack As Border = Nothing
     Public ReadOnly Property RectBack As Border
         Get
-            If _RectBack Is Nothing Then
-                Dim Rect As New Border With {
-                    .Name = "RectBack",
-                    .CornerRadius = New CornerRadius(3),
-                    .RenderTransform = New ScaleTransform(0.8, 0.8),
-                    .RenderTransformOrigin = New Point(0.5, 0.5),
-                    .BorderThickness = New Thickness(GetWPFSize(1)),
-                    .SnapsToDevicePixels = True,
-                    .IsHitTestVisible = False,
-                    .Opacity = 0
-                }
-                Rect.SetResourceReference(Border.BackgroundProperty, "ColorBrush7")
-                Rect.SetResourceReference(Border.BorderBrushProperty, "ColorBrush6")
-                SetColumnSpan(Rect, 999)
-                SetRowSpan(Rect, 999)
-                Children.Insert(0, Rect)
-                _RectBack = Rect
-                '<!--<Border x:Name = "RectBack" CornerRadius="3" RenderTransformOrigin="0.5,0.5" SnapsToDevicePixels="True" 
-                'IsHitTestVisible = "False" Opacity="0" BorderThickness="1" 
-                'Grid.ColumnSpan = "4" Background="{DynamicResource ColorBrush7}" BorderBrush="{DynamicResource ColorBrush6}"/>-->
-            End If
-            Return _RectBack
+            Return Controller.RectBack
         End Get
     End Property
-
-    '按钮
-    Public ButtonHandler As Action(Of MyLocalModItem, EventArgs)
-    Public ButtonStack As FrameworkElement
-    Private _Buttons As IEnumerable(Of MyIconButton)
     Public Property Buttons As IEnumerable(Of MyIconButton)
         Get
-            Return _Buttons
+            Return Controller.Buttons
         End Get
         Set(value As IEnumerable(Of MyIconButton))
-            _Buttons = value
-            '移除原 Stack
-            If ButtonStack IsNot Nothing Then
-                Children.Remove(ButtonStack)
-                ButtonStack = Nothing
-            End If
-            If Not value.Any() Then Return
-            '添加新 Stack
-            ButtonStack = New StackPanel With {.Opacity = 0, .Margin = New Thickness(0, 0, 5, 0), .SnapsToDevicePixels = False, .Orientation = Orientation.Horizontal,
-                .HorizontalAlignment = HorizontalAlignment.Right, .VerticalAlignment = VerticalAlignment.Center, .UseLayoutRounding = False}
-            SetColumnSpan(ButtonStack, 10) : SetRowSpan(ButtonStack, 10)
-            '构造按钮
-            For Each Btn As MyIconButton In value
-                If Btn.Height.Equals(Double.NaN) Then Btn.Height = 25
-                If Btn.Width.Equals(Double.NaN) Then Btn.Width = 25
-                CType(ButtonStack, StackPanel).Children.Add(Btn)
-            Next
-            Children.Add(ButtonStack)
+            Controller.Buttons = value
         End Set
     End Property
-
-    '勾选条
-    Private _RectCheck As Border
     Public ReadOnly Property RectCheck As Border
         Get
-            If _RectCheck Is Nothing Then
-                _RectCheck = New Border With {.Width = 5, .Height = If(Checked, Double.NaN, 0), .CornerRadius = New CornerRadius(2, 2, 2, 2),
-                    .VerticalAlignment = If(Checked, VerticalAlignment.Stretch, VerticalAlignment.Center),
-                    .HorizontalAlignment = HorizontalAlignment.Left, .UseLayoutRounding = False, .SnapsToDevicePixels = False,
-                    .Margin = If(Checked, New Thickness(-3, 6, 0, 6), New Thickness(-3, 0, 0, 0))}
-                _RectCheck.SetResourceReference(Border.BackgroundProperty, "ColorBrush3")
-                SetRowSpan(_RectCheck, 10)
-                Children.Add(_RectCheck)
-            End If
-            Return _RectCheck
+            Return Controller.RectCheck
         End Get
     End Property
-
-#End Region
-
     Private Function GetUpdateCompareDescription() As String
-        Dim CurrentName = If(Entry.ProjectVersion.Version, Entry.ProjectVersion.Display).Replace(".jar", "")
-        Dim NewestName = If(Entry.UpdateFile.Version, Entry.UpdateFile.Display).Replace(".jar", "")
-        '简化名称对比
-        Dim CurrentSegs = CurrentName.Split("-_+ ".ToCharArray).ToList()
-        Dim NewestSegs = NewestName.Split("-_+ ".ToCharArray).ToList()
-        Dim Shortened As Boolean = False
-        For Each Seg In CurrentSegs.ToList()
-            If Not NewestSegs.Contains(Seg) Then Continue For
-            CurrentSegs.Remove(Seg)
-            NewestSegs.Remove(Seg)
-            Shortened = True
-        Next
-        If Shortened AndAlso CurrentSegs.Any() AndAlso NewestSegs.Any() Then
-            CurrentName = CurrentSegs.Join("-")
-            NewestName = NewestSegs.Join("-")
-            Entry._Version = CurrentName '使用网络信息作为显示的版本号
-        End If
-        Return $"当前版本：{CurrentName}（{StringUtils.FormatTimeSpan(Entry.ProjectVersion.ReleaseDate - Date.Now, False)}）{vbCrLf}最新版本：{NewestName}（{StringUtils.FormatTimeSpan(Entry.UpdateFile.ReleaseDate - Date.Now, False)}）"
+        Return Controller.GetUpdateCompareDescription()
     End Function
-
-    '懒加载
-    Public Sub New()
-        InitializeComponent()
-        LazyLoadBehavior.OnFirstEnterScrollViewerViewport(Me, AddressOf FirstEnterScrollViewerViewport)
-    End Sub
-    Private HasEnteredViewport As Boolean = False
     Private Sub FirstEnterScrollViewerViewport()
-        HasEnteredViewport = True
-        Refresh()
+        Controller.FirstViewport()
     End Sub
     Public Sub Refresh()
-        If RestorePoint IsNot Nothing Then
-            PCLCS.EnvironmentHistoryPagePointPresenter.Refresh(RestorePointView())
-            Return
-        End If
-        If ResourceEntry IsNot Nothing Then
-            RefreshResource()
-            Return
-        End If
-        If Not HasEnteredViewport Then Return '避免在未显示时因为资源更新而加载内容
-        '更新
-        If Entry.HasUpdate Then
-            BtnUpdate.Visibility = Visibility.Visible
-            BtnUpdate.ToolTip = $"{GetUpdateCompareDescription()}{vbCrLf}点击以更新，右键查看更新日志。"
-        Else
-            BtnUpdate.Visibility = Visibility.Collapsed
-        End If
-        '标题与描述
-        Dim DescFileName As String = PathUtils.GetFileNameWithoutExtension(Entry.EnabledName)
-        Dim NewDescription As String
-        If Settings.Get(Of Integer)("ToolModLocalNameStyle") = 1 Then
-            '标题显示文件名，详情显示译名
-            '标题
-            Title = DescFileName
-            SubTitle = ""
-            '描述
-            If Entry.Project Is Nothing Then
-                NewDescription = Entry.Display
-            Else
-                Dim Titles = Entry.Project.GetControlTitle(False)
-                NewDescription = Titles.Title & Titles.SubTitle
-            End If
-            NewDescription = NewDescription.Replace("  |  ", " / ")
-            If Entry.Version IsNot Nothing Then NewDescription &= $" ({Entry.Version})"
-        Else
-            '标题显示译名，详情显示文件名
-            '标题
-            If Entry.Project Is Nothing Then
-                Title = Entry.Display
-                SubTitle = If(Entry.Version Is Nothing, "", "  |  " & Entry.Version)
-            Else
-                Dim Titles = Entry.Project.GetControlTitle(False)
-                Title = Titles.Title
-                SubTitle = Titles.SubTitle & If(Entry.Version Is Nothing, "", "  |  " & Entry.Version)
-            End If
-            '描述
-            NewDescription = DescFileName
-        End If
-        If Entry.Project IsNot Nothing Then
-            NewDescription += ": " & Entry.Project.Description.ReplaceLineEndings("")
-        ElseIf Entry.Description IsNot Nothing Then
-            NewDescription += ": " & Entry.Description.ReplaceLineEndings("")
-        End If
-        Description = NewDescription
-        If Checked Then
-            LabTitle.SetResourceReference(TextBlock.ForegroundProperty, If(Entry.IsEnabled, "ColorBrush2", "ColorBrush5"))
-        Else
-            LabTitle.SetResourceReference(TextBlock.ForegroundProperty, If(Entry.IsEnabled, "ColorBrush1", "ColorBrushGray4"))
-        End If
-        '主 Logo
-        If Entry.Project IsNot Nothing Then
-            Entry.Project.ApplyLogoToMyImage(PathLogo)
-        Else
-            PathLogo.Source = PathImage & "Icons/NoIcon.png"
-        End If
-        '图标右下角的 Logo
-        If Entry.IsEnabled Then
-            If ImgState IsNot Nothing Then
-                Children.Remove(ImgState)
-                ImgState = Nothing
-            End If
-        Else
-            If ImgState Is Nothing Then
-                ImgState = New Image With {
-                    .Width = 20, .Height = 20, .Margin = New Thickness(0, 0, -5, -3), .IsHitTestVisible = False,
-                    .HorizontalAlignment = HorizontalAlignment.Right, .VerticalAlignment = VerticalAlignment.Bottom
-                }
-                RenderOptions.SetBitmapScalingMode(ImgState, BitmapScalingMode.HighQuality)
-                SetColumn(ImgState, 1) : SetRow(ImgState, 1) : SetRowSpan(ImgState, 2)
-                Children.Add(ImgState)
-                '<Image x:Name="ImgState" RenderOptions.BitmapScalingMode="HighQuality" Width="16" Height="16" Margin="0,0,-3,-1"
-                '       Grid.Column="1" Grid.Row="1" Grid.RowSpan="2" IsHitTestVisible="False"
-                '       HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                '       Source="/Images/Icons/Unavailable.png" />
-            End If
-            ImgState.Source = New MyBitmap(PathImage & $"Icons/Disabled.png")
-        End If
-        '标签
-        If Entry.Project IsNot Nothing Then Tags = Entry.Project.Tags
+        Controller.Refresh()
     End Sub
-
     Public Sub RefreshColor(sender As Object, e As EventArgs) Handles Me.MouseEnter, Me.MouseLeave, Me.MouseLeftButtonDown, Me.MouseLeftButtonUp, Me.Changed
-        InitLate(sender, e)
-        '触发颜色动画
-        Dim Time As Integer = If(IsMouseOver, 120, 180)
-        Dim Ani As New List(Of AniData)
-        'ButtonStack
-        If ButtonStack IsNot Nothing Then
-            If IsMouseOver Then
-                Ani.Add(AaOpacity(ButtonStack, 1 - ButtonStack.Opacity, Time * 0.7, Time * 0.3))
-                Ani.Add(AaDouble(Sub(i) ColumnPaddingRight.Width = New GridLength(Math.Max(0, ColumnPaddingRight.Width.Value + i)),
-                    5 + Buttons.Count * 25 - ColumnPaddingRight.Width.Value, Time * 0.3, Time * 0.7))
-            Else
-                Ani.Add(AaOpacity(ButtonStack, -ButtonStack.Opacity, Time * 0.4))
-                Ani.Add(AaDouble(Sub(i) ColumnPaddingRight.Width = New GridLength(Math.Max(0, ColumnPaddingRight.Width.Value + i)),
-                    4 - ColumnPaddingRight.Width.Value, Time * 0.4))
-            End If
-        End If
-        LocalResourceUi.AppendItemSelection(Ani, RectBack, IsMouseOver, Checked, IsMouseDown)
-        AniStart(Ani, "LocalModItem Color " & Uuid)
+        Controller.RefreshColor(sender, e)
     End Sub
-
-    '触发虚拟化内容
     Private Sub InitLate(sender As Object, e As EventArgs)
-        If ButtonHandler IsNot Nothing Then
-            ButtonHandler(sender, e)
-            ButtonHandler = Nothing
-        End If
+        Controller.InitLate(sender, e)
     End Sub
-
-    '显示更新日志
     Private Sub BtnUpdate_PreviewMouseRightButtonUp(sender As Object, e As MouseButtonEventArgs) Handles BtnUpdate.PreviewMouseRightButtonUp
         e.Handled = True
-        ShowUpdateLog()
+        Controller.ShowUpdateLog()
     End Sub
     Private Sub ShowUpdateLog()
-        If RestorePoint IsNot Nothing Then Return
-        If ResourceEntry IsNot Nothing Then
-            ResourceDetailsRequested?.Invoke()
-            Return
-        End If
-        Dim CurseForgeUrl As String = Entry.ChangelogUrls.FirstOrDefault(Function(x) x.Contains("curseforge.com"))
-        Dim ModrinthUrl As String = Entry.ChangelogUrls.FirstOrDefault(Function(x) x.Contains("modrinth.com"))
-        If CurseForgeUrl Is Nothing OrElse ModrinthUrl Is Nothing Then
-            OpenWebsite(Entry.ChangelogUrls.First)
-        Else
-            Select Case MyMsgBox("要在哪个网站上查看更新日志？", "查看更新日志", "Modrinth", "CurseForge", "取消")
-                Case 1
-                    OpenWebsite(ModrinthUrl)
-                Case 2
-                    OpenWebsite(CurseForgeUrl)
-            End Select
-        End If
+        Controller.ShowUpdateLog()
     End Sub
-
-    '触发更新
     Private Sub BtnUpdate_Click(sender As Object, e As EventArgs) Handles BtnUpdate.Click
-        If RestorePoint IsNot Nothing Then Return
-        If ResourceEntry IsNot Nothing Then
-            ResourceUpdateRequested?.Invoke()
-            Return
-        End If
-        Select Case MyMsgBox($"是否要更新 {Entry.Display}？{vbCrLf}{vbCrLf}{GetUpdateCompareDescription()}", "Mod 更新确认", "更新", "查看更新日志", "取消")
-            Case 1 '更新
-                FrmInstanceMod.UpdateMods({Entry})
-            Case 2 '查看更新日志
-                ShowUpdateLog()
-            Case 3 '取消
-        End Select
+        Controller.UpdateClick()
     End Sub
-
     Private Sub ReleaseResourceInteraction() Handles Me.Unloaded
-        If ResourceEntry Is Nothing AndAlso RestorePoint Is Nothing Then Return
-        IsMouseDown = False
-        Swiping = False
-        If SelectionBar Is SwipeBar Then
-            SwipeBar = Nothing
-            SwipePanel = Nothing
-        End If
-        AniStop("MyLocalModItem Checked " & Uuid)
-        AniStop("LocalModItem Color " & Uuid)
+        Controller.ReleaseResourceInteraction()
     End Sub
-
-    '自适应（#4465）
     Private Sub PanTitle_SizeChanged() Handles PanTitle.SizeChanged
-        '0：全部舒展：Auto - Auto - (Auto) - 1*
-        '1：压缩 Subtitle：Auto - 1* - (Auto) - 0
-        '2：继续压缩 Title：1* - 0 - (Auto) - 0
-        Dim CurrentCompressLevel As Integer =
-            If(ColumnExtend.Width.IsStar, 0, If(ColumnTitle.Width.IsStar, 2, 1)) 'Subtitle 可能是 Collapsed
-        Dim NewCompressLevel As Integer
-        Select Case CurrentCompressLevel
-            Case 0
-                If ColumnExtend.ActualWidth < 0.5 Then
-                    NewCompressLevel = If(LabSubtitle.Visibility = Visibility.Collapsed, 2, 1)
-                Else
-                    Return
-                End If
-            Case 1
-                If ColumnSubtitle.ActualWidth < 0.5 Then
-                    NewCompressLevel = 2
-                ElseIf Not LabSubtitle.IsTextTrimmed Then
-                    NewCompressLevel = 0
-                Else
-                    Return
-                End If
-            Case 2
-                If Not LabTitle.IsTextTrimmed Then
-                    NewCompressLevel = If(LabSubtitle.Visibility = Visibility.Collapsed, 0, 1)
-                Else
-                    Return
-                End If
-        End Select
-        Select Case NewCompressLevel
-            Case 0
-                '全部舒展：Auto - Auto - (Auto) - 1*
-                ColumnTitle.Width = GridLength.Auto
-                ColumnSubtitle.Width = GridLength.Auto
-                ColumnExtend.Width = New GridLength(1, GridUnitType.Star)
-            Case 1
-                '压缩 Subtitle：Auto - 1* - (Auto) - 0
-                ColumnTitle.Width = GridLength.Auto
-                ColumnSubtitle.Width = New GridLength(1, GridUnitType.Star)
-                ColumnExtend.Width = New GridLength(0, GridUnitType.Pixel)
-            Case 2
-                '继续压缩 Title：1* - 0 - (Auto) - 0
-                ColumnTitle.Width = New GridLength(1, GridUnitType.Star)
-                ColumnSubtitle.Width = New GridLength(0, GridUnitType.Pixel)
-                ColumnExtend.Width = New GridLength(0, GridUnitType.Pixel)
-        End Select
+        Controller.ResizeTitle()
     End Sub
-
 End Class
