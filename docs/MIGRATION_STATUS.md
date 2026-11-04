@@ -6,7 +6,7 @@
 
 - 目标状态：`in_progress`。原资源/备份/按键/Quick Play/历史/克隆链及已述原生动画/图像/控件已各有真实Windows证据；安装/启动/网络后端已成组C#接线，登录/导出/Base批次继续集成。原主产品仍VB/net48，完整C#/NET10主宿主、发布及端到端兼容验收未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 最新已验检查点 `0e5571b70db6e9cc9a9025f2dc85aeae7a98235d`：Modern41851609678 Debug126649094623／Release126649094081全success；Migration41851609394 Ubuntu435/435、Windows486/486和严格397零差异。原Build41851609700产品/前段检查与六cold组成功，UpdateUx缺新Presentation引用而停止；c5974ce定向Build41852620709两配置已通过真实loopback进度/更新UI/取消锁/事务回滚恢复，随后ReviewFixes旧ThreadClient私有hook失败，a515eea已改为检查唯一NativeRuntime实际client，等待定向结果。后续未执行项不记通过。
+- 最新已验检查点：`b2b276c` Modern41853954608 Debug126657383910／Release126657382670全success；Migration41853954918 Windows489/489、Ubuntu438/438及严格397零差异，含新增旧中文INI/资源三组。原Build41853954557真实产品及前段更新/redirect/登录结构体/依赖成功，在constructor-free Watcher夹具缺引擎时停止；`abbb955`定向41854676827 Debug126660069208／Release126660069356原产品模式与EngineOnly存档备份两模式均success。原后段其余消费者仍待下一完整检查点，不将未运行项算通过。
 - 当前交付批次：C019b／C021a-b／C024b／C027c已推送；本批新增C020c完整导出/对话框/模式设置页、C023a九登录/皮肤/设备页及C024c全部剩余Base方法。真实两个Core/两个Presentation及modern test图Release警告视错0W0E；新168有效VB/当前Main和Presentation BAML全调用图编译0E/1既有JSON warning。仅编译或临时样本不算Windows整链完成，下一Windows检查点按共享Base/账号/UI实际影响运行。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前18组（设置／校验Loader／Java与新增foundation独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
@@ -214,9 +214,13 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 b385ad8定向检查已成功：Build41847370882原Debug/Release构建、常驻门禁及真实FolderScope fixture通过；Migration41847370933按范围仅selection成功，未把跳过pure记通过。现代组件复用1b97baa两配置完整成功记录，C017图标/安装组件/导出尾部仍待下一个必要完整源码批。
 
-C019b/C021a-b/C024b/C027c以0e5571b推送。实际Modern41851609678两配置全success、Migration41851609394双OS435/486及严格397零差异；原产品两配置构建/前段资源与六cold控件成功。UpdateUx辅助编译缺Presentation依赖由c5974ce补齐；定向41852620709已通过真实loopback父进度、版本/预览UI、取消锁/回滚/恢复，随后Redirects仍读旧ModNet.ThreadClient导致NRE。a515eea只将fixture改为沿NativeRuntime读实际唯一client，保所有真实redirect/凭据/POST/降级/loop边界断言，待定向复验。整批原后段消费者及新增live McLoginResult struct case仍未执行，不写成功。
+C019b/C021a-b/C024b/C027c以0e5571b推送；Modern41851609678和Migration41851609394均成功，WindowsBuild辅助引用/hook问题已分别由c5974ce/a515eea定向修正。a515eea Build41853325775两配置全success，实际原loopback更新进度/对话框、取消锁/事务回滚恢复与完整SafeRedirect凭据/POST/降级/loop边界通过，未重跑未选模块。
 
-C020c/C023a/C024c按原件/草稿双SHA集成，原XAML全不变；十三导出相关源、九页+五C#控制器+真实账号适配、七Base C#与原46方法薄桥落地。实际Core/PF双目标和现代测试完整图Release -warnaserror0W0E，全旧真实168VB/BAML probe0E/1既有JSON绑定warning。Root捕获net48新HttpMethod引用缺失并显式补System.Net.Http。Base仅局部现代GB18030回退与自建PSI默认True适配，缓存/UUID/字段初始化唯一，provider不全局注册。仓库新增foundation三组真实Task/取消/异常/原地搜索/惰性随机/旧中文INI BOM与GB18030/资源字节样本，本地定向3/3；Windows UI/clipboard/XAML guard/锁、完整导出Java/archive、皮肤设备登录与最终主程序仍待验。
+C020c/C023a/C024c按原件/草稿双SHA集成并以b2b276c推送，原XAML全不变；Core/Presentation双目标与现代测试Release -warnaserror0W0E，全旧真实168VB/BAML probe0E/1既有JSON warning。b2b实际Modern41853954608两配置全success；Migration41853954918 Windows489/489、Ubuntu438/438和严格397零差异；真实Windows产品/账号/更新/redirect及新增live六字段McLoginResult struct/LoaderTask双向与整体替换/Input/State/Progress成功（未启动认证/游戏）。WorldBackups接着因FormatterServices绕过原Watcher构造，缺新readonly Native引擎而在State getter NRE，未跑后续消费者。abbb955只给fixture挂真实引擎+原Host/Group，不启动监控，原断言全保；定向41854676827 Debug126660069208／Release126660069356实际完整产品+EngineOnly均通过，活动/退出process、取消回滚/恢复/保留及原UI合同均成功。
+
+3df7d21追加完整启动BCL单例租约/Unicode窗口唤醒C#与两原内部类型薄桥：固定LF SessionLock419909eb9c5a1404924d26f374eb8864f64f7521及Activation22d549d24e125c356c07a88122b23ccc4e81839c；不用Shared/设置/日志/WPF，原Application锁先于设置顺序不改。实际双Core -warnaserror0W0E，全旧调用图0E/1既有warning；foundation增两组实际跨线程mutex排他/部分获取回滚及原caption/6402/重试/失败样本，本地5/5，Windows abandoned/native branch另待真实检查，不记Linux通过。
+
+C020c完整WindowsJava/archive/export取消、C023原生设备poll/头像/cape/upload、C024c UI/clipboard/XAML guard/WindowsINI锁与最终现代主宿主仍未验收；这些完成条件不能由编译或临时样本替代。
 
 b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41831770480)两配置各11步成功，实际原ThreadDriver在隔离子进程启动。Build41831770664／Migration41831770692仅选择job通过，产品/纯测试job按范围skipped；复用02ba2b2实际全纯测试/原Windows结果，不把跳过写成功。
 
@@ -289,7 +293,7 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | C029a | done | C005b、C007u2 | 资源与按键整页已实证LF C# WPF标准视图／惰性typed Host单向边界，无main反引；3f在Frame实际native壳及NET10同源live控制器双配置通过，足以解除独立页面人工阻塞。完整原生控件／主C#工程与最终VB清理仍归C027／N003／R001 |
 | C029 | in_progress | C005c2、C008、C010、C011、C012、C016、C020、C027 | 完成实例页面和资源页面 C# 后台／XAML 的最终汇总，已有先行页面只验收集成，不与 C029a 宿主前置相互等待 |
 | C030 | in_progress | C022、C027 | 完成设置、个性化、工具、帮助、关于及现有可选联机页面的迁移；默认关闭项单独验收，不静默删除 |
-| C031 | in_progress | C023、C025、C026、C027、C028、C029、C030 | 成组完成 `Application`、`FormMain`、`ModMain`、事件／音乐／维护等剩余入口；窗口、路由、单实例和关闭生命周期回归 |
+| C031 | in_progress | C023、C025、C026、C027、C028、C029、C030 | 主窗FormMain/DragHelper完整批正并行draft；启动单例锁/Unicode唤醒已3df7d21接BCL C#，原App早期顺序不改，本地双Core/全图编译与foundation样本通过。Application/ModMain/事件/音乐/主宿主及真实Windows冷启动/关闭仍待后续，不以helper替整链 |
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
