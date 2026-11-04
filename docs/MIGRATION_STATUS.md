@@ -84,6 +84,9 @@ b84e6d2实际手动复验全成功（e6e0470与b84普通push收到远端但未�
 
 C014本地集成：四C#完整pipeline／hash／匹配／HTTP与原50行typed VB壳保旧Options16字段、缓存单份、private HttpFailure及原签头ByRef语义。net48／modern Core＋原Online完整stub的实际Strict桥编译0警告错误，独立终审未见规则差异。新六组真实C13报告／文件／平台响应样本首轮出现5失败、总7／12（本地Inspector6全过）：FirstChance实证是测试加载原Framework Newtonsoft后首次JArray.FromObject/ToObject缺System.Security.Permissions，原Enrich正确降级致后续阶段未执行，不是生产匹配规则错误。只预加载固定NuGet13.0.3/net6.0资产的同一测试DLL六组原断言全部成功，未改golds或业务catch。正式.NET10纯测试改与modern/PCLCS同PackageReference13.0.3，独立CLR4 oracle继续使用固定LF DLL；现代oracle也改用实际现代包并记录程序集framework／version／SHA，旧LF源码／config／manifest／DLL与所有397case不改。完整14组正式运行411／411，Release0警告错误；现代测试与oracle实际copy SHA均22c649f75fce5be7c7ccda8880473b634ef69ecf33f5d1ab8ad892caf47d5a07，旧LF仍e1e27af7…44fa9d。该全量纯test是明确共享序列化目标变化的必要复验；Windows现代JSON与CLR4严格比较、原在线／Graph／启动消费者及新增实际thread-driver子进程待本批CI，不能将编译或孤立预加载算成已通过。现6子代理分别准备C015、C016整条UI、C018资源、C017 Java、C024校验与C026图像颜色几何，完整稿互斥、主执行者统一build／测试／提交，准备稿尚不记完成。
 
+
+02ba2b2实际自动CI：Migration41825028416 Windows126557566519为462／462、Ubuntu126557566806为411／411，14canonical组均实际执行；现代JSON包资产下v7严格397case零baseline／native／path／text差异（实际modern端已与产品同13.0.3包，原LF CLR4 DLL不变）。旧Build41825028388 Debug126557526963／Release126557527028全success，原在线／图／启动消费者、真实克隆页、六cold控件及旧桥通过。Modern41825028405 Debug126557455671／Release126557455884：全部原组件及动画1～5实际通过，新worker child已真启动并验证线程／STA，随后终值断言失败，Release实际0.9999979999999995。原LF每帧七位四舍五入累积不保证增量1最后恰为1；保持全部断言／Near阈值和生产算法，仅把worker样本增量改1.25，使用原[0,1]clamp让期望终值1成为真实LF约定，仍要求中帧／callback／foreground／priority／UI。该fixture修复仅现代测试定向复验，不重跑已通过业务全量。新并行C015／C016／C017／C018／C024／C026代码另批集成，未把未提交源码混计到本次运行。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |

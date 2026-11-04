@@ -123,7 +123,11 @@ internal static class AnimationTests {
         };
         opacity.AddValueChanged(target, changed);
         try {
-            runtime.Engine.AniStart(new[] { runtime.Factories.AaOpacity(target, 1, 1200), runtime.Factories.AaCode(() => {
+            // LF rounds each delta to seven decimals, so a total increment of 1
+            // does not guarantee an exact final 1 under real clock jitter. An
+            // overrange increment exercises LF's original clamp and makes 1
+            // the actual contract without changing the endpoint tolerance.
+            runtime.Engine.AniStart(new[] { runtime.Factories.AaOpacity(target, 1.25, 1200), runtime.Factories.AaCode(() => {
                 Require(dispatcher.CheckAccess() && Thread.CurrentThread.ManagedThreadId == uiThread && Thread.CurrentThread.GetApartmentState() == ApartmentState.STA,
                     "The real After callback left its STA/UI dispatcher.");
                 callbacks++;
