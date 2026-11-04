@@ -63,7 +63,7 @@ def main():
         result=execute(r/'producer.ps1',env)
         assert result.returncode==0,result.stdout+result.stderr
         print('PASS actual producer run block writes a bounded same-run manifest from synthetic offline receipts')
-        q=json.loads((base/'native-upgrade-qualification.json').read_text());assert len(q['roles'])==4 and set(q['requiredSteps'])=={'main','resources','package','package_roles','metadata_identity','cold_entry'}
+        q=json.loads((base/'native-upgrade-qualification.json').read_text());assert len(q['roles'])==4 and set(q['requiredSteps'])=={'main','resources','package','package_roles','credentials','metadata_identity','cold_entry'}
         cases=[]
         def run(name,change=None,expected=True,regenerate=False):
          folder=work/'cases'/name
@@ -105,6 +105,7 @@ def main():
         run('qualification-missing',lambda d,e:(d/'native-upgrade-qualification.json').unlink(),False)
         for key,value in [('repository','different/repo'),('sourceSha','d'*40),('sourceRunId','123456780'),('sourceRunAttempt','1'),('configuration','Debug'),('runtimeIdentifier','linux-x64')]:run('wrong-'+key,editQ(lambda q,k=key,v=value:q.__setitem__(k,v)),False)
         run('cold-gate-failed',editQ(lambda q:q['requiredSteps'].__setitem__('cold_entry','failure')),False)
+        run('credential-gate-failed',editQ(lambda q:q['requiredSteps'].__setitem__('credentials','failure')),False)
         run('resource-gate-absent',editQ(lambda q:q['requiredSteps'].pop('resources')),False)
         run('unknown-extra-gate',editQ(lambda q:q['requiredSteps'].__setitem__('data','success')),False)
         run('evidence-path-escape',editQ(lambda q:q['coldEntry'].__setitem__('relativePath','../outside/evidence.json')),False)
@@ -135,9 +136,9 @@ def main():
         qualification=next(s for s in w['jobs']['native']['steps'] if s.get('id')=='upgrade_qualification');assert all('steps.'+n+".outcome == 'success'" in qualification['if'] for n in q['requiredSteps'])
         assert w['jobs']['native']['steps'].index(qualification)<next(i for i,s in enumerate(w['jobs']['native']['steps']) if s['name'].startswith('Verify real Registry'))
         consumerIndex=next(i for i,s in enumerate(w['jobs']['native-upgrade']['steps']) if s.get('id')=='upgrade_inputs');legacyIndex=next(i for i,s in enumerate(w['jobs']['native-upgrade']['steps']) if s['name']=='Download and verify the fixed original legacy product artifact');assert consumerIndex<legacyIndex
-        print('PASS workflow status, six actual gates, always upload and fail-closed-before-old-download order')
+        print('PASS workflow status, seven actual gates, always upload and fail-closed-before-old-download order')
         summary={'scope':'Actual workflow producer/consumer blocks and explicitly NON-EXECUTABLE offline fixtures only; no Windows product/bridge acceptance claimed','cases':cases,'counts':{'qualified':sum(c['expected']=='qualified' for c in cases),'rejected':sum(c['expected']!='qualified' for c in cases)}}
-        assert summary['counts']=={'qualified':3,'rejected':31},summary
+        assert summary['counts']=={'qualified':3,'rejected':32},summary
         assert w['jobs']['native']['strategy']['fail-fast'] is False
         upgrade=w['jobs']['native-upgrade']['steps']
         assert not w['jobs']['native-upgrade'].get('continue-on-error') and not upgrade[consumerIndex].get('continue-on-error')

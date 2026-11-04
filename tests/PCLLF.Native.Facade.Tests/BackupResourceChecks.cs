@@ -115,7 +115,9 @@ internal static class BackupResourceChecks
     internal static void Cache(ModMinecraft.McInstance owner, string key, object value) => ((IDictionary)Native.Get(Native.Entries[key]!, "ValueCache")!)[owner.PathVersion] = value;
     internal static T Part<T>(FrameworkElement element, string name) where T : class => element.FindName(name) as T ?? throw new MissingMemberException(element.GetType().FullName, name);
     internal static object ReadProperty(object value, string name) => Native.Property(value.GetType(), name).GetValue(value)!;
-    internal static object New(string type, params object?[] values) => Activator.CreateInstance(Native.Type(type), Native.Flags, null, values, null)!;
+    // Constructors are instance members; Static also admits .cctor and makes
+    // a genuine zero-argument WPF type with static initialization ambiguous.
+    internal static object New(string type, params object?[] values) => Activator.CreateInstance(Native.Type(type), Native.Flags & ~BindingFlags.Static, null, values, null)!;
     internal static JObject Point(string world, int age = 0) => new() { ["id"] = Guid.NewGuid().ToString("N"), ["world"] = world, ["label"] = "Same world display name", ["created"] = DateTime.UtcNow.AddDays(-age), ["reason"] = "manual", ["description"] = world + " - manual - 19 B", ["healthy"] = false, ["bytes"] = 19L, ["archiveBytes"] = 120L, ["files"] = new JObject() };
     internal static Delegate Subscribe(object target, string name, Action action)
     {

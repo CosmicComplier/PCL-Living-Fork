@@ -22,7 +22,11 @@ internal static class Program
         ["modpack-update"] = ModpackUpdateChecks.Run,
         ["environment-history"] = EnvironmentHistoryChecks.Run,
         ["local-features"] = LocalFeatureChecks.Run,
-        ["launch-dependencies"] = LaunchDependencyChecks.Run
+        ["launch-dependencies"] = LaunchDependencyChecks.Run,
+        ["dependency-graph"] = DependencyGraphChecks.Run,
+        ["toolbox"] = ToolboxChecks.Run,
+        ["visual-assets"] = VisualAssetChecks.Run,
+        ["launcher-lifecycle"] = LauncherLifecycleChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)
@@ -52,7 +56,7 @@ internal static class Program
 
             environment.AssertNoForbiddenIo();
             Native.Check(Application.Current.Windows.Count == 0, "A selected facade group left a real window open.");
-            Console.WriteLine("PASS " + selected.Length + " selected groups; genuine Main data/adapters. The original data groups do not pump; theme uses an isolated Window and file-tasks drains real task Dispatcher callbacks after LF Startup hooks are detached. EntryAssembly remains the test host.");
+            Console.WriteLine("PASS " + selected.Length + " selected groups; genuine Main data/adapters. Selected UI/task families drain real Dispatcher callbacks after LF Startup hooks are detached. EntryAssembly remains the test host; actual product cold entry is checked separately.");
             return 0;
         }
         catch (Exception error)

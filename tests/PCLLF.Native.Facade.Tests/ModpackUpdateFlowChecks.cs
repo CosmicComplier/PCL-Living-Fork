@@ -19,6 +19,9 @@ internal static class ModpackUpdateFlowChecks
     internal static void Run(FixtureEnvironment environment, string fixtureRoot)
     {
         ModpackUpdateCleanup.VerifyIsolatedChild();
+        // Disposed AFTER FileTaskScope, so every actual producer and posted
+        // reload callback has finished before the account primitive/cache restores.
+        using ReloadAccountStore accounts = new(environment);
         using FileTaskScope scope = new(environment);
         string root = Path.Combine(fixtureRoot, "flow"); Directory.CreateDirectory(root);
         string minecraft = Path.Combine(root, "minecraft"); scope.SelectMinecraft(minecraft);
@@ -120,8 +123,103 @@ internal static class ModpackUpdateFlowChecks
         Check(PageInstanceLeft.Instance is not null && !ReferenceEquals(PageInstanceLeft.Instance, accepted) && Native.Full(PageInstanceLeft.Instance.PathVersion) == Native.Full(accepted.PathVersion) && ReferenceEquals(PageInstanceLeft.Instance, ModMinecraft.McInstanceSelected), "FLOW-08-reload", "actual selected/page instance was not reloaded together");
         Check(!((IEnumerable<string>)Update("Pending", accepted.PathVersion)!).Any() && !flow.Updating && !ModMinecraft.McInstanceLock.IsLocked(accepted), "FLOW-08-release", "successful actual workload left pending state/Active/lease");
         scope.FinishActualTasks();
+        accounts.AssertUsed();
         environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS native modpack-update workflow: FLOW-01..08 (genuine admission lease, baseline/preview refusals, guarded cancellation, history/commit/reload).");
+    }
+
+    // The real SelectInstance evaluates CacheNideServer/CacheAuthServerServer
+    // before VersionServerLogin. LF50 deliberately bypasses account ValueCache.
+    // Scope ONLY those two physical reads to owned synthetic ciphertext files;
+    // unknown keys/paths still invoke FixtureEnvironment's original hard guard.
+    private sealed class ReloadAccountStore : IDisposable
+    {
+        private const string LogicalPath = @"HKEY_CURRENT_USER\Software\PCL";
+        private readonly object host;
+        private readonly FieldInfo field;
+        private readonly Func<string, string, string?, string?> original, replacement;
+        private readonly Dictionary<string, (string File, string Plain, byte[] Bytes)> records = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, int> reads = new(StringComparer.Ordinal);
+        private readonly Stack<Action> restoreCaches = new();
+        private readonly string root, marker, owner = Guid.NewGuid().ToString("N");
+        private bool installed, disposed;
+        internal ReloadAccountStore(FixtureEnvironment environment)
+        {
+            root = Path.Combine(environment.Data, "modpack-reload-account-" + owner);
+            marker = Path.Combine(root, "fixture.owner");
+            Native.Check(!Directory.Exists(root) && !File.Exists(root), "Refusing an existing account fixture.");
+            Directory.CreateDirectory(root);
+            File.WriteAllText(marker, owner);
+            object backend = Native.Field(typeof(Settings), "Backend").GetValue(null)!;
+            host = Native.Get(backend, "host")!;
+            field = Native.Field(host.GetType(), "ReadRegistry");
+            original = (Func<string, string, string?, string?>)field.GetValue(host)!;
+            replacement = Read;
+            try
+            {
+                string identify = ModBase.Identify;
+                Native.Check(identify == LegacySettingsCrypto.SourceIdentify("native-facade-synthetic-hardware", "native-facade-synthetic-seed"), "Account fixture did not retain the original synthetic identity primitive.");
+                foreach (string key in new[] { "CacheNideServer", "CacheAuthServerServer" })
+                {
+                    Settings.Setting entry = Settings.Entries[key];
+                    Native.Check(entry.Source == Settings.Sources.Registry && entry.Encrypted &&
+                        (bool)Native.Static("PCL.Settings", "IsPclAccountSetting", entry)! &&
+                        (string)Native.Static("PCL.Settings", "RegistryFolderFor", entry)! == "PCL" &&
+                        (string)Native.Static("PCL.Settings", "RegistryValueName", entry)! == key,
+                        "Unreviewed real account folder/name/encryption contract: " + key);
+                    var cache = entry.ValueCache; var before = cache.ToArray();
+                    restoreCaches.Push(() => { cache.Clear(); foreach (var pair in before) cache[pair.Key] = pair.Value; });
+                    string plain = "synthetic-reload-" + key, file = Path.Combine(root, key + ".cipher");
+                    string cipher = (string)Native.Static("PCL.Settings", "DesEncrypt", plain, "PCL" + identify)!;
+                    File.WriteAllText(file, cipher);
+                    records.Add(key, (file, plain, File.ReadAllBytes(file)));
+                }
+                ValidateOwned(); field.SetValue(host, replacement); installed = true;
+            }
+            catch { Dispose(); throw; } // No actual worker exists at this constructor boundary.
+        }
+        private string? Read(string path, string key, string? fallback)
+        {
+            if (!string.Equals(path, LogicalPath, StringComparison.Ordinal) || !records.TryGetValue(key, out var record))
+                return original(path, key, fallback); // Count/throw stays in the original guard, including caught errors.
+            ValidateOwned(); reads.AddOrUpdate(key, 1, static (_, count) => count + 1);
+            return File.ReadAllText(record.File); // The genuine Settings engine performs DES decode and cache update.
+        }
+        private void ValidateOwned()
+        {
+            Native.Check((File.GetAttributes(root) & FileAttributes.ReparsePoint) == 0 &&
+                (File.GetAttributes(marker) & FileAttributes.ReparsePoint) == 0 && File.ReadAllText(marker) == owner,
+                "Owned reload account fixture lost its GUID marker or became a link.");
+            HashSet<string> expected = new(records.Values.Select(value => value.File), StringComparer.OrdinalIgnoreCase) { marker };
+            Native.Check(expected.SetEquals(Directory.EnumerateFileSystemEntries(root)), "Unowned entry appeared in the reload account fixture.");
+            foreach (var record in records.Values)
+                Native.Check((File.GetAttributes(record.File) & FileAttributes.ReparsePoint) == 0 && File.ReadAllBytes(record.File).SequenceEqual(record.Bytes), "Read-only reload account ciphertext changed.");
+        }
+        internal void AssertUsed()
+        {
+            ValidateOwned();
+            foreach (var pair in records)
+                Check(reads.TryGetValue(pair.Key, out int count) && count > 0 &&
+                    Equals(Settings.Entries[pair.Key].ValueCache[""], pair.Value.Plain),
+                    "FLOW-08-account-" + pair.Key, "actual setter did not read/decrypt its isolated account store; cache bypass/fallback cannot pass");
+        }
+        public void Dispose()
+        {
+            if (disposed) return; disposed = true;
+            try
+            {
+                ValidateOwned();
+                if (installed)
+                {
+                    Native.Check(ReferenceEquals(field.GetValue(host), replacement), "Account read primitive was unexpectedly replaced.");
+                    field.SetValue(host, original); installed = false;
+                }
+                while (restoreCaches.TryPop(out Action? restore)) restore();
+                foreach (var record in records.Values) File.Delete(record.File);
+                File.Delete(marker); Directory.Delete(root, false); // Never recurse into an unowned path.
+            }
+            catch (Exception error) { ModpackUpdateCleanup.TerminateChild("Owned reload-account primitive/cache cleanup failed after actual work barriers: " + error); }
+        }
     }
 
     private static ModMinecraft.McInstance Instance(string minecraft, string name)

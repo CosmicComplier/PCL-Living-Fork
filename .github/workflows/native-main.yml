@@ -258,6 +258,18 @@ jobs:
             supportIndexIsReleaseAsset = $false
           } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $env:NATIVE_LOG_DIRECTORY 'package-roles.json')
 
+      - name: Verify actual CSharp credential factories and the exact Native Main module
+        id: credentials
+        if: ${{ !cancelled() && steps.package_roles.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dotnet = (Get-Command dotnet).Source
+          if ($env:NATIVE_CONFIGURATION -eq 'Release') {
+            & ./scripts/tests/Test-CSharpCredentialFactories.ps1 -DotNetPath $dotnet
+          }
+          $mainOutput = "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/win-x64"
+          & ./scripts/tests/Test-NativeBuildCredentials.ps1 -ManagedMainPath "$mainOutput/LivingPCL.dll" -NativeExecutablePath "$env:NATIVE_EXE" -DotNetPath $dotnet -KeylessBuild
+
       - name: Verify managed and native bridge metadata exception routing
         id: metadata_identity
         if: ${{ !cancelled() && steps.package_roles.outcome == 'success' }}
@@ -281,7 +293,7 @@ jobs:
         id: upgrade_qualification
         # Data-only facade failures remain workflow failures, but do not revoke
         # a package whose required product gates actually succeeded in this run.
-        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.main.outcome == 'success' && steps.resources.outcome == 'success' && steps.package.outcome == 'success' && steps.package_roles.outcome == 'success' && steps.metadata_identity.outcome == 'success' && steps.cold_entry.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.main.outcome == 'success' && steps.resources.outcome == 'success' && steps.package.outcome == 'success' && steps.package_roles.outcome == 'success' && steps.credentials.outcome == 'success' && steps.metadata_identity.outcome == 'success' && steps.cold_entry.outcome == 'success' }}
         run: |
           $ErrorActionPreference = 'Stop'
           $root = [IO.Path]::GetFullPath($env:NATIVE_LOG_DIRECTORY)
@@ -302,7 +314,7 @@ jobs:
             repository = $env:GITHUB_REPOSITORY; sourceSha = $env:GITHUB_SHA
             sourceRunId = $env:GITHUB_RUN_ID; sourceRunAttempt = $env:GITHUB_RUN_ATTEMPT
             configuration = 'Release'; runtimeIdentifier = 'win-x64'; nativePayloadSha256 = $index.nativePayloadSha256
-            requiredSteps = [ordered]@{ main = 'success'; resources = 'success'; package = 'success'; package_roles = 'success'; metadata_identity = 'success'; cold_entry = 'success' }
+            requiredSteps = [ordered]@{ main = 'success'; resources = 'success'; package = 'success'; package_roles = 'success'; credentials = 'success'; metadata_identity = 'success'; cold_entry = 'success' }
             packageIndex = Qualified-File $indexPath
             roles = @($index.artifacts | ForEach-Object { [ordered]@{ role = $_.role; fileName = $_.fileName; bytes = $_.bytes; sha256 = $_.sha256 } })
             coldEntry = Qualified-File $coldFiles[0].FullName
@@ -333,7 +345,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
           $failedGroups = @()
-          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies')
+          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies', 'dependency-graph', 'toolbox', 'visual-assets', 'launcher-lifecycle')
           foreach ($group in $groups) {
             # Every family owns its real STA child and temporary state. A
             # failed theme family must not hide file/dependency acceptance.
@@ -453,7 +465,7 @@ jobs:
           if (-not [IO.File]::Exists($qualificationPath) -or (Get-Item -LiteralPath $qualificationPath).Length -gt 65536 -or ((Get-Item -LiteralPath $qualificationPath).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Missing, oversized or nonordinary Release upgrade qualification; no product entry is allowed.' }
           $qualification = Get-Content -LiteralPath $qualificationPath -Raw | ConvertFrom-Json
           if ($qualification.schemaVersion -ne 1 -or $qualification.kind -cne 'PCLLF.NativeUpgradeQualification' -or $qualification.repository -cne $env:GITHUB_REPOSITORY -or $qualification.sourceSha -cne $env:GITHUB_SHA -or [string]$qualification.sourceRunId -cne $env:GITHUB_RUN_ID -or [string]$qualification.sourceRunAttempt -cne $env:GITHUB_RUN_ATTEMPT -or $qualification.configuration -cne 'Release' -or $qualification.runtimeIdentifier -cne 'win-x64' -or $qualification.nativePayloadSha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Qualification must identify this exact repository/SHA/run/attempt and Release win-x64 payload.' }
-          $required = @('main', 'resources', 'package', 'package_roles', 'metadata_identity', 'cold_entry')
+          $required = @('main', 'resources', 'package', 'package_roles', 'credentials', 'metadata_identity', 'cold_entry')
           if (@($qualification.requiredSteps.PSObject.Properties).Count -ne $required.Count -or @($required | Where-Object { $qualification.requiredSteps.$_ -cne 'success' }).Count -ne 0) { throw 'A required real product gate did not succeed; no product entry is allowed.' }
           function Read-QualifiedJson([object]$record, [string]$pattern, [long]$maximumBytes) {
             if ($record.relativePath -cnotmatch $pattern -or $record.sha256 -cnotmatch '\A[0-9a-f]{64}\z' -or $record.bytes -le 0 -or $record.bytes -gt $maximumBytes) { throw 'Qualification contains an invalid bounded relative evidence record.' }

@@ -34,7 +34,7 @@ NATIVE_ONLY_PREFIXES = (
     "modern/Main/", "modern/BuildEvents/", "modern/BuildResources/",
     "modern/Presentation/NativeWpf/", "modern/ThirdParty/",
     "tests/PCLLF.Native.Facade.Tests/", "scripts/native-smoke/",
-    "scripts/native-update-inspector/",
+    "scripts/native-update-inspector/", "scripts/tests/native-credentials/",
 )
 NATIVE_ONLY_PATHS = {
     "PCL-Living-Fork.Modern.slnx",
@@ -42,6 +42,7 @@ NATIVE_ONLY_PATHS = {
     "scripts/Build-NativeRelease.ps1", "scripts/Build-ModernRelease.ps1",
     "scripts/Test-NativeLauncherSmoke.ps1",
     "scripts/tests/Test-NativeUpgradeQualification.py",
+    "scripts/tests/Test-CSharpCredentialFactories.ps1", "scripts/tests/Test-NativeBuildCredentials.ps1",
 }
 
 NATIVE_ONLY_PATHS.update({"scripts/Test-NativeUpdateBridge.ps1", "scripts/tests/Test-BridgePayloadIdentity.ps1"})

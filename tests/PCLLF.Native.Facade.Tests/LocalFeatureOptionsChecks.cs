@@ -55,7 +55,7 @@ internal static class LocalFeatureOptionsChecks
         profile = (JObject)Data("ReadJson", "personal-options.json")!; L(96, (string?)profile["values"]!["mouseSensitivity"] == "0.7");
         L(98, Rejected(() => Data("AtomicWrite", targetFile, Encoding.UTF8.GetBytes("unexpected-new-data"), "incorrect-old-hash", true)) is IOException);
         foreach (var (version, expected) in new[] { ("1.19.4", false), ("1.20.1", true), ("26.2", true) }) L(99, (bool)Quick("Supported", Instance(scope, "version-" + version, version))! == expected);
-        string world = Path.Combine(target.PathVersion, "saves/World with spaces"); Put(Path.Combine(world, "level.dat"), "synthetic-world"); Put(Path.Combine(world, "region/keep.txt"), "world-data-preserve");
+        string world = Path.Combine(target.PathVersion, "saves", "World with spaces"); Put(Path.Combine(world, "level.dat"), "synthetic-world"); Put(Path.Combine(world, "region", "keep.txt"), "world-data-preserve");
         foreach (string? id in new[] { null, "", " ", ".", "..", "../outside", "..\\outside", "bad:name", "\0" }) L(101, Rejected(() => Quick("WorldPath", target.PathVersion, id)) is not null, id);
         L(102, (string)Quick("WorldPath", target.PathVersion, "World with spaces")! == world);
         foreach (JObject sample in (JArray)baseline["Paths"]!) {
@@ -63,7 +63,7 @@ internal static class LocalFeatureOptionsChecks
             L(111, Rejected(() => Quick("WorldPath", null, identifier)).GetType().FullName == (string)sample["Error"]!, "CLR4 codepoint=" + (int)sample["Code"]!);
         }
         L(116, Rejected(() => Quick("WorldPath", target.PathVersion, "missing-quickplay-leaf")) is IOException);
-        L(117, !Directory.Exists(Path.Combine(target.PathVersion, "saves/missing-quickplay-leaf")));
+        L(117, !Directory.Exists(Path.Combine(target.PathVersion, "saves", "missing-quickplay-leaf")));
         List<string> arguments = new() { "prefix", "--quickPlaySingleplayer", "old world", "--quickPlayMultiplayer", "example.invalid", "--quickPlayRealms", "realm", "--server", "-single-hyphen-value", "--port", "25565", "--server", "--kept", "value", "--SERVER", "upper-kept", "--quickPlayPath=custom.json", "--server=equals-kept", "--quickPlaySingleplayer" };
         object context = Quick("Prepare", target, "World with spaces", arguments, false)!;
         L(121, !arguments.Contains("--quickPlayMultiplayer") && !arguments.Contains("--server") && arguments.Contains("--quickPlaySingleplayer") && arguments[arguments.IndexOf("--quickPlaySingleplayer") + 1] == "World with spaces");
@@ -74,7 +74,7 @@ internal static class LocalFeatureOptionsChecks
         Put(log, "[{\"type\":\"singleplayer\",\"identifier\":\"World with spaces\",\"name\":\"A recent world\",\"lastPlayedTime\":\"2026-10-01T12:00:00Z\"}]"); Quick("Finish", context);
         IList recent = (IList)Quick("Recent")!;
         L(129, recent.Count == 1 && (string)Native.Get(recent[0]!, "VersionPath")! == target.PathVersion && (string)Native.Get(recent[0]!, "Identifier")! == "World with spaces");
-        L(130, File.ReadAllText(Path.Combine(world, "region/keep.txt")) == "world-data-preserve"); File.Delete(Path.Combine(world, "level.dat")); L(132, ((IList)Quick("Recent")!).Count == 0);
+        L(130, File.ReadAllText(Path.Combine(world, "region", "keep.txt")) == "world-data-preserve"); File.Delete(Path.Combine(world, "level.dat")); L(132, ((IList)Quick("Recent")!).Count == 0);
         BindingFiles(target, targetFile);
         Console.WriteLine("PASS local-features personal/QuickPlay: original options/session/file/argument/mod binding assertions and independent CLR4 FOV/path comparisons.");
     }

@@ -405,6 +405,10 @@
     "scripts/Build-ModernRelease.ps1",
     ".github/workflows/native-main.yml",
     "PCL-Living-Fork.Modern.slnx",
-    "scripts/tests/Test-NativeUpgradeQualification.py"
+    "scripts/tests/Test-NativeUpgradeQualification.py",
+    "scripts/tests/native-credentials/NativeCredentialChecks.csproj",
+    "scripts/tests/native-credentials/Program.cs",
+    "scripts/tests/Test-NativeBuildCredentials.ps1",
+    "scripts/tests/Test-CSharpCredentialFactories.ps1"
   ]
 }
