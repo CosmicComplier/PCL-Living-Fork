@@ -312,13 +312,20 @@ try{
  # These exact bytes are compiler inputs under a non-probing subdirectory; never LoadFrom either file.
  $compiler=Join-Path $fixture 'compiler';[IO.Directory]::CreateDirectory($compiler)|Out-Null
  $reference=Join-Path $compiler 'PCLLF.Presentation.dll';[IO.File]::WriteAllBytes($reference,$presentationBytes)
+ # C031's original collection now inherits the real Core generic store. The verifier
+ # needs that compile metadata; runtime Core must still come from this EXE's bytes.
+ $coreBytes=$resources.GetObject('PCLCS');$core=$asm.GetType('PCL.CustomEventCollection',$true).BaseType.Assembly
+ if($coreBytes -isnot [byte[]] -or $coreBytes.Length -eq 0 -or $core.GetName().Name -cne 'PCLCS' -or $core.Location -ne ''){throw 'The standalone EXE did not resolve its real Core from embedded bytes'}
+ $coreMetadata=[Reflection.Assembly]::ReflectionOnlyLoad($coreBytes)
+ if($coreMetadata.FullName -cne $core.FullName -or $coreMetadata.ManifestModule.ModuleVersionId -ne $core.ManifestModule.ModuleVersionId){throw 'Loaded Core identity/module differs from the embedded bytes'}
+ $coreReference=Join-Path $compiler 'PCLCS.dll';[IO.File]::WriteAllBytes($coreReference,$coreBytes)
  $mainReference=Join-Path $compiler ($asm.GetName().Name+'.dll');$mainBytes=[IO.File]::ReadAllBytes($asm.Location)
  [IO.File]::WriteAllBytes($mainReference,$mainBytes)
  $mainMetadata=[Reflection.Assembly]::ReflectionOnlyLoad([IO.File]::ReadAllBytes($mainReference))
  if($mainMetadata.FullName -cne $asm.FullName -or $mainMetadata.ManifestModule.ModuleVersionId -ne $asm.ManifestModule.ModuleVersionId){throw 'The compiler main-assembly reference differs from the loaded standalone EXE'}
  Add-Type -TypeDefinition $checks -ReferencedAssemblies @('System.dll','System.Core.dll','System.Xaml.dll',
   [Windows.FrameworkElement].Assembly.Location,[Windows.UIElement].Assembly.Location,[Windows.Point].Assembly.Location,
-  $mainReference,$reference)
+  $mainReference,$reference,$coreReference)
  $boundMain=[PclMigratedControlChecks].GetField('LastTick',[Reflection.BindingFlags]'NonPublic,Static').GetValue($null).DeclaringType.Assembly
  if(-not [object]::ReferenceEquals($boundMain,$asm) -or $boundMain.Location -ine $executable){throw 'The compiled verifier rebound its main types away from the original standalone EXE'}
  try{[PclMigratedControlChecks]::Run()}catch{throw ($_.Exception.GetBaseException().ToString())}

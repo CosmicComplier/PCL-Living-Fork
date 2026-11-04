@@ -142,13 +142,6 @@ jobs:
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-AuditFixes')
       run: powershell -NoProfile -STA -File scripts/Test-AuditFixes.ps1 -ExecutablePath "$env:PCL_EXE"
 
-    - name: Verify original custom-event DP owners XAML and safe secret boundaries
-      if: contains(fromJSON(env.MIGRATION_CHECKS), 'Test-CustomEventAndSecret')
-      shell: pwsh
-      run: |
-        powershell -NoProfile -STA -File scripts/Test-CustomEventAndSecret.ps1 -ExecutablePath $env:PCL_EXE -RepositoryRoot $env:GITHUB_WORKSPACE
-        if ($LASTEXITCODE -ne 0) { throw 'Original custom-event and secret boundary checks failed.' }
-
     - name: Verify launcher window activation
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-LauncherActivation')
       run: powershell -NoProfile -STA -File scripts/Test-LauncherActivation.ps1 -ExecutablePath "$env:PCL_EXE"
@@ -293,6 +286,13 @@ jobs:
 
     - name: Verify update bridge handoff
       run: powershell -NoProfile -File scripts/Test-UpdateBridge.ps1 -ExecutablePath "$env:PCL_EXE"
+
+    - name: Verify original custom-event DP owners XAML and safe secret boundaries
+      if: ${{ !cancelled() && steps.product_build.outcome == 'success' && contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-CustomEventAndSecret') }}
+      shell: pwsh
+      run: |
+        powershell -NoProfile -STA -File scripts/Test-CustomEventAndSecret.ps1 -ExecutablePath $env:PCL_EXE -RepositoryRoot $env:GITHUB_WORKSPACE
+        if ($LASTEXITCODE -ne 0) { throw 'Original custom-event and secret boundary checks failed.' }
 
     - name: Verify migrated controls and isolated release resources
       if: ${{ !cancelled() && steps.product_build.outcome == 'success' && contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-MigratedControls') }}

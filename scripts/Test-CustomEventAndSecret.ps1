@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$ExecutablePath,[Parameter(Mandatory=$true)][string]$RepositoryRoot)
+﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath,[Parameter(Mandatory=$true)][string]$RepositoryRoot)
 # Windows/.NET Framework/STA only. Actual original owners, no startup, network, credential reads or hardware calls.
 $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
