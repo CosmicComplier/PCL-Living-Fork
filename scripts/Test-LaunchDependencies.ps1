@@ -26,6 +26,40 @@ function VersionData($path,$project,$version,$dependencies){return @{id=$version
 function CfData($path,$project,$id,$dependencies){return @{gameId=432;modId=$project;id=$id;displayName='1.0.0';fileDate='2026-11-01T00:00:00Z';releaseType=1;downloadCount=10;fileName=($project.ToString()+'.jar');fileLength=(Get-Item $path).Length;fileFingerprint=123;isAvailable=$true;downloadUrl=('https://edge.forgecdn.net/files/2000/'+$id+'/'+$project+'.jar');gameVersions=@('1.21.1','Fabric');hashes=@(@{algo=1;value=(Get-FileHash $path -Algorithm SHA1).Hash.ToLowerInvariant()});dependencies=$dependencies}}
 function Render($element,$name,$width=740,$height=560){if(-not $PreviewDirectory){return};[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null;$hostPanel=[Windows.Controls.Grid]::new();$hostPanel.Background=[Windows.Media.BrushConverter]::new().ConvertFromString('#e7effb');$hostPanel.Children.Add($element)|Out-Null;$hostPanel.Measure([Windows.Size]::new($width,$height));$hostPanel.Arrange([Windows.Rect]::new(0,0,$width,$height));$hostPanel.UpdateLayout();$bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new($width,$height,96,96,[Windows.Media.PixelFormats]::Pbgra32);$bitmap.Render($hostPanel);$enc=[Windows.Media.Imaging.PngBitmapEncoder]::new();$enc.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap));$out=[IO.File]::Create((Join-Path $PreviewDirectory $name));try{$enc.Save($out)}finally{$out.Dispose()};$hostPanel.Children.Clear()}
 try{
+ # Verify the new C# login adapter against the real VB value-type output/loader,
+ # without starting a login task, network call, game process or account write.
+ $launchModule=$asm.GetType('PCL.ModLaunch',$true)
+ $loginInputType=$asm.GetType('PCL.ModLaunch+McLoginLegacy',$true)
+ $loginResultType=$asm.GetType('PCL.ModLaunch+McLoginResult',$true)
+ $loginLoaderType=$asm.GetType('PCL.ModLoader+LoaderTask`2',$true).MakeGenericType($loginInputType,$loginResultType)
+ $loginLoader=[Activator]::CreateInstance($loginLoaderType)
+ $factory=$launchModule.GetMethod('LoginPort',$flags).MakeGenericMethod($loginInputType)
+ $loginPort=$factory.Invoke($null,[object[]]@($loginLoader));$liveResult=$loginPort.Output
+ if(-not [object]::ReferenceEquals($loginPort.Source,$loginLoader)){throw 'Login adapter replaced the original loader identity'}
+ $resultNames=@('Name','Uuid','AccessToken','Type','ClientToken','ProfileJson')
+ foreach($name in $resultNames){$liveResult.GetType().GetProperty($name).SetValue($liveResult,('port-'+$name),$null)}
+ $outputField=$loginLoaderType.GetField('Output',$flags);$actual=$outputField.GetValue($loginLoader)
+ foreach($name in $resultNames){if($loginResultType.GetField($name).GetValue($actual) -cne ('port-'+$name)){throw ('Login adapter mutated a boxed copy: '+$name)}}
+ $direct=[Activator]::CreateInstance($loginResultType)
+ foreach($name in $resultNames){$loginResultType.GetField($name).SetValue($direct,('direct-'+$name))}
+ $outputField.SetValue($loginLoader,$direct)
+ foreach($name in $resultNames){if($liveResult.GetType().GetProperty($name).GetValue($liveResult,$null) -cne ('direct-'+$name)){throw ('Held login adapter retained a stale struct: '+$name)}}
+ $replacement=[PCLCS.LegacyLaunchLoginResult]::new()
+ foreach($name in $resultNames){$replacement.GetType().GetProperty($name).SetValue($replacement,('whole-'+$name),$null)}
+ $loginPort.GetType().GetProperty('Output').SetValue($loginPort,$replacement,$null)
+ $actual=$outputField.GetValue($loginLoader)
+ foreach($name in $resultNames){if($loginResultType.GetField($name).GetValue($actual) -cne ('whole-'+$name)){throw ('Whole login result did not reach the original struct: '+$name)}}
+ if(-not [object]::ReferenceEquals($liveResult,$loginPort.Output)){throw 'Whole result write replaced the live adapter identity'}
+ $loginInput=[Activator]::CreateInstance($loginInputType);$loginLoaderType.GetField('Input',$flags).SetValue($loginLoader,$loginInput)
+ if(-not [object]::ReferenceEquals($loginInput,$loginPort.Input)){throw 'Login adapter copied the actual input'}
+ # Waiting deliberately reports zero progress in LF; exercise the same real
+ # public state transition without calling Start or invoking the load delegate.
+ $loginPort.State=[PCLCS.LegacyLaunchState]::Loading
+ $loginPort.Progress=0.375
+ if($loginLoader.Progress -ne 0.375 -or $loginLoader.State.ToString() -ne 'Loading' -or $null -ne $loginLoader.LastRunningThread){throw 'Login adapter state/progress diverged from the real loader'}
+ $loginPort.State=[PCLCS.LegacyLaunchState]::Waiting
+ if($loginLoader.State.ToString() -ne 'Waiting' -or $loginPort.Progress -ne 0 -or $null -ne $loginLoader.LastRunningThread){throw 'Login adapter changed original Waiting progress or started authentication'}
+ Write-Output 'PASS: actual login LoaderTask/struct port keeps all six fields live in both directions, whole-output replacement, input identity and progress without starting authentication.'
  [IO.Directory]::CreateDirectory($fixture)|Out-Null;$mods=Join-Path $fixture 'mods';$source=Join-Path $mods 'consumer.jar';$library=Join-Path $fixture 'packages/library.jar';$base=Join-Path $fixture 'packages/base.jar'
  Jar $source 'consumer' @{lib_core='>=1.0.0'};Jar $library 'lib_core' @{base_core='>=1.0.0'};Jar $base 'base_core' @{}
  $context=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionContext'));$context.MinecraftVersion='1.21.1';$context.LoaderKnown=$true;$context.LoaderVersions.Add('fabricloader','0.16.10')
