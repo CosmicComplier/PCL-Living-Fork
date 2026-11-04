@@ -28,7 +28,7 @@ internal static class Program {
                 .Concat(InstanceResourcePathTextTests.Cases()).Concat(InstanceResourcePathCompatibilityTests.Cases())),
             ("resource-files", () => InstanceResourceKindRulesTests.Cases()
                 .Concat(InstanceResourceNameRulesTests.Cases()).Concat(InstanceResourceFileRulesTests.Cases())
-                .Concat(InstanceResourcePackageRulesTests.Cases()).Concat(InstanceResourcePipelineTests.Cases())),
+                .Concat(InstanceResourcePackageRulesTests.Cases()).Concat(InstanceResourcePipelineTests.Cases()).Concat(ResourceRecyclePipelineTests.Cases())),
             ("resource-metadata", () => InstanceResourceDetailsRulesTests.Cases()
                 .Concat(InstanceResourcePackMetadataTests.Cases()).Concat(InstanceResourceMetadataRuntimeTests.Cases()))
         ];

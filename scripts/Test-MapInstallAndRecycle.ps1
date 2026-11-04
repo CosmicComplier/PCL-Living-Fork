@@ -5,6 +5,30 @@ $root=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.IO.Compression,System.IO.Compression.FileSystem
 foreach($p in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll','Plain Craft Launcher 2/Resources/ThrottleDebounce.dll')){[Reflection.Assembly]::LoadFrom((Join-Path $root $p))|Out-Null}
 $asm=[Reflection.Assembly]::LoadFrom([IO.Path]::GetFullPath($ExecutablePath));$flags=[Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
+# Only this page's private state may move from a field to a forwarding property.
+# Keep DTO/control field contracts and the behavioral assertions below unchanged.
+function Get-ResourcePageStateMember([type]$pageType,[string]$name){
+ if($pageType.FullName -cne 'PCL.PageInstanceResources'){throw 'State hooks are limited to PageInstanceResources'}
+ $member=$pageType.GetField($name,$flags)
+ if($null -eq $member){$member=$pageType.GetProperty($name,$flags)}
+ if($null -eq $member){throw [MissingMemberException]::new($pageType.FullName,$name)}
+ return $member
+}
+function Get-ResourcePageStateType([type]$pageType,[string]$name){
+ $member=Get-ResourcePageStateMember $pageType $name
+ if($member -is [Reflection.FieldInfo]){return $member.FieldType}
+ return $member.PropertyType
+}
+function Get-ResourcePageState($page,[string]$name){
+ $target=$page.PSObject.BaseObject;$member=Get-ResourcePageStateMember ($target.GetType()) $name
+ if($member -is [Reflection.FieldInfo]){return ,$member.GetValue($target)}
+ return ,$member.GetValue($target,$null)
+}
+function Set-ResourcePageState($page,[string]$name,$value){
+ $target=$page.PSObject.BaseObject;$member=Get-ResourcePageStateMember ($target.GetType()) $name
+ if($null -ne $value){$value=$value.PSObject.BaseObject}
+ if($member -is [Reflection.FieldInfo]){$member.SetValue($target,$value)}else{$member.SetValue($target,$value,$null)}
+}
 $app=[Activator]::CreateInstance($asm.GetType('PCL.Application'),$true);$app.InitializeComponent()
 # The dispatcher pump below must not follow Application.xaml's real StartupUri.
 [Windows.Application].GetField('_startupUri',[Reflection.BindingFlags]'NonPublic,Instance').SetValue($app,$null)
@@ -84,7 +108,7 @@ try{
  foreach($entry in $settings.Values|Where-Object {$_.Source.ToString() -eq 'Instance'}){$entry.ValueCache[$owner.PathVersion]=$entry.DefaultValue}
  $settings['VersionArgumentIndieV2'].ValueCache[$owner.PathVersion]=$true
  $type=$asm.GetType('PCL.PageInstanceResources');$page=$type.GetConstructors($flags)|Where-Object {$_.GetParameters().Count -eq 1}|Select-Object -First 1;$page=$page.Invoke(@($kind))
- $type.GetField('Owner',$flags).SetValue($page,$owner);$type.GetField('RecycleRoot',$flags).SetValue($page,$trash);$type.GetProperty('IsRecycleMode',$flags).SetValue($page,$true,$null)
+ Set-ResourcePageState $page 'Owner' $owner;Set-ResourcePageState $page 'RecycleRoot' $trash;$type.GetProperty('IsRecycleMode',$flags).SetValue($page,$true,$null)
  $deleted=Call $recycle 'List' @($saves,$trash,$kind);$type.GetMethod('ShowResources',$flags).Invoke($page,@([string]$saves,[string]$saves,$deleted))|Out-Null
  if($page.FindName('PanWorlds').Visibility -ne 'Collapsed' -or $page.FindName('PanList').Children.Count -ne 1){throw 'Recycle mode did not reuse the native resource list'}
  if($page.FindName('BtnDownload').Visibility -ne 'Collapsed' -or $page.FindName('BackupSettings').Visibility -ne 'Collapsed' -or $page.FindName('BtnBackupAll').Visibility -ne 'Visible'){throw 'Recycle toolbar still exposes ordinary install/backup actions'}
@@ -128,23 +152,23 @@ try{
  }
  $packKind=[Enum]::Parse($asm.GetType('PCL.InstanceResourceKind'),'ResourcePacks')
  $packPage=($type.GetConstructors($flags)|Where-Object {$_.GetParameters().Count -eq 1}|Select-Object -First 1).Invoke(@($packKind))
- $type.GetField('Owner',$flags).SetValue($packPage,$owner);$type.GetProperty('IsRecycleMode',$flags).SetValue($packPage,$true,$null)
+ Set-ResourcePageState $packPage 'Owner' $owner;$type.GetProperty('IsRecycleMode',$flags).SetValue($packPage,$true,$null)
  $packEntry=[Activator]::CreateInstance($asm.GetType('PCL.InstanceResourceEntry'));$packEntry.IsDirectory=$false;$packEntry.FullPath=Join-Path $fixture 'missing-pack.zip'
- $packEntries=[Activator]::CreateInstance($type.GetField('Entries',$flags).FieldType);$packEntries.Add($packEntry)
- $type.GetField('Entries',$flags).SetValue($packPage,$packEntries);$type.GetMethod('CheckUpdates',$flags).Invoke($packPage,@())|Out-Null
- if($type.GetField('Checking',$flags).GetValue($packPage) -or $type.GetField('OnlineCancellation',$flags).GetValue($packPage)){throw 'Recycle resources started an online update lookup'}
+ $packEntries=[Activator]::CreateInstance((Get-ResourcePageStateType $type 'Entries'));$packEntries.Add($packEntry)
+ Set-ResourcePageState $packPage 'Entries' $packEntries;$type.GetMethod('CheckUpdates',$flags).Invoke($packPage,@())|Out-Null
+ if((Get-ResourcePageState $packPage 'Checking') -or (Get-ResourcePageState $packPage 'OnlineCancellation')){throw 'Recycle resources started an online update lookup'}
  $type.GetMethod('RestoreRecycleSelection',$flags).Invoke($page,@($null))|Out-Null
  $timer=[Diagnostics.Stopwatch]::StartNew()
- while($type.GetField('Busy',$flags).GetValue($page) -and $timer.ElapsedMilliseconds -lt 10000){
+ while((Get-ResourcePageState $page 'Busy') -and $timer.ElapsedMilliseconds -lt 10000){
   $frame=[Windows.Threading.DispatcherFrame]::new()
   [Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background,[Action]{$frame.Continue=$false})|Out-Null
   [Windows.Threading.Dispatcher]::PushFrame($frame);[Threading.Thread]::Sleep(5)
  }
- if($type.GetField('Busy',$flags).GetValue($page)){throw 'Resource restore did not finish'}
+ if((Get-ResourcePageState $page 'Busy')){throw 'Resource restore did not finish'}
  Text (Join-Path $saves 'Flat map (2)/level.dat') 'flat-world'
  $hints=$asm.GetType('PCL.ModMain').GetField('HintWaiting',$flags).GetValue($null).ToArray()
  if(-not @($hints|Where-Object {$_.Text -eq '已还原资源' -and $_.Type.ToString() -eq 'Green'}).Count -or $page.FindName('LabOperation').Visibility -ne 'Collapsed'){throw ('Successful restore did not replace inline status with the native corner toast; status='+$page.FindName('LabOperation').Text+'; visibility='+$page.FindName('LabOperation').Visibility+'; hints='+($hints|ConvertTo-Json -Compress))}
- $empty=[Activator]::CreateInstance($type.GetField('Entries',$flags).FieldType)
+ $empty=[Activator]::CreateInstance((Get-ResourcePageStateType $type 'Entries'))
  $type.GetMethod('ShowResources',$flags).Invoke($page,@([string]$saves,[string]$saves,$empty))|Out-Null
  if($page.FindName('LabEmpty').Text -ne '回收站为空。' -or $page.FindName('BtnBackupAll').IsEnabled -or $back.Visibility -ne 'Visible' -or $page.FindName('CardSelect').Visibility -ne 'Collapsed'){throw 'Empty recycle bin lost its empty state, return action or selection cleanup'}
  $type.GetMethod('ReturnToResources',$flags).Invoke($page,@())|Out-Null
