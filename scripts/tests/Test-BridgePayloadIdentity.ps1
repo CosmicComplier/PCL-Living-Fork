@@ -67,3 +67,6 @@ foreach($item in @(
 $summary=[ordered]@{platform=[Runtime.InteropServices.RuntimeInformation]::OSDescription;runtime=[Runtime.InteropServices.RuntimeInformation]::FrameworkDescription;powerShell=$PSVersionTable.PSVersion.ToString();scope='Actual production identity slice and typed exception catch plus real bounded reader; no product execution or Windows acceptance implied';count=$results.Count;results=@($results.ToArray())}
 $summary|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $runRoot 'results.json') -Encoding utf8
 Write-Output ('PASS '+$results.Count+' actual identity routing/catch contracts; evidence '+(Join-Path $runRoot 'results.json'))
+# Expected native-reader rejection exits are asserted above. Report success to
+# GitHub's pwsh exit tail only after every assertion and evidence write succeeds.
+$global:LASTEXITCODE=0

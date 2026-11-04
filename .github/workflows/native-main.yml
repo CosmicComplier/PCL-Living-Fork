@@ -281,9 +281,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
-          & dotnet run --project tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-build 2>&1 |
-            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'facade-runtime.log')
-          if ($LASTEXITCODE -ne 0) { throw 'Actual native Main data/adapter acceptance failed.' }
+          $failedGroups = @()
+          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater')
+          foreach ($group in $groups) {
+            # Every family owns its real STA child and temporary state. A
+            # failed theme family must not hide file/dependency acceptance.
+            & dotnet run --project tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-build -- --groups $group 2>&1 |
+              Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY ("facade-" + $group + '.log'))
+            if ($LASTEXITCODE -ne 0) { $failedGroups += $group }
+          }
+          if ($failedGroups.Count -ne 0) { throw ('Actual native Main acceptance failed: ' + ($failedGroups -join ', ')) }
 
       - name: Compile the original optional LegacyLink mode without running services
         id: legacy_link_compile
@@ -298,6 +305,21 @@ jobs:
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'legacy-link-build.log')
           if ($LASTEXITCODE -ne 0) { throw 'The original optional LegacyLink mode failed Windows compilation.' }
           Write-Output 'Compiled EnableLegacyLink=true only; optional network services were not executed. Main warnings remain in legacy-link-build.log.'
+
+      - name: Upload small actual native startup evidence
+        if: always() && matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-startup-evidence-${{ matrix.configuration }}
+          path: |
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/evidence.json
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/*-diagnostics.json
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/PCL/Log*.txt
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/startup-*.log
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/main-*.png
+          if-no-files-found: warn
+          compression-level: 9
+          retention-days: 7
 
       - name: Upload native build packages and bounded runtime evidence
         if: always()

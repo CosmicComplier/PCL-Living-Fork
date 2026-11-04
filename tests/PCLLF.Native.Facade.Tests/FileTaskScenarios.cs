@@ -38,7 +38,7 @@ internal static class FileTaskScenarios
         File.WriteAllText(second, "second original");
         File.WriteAllText(firstPayload, "first replacement");
         File.WriteAllText(secondPayload, "second replacement");
-        string Digest(string path) => (string)Native.Static("PCL.ModpackUpdate", "Digest", path)!;
+        string Digest(string path) => (string)Native.Static("PCL.ModpackUpdate", "Digest", path, "sha1")!;
         var operations = new List<Tuple<string, string, string>>
         {
             Tuple.Create(first, firstPayload, Digest(first)),

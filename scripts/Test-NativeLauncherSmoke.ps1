@@ -53,6 +53,25 @@ function Check-Log([string]$text,[string]$expectedNotice){
  foreach($title in $titles){if($title -cne $expectedNotice){Pending ('Unexpected actual product dialog, never auto-clicked: '+$title)}}
  if($text -match '主窗体加载完成前出现意料外的等待弹窗|处理等待中的弹窗失败|弹窗初始化失败|弹窗加载失败'){throw 'Actual product modal/initialization failed.'}
 }
+function Assert-LfNormalClose([int]$exitCode,[string]$text,[string]$expectedNotice){
+ # LF50 EndProgramForce(Success=0) flushes and self-Kill()s. The fixed Windows
+ # runtime10.0.14 Process.Kill calls TerminateProcess(handle,-1), not Exit(0).
+ if($exitCode -ne -1){throw ('Actual Main did not preserve LF Windows self-Kill exit -1; observed '+$exitCode)}
+ Check-Log $text $expectedNotice
+ $closing=[regex]::Match($text,'(?m)^\d{2}:\d{2}:\d{2}\.\d{3} I [^\r\n]*\] 收到关闭指令\r?$')
+ $success=[regex]::Match($text,'(?m)^\d{2}:\d{2}:\d{2}\.\d{3} I [^\r\n]*\] 程序已退出，返回值：Success\r?$')
+ if(-not $closing.Success -or -not $success.Success -or $success.Index -le $closing.Index){throw 'Actual Main lacks ordered real LF closing and Success termination log receipts.'}
+}
+function Write-OwnedCloseDiagnostic([object]$exitCode,[string]$text,[string]$phase){
+ # Only this GUID fixture's synthetic product log. Cap console/file evidence;
+ # no AppData/account, global event log, desktop or unrelated process is read.
+ $lines=@($text.Replace("`r",'').Split("`n")|Select-Object -Last 25|ForEach-Object {if($_.Length -gt 512){$_.Substring($_.Length-512)}else{$_}})
+ $tail=$lines -join "`n";if($tail.Length -gt 12000){$tail=$tail.Substring($tail.Length-12000)}
+ $hex=$null;if($null -ne $exitCode){$hex='0x'+([BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$exitCode),0)).ToString('X8')}
+ $diagnostic=[ordered]@{Phase=$phase;ObservedExitCode=$exitCode;ObservedExitCodeHex=$hex;ExpectedWindowsLfExitCode=-1;HasClosingReceipt=$text.Contains('收到关闭指令');HasSuccessReceipt=$text.Contains('程序已退出，返回值：Success');LogCharacters=$text.Length;BoundedOwnedLogTail=$tail;ForcedCleanup=$evidence.ForcedCleanup}
+ [IO.File]::WriteAllText((Join-Path $fixture ('process-'+$phase+'-diagnostics.json')),($diagnostic|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+ Write-Output ('Actual Native Main bounded diagnostic: '+($diagnostic|ConvertTo-Json -Depth 4 -Compress))
+}
 try{
  foreach($directory in @($fixture,$install,$differentCwd,$cache)){[IO.Directory]::CreateDirectory($directory)|Out-Null}
  [IO.File]::WriteAllText((Join-Path $fixture 'owner.txt'),$id)
@@ -119,9 +138,9 @@ try{
   if($pass -eq 2){$rotated=Join-Path $install 'PCL/Log2.txt';if(-not [IO.File]::Exists($rotated) -or (Hash-OwnedFile $rotated) -cne $previousLogHash){throw 'Reopen did not preserve original LF log rotation.'}}
   if(-not [PclLfNativeSmoke.Win32]::PostClose($mainWindow.Handle)){throw 'Actual selected Main HWND did not accept WM_CLOSE.'}
   if(-not $nativeProcess.WaitForExit($CloseTimeoutSeconds*1000)){throw 'Actual Main failed normal bounded close; forced cleanup is not success.'}
-  $run.ExitCode=$nativeProcess.ExitCode;if($nativeProcess.ExitCode -ne 0){throw 'Actual Main normal exit code was not zero.'}
-  $text=Read-OwnedLog;Check-Log $text $expectedNotice
-  if(-not $text.Contains('收到关闭指令')){throw 'WM_CLOSE did not execute the real LF closing/controller path.'}
+  $run.ExitCode=$nativeProcess.ExitCode
+  $text=Read-OwnedLog;Write-OwnedCloseDiagnostic $run.ExitCode $text ('close-'+$pass)
+  Assert-LfNormalClose $run.ExitCode $text $expectedNotice
   $run.NormalExit=$true;$nativeProcess.Dispose();$nativeProcess=$null
   foreach($name in $mutexNames){Check-Mutex $name $false}
   $exclusive=[IO.File]::Open($installed,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$exclusive.Dispose()
@@ -133,6 +152,12 @@ try{
  $evidence.Result='passed';$evidence.Limit='Cold actual Main HWND visible in the CI windowstation/normal close/reopen only; noninteractive sessions are recorded, not claimed as human desktop interaction. Known OpenSource version information is observed, never clicked; no navigation/font/interaction/update-bridge completion inferred.'
 }catch{if($evidence.Result -ne 'pending' -or $_.Exception.Message -notlike 'PENDING:*'){$evidence.Result='failed'};$evidence.Error=$_.Exception.Message;throw}
 finally{
+ try{
+  $diagnosticExit=$null
+  if($null -ne $nativeProcess -and $nativeProcess.HasExited){$diagnosticExit=$nativeProcess.ExitCode}elseif($null -ne $run -and $run.Contains('ExitCode')){$diagnosticExit=$run.ExitCode}
+  $diagnosticLog=Read-OwnedLog
+  if($diagnosticLog.Length -gt 0){Write-OwnedCloseDiagnostic $diagnosticExit $diagnosticLog 'before-cleanup'}
+ }catch{$evidence.CleanupErrors+=('Owned bounded diagnostics: '+$_.Exception.Message);Write-Output ('Native diagnostic collection failed: '+$_.Exception.Message)}
  if($null -ne $nativeProcess){try{if(-not $nativeProcess.HasExited){[void]$nativeProcess.CloseMainWindow();if(-not $nativeProcess.WaitForExit(3000)){$evidence.ForcedCleanup=$true;$nativeProcess.Kill();[void]$nativeProcess.WaitForExit(5000)}};$ownProcessStopped=$nativeProcess.HasExited;if(-not $ownProcessStopped){$evidence.CleanupErrors+='Own launcher is still alive; preserve fixture profile.'}}catch{$ownProcessStopped=$false;$evidence.CleanupErrors+=('Own process cleanup: '+$_.Exception.Message)}finally{$nativeProcess.Dispose()}}
  # Delete only initially absent stores owned by this fixture marker. Never back
  # up/read/restore a real user's profile or delete an unmarked changed store.

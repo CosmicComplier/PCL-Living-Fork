@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MeloongCore;
@@ -60,21 +61,42 @@ public static class ThemeScenarios {
         try {
             theme.Refresh();
             Require(!LegacyThemePalette.IsDarkTheme && LegacyThemePalette.Brush("ColorBrushDialog").Color==(Color)ColorConverter.ConvertFromString("#FBFBFB"),"Light palette");
-            SolidColorBrush sharedWhite=LegacyThemePalette.Brush("ColorBrushWhite");
-            SolidColorBrush oldCard=LegacyThemePalette.Brush("ColorBrushCard");oldCard.Freeze();
+            SolidColorBrush naturalWhite=LegacyThemePalette.Brush("ColorBrushWhite");
+            Color naturalWhiteColor=naturalWhite.Color;double naturalWhiteOpacity=naturalWhite.Opacity;
+            ReportBrush("natural light White",naturalWhite,naturalWhite);
+            Require(naturalWhite.IsFrozen && naturalWhiteColor==Color.FromArgb(255,255,255,255) && naturalWhiteOpacity==1,
+                "Application-owned plain White must retain the exact light role and framework freeze: "+BrushState(naturalWhite));
+            // Application ResourceDictionary seals/freezes every sealable value.
+            // A genuine Binding expression makes this concrete WPF brush unable
+            // to freeze, so the production mutable-resource branch is actually tested.
+            SolidColorBrush sharedWhite=new(naturalWhiteColor);
+            BindingOperations.SetBinding(sharedWhite,Brush.OpacityProperty,new Binding { Source=0.875,Mode=BindingMode.OneWay });
+            Require(!sharedWhite.IsFrozen && !sharedWhite.CanFreeze && BindingOperations.IsDataBound(sharedWhite,Brush.OpacityProperty),
+                "The controlled mutable White requires a real live binding: "+BrushState(sharedWhite));
+            application.Resources["ColorBrushWhite"]=sharedWhite;
+            Require(ReferenceEquals(sharedWhite,LegacyThemePalette.Brush("ColorBrushWhite")) && sharedWhite.Opacity==0.875,
+                "Application resource insertion replaced or froze the bound White: "+BrushState(sharedWhite));
+            SolidColorBrush oldCard=LegacyThemePalette.Brush("ColorBrushCard");Color oldCardColor=oldCard.Color;double oldCardOpacity=oldCard.Opacity;oldCard.Freeze();
             theme.UseDefaultBackground(background);
             ImageBrush day=(ImageBrush)background.Background;
             day.Stretch=Stretch.UniformToFill;day.AlignmentX=AlignmentX.Right;day.Freeze();
             window.Content=watched;window.Show();PumpUntil(()=>refreshes==1);
+            ReportBrush("after real Window.Show White",sharedWhite,LegacyThemePalette.Brush("ColorBrushWhite"));
             int loadedRefreshes=refreshes;
             Task dispatched=Task.Run(()=>theme.Refresh());
             PumpUntil(()=>dispatched.IsCompleted);dispatched.GetAwaiter().GetResult();
+            ReportBrush("after worker-to-UI light refresh White",sharedWhite,LegacyThemePalette.Brush("ColorBrushWhite"));
             Require(refreshes==loadedRefreshes+1,"Real worker-to-UI refresh did not notify once");
             loadedRefreshes=refreshes;
             mode=1;theme.Refresh();
             Require(refreshes==loadedRefreshes+1 && suppression==0,"Loaded watcher/animation suppression");
-            Require(LegacyThemePalette.IsDarkTheme && ReferenceEquals(sharedWhite,LegacyThemePalette.Brush("ColorBrushWhite")) && sharedWhite.Color==(Color)ColorConverter.ConvertFromString("#252932"),"Mutable role brush identity/dark color");
-            Require(!ReferenceEquals(oldCard,LegacyThemePalette.Brush("ColorBrushCard")) && LegacyThemePalette.Brush("ColorBrushCard").Color.A==245,"Frozen card replacement/panel alpha");
+            SolidColorBrush currentWhite=LegacyThemePalette.Brush("ColorBrushWhite"),currentCard=LegacyThemePalette.Brush("ColorBrushCard");
+            ReportBrush("after dark refresh White",sharedWhite,currentWhite);
+            ReportBrush("after dark refresh Card",oldCard,currentCard);
+            Require(LegacyThemePalette.IsDarkTheme && ReferenceEquals(sharedWhite,currentWhite) && sharedWhite.Color==Color.FromArgb(255,37,41,50) && sharedWhite.Opacity==0.875 && !sharedWhite.IsFrozen && !sharedWhite.CanFreeze && BindingOperations.IsDataBound(sharedWhite,Brush.OpacityProperty),
+                "Mutable White expected same reference, exact ARGB=#FF252932, Opacity=0.875 and live binding; "+BrushPair(sharedWhite,currentWhite));
+            Require(!ReferenceEquals(oldCard,currentCard) && currentCard.Color==Color.FromArgb(245,37,41,50) && currentCard.Opacity==1 && currentCard.IsFrozen && oldCard.Color==oldCardColor && oldCard.Opacity==oldCardOpacity && oldCard.IsFrozen,
+                "Frozen Card expected replacement, exact ARGB=#F5252932 at panel=960, Opacity=1 and unchanged old object; "+BrushPair(oldCard,currentCard));
             Require(colors[13].ToMediaColor()==(Color)ColorConverter.ConvertFromString("#7F8B9E") && colors[0].ToMediaColor()==(Color)ColorConverter.ConvertFromString("#DCE2EB"),"Live color slots");
             ImageBrush night=(ImageBrush)background.Background;
             Require(!ReferenceEquals(day,night) && !ReferenceEquals(day.ImageSource,night.ImageSource) && night.Stretch==Stretch.UniformToFill && night.AlignmentX==AlignmentX.Right,"Night switch preserves frozen ImageBrush settings");
@@ -84,8 +106,8 @@ public static class ThemeScenarios {
             backgroundMode=1;theme.ApplyBackground(main,background);
             Require(background.Visibility==Visibility.Collapsed && ReferenceEquals(main.Background,LegacyThemePalette.Brush("ColorBrushBackground")),"Plain dark background");
             Require(((LinearGradientBrush)title.Background).IsFrozen,"Title brush freeze");
-            opacity=-1;theme.RefreshPanelOpacity();Require(LegacyThemePalette.Brush("ColorBrushCard").Color.A==0,"Panel lower clamp");
-            opacity=1001;theme.RefreshPanelOpacity();Require(LegacyThemePalette.Brush("ColorBrushCard").Color.A==255,"Panel upper clamp");
+            opacity=-1;theme.RefreshPanelOpacity();Require(LegacyThemePalette.Brush("ColorBrushCard").Color==Color.FromArgb(0,37,41,50),"Panel lower clamp must preserve complete RGB: "+BrushState(LegacyThemePalette.Brush("ColorBrushCard")));
+            opacity=1001;theme.RefreshPanelOpacity();Require(LegacyThemePalette.Brush("ColorBrushCard").Color==Color.FromArgb(255,37,41,50),"Panel upper clamp must preserve complete RGB: "+BrushState(LegacyThemePalette.Brush("ColorBrushCard")));
             TextBlock replacement=new(){Text="replacement"};tooltip.Child=replacement;
             PumpUntil(()=>replacement.Foreground is SolidColorBrush b && b.Color==colors[0].ToMediaColor());
             Require(ReferenceEquals(tooltip.Background,LegacyThemePalette.Brush("ColorBrushPopup")),"Actual tooltip card role reference");
@@ -99,12 +121,23 @@ public static class ThemeScenarios {
             window.Content=watched;PumpUntil(()=>watched.IsLoaded && refreshes==unloaded+1);
             theme.NotifyThemeChanged();Require(refreshes==unloaded+2,"Reload duplicated palette subscription");
             window.Content=null;PumpUntil(()=>!watched.IsLoaded);
+            // The ordinary resource from the first real palette was naturally
+            // frozen by WPF. Reinstall it to exercise LF's other production path.
+            application.Resources["ColorBrushWhite"]=naturalWhite;
+            theme.ApplyThemePalette();
+            SolidColorBrush replacedWhite=LegacyThemePalette.Brush("ColorBrushWhite");
+            ReportBrush("natural frozen White replacement",naturalWhite,replacedWhite);
+            Require(!ReferenceEquals(naturalWhite,replacedWhite) && replacedWhite.Color==Color.FromArgb(255,37,41,50) && replacedWhite.Opacity==1 && replacedWhite.IsFrozen && naturalWhite.Color==naturalWhiteColor && naturalWhite.Opacity==naturalWhiteOpacity && naturalWhite.IsFrozen,
+                "Natural frozen White expected replacement, exact ARGB=#FF252932/Opacity=1, and unchanged original light object; "+BrushPair(naturalWhite,replacedWhite));
             Console.WriteLine("PASS theme-main50 Windows: actual palette/slots/resources/title/background/opacity, live loaded/unloaded watcher and failure finally, actual tooltip-card child replacement; host bitmap filesystem adapter used.");
         } finally {
             window.Close();theme.PrepareThemeTones(oldDark);
             application.Resources=oldResources;application.ShutdownMode=oldShutdown;
         }
     }
+    private static string BrushState(SolidColorBrush brush)=>$"ARGB=#{brush.Color.A:X2}{brush.Color.R:X2}{brush.Color.G:X2}{brush.Color.B:X2}, Opacity={brush.Opacity.ToString("R",System.Globalization.CultureInfo.InvariantCulture)}, IsFrozen={brush.IsFrozen}, CanFreeze={brush.CanFreeze}, OpacityBinding={BindingOperations.IsDataBound(brush,Brush.OpacityProperty)}";
+    private static string BrushPair(SolidColorBrush previous,SolidColorBrush current)=>"SameReference="+ReferenceEquals(previous,current)+"; previous {"+BrushState(previous)+"}; current {"+BrushState(current)+"}";
+    private static void ReportBrush(string phase,SolidColorBrush previous,SolidColorBrush current)=>Console.WriteLine("DIAG theme "+phase+": "+BrushPair(previous,current));
     private static void Require(bool value,string message){if(!value)throw new Exception(message);}
     private static void PumpUntil(Func<bool> done) {
         Stopwatch timer=Stopwatch.StartNew();

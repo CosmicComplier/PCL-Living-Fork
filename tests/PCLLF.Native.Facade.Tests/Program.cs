@@ -15,7 +15,8 @@ internal static class Program
         ["theme"] = environment => ThemeScenarios.Run(Application.Current, Path.Combine(AppContext.BaseDirectory, "assets")),
         ["file-tasks"] = FileTaskScenarios.Run,
         ["mod-dependencies"] = NativeDependencyChecks.Local,
-        ["mod-dependency-online"] = NativeDependencyChecks.Online
+        ["mod-dependency-online"] = NativeDependencyChecks.Online,
+        ["updater"] = NativeUpdateChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)

@@ -35,7 +35,7 @@ public static class LegacyMainTermination {
     public static void EndProgramForce(int returnCode, LegacyMainTerminationHost host) {
         ProjectData.ClearProjectError();
         ResumeNext(host.MarkEnding); ResumeNext(host.DisableAnimations);
-        if (returnCode == 1) {
+        if (returnCode == 2) { // LF ProcessReturnValues.Exception; Fail is 1.
             if (ResumeNextCondition(() => !host.LogShown())) {
                 ResumeNext(host.Feedback); ResumeNext(() => Logger.Info($"请在 {host.IssuesUrl()} 提交启动器错误报告，以便于本项目维护者排查。"));
                 ResumeNext(() => host.WriteLogShown(true)); ResumeNext(host.OpenLog);

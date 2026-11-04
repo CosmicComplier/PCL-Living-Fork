@@ -37,6 +37,7 @@ NATIVE_ONLY_PREFIXES = (
     "scripts/native-update-inspector/",
 )
 NATIVE_ONLY_PATHS = {
+    "PCL-Living-Fork.Modern.slnx",
     ".github/workflows/native-main.yml",
     "scripts/Build-NativeRelease.ps1", "scripts/Build-ModernRelease.ps1",
     "scripts/Test-NativeLauncherSmoke.ps1",

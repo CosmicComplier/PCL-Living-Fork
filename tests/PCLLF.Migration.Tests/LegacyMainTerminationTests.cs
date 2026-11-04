@@ -17,8 +17,40 @@ internal static class LegacyMainTerminationTests
         Exit = _ => { }, DescribeCode = _ => "Success"
     };
 
+    private static void VerifyReturnCodeRoutes()
+    {
+        // Real LF f4/main50 enum: Success=0, Fail=1, Exception=2. Isolate only
+        // process/UI primitives; invoke the actual production shutdown engine.
+        foreach (var scenario in new[] { (Code: 0, Name: "Success", Shown: false), (Code: 1, Name: "Fail", Shown: false), (Code: 2, Name: "Exception", Shown: false), (Code: 2, Name: "Exception", Shown: true) })
+        {
+            List<string> order = new();
+            var host = Host();
+            host.MarkEnding = () => order.Add("ending"); host.DisableAnimations = () => order.Add("animation");
+            host.LogShown = () => { order.Add("shown?"); return scenario.Shown; };
+            host.Feedback = () => order.Add("feedback"); host.IssuesUrl = () => { order.Add("issues"); return "https://example.invalid/issues"; };
+            host.WriteLogShown = value => order.Add("shown:" + value); host.OpenLog = () => order.Add("open-log");
+            host.DescribeCode = value => { order.Add("log:" + value); return scenario.Name; };
+            host.SaveAll = () => order.Add("save"); host.FlushLog = () => order.Add("flush");
+            host.Exit = value => order.Add("exit:" + value); host.Kill = () => order.Add("kill");
+            LegacyMainTermination.EndProgramForce(scenario.Code, host);
+            List<string> expected = new() { "ending", "animation" };
+            if (scenario.Code == 2)
+            {
+                expected.Add("shown?");
+                if (!scenario.Shown) expected.AddRange(new[] { "feedback", "issues", "shown:True", "open-log" });
+            }
+            expected.AddRange(new[] { "log:" + scenario.Code, "save", "flush" });
+            if (scenario.Code != 0) expected.Add("exit:" + scenario.Code);
+            expected.Add("kill");
+            Assert(order.SequenceEqual(expected), "LF return-code shutdown route mismatch for " + scenario.Name + "/shown=" + scenario.Shown + ": " + string.Join(",", order));
+            Assert(Current is null, "healthy return-code route must preserve clear Err");
+        }
+        Console.WriteLine("PASS actual LF termination routes: Success0 self-Kill only, Fail1 Exit without exception feedback, Exception2 feedback once/Exit2 and save-flush order");
+    }
+
     internal static void Run()
     {
+        VerifyReturnCodeRoutes();
         // Entry is the original On Error statement. A healthy call clears an earlier Err.
         ProjectData.SetProjectError(new IOException("prior"));
         bool entryClear = false;
@@ -69,7 +101,7 @@ internal static class LegacyMainTerminationTests
         warning.FlushLog = () => seen.Add(("flush after warning", ReferenceEquals(Current, open)));
         warning.Exit = _ => throw exit;
         warning.Kill = () => seen.Add(("failed Exit still reaches Kill", ReferenceEquals(Current, exit)));
-        LegacyMainTermination.EndProgramForce(1, warning);
+        LegacyMainTermination.EndProgramForce(2, warning);
         Assert(seen.Count == 6 && seen.All(item => item.Passed), "warning/exit continuation Err mismatch: " + string.Join(", ", seen.Where(item => !item.Passed).Select(item => item.Name)));
         Assert(ReferenceEquals(Current, exit), "method exit must retain failed Exit Err when Kill succeeds");
 

@@ -21,7 +21,9 @@ internal static class RegistryDataChecks
         string identify = PCL.ModBase.Identify;
         Native.Check(identify == LegacySettingsCrypto.SourceIdentify(RegistryDataPlatformScope.Hardware, RegistryDataPlatformScope.Seed), "The real Main CurrentIdentify did not use the already-installed synthetic identity primitives.");
         Native.Check(Native.Static("PCL.Settings", "DesEncrypt", "synthetic-user", "") as string == "yVKVR2ckWDXyfsNYInb5MQ==", "Real Main DES facade lost the independently fixed LF wire-format vector.");
-        var expected = Native.Entries.Cast<DictionaryEntry>().Where(item => item.Key is string key && (key == "LoginMsJson" || key.StartsWith("CacheMs", StringComparison.Ordinal))).Select(item => (string)item.Key).ToHashSet(StringComparer.Ordinal);
+        // IDictionary's IEnumerable enumerator may yield generic KeyValuePair values;
+        // this check needs only the real schema keys, whose Keys collection yields strings.
+        var expected = Native.Entries.Keys.Cast<string>().Where(key => key == "LoginMsJson" || key.StartsWith("CacheMs", StringComparison.Ordinal)).ToHashSet(StringComparer.Ordinal);
         Native.Check(expected.SetEquals(MicrosoftNames), "The genuine Main schema is not the thirteen reviewed Microsoft records.");
         RoundtripAndForeign(registry, identify);
         UpgradeAndLogout(registry, identify);

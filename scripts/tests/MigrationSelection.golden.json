@@ -403,6 +403,7 @@
     "scripts/native-update-inspector/Program.cs",
     "scripts/Build-NativeRelease.ps1",
     "scripts/Build-ModernRelease.ps1",
-    ".github/workflows/native-main.yml"
+    ".github/workflows/native-main.yml",
+    "PCL-Living-Fork.Modern.slnx"
   ]
 }
