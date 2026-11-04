@@ -156,6 +156,8 @@ $parameters.ReferencedAssemblies.Add($corePath)|Out-Null
 $parameters.ReferencedAssemblies.Add($sharedPath)|Out-Null
 $parameters.ReferencedAssemblies.Add($jsonPath)|Out-Null
 $framework=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
+# Prevent CodeDom inferring its core assembly from the netstandard Facades directory.
+$parameters.CoreAssemblyFileName=Join-Path $framework 'mscorlib.dll'
 $parameters.ReferencedAssemblies.Add((Join-Path $framework 'Facades/netstandard.dll'))|Out-Null
 $parameters.GenerateInMemory=$true
 $parameters.CompilerOptions='/optioninfer+ /imports:Microsoft.VisualBasic,System.Threading /sdkpath:"'+$framework+'" /vbruntime:"'+(Join-Path $framework 'Microsoft.VisualBasic.dll')+'"'
