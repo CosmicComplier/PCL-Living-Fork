@@ -18,6 +18,13 @@ function Get-ResourcePageStateMember([type]$pageType,[string]$name){
  if($null -eq $member){throw [MissingMemberException]::new($pageType.FullName,$name)}
  return $member
 }
+# These three states now belong to the C# controller, not page forwarding properties.
+function Get-ResourceBackupStateMember($controller,[string]$name){
+ if($name -notin @('WorldBackupPoints','BackupGroups','SelectedPaths')){throw 'Backup state hooks are limited to the migrated controller fields'}
+ $controllerType=$controller.GetType();$member=$controllerType.GetField($name,$flags)
+ if($null -eq $member){throw [MissingMemberException]::new($controllerType.FullName,$name)}
+ return $member
+}
 function Get-ResourcePageStateType([type]$pageType,[string]$name){
  $member=Get-ResourcePageStateMember $pageType $name
  if($member -is [Reflection.FieldInfo]){return $member.FieldType}
@@ -88,30 +95,32 @@ try {
   $points.Add([Newtonsoft.Json.Linq.JObject]::Parse(($json|ConvertTo-Json -Depth 5)))
  }
  $pageType=$asm.GetType('PCL.PageInstanceResources');$page=$pageType.GetConstructor($flags,$null,[type[]]@($kindType),$null).Invoke(@((Kind 'Saves')))
- Set-ResourcePageState $page 'Owner' $owner.PSObject.BaseObject;Set-ResourcePageState $page 'WorldBackupPoints' $points
+ Set-ResourcePageState $page 'Owner' $owner.PSObject.BaseObject
+ $controller=Get-ResourcePageState $page 'Controller'
+ (Get-ResourceBackupStateMember $controller 'WorldBackupPoints').SetValue($controller,$points.PSObject.BaseObject)
  $items=Scan $saves (Kind 'Saves');$pageType.GetMethod('ShowResources',$flags).Invoke($page,[object[]]@([string]$saves,[string]$saves,$items.PSObject.BaseObject))|Out-Null
- $groups=(Get-ResourcePageState $page 'BackupGroups')
+ $groups=(Get-ResourceBackupStateMember $controller 'BackupGroups').GetValue($controller)
  if($groups.Count -ne 3 -or $page.FindName('PanWorlds').Children.Count -ne 3){throw 'World and orphan-backup groups were not integrated'}
- $group=$groups['Folder A'];$card=$group.FindName('CardBackups');$card.IsSwapped=$false;$card.BuildContent()
+ $group=$groups['Folder A'].Element;$card=$group.FindName('CardBackups');$card.IsSwapped=$false;$card.BuildContent()
  $backupRow=$group.FindName('PanEntries').Children[0];$backupRow.Checked=$true
  if($page.FindName('BtnBackupRestore').Visibility -ne 'Visible' -or -not $page.FindName('BtnBackupRestore').IsEnabled -or $page.FindName('BtnExport').Visibility -ne 'Collapsed'){throw 'Backup selection did not route the shared footer to backup actions'}
- if((Get-ResourcePageState $page 'SelectedPaths').Count -ne 0){throw 'World and backup selections were mixed'}
+ if((Get-ResourceBackupStateMember $controller 'SelectedPaths').GetValue($controller).Count -ne 0){throw 'World and backup selections were mixed'}
  $worldHost=$page.FindName('PanWorlds').Children|Where-Object {$_ -is [Windows.Controls.StackPanel]}|Select-Object -First 1
  $worldRow=$worldHost.Children|Where-Object {$_.GetType().Name -eq 'MyLocalModItem'}|Select-Object -First 1
  $worldRow.Checked=$true
  if($group.GetType().GetProperty('SelectedIds',$flags).GetValue($group,$null).Count -ne 0 -or $page.FindName('BtnBackupRestore').Visibility -ne 'Collapsed' -or $page.FindName('BtnExport').Visibility -ne 'Visible'){throw 'World selection retained backup deletion targets'}
  $pageType.GetMethod('ChangeAllSelected',$flags).Invoke($page,@($true))|Out-Null
- if((Get-ResourcePageState $page 'SelectedPaths').Count -ne 2){throw 'Select all included group containers or backup records'}
+ if((Get-ResourceBackupStateMember $controller 'SelectedPaths').GetValue($controller).Count -ne 2){throw 'Select all included group containers or backup records'}
  $page.FindName('SearchBox').Text='Removed Folder'
  if($page.FindName('PanWorlds').Children.Count -ne 1 -or $page.FindName('PanEmpty').Visibility -ne 'Collapsed'){throw 'Backup-only worlds became inaccessible'}
- $orphan=$groups['Removed Folder'];if($orphan.FindName('BtnCreate').IsEnabled -or -not $orphan.FindName('CardBackups').Title.Contains('Removed Folder')){throw 'Orphan group is not clearly identified or permits backing up a missing world'}
+ $orphan=$groups['Removed Folder'].Element;if($orphan.FindName('BtnCreate').IsEnabled -or -not $orphan.FindName('CardBackups').Title.Contains('Removed Folder')){throw 'Orphan group is not clearly identified or permits backing up a missing world'}
  $page.FindName('SearchBox').Text=''
  $left=[Activator]::CreateInstance($asm.GetType('PCL.PageInstanceLeft'));if($left.FindName('ItemBackups')){throw 'Separate backup sidebar still exists'}
  $enum=$asm.GetType('PCL.FormMain+PageSubType');$legacy=[Enum]::Parse($enum,'InstanceBackups');$target=$left.PageGet($legacy)
  if($target.GetType() -ne $pageType -or $left.GetType().GetMethod('NavigationItem',$flags).Invoke($left,@($legacy)).Title -cne '存档'){throw 'Legacy backup navigation no longer resolves to saves'}
  $page.FindName('PanLoad').Visibility='Collapsed';$page.FindName('PanAllBack').Visibility='Visible';$page.FindName('PanAllBack').Opacity=1
- $group=$groups['Folder A'];$group.FindName('CardBackups').IsSwapped=$false;$group.FindName('CardBackups').BuildContent()
- foreach($worldGroup in $groups.Values){$null=$worldGroup.FindName('CardBackups').MainTextBlock}
+ $group=$groups['Folder A'].Element;$group.FindName('CardBackups').IsSwapped=$false;$group.FindName('CardBackups').BuildContent()
+ foreach($worldGroup in $groups.Values){$null=$worldGroup.Element.FindName('CardBackups').MainTextBlock}
  $null=$page.FindName('BackupSettings').FindName('CardSettings').MainTextBlock
  $panel=[Windows.Controls.Grid]::new();$panel.Background=[Windows.Media.BrushConverter]::new().ConvertFromString('#e4effa');$panel.Children.Add($page)|Out-Null
  if($PreviewDirectory){[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null;Render-Png $panel (Join-Path $PreviewDirectory 'save-backup-groups.png') 780 760}

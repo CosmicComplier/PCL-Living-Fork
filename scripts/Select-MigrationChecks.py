@@ -40,6 +40,29 @@ LOCAL_CHECKS = {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-K
                 "Test-BackupRetention", "Test-WorldBackups", "Test-WorldBackupGroups", "Test-SaveBackupIntegration"}
 RESOURCE_CHECKS = {"Test-InstanceResources", "Test-MapInstallAndRecycle", "Test-BackgroundModes",
                    "Test-ResourceUpdates", "Test-MapDetails", "Test-ResourceEntryPoints", "Test-ScreenshotGallery"}
+# These UI files serve the resource page and its existing offscreen consumers.
+# Exact paths keep unrelated/future platform contracts on the full fallback.
+RESOURCE_PAGE_PATHS = {
+    "PCLCS/Platform/Windows/ResourcePageContracts.cs",
+    "PCLCS/Platform/Windows/ResourcePageController.cs",
+    "PCLCS/Platform/Windows/ResourcePageController.Recycle.cs",
+    "PCLCS/Platform/Windows/ResourcePageController.Backups.cs",
+    "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.xaml.vb",
+    "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.Recycle.vb",
+    "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.Backups.vb",
+    "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.xaml",
+}
+RESOURCE_IMAGE_PATHS = {
+    "PCLCS/Platform/Windows/ResourceThumbnailController.cs",
+    "PCLCS/Platform/Windows/InstanceResourceImages.cs",
+    "Plain Craft Launcher 2/Pages/PageInstance/MyScreenshotItem.xaml.vb",
+    "Plain Craft Launcher 2/Pages/PageInstance/MyScreenshotItem.xaml",
+}
+RESOURCE_PAGE_CHECKS = RESOURCE_CHECKS | {"Test-SaveBackupIntegration", "Test-InstanceClone"}
+# The shared decoder also supplies recent-world images through PageLaunchRight.
+RESOURCE_IMAGE_CHECKS = RESOURCE_CHECKS | {"Test-RecentWorldCard"}
+# The update facade's hash helper is shared with launch/dependency activation.
+RESOURCE_ONLINE_CHECKS = RESOURCE_CHECKS | {"Test-LaunchDependencies", "Test-DependencyActivation", "Test-DependencyToggles"}
 # Store is the shared path/transaction facade consumed by these existing chains.
 STORE_CHECKS = RESOURCE_CHECKS | WORLD_CHECKS | LOCAL_CHECKS | {
     "Test-ReviewFixes", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-RecentEnvironmentChanges",
@@ -95,7 +118,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("resource-paths",), (), build=False)
             elif stem.startswith(("InstanceResourceDetails", "InstanceResourcePackMetadata", "InstanceResourceMetadata")):
                 include(("resource-metadata",), (), build=False)
-            elif stem == "ResourceRecyclePipeline":
+            elif stem in {"ResourceRecyclePipeline", "InstanceResourceOnline"}:
                 include(("resource-files",), (), build=False)
             elif stem in {"InstanceResourceKindRules", "InstanceResourceNameRules", "InstanceResourceFileRules", "InstanceResourcePackageRules", "InstanceResourcePipeline"}:
                 include(("resource-files",), (), build=False)
@@ -103,8 +126,14 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 unknown.append(name)
         elif name.startswith("scripts/Test-") and leaf.removesuffix(".ps1") in SCRIPTS:
             include((), (leaf.removesuffix(".ps1"),))
+        elif name in RESOURCE_PAGE_PATHS:
+            include(RESOURCE_GROUPS, RESOURCE_PAGE_CHECKS)
+        elif name in RESOURCE_IMAGE_PATHS:
+            include(RESOURCE_GROUPS, RESOURCE_IMAGE_CHECKS)
         elif name.startswith("PCLCS/Minecraft/") and leaf.endswith(".cs"):
-            if leaf in {"ResourceRecycleFiles.cs", "MapDownloadFiles.cs"}:
+            if leaf.startswith("InstanceResourceOnline"):
+                include(RESOURCE_GROUPS, RESOURCE_ONLINE_CHECKS)
+            elif leaf in {"ResourceRecycleFiles.cs", "MapDownloadFiles.cs"}:
                 include(RESOURCE_GROUPS, RESOURCE_CHECKS)
             elif leaf.startswith("WorldMetadata"):
                 include(("world-metadata", "quick-play", "resource-entry", "resource-files"), WORLD_CHECKS)
@@ -126,6 +155,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(RESOURCE_GROUPS, STORE_CHECKS, io_oracle=True)
             else:
                 unknown.append(name)
+        elif name == "Plain Craft Launcher 2/Modules/Minecraft/InstanceResourceUpdates.vb":
+            include(RESOURCE_GROUPS, RESOURCE_ONLINE_CHECKS)
         elif name in {"Plain Craft Launcher 2/Modules/Minecraft/ResourceRecycleStore.vb", "Plain Craft Launcher 2/Modules/Minecraft/MapDownloadInstaller.vb"}:
             include(RESOURCE_GROUPS, RESOURCE_CHECKS)
         elif name == "Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb":
