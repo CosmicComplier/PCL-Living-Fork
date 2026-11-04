@@ -19,7 +19,7 @@ try {
     [IO.Directory]::CreateDirectory($generatedFolder) | Out-Null
     & (Join-Path $PSScriptRoot 'Write-BuildCredentials.ps1') -OutputPath $generatedSource
     $intermediatePath = Join-Path $generatedFolder 'Intermediate\'
-    $buildArgs = @((Join-Path $projectRoot 'Plain Craft Launcher 2\PCL-Living-Fork.vbproj'), '-t:Rebuild', "-p:Configuration=$Configuration", "-p:GeneratedCredentialSource=$generatedSource", "-p:CredentialIntermediateOutputPath=$intermediatePath", '-verbosity:minimal', '-nologo')
+    $buildArgs = @((Join-Path $projectRoot 'Plain Craft Launcher 2\PCL-Living-Fork.vbproj'), '-restore', '-t:Rebuild', "-p:Configuration=$Configuration", "-p:GeneratedCredentialSource=$generatedSource", "-p:CredentialIntermediateOutputPath=$intermediatePath", '-verbosity:minimal', '-nologo')
     if ($OutputPath) { $buildArgs += "-p:OutputPath=$OutputPath" }
     & $MSBuildPath @buildArgs
     if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE" }

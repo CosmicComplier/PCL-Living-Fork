@@ -204,6 +204,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C026b／C022 | bitmap_chain：图像/颜色/矩形及完整设置/账号/偏好/Binding；原Imazen/native加载保留，新测试只用GUID存储，不触真实账号 |
 | 项目／提交／Windows | 主执行者：两个Core、两个Presentation与modern test完整图Release警告视错通过。Linux旧vbproj直接Compile缺WPF生成target/BAML及netstandard而失败，不能据此判原产品通过或回归；实际原Windows构建/运行待本批CI |
 
+首轮d7a830b检查：Migration41837988181 Ubuntu126601919611实际435／435、Windows126601920011实际486／486及17组均成功；严格v7仍397例、contract/native/path/text差异全零（artifact13327667429）。Modern41837988171两配置在build阶段因冗余显式System.Drawing.Common触NU1510失败（该程序集已由WindowsDesktop framework提供）；原Build41837988131两配置在新控件local-type BAML触发临时程序集时缺Presentation NuGet props/targets/dgspec而失败，原工作流只restore Core。两者尚未进入运行，不能记Windows通过。修复为移除冗余Drawing包引用和Build-Release使用MSBuild `-restore`恢复完整实际项目图，保凭据/锁/产物/测试语义；本地完整restore graph已确认包含Presentation、Core及Shared/Wpf/原VB五项目；移除包后实际restore＋现代test完整图警告视错构建0警告错误。等待新Windows检查点。
+
 b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41831770480)两配置各11步成功，实际原ThreadDriver在隔离子进程启动。Build41831770664／Migration41831770692仅选择job通过，产品/纯测试job按范围skipped；复用02ba2b2实际全纯测试/原Windows结果，不把跳过写成功。
 
 本批实际本地验证：SDK10.0.403，`dotnet build tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj -c Release --no-restore -warnaserror`零警告错误；仓库runner定向`--group settings --group validation-loaders`实际18／18、`--group legacy-java`实际6／6，未选旧14组未重复计通过。设置只在具体`RegistryValueKind`元数据语句局部抑制CA1416，不掩盖真实Registry API；Java六child首触Configs前设置GUID真实provider，异常/超时退出均向父传递，未触用户目录。新增真实现代图像五组与六控件交互/渲染样本已编译接线，Windows运行待CI。
