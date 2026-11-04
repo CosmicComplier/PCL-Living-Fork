@@ -39,6 +39,11 @@
     <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.cs" Link="Production/WorldBackupEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.Restore.cs" Link="Production/WorldBackupEngine.Restore.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupWorkflow.cs" Link="Production/WorldBackupWorkflow.cs" />
+    <Compile Include="../../PCLCS/Minecraft/EnvironmentHistoryContracts.cs" Link="Production/EnvironmentHistoryContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/EnvironmentHistoryEngine.cs" Link="Production/EnvironmentHistoryEngine.cs" />
+    <Compile Include="../../PCLCS/Minecraft/EnvironmentHistoryEngine.Restore.cs" Link="Production/EnvironmentHistoryEngine.Restore.cs" />
+    <Compile Include="../../PCLCS/Minecraft/EnvironmentHistoryWorkflow.cs" Link="Production/EnvironmentHistoryWorkflow.cs" />
+    <Compile Include="../../PCLCS/Minecraft/RecentEnvironmentChanges.cs" Link="Production/RecentEnvironmentChanges.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
