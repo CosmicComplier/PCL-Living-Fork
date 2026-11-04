@@ -7,6 +7,7 @@ using PCLCS;
 // including partial writes and VB conversions, remains the compatibility contract.
 internal static class LegacyFoundationTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
+        yield return ("main termination preserves original statement continuation and thread Err state", LegacyMainTerminationTests.Run);
         yield return ("startup singleton retains real mutex exclusion partial rollback and Windows abandonment", StartupMutex);
         yield return ("startup activation retains original captions message order failure and bounded retry", StartupActivation);
         yield return ("foundation preserves actual UUID Task timeout exceptions and process parameters", () => InFixture(Tasks));
