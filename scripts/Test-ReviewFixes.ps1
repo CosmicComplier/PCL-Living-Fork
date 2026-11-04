@@ -144,7 +144,13 @@ public static class ReviewFixChecks {
  }
  public static void Redirects(Assembly asm){
   var type=asm.GetType("PCL.SafeRedirectHandler");Require(type!=null,"HTTP redirect policy does not protect credential headers");
-  var downloadClient=(HttpClient)asm.GetType("PCL.ModNet").GetField("ThreadClient",Flags).GetValue(null);
+  var runtimeField=asm.GetType("PCL.ModNet").GetField("NativeRuntime",Flags);
+  Require(runtimeField!=null,"Download runtime bridge was not found");
+  var runtime=runtimeField.GetValue(null);Require(runtime!=null,"Download runtime is not initialized");
+  var clientField=runtime.GetType().GetField("ThreadClient",Flags);
+  Require(clientField!=null,"Actual runtime download client was not found");
+  var downloadClient=(HttpClient)clientField.GetValue(runtime);
+  Require(downloadClient!=null,"Actual runtime download client is not initialized");
   var handlerField=typeof(HttpMessageInvoker).GetFields(Flags).Single(f=>f.FieldType==typeof(HttpMessageHandler));
   var productionHandler=handlerField.GetValue(downloadClient) as DelegatingHandler;
   Require(productionHandler!=null&&type.IsInstanceOfType(productionHandler),"Download transport bypasses the safe redirect policy");
