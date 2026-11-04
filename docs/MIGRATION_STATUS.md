@@ -9,7 +9,7 @@
 - 最新已验收检查点 `0df889ab3d6aa1695981855ebf6d5e8ca5df8c58`：Windows Build41795970888 Debug126460111396／Release126460111508各41步成功、无跳过，资源整页／地图回收／备份集成／截图异步与旧更新桥均通过；Migration41795970903双平台与严格v7通过。前一271d058实测381／425组，测试hook失败及修正保留。主产品仍net48／VB，不等于全产品现代化完成。
 - 当前交付批次：已验收的资源页typed Host／View／Controller作为后续界面整链先例，原XAML／控件／平台适配暂保，最终移除由C027／C029／R001汇总。当前C009在线匹配／下载替换与C010存档备份／恢复事务／UI命令成组实施；禁止将未推送或未验Windows的新代码写成完成。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
-- 用户补充测试要求：按受影响模块／下游／功能链执行相关检查；跨链高影响或范围不明的框架／公共契约改动及发布前才全量回归，纯文档不跑产品测试。G005的9组／42脚本路由已实测：b1357f7仅运行截图消费者及常驻门禁，其余明确skipped；当前控制器公共契约和selector变更采用一个完整检查点；已知资源UI／在线更新下游同时登记精确路由，后续局部修改不再因未知路径触发全量。
+- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原9组已验，C010追加独立world-backups第10组，resources始终只4组；备份源精确选新组＋10真实消费者，不拉无关Store大集。C009框架引用及C010路由／组定义本批合并一个完整检查点，后续具体页修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
 - 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
 
@@ -152,15 +152,16 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 ## 当前批次文件与协作归属
 
-2026-11-04恢复时本地与远端均为7beef22、工作树干净。G005、资源后端／截图批次已推送至b1357f7；以下为其后本批已知文件，禁止reset／clean覆盖。代理不提交、不切共享分支；现已冻结，由主执行者统一集成。
+2026-11-04最初从干净7beef22恢复，资源整页／C008已推0df889a且真实验收。C009已本地提交2304fc5，正与C010成组准备下一次推送。以下均为已知独占改动，禁止reset／clean覆盖；代理不提交、不切分支，主执行者统一集成。
 
 | 范围 | 执行归属／状态 |
 | --- | --- |
-| ResourceRecycleFiles.cs／MapDownloadFiles.cs、原两个VB入口 | 后端代理与主执行者；独立逐段审通过、三个后端门面严格VB编译通过 |
-| ResourcePageContracts／Controller四C#、原页面三VB partial | 页面代理及其子代理；已冻结、交叉审短路／快照／取消／状态与事件；普通PCLCS Release零警告错误，完整VB产品待Windows |
-| ResourceRecyclePipelineTests.cs、测试项目／注册、selector | 测试代理与主执行者；8组实际生产文件链，Linux两新增守卫随45／45文件组通过，6组Windows待运行 |
-| Test-MapInstallAndRecycle／Test-SaveBackupIntegration.ps1 | CI代理冻结；仅页面私有状态field／property hook适配，原行为断言、其他DTO字段约束与清理保留，实际Windows待运行 |
-| docs／集成／提交与CI结果 | 主执行者；上一批0bee590及b1357f7实际证据见上，不把当前未验证页面写成完成 |
+| InstanceResourceOnlineFiles／旧Updates.vb／8组测试 | 已冻结并提交2304fc5；47／47资源文件组、本地Core编译及独立源审通过，Windows消费者与6新Windows组待下次CI |
+| WorldBackupContracts／Engine／Restore／Workflow与旧WorldBackups.vb | 页面代理及子代理冻结；全部原Friend与Metadata／ReadArchive入口、单例状态保留；完整Core强制Rebuild零警告错误及真实EngineOnly门面严格VB编译通过 |
+| WorldBackupPipelineTests、runner／项目／selector | 测试及CI代理冻结、主执行者统一注册独立world-backups；5／5跨平台真实文件与故障事务通过，Windows第6锁组待CI；精确10消费者与资源4组隔离核对 |
+| Test-WorldBackups.ps1 | CI代理冻结；编译真实新VB门面并核闭合泛型实际绑定Core，原stub／全部故障fixture与断言／cleanup保持，Windows执行待CI |
+| KeybindingPageController.cs／原按键页VB | 下一互斥批已冻结；控制器全业务＋原typed控件平台适配，完整Core Rebuild含此C#通过、独立源审通过；Test-KeybindingGroups原两私有field→property及真实窄WPF保存回归进行中，未提交，不得丢弃 |
+| docs／集成／CI与提交 | 主执行者；已经通过的0df889a资源页不重复改写，当前C009／C010和按键页的Windows待验范围分别保留 |
 
 ## 任务依赖与验收
 
@@ -183,7 +184,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C007 | done | B001 | `0bee590`后端／截图与`271d058`整页主／Recycle／Backups控制器已C#接通，`0df889a` Windows各41步＋381／425及严格v7通过；原XAML、Loader、自定义控件和typed平台适配保留，最终VB门面／控件归C027／C029／R001，非现代主程序已完成 |
 | C008 | done | C007d2、C007e、C007u2 | `271d058` ResourceRecycleFiles／MapDownloadFiles接原入口，保PathUtils.IsSame、记录／链接／全预检／取消／同名／双暂存清理；425组含六新增Windows真实文件链，`0df889a`两配置原地图回收与整页消费者通过 |
 | C009 | in_progress | C007 | 完整OnlineFiles／Info／typed Host接原四入口，原平台模型与可注入Request／Fingerprint／Download保持；8新组注册resource-files，本地47／47及net48／测试编译零警告错误、独立终审通过，6新Windows链与原平台消费者待CI |
-| C010 | in_progress | C002、C003、C007 | WorldBackupEngine／Restore事务／Workflow与原VB宿主适配正在成组转换；Gate／Busy／TestRoot／Changed／账号目录与取消回滚契约保持，原EngineOnly及产品消费者将统一验证；未验收完成 |
+| C010 | in_progress | C002、C003、C007 | 完整WorldBackupEngine／Restore事务／Workflow接原WorldBackups／Ui，VB仅185行typed平台适配，Gate／Busy／TestRoot／Changed无状态副本；Rebuild零警告错误、真实EngineOnly VB门面严格编译通过，world-backups新独立组5／5跨平台真实备份回滚通过，Windows锁与原产品／EngineOnly待CI |
 | C011 | todo | C003、C007 | 迁移 `EnvironmentHistory`／`RecentEnvironmentChanges` 与还原点界面链；恢复前留档、保留当前存档和崩溃对照回归 |
 | C012 | todo | C003、C007 | 迁移实例测试副本、来源分组与导出版本隔离；克隆、路径、版本选择折叠和导出隔离回归 |
 | C013 | todo | B001 | 迁移本地模组声明解析与 `ModDependencyInspector`；可靠声明、内嵌 JAR、依赖和冲突样本回归 |

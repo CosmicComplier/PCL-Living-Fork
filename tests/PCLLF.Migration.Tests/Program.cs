@@ -30,7 +30,8 @@ internal static class Program {
                 .Concat(InstanceResourceNameRulesTests.Cases()).Concat(InstanceResourceFileRulesTests.Cases())
                 .Concat(InstanceResourcePackageRulesTests.Cases()).Concat(InstanceResourcePipelineTests.Cases()).Concat(ResourceRecyclePipelineTests.Cases()).Concat(InstanceResourceOnlineTests.Cases())),
             ("resource-metadata", () => InstanceResourceDetailsRulesTests.Cases()
-                .Concat(InstanceResourcePackMetadataTests.Cases()).Concat(InstanceResourceMetadataRuntimeTests.Cases()))
+                .Concat(InstanceResourcePackMetadataTests.Cases()).Concat(InstanceResourceMetadataRuntimeTests.Cases())),
+            ("world-backups", WorldBackupPipelineTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

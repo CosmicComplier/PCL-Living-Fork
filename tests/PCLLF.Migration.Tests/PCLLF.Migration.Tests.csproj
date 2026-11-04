@@ -35,6 +35,10 @@
     <Compile Include="../../PCLCS/Minecraft/ResourceRecycleFiles.cs" Link="Production/ResourceRecycleFiles.cs" />
     <Compile Include="../../PCLCS/Minecraft/MapDownloadFiles.cs" Link="Production/MapDownloadFiles.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourceOnlineFiles.cs" Link="Production/InstanceResourceOnlineFiles.cs" />
+    <Compile Include="../../PCLCS/Minecraft/WorldBackupContracts.cs" Link="Production/WorldBackupContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.cs" Link="Production/WorldBackupEngine.cs" />
+    <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.Restore.cs" Link="Production/WorldBackupEngine.Restore.cs" />
+    <Compile Include="../../PCLCS/Minecraft/WorldBackupWorkflow.cs" Link="Production/WorldBackupWorkflow.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />

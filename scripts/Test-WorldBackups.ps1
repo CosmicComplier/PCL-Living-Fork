@@ -18,13 +18,18 @@ try{
  [Reflection.Assembly]::LoadFrom((Join-Path $root 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'))|Out-Null
  [Reflection.Assembly]::LoadFrom((Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'))|Out-Null
  if($EngineOnly){
-  # Compile the actual engine, replacing only launcher/UI adapters with inert test doubles.
-  # Requires the current Shared and PCLCS libraries, but never builds the launcher or reads build credentials.
+  # Compile the actual VB facade and LocalGameData adapter; all engine business
+  # code runs from the current PCLCS DLL. Only launcher/UI services are inert stubs.
+  # Never build the launcher, load UI assemblies or read build credentials here.
   $core=Join-Path $root 'PCLCS/bin/PCLCS.dll'
   if(-not [IO.File]::Exists($core)){throw 'Build PCLCS/PCLCS.csproj before running the isolated backup engine.'}
-  [Reflection.Assembly]::LoadFrom($core)|Out-Null
+  $coreAssembly=[Reflection.Assembly]::LoadFrom($core)
+  $backupEngineType=$coreAssembly.GetType('PCLCS.WorldBackupEngine`1',$false)
+  if($null -eq $backupEngineType){throw 'Build the current PCLCS library containing WorldBackupEngine before -EngineOnly.'}
   $engine=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb'))
-  $engine=$engine.Substring(0,$engine.IndexOf('Friend NotInheritable Class WorldBackupsUi'))
+  $uiBoundary=[regex]::Matches($engine,'(?m)^Friend NotInheritable Class WorldBackupsUi\r?$')
+  if($uiBoundary.Count -ne 1){throw 'Expected exactly one production backup UI boundary for isolated facade compilation.'}
+  $engine=$engine.Substring(0,$uiBoundary[0].Index)
   Put (Join-Path $fixture 'Engine.vb') $engine
   Put (Join-Path $fixture 'LocalGameData.vb') ([IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb')))
   $stubs=@'
@@ -118,6 +123,8 @@ End Module
   & $compiler @compilerArgs
   if($LASTEXITCODE -ne 0){throw 'Isolated world-backup engine compilation failed'}
   $asm=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($output))
+  $service=$asm.GetType('PCL.WorldBackups',$true).GetField('Service',$flags)
+  if($null -eq $service -or -not $service.FieldType.IsGenericType -or $service.FieldType.GetGenericTypeDefinition() -ne $backupEngineType){throw 'The isolated production facade is not bound to the current C# backup engine.'}
  }else{
   if(-not $ExecutablePath){throw 'Specify -ExecutablePath or -EngineOnly.'}
   Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
