@@ -16,7 +16,7 @@ import sys
 
 BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java", "foundation")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Exact existing scripts; workflows keep their original static invocations/options.
@@ -208,6 +208,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("settings",), (), build=False)
             elif stem == "LegacyValidationLoader":
                 include(("validation-loaders",), (), build=False)
+            elif stem == "LegacyFoundation":
+                include(("foundation",), (), build=False)
             elif stem == "LegacyJava":
                 include(("legacy-java",), (), build=False)
             elif stem.startswith("PersonalOptions"):

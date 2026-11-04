@@ -33,6 +33,9 @@ CE许可按实际路径核对：`Plain Craft Launcher 2/**`使用该目录的`LI
 | C027c 六控件 | 原LF六控件/三XAML不改视觉/枚举/DP/事件/等待及线程/缓存时序，真实验证/位图/动画复用 | 应用`Controls/MyLoading.xaml.cs`、`MyRadioBox.xaml.cs`、`MySlider.xaml.cs`、`MyTextBox.cs`、`MyComboBox.cs`、`MyImage.cs`结构对照；不引CE FluentValidation/HintText DP/图片async/dedup策略 |
 | C020a `ModModpack`／`ModModpackMode` | Modpack保LF模式导入限制/Source记录/隔离路由，Mode为LF特有；现有MMC等格式仅等价迁移 | 应用`Modules/Minecraft/ModModpack.cs`选择性翻译/结构参考，保LF识别与解包/worker/模式policy，不引CE新增格式/loader策略 |
 | C020b `ModpackUpdate`／`ModpackUpdateFlow` | LF特有；除初始f4还保当前事务/取消修复`07dd3503b38b39095c8b92b40ae0454907387f9f`，同一作者基线/备份日志/反向回滚/真实负载锁 | CE固定stable应用`ModModpack.cs`仅导入分层参照，没有LF更新事务可等价替换，实际算法从当前LF转换 |
+| C020c 导出/更新对话框/整合包设置页 | 导出保当前LF07dd350修复、exe/config/privacy/isolation/mode/Like及三stage loader；setup/dialog为LF独有 | 应用`Pages/PageInstance/PageInstanceExport.xaml.cs/.xaml`只翻译参考，不引CE DP/globbing/新导出政策；真实Windows完整导出未验 |
+| C023a 九登录/皮肤/设备页 | 保LF原C022 atomic账号/旧 DTO/Loader/cache与原页/BAML；不改格式/存储/错误/取消/HasCape原语义 | 应用`Pages/PageLaunch/PageLogin{Ms,Offline,Auth,ProfileSkin}.xaml.cs`及`MySkin.xaml.cs`仅同源参考，按目录LICENCE；不引CE profile/provider/本地化新策略 |
+| C024c 剩余ModBase | LF原模块在ebffef884d2b49b275a3379e62c170d892679db8，全部46方法/INI/search/线程/资源/XML/24SVG及真实字段初始化保留 | 应用`Modules/Base/ModBase.cs`仅转换参考；固定Shared c774原API直接复用，GB18030只局部provider回退，自建PSI显式保Framework shell默认，无全局注册/新INI锁 |
 | C022 `Settings.*`／`SettingService` | 保LF共享账号/偏好/旧DES及205定义40回调；真实注册表/INI和字段唯一 | 应用`ModSetup.cs`和Core`App/Configuration/ConfigItem.cs`、`Storage/CatIniFileProvider.cs`仅边界参考；不迁CE profile/AES/deferred/JSON存储政策 |
 | C024a／C025 `ModValidate`／`ModLoader`／`LoaderFileOperation` | 校验同PCL，保Object父目录选项/Err；Loader保LF真实负载文件guard及取消收尾 | Core`Utils/Validate`仅分层参考，不换FluentValidation；应用`ModLoader.cs`仅C#组织参考，不换Task/Abort线程策略 |
 | C026b `MyBitmap`／`ModBase.MyColor/MyRect` | 保LF pack URI扩展、静态cache、Imazen和原stream短读；Color/Rect同PCL | 应用`Modules/Base/MyBitmap.cs`／`ModBase.cs`仅转换参考；不引WIC/cache/Equals/HSL策略改变，复用LF既有G15适配 |

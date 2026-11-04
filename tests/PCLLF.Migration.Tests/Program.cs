@@ -39,7 +39,8 @@ internal static class Program {
             ("mod-dependency-online", ModDependencyOnlinePipelineTests.Cases),
             ("settings", LegacySettingsTests.Cases),
             ("validation-loaders", LegacyValidationLoaderTests.Cases),
-            ("legacy-java", LegacyJavaTests.Cases)
+            ("legacy-java", LegacyJavaTests.Cases),
+            ("foundation", LegacyFoundationTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);
