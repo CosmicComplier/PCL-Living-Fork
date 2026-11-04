@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The same LF controls and XAML as ../../presentation/PCLLF.Presentation.csproj.
-       The modern animation host remains a separate migration boundary; this
-       project supplies no replacement or inert implementation of LF animations. -->
+  <!-- The same LF controls, compiled XAML and complete animation engine as
+       ../../presentation/PCLLF.Presentation.csproj. NativeRuntime/NativeHost bind
+       real C# WPF frames; the complete LF theme/main-window host remains separate. -->
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
@@ -22,6 +22,9 @@
     <Compile Include="../../presentation/Controls/**/*.cs"
       Exclude="../../presentation/**/bin/**;../../presentation/**/obj/**"
       Link="Controls/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Animation/**/*.cs"
+      Exclude="../../presentation/**/bin/**;../../presentation/**/obj/**"
+      Link="Animation/%(RecursiveDir)%(Filename)%(Extension)" />
     <Page Include="../../presentation/Controls/*.xaml" Link="Controls/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>

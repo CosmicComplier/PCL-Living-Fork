@@ -82,6 +82,8 @@ N002a后继实际Windows证据：`3f04b63346a23dfeee4a9b301cc0778d7aec07fa` [Mod
 
 候选：为旧数据、旧网页和 Java 输出显式指定原有编码策略；在入口统一注册所需 provider，并把“系统活动代码页”与“UTF-8 默认”分别表达。不能直接把所有文件改写为 UTF-8。
 
+C026a动画文本已通过`AnimationNativeHost.DecodeText`局部请求`CodePagesEncodingProvider.Instance.GetEncoding("GB18030")`，不注册全局provider；旧net48宿主仍用原`Encoding.GetEncoding`。这是动画局部迁移实现及编译证据，不代表本节Java／网页／文件默认编码矩阵已通过，实际文本运行仍按对应Windows门禁验。
+
 最低验证：中文与英文系统、系统 UTF-8 开／关、Java 8／17／21 的输出和 `native.encoding`／COMPAT；旧 GB18030 配置／网页／日志、非 ASCII 路径与字符替换。记录实际字节与显示文本，回归参数和用户文件写回。
 
 数值补充（C004a）：现代 `Double.TryParse` 可将 `1e400` 解析为 Infinity，并接受更多特殊值字面；旧 Framework 对溢出返回失败。这会改变原 `MergeText` 根据 existing FOV 推断归一值／角度的结果。`PersonalOptionsRules` 仅在这一推断处保留旧特殊值成功条件：Trim 后精确匹配 invariant `Infinity`／`-Infinity`／`NaN`，其余非有限结果沿用原默认格式。依据固定 [Reference Source Double.TryParse](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/double.cs#L274) 的公开行为核对，独立实现适配，没有引入其内部解析器。新增 .NET 10 样本与 Windows PowerShell CLR4 原始 TryParse oracle 对照；后者实际结果见账本。此处理不声称复现所有有限值极端舍入／Unicode 版本差异，其他数值入口仍需随所属功能对照。

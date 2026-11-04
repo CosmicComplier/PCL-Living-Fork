@@ -64,6 +64,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 - **前置／保留：** 核对依赖属性、`Handles`／`WithEvents`、默认属性、委托、Dispatcher、名称作用域、资源及图片格式。保留命名动画组的中断／叠加、页面重复进入、鼠标悬停／按下／禁用、滚轮和弹窗焦点行为；固定默认主题与背景选择沿用 LF。
 - **批次／禁止倒依赖：** 先一个控件及直接消费者，再一个页面的 XAML／后台／资源绑定；基础全局状态和导航环最后成组适配。动画规则不要依赖具体页面，图片加载适配不要进入通用资源 DTO。
 - **按键页已核实的结构前置：** 当前 VB main 同时拥有 XAML partial、MyPageRight／自定义控件／LocalResourceUi 和具体页面路由，且已引用 PCLCS，不能让 PCLCS 反向引用 main。先提取页面纯显示／分组规则（C005c1）；C027 基础层就绪后由独立 C029a 建立单向的 C# WPF 呈现库和惰性 host，再迁整页（C005c2）及实际路由。C029 只汇总最终页面，不成为宿主前置的依赖；主工程 C031／N003 在其后集成，避免循环或未编译的 C# 页面占位。
+- **已实施边界（C026a／C027a）：** `presentation/Animation`与`modern/Presentation`编译同一完整LF动画内核；原AniData／AniGroups字段经约束struct接口直通，现代NativeRuntime使用真实C#状态与WPF宿主。原LF与固定PCL的ModAnimation逐行相同；固定CE稳定ModAnimation.cs仅缓动／C#迁移对照，未复用CE并发字典或其它调度语义。基础动画只需原UI／时钟／Net／日志primitive，不等待整个Loader C025；现代主窗口／主题及其余位图仍后续。前三控件保原视觉／原名typed壳，跨程序集BAML通过公开reader／writer装入同实例，98f81fe原消费者与cold构造已Windows通过，末端新族误判修复及真实现代五组仍待验。
 - **回归：** `Test-BackgroundModes.ps1`、`Test-IconCompatibility.ps1`；相关页面脚本的预览检查，再在 Windows 人工对照滚动、切页、连续点击和动画取消。现有脚本没有覆盖所有动画时序，不能以截图代替交互验收。
 
 ### M02 加载器、Worker、取消、进度与文件占用

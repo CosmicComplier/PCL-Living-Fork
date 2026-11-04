@@ -56,6 +56,7 @@ internal static class Program {
             PclKeybindingControllerChecks.Run(Path.Combine(fixture, "keybindings"));
             Console.WriteLine("PASS shared keybinding controller acceptance: capture, confirmation, owner switch, actual options transactions and failure callbacks.");
             CheckImageDecoding(Path.Combine(fixture, "images"));
+            AnimationTests.Run();
             Require(!AppDomain.CurrentDomain.GetAssemblies().Any(assembly => IsLegacyWpf(assembly.GetName())),
                 "The modern runtime loaded the historical Meloong WPF assembly.");
         } finally {

@@ -4,12 +4,12 @@
 
 ## 当前状态
 
-- 目标状态：`in_progress`。资源整页／回收／在线更新／存档备份、按键整页与近期世界Quick Play链均已按各自实际Windows证据验收；LF全C#库.NET10/WPF组件已双配置运行通过。C011环境历史／分析与C027a基础3控件正互斥成组迁移，主程序与全产品现代化未完成。
+- 目标状态：`in_progress`。资源整页／回收／在线更新／存档备份、按键整页与近期世界Quick Play链均已按各自实际Windows证据验收；LF全C#库.NET10/WPF组件已双配置运行通过。C011环境历史／分析／还原点整页已在原Windows链验收；当前C026原生动画、C027a控件族与C012克隆整链集成，主程序与全产品现代化未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `3f04b63346a23dfeee4a9b301cc0778d7aec07fa`：Modern41804541772 Debug126488198216／Release126488197906各11步成功，真.NET10／Shared、四精确资源bytes、缩略图／按键保存／decoder运行通过；旧Build41804541653 Debug126488274095／Release126488274011各18成功23跳过，只按键／截图＋常驻门禁复验。C006近期动画／Quick Play使用同产品树b7493b8已成功的前序步骤，未把整个失败job写成功；先前完整388／439与严格oracle见8c706ee。
-- 当前交付批次：C011完整EnvironmentHistory／RecentEnvironmentChanges Engine／Workflow及原LF事务适配；C027a将MyButton／MyRadioButton／MyCheckBox原视觉与业务移C#呈现库，原名VB仅事件／设置／平台原语适配壳。旧控件XAML其他消费者不改，实际动画仍原AniData引擎；现代视图库不以空动画称通过，现代动画宿主仍归C026／N003。
+- 当前交付批次：C026a完整动画内核／工厂／缓动／线程与真实现代NativeHost；C012a克隆／迁回／分组／导出后端及b两页面。C027a三控件BAML冷构造与所有原页面消费者已实证，末端新族测试错误包装器身份断言已修，后续事件／逐帧仍待验；现代原生动画新增五组真实WPF运行门禁待CI。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
-- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原9组已验，C010追加独立world-backups第10组，resources始终只4组；备份源精确选新组＋10真实消费者，不拉无关Store大集。C009框架引用及C010路由／组定义本批合并一个完整检查点，后续具体页修复定向。
+- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前12组（备份／历史／克隆各独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
 - 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
 
@@ -71,6 +71,9 @@ C012a后端成组迁移：原InstanceCloner／InstanceCloneGroups／ExportedVers
 
 
 98f81fe实际[Build41816180616](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41816180616) Debug126527445833／Release126527445668：产品编译、原资源页／备份／历史／克隆／账号相关旧消费者及旧桥均成功，仅末端新增控件族StaticApi断言失败“Original InlineCollection forwarding changed”。这次已实际通过compiled BAML构造、原XAML属性、所有原页面消费者；冷EXE仍通过嵌入identity／MVID／SHA且无sidecar。原LF Inlines getter就是每次返回LabText.Inlines，WPF返回包装集合，ReferenceEquals包装器不是原行为契约；新断言改为三个真实控件各自双向Add／Contains／Count＋清理恢复，验证同一视觉内容而不缓存包装器改产品。其余六组断言保留，未到达的事件／逐帧组仍待验。Modern41816180601 Debug126527386734／Release126527388787成功（C026尚未在该树），Migration41816180595双平台成功。
+
+
+C026a完整动画成组迁移：八份Animation契约／数据／工厂／缓动／Engine／ThreadDriver／NativeHost／NativeRuntime与原ModAnimation公开API壳。实际固定LF与PCL的原ModAnimation逐行diff为空；CE稳定1a765312…的Plain Craft Launcher 2/Modules/Base/ModAnimation.cs:1200-1467（CE LICENSE及PCL LICENCE）仅同源C#／缓动参照，保LF原Dictionary、StartTick与AniLastTick、Uuid同名重建、After原位重试、结构体写回、signed颜色余数及完成SetResourceReference、三毫秒gate／double delta／前台线程／Sleep(1)／绝对AniControlEnabled setter。Shared Lerp保七位，MyColor通道Lerp保六位，CompareTo clamp保NaN原行为；NativeHost保实际WPF／时钟／VB Conversions／窄late fallback，GB18030只局部请求provider不改全局编码，null color保白色。旧私有_AniControlEnabled的两脚本三处仅改公开property hook，不减断言。两呈现项目及完整现代test图Release --no-restore -warnaserror均0警告错误，作者＋独立审未见行为回归。新五组真实NativeHost／Runtime／Factories／Engine与三控件中帧／终态、取消、After／延迟／重建、颜色资源／余数、回调故障恢复已接入，未启动原无限前台线程；Linux只编译，Windows实际运行与原产品消费者待同一完整检查点。
 
 本轮已推送的实现与验证检查点：
 
@@ -177,16 +180,17 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 ## 当前批次文件与协作归属
 
-远端3f04b63已完整验收当前现代组件、按键／截图定向门禁，近期动画有同产品树前序实际证据。本批C011a与C027a均作者冻结，主执行者集成；禁止reset／clean覆盖，不切共享分支。
+远端98f81fe已实证公共BAML冷构造和所有原产品消费者；只有新增族错误身份断言失败，修复与C012a已本地提交等待同批推送。子代理按文件互斥、主执行者集成；禁止reset／clean覆盖，不切共享分支。
 
 | 范围 | 执行归属／状态 |
 | --- | --- |
-| C011五C#＋两VB／EnvPipeline五测试 | 后端与测试代理冻结、独立终审通过；net48 Core Rebuild／现代全图编译0警告错误、5／5新组运行通过；原VB事务仍真host，Windows恢复／锁／链接待验 |
-| C027合同／三C#view／三LF视觉XAML／两项目 | 呈现团队冻结；两真实WPF项目编译0警告错误，含XAML；bool／状态／预览／动画全分支C#，不引CE新三态／主题／模糊行为 |
-| C027三VB壳／PresentationRuntime／主项目 | 适配代理冻结；保原名／事件／设置接口与真实AniData，主项目仅三Page移除／runtime／ProjectRef与资源输入；未运行完整VB产品 |
-| 新DLL嵌入／Resources／App resolver | 呈现代理补齐，fixed legacy bin／resx bytes／早期精确白名单；不以sidecar构建成功替代单exe发布，真实冷加载待Windows |
-| Test-MigratedControls.ps1／CI路由 | 新6组独立EXE child＋原AniTimer／事件／DP／设置验证已冻结，源自审修正先Initialize再卸Startup／清Uri、任何pump前禁真实启动；未编译该C#5 helper／Windows执行；selector第11组与43原消费者、旧workflow加一控件步、modern涵盖presentation源，静态检查通过 |
-| docs／集成／实际Windows结果 | 主执行者；C011母项及C027母项未关闭，现代原生动画仍C026／N003，不以编译或空host冒充运行 |
+| C011历史／分析／还原点整页 | 98f81fe两配置所有原消费者成功，母项在原功能链范围验收；最终VB事务／平台壳仍归后续任务 |
+| C027三C#view／原XAML／VB壳／单EXE | 跨程序集公共BAML loader已实证构造、XAML属性／原页面和无sidecar identity／SHA；新族InlineCollection身份误判修成双向实际内容验证，后续组待Windows |
+| C026八C#动画源／原VB API壳／两视图项目 | 作者冻结、独立终审无回归；legacy和modern呈现库及modern test完整图Release -warnaserror 0警告错误，原字典／字段／帧／clock真实单份，无noop |
+| C026测试 | 两旧脚本仅私有状态hook改原公开property；现代五组真实NativeHost／Runtime／WPF控件中帧终态／取消／故障／颜色／资源／After冻结，Windows待验 |
+| C012a六C#＋三VB／测试与路由 | 4f12693本地提交；net48与纯测试编译通过，克隆6＋历史5定向11／11、JSON真实LF字节核对通过；Windows原事务／锁／回滚待验 |
+| C012b页面与来源分组 | 页面代理整稿集成；原XAML与选择器非来源分组区段保留，最终编译／Windows在本批集成后记录 |
+| docs／集成／实际Windows结果 | 主执行者统一提交推送；C026／C027／C012母项未关闭，主C#工程／账号／游戏／发布最终验收未完成 |
 
 ## 任务依赖与验收
 
@@ -229,9 +233,10 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C023 | todo | C017、C021、C022 | 迁移登录页、皮肤和主页的生产调用；脱敏账号旧数据、取消、错误、刷新及启动交接验证，实际账号行为单独记录 |
 | C024 | todo | B001 | 迁移基础校验、网络和日志规则及其适配；旧异常语义、重定向凭据、编码和日志回归 |
 | C025 | todo | C024 | 迁移 Loader 与文件操作生命周期；等待实际任务结束、取消、回滚、恢复和版本占用的故障场景回归 |
-| C026 | todo | C025 | 迁移基础动画、位图与 WPF 适配；覆盖线程、资源、动画打断和叠加，实际交互对照 |
-| C027 | in_progress | C029a | a先迁3常用控件完整视图／业务与原typed动画Host，原名壳保现XAML接线；其余控件成族推进。现代实际动画引擎仍依赖C026，最终薄壳／事件类型清理由C031／R001验，不用空host关闭母项 |
-| C027a | in_progress | B001、C029a | 三完整C#view／原LF视觉XAML／Services与真实AniData Host／两WPF项目／原名VB壳／设置事件／单exe嵌入接线完成；net48与NET10实际XAML编译0警告错误，独立终审通过；新6族断言与无sidecar冷进程待Windows，现代实际动画宿主仍C026／N003 |
+| C026 | in_progress | C026a、C025 | a完整动画引擎与真实.NET10宿主已成组迁移，窗口／位图／Loader其它平台适配及人工手感仍后续；不以局部自动化关闭母项 |
+| C026a | in_progress | B001、C029a | 原完整帧／线程／工厂／缓动迁入八C#源，原AniData／AniGroups／AniLastTick／公开API与typed primitive Host保留；NativeHost／NativeRuntime真实原生C#实例承载同内核。LF与固定PCL该模块逐行相同，CE稳定ModAnimation.cs仅缓动／C#语法参考，未换并发字典／调度模型。两目标与现代test完整图Release零警告错误、独立审无回归；新增五组现代真实WPF＋原消费者／中帧／线程实际运行待Windows。独立子项不等待整个C025，以原Net／UI／日志primitive边界避免人工阻塞，无反向依赖 |
+| C027 | in_progress | C029a | a先迁3常用控件完整视图／业务与原typed动画Host，原名壳保现XAML接线；其余控件成族推进。现代实际动画引擎由C026a承载且待本批Windows，最终薄壳／事件类型清理由C031／R001验，不用空host关闭母项 |
+| C027a | in_progress | B001、C029a | 三完整C#view／原LF视觉XAML／Services与真实AniData Host／两WPF项目／原名VB壳／设置事件／单exe嵌入接线完成；net48与NET10实际XAML编译0警告错误，独立终审通过；无sidecar冷进程／BAML／原页面已Windows成功，6族静态包装器误判已修且其余组待验；实际现代动画由C026a同引擎承载 |
 | C028 | todo | C018、C019、C027 | 完成下载页面的 C# 后台与 XAML 调用，确认没有残留 VB 功能实现和重复入口 |
 | C029a | done | C005b、C007u2 | 资源与按键整页已实证LF C# WPF标准视图／惰性typed Host单向边界，无main反引；3f在Frame实际native壳及NET10同源live控制器双配置通过，足以解除独立页面人工阻塞。完整原生控件／主C#工程与最终VB清理仍归C027／N003／R001 |
 | C029 | todo | C005c2、C008、C010、C011、C012、C016、C020、C027 | 完成实例页面和资源页面 C# 后台／XAML 的最终汇总，已有先行页面只验收集成，不与 C029a 宿主前置相互等待 |
@@ -332,6 +337,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：已验的C005／C006／C007／C008／C009／C010和N002a不重复全测；优先集成当前C011整链及C027a控件族，继续按依赖推进其余业务与真实现代动画／控件宿主。C011剩余VB事务由真实Windows原链验证，不写模拟算法冒称迁移；C027a原三控件C#完整逻辑＋原名typed壳逐族消除UI阻塞，现代动画不以noop替代。主程序／账号／游戏／发布最终仍未完成。
+下次入口：已验C005／C006／C007／C008／C009／C010／C011和N002a不重复全测；先收尾当前C026a原生动画＋C027a六族门禁及C012a／b整链实际Windows集成，针对实际失败修复并保留原样本。C026a独立primitive Host已解除整个Loader／C025的人工前置阻塞，NativeHost真实运行同内核；原VB事务及平台薄壳最终由后续对应任务清理。随后按依赖继续C013等整链，主程序／账号／游戏／发布最终仍未完成。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
