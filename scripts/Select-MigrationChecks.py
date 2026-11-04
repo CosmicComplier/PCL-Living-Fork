@@ -19,6 +19,14 @@ GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "qu
           "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java", "foundation")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
+# Release-tooling-only paths have isolated, synthetic Python checks. They do
+# not change launcher code or require a VB/WPF build; other workflow edits keep
+# the conservative full fallback below.
+CNB_CHECK_PATHS = {
+    ".github/workflows/cnb-checks.yml", ".github/workflows/cnb-release.yml",
+    "scripts/ReleaseSyncState.py", "scripts/Sync-CnbRelease.py",
+    "scripts/Test-CnbMirror.py", "scripts/Test-CnbTrigger.py", "scripts/Trigger-CnbSync.py",
+}
 # Exact existing scripts; workflows keep their original static invocations/options.
 SCRIPTS = (
     "Test-Release", "Test-VersionListCancellation", "Test-AuditFixes", "Test-CustomEventAndSecret", "Test-LauncherActivation", "Test-MigratedControls",
@@ -158,6 +166,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
     scripts: set[str] = set()
     oracle = inventory = product = False
     modern_test_change = False
+    cnb_tooling_change = False
     reasons = [reason]
     unknown = []
 
@@ -173,6 +182,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         leaf = name.rsplit("/", 1)[-1]
         if name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
             inventory = True
+        elif name in CNB_CHECK_PATHS:
+            cnb_tooling_change = True
         elif name.startswith("tests/PCLLF.Modern.Wpf.Tests/") or name == ".github/workflows/modern-wpf.yml":
             # These sources execute in their own real NET10 WPF workflow and do
             # not reference the VB product or require its unrelated regressions.
@@ -301,6 +312,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             pass
         else:
             unknown.append(name)
+    if cnb_tooling_change:
+        reasons.append("CNB release tooling changes run in cnb-checks.yml without network publication")
     if modern_test_change:
         reasons.append("modern WPF test/workflow changes run in modern-wpf.yml")
     if unknown:

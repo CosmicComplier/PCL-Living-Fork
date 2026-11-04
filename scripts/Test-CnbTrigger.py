@@ -1,5 +1,7 @@
 import importlib.util
 import copy
+import hashlib
+import json
 from pathlib import Path
 import unittest
 
@@ -9,9 +11,9 @@ spec.loader.exec_module(module)
 
 
 class TriggerTests(unittest.TestCase):
-    def release(self):
-        names = ["PCL-Living-Fork-1.3.4.exe", "PCL-Living-Fork-1.3.4-win-x64.zip", "SHA256SUMS.txt"]
-        return {"tag_name": "v1.3.4", "name": "release", "body": "notes", "draft": False, "prerelease": False, "assets": [{"name": name, "size": 100, "digest": "sha256:" + "a" * 64} for name in names]}
+    def release(self, version="1.3.4", prerelease=False):
+        names = ["PCL-Living-Fork-" + version + ".exe", "PCL-Living-Fork-" + version + "-win-x64.zip", "SHA256SUMS.txt"]
+        return {"tag_name": "v" + version, "name": "release", "body": "notes", "draft": False, "prerelease": prerelease, "assets": [{"name": name, "size": 100, "digest": "sha256:" + "a" * 64} for name in names]}
 
     def test_already_synchronized_does_not_start_cnb(self):
         value = self.release()
@@ -47,6 +49,33 @@ class TriggerTests(unittest.TestCase):
         value["assets"].reverse()
         self.assertTrue(module.receipt_matches(receipt, value))
 
+    def test_stable_receipts_remain_compatible_and_channels_are_distinct(self):
+        value = self.release()
+        old = {key: value[key] for key in ("tag_name", "name", "body")}
+        old["assets"] = sorted(value["assets"], key=lambda item: item["name"])
+        fingerprint = hashlib.sha256(json.dumps(old, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        receipt = module.receipt_for(value)
+        self.assertEqual(receipt["source_fingerprint"], fingerprint)
+        value["prerelease"] = True
+        self.assertFalse(module.receipt_matches(receipt, value))
+
+    def test_prerelease_events_trigger_once_then_skip_completed_receipts(self):
+        value = self.release("1.3.5-pre-1", True)
+        calls = []
+        def request(url, token, data=None):
+            calls.append(data)
+            return {"success": True, "sn": "cnb-synthetic-pre"}
+        read = lambda url, missing=False: None if missing else value
+        module.trigger_if_changed("synthetic", value["tag_name"], read=read, request=request)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["env"], {"GITHUB_RELEASE_TAG": "v1.3.5-pre-1"})
+        receipt = module.receipt_for(value)
+        self.assertIsNone(module.trigger_if_changed("synthetic", value["tag_name"], read=lambda url, missing=False: receipt if missing else value, request=lambda *args: self.fail("Completed prerelease started another build")))
+
+    def test_release_workflow_accepts_published_prereleases(self):
+        workflow = Path(__file__).parents[1] / ".github/workflows/cnb-release.yml"
+        self.assertNotIn("!github.event.release.prerelease", workflow.read_text())
+
     def test_incomplete_release_cannot_start_a_task(self):
         value = self.release()
         value["assets"].pop()
@@ -69,7 +98,7 @@ class TriggerTests(unittest.TestCase):
     def test_missing_secret_and_bad_tags_never_call_api(self):
         def request(*args):
             self.fail("Invalid request reached API")
-        for token, tag in (("", "v1.3.4"), ("bad\nsecret", "v1.3.4"), ("synthetic", "v1.3.4-beta"), ("synthetic", "x; echo unsafe")):
+        for token, tag in (("", "v1.3.4"), ("bad\nsecret", "v1.3.4"), ("synthetic", "v1.3.4-pre-"), ("synthetic", "x; echo unsafe")):
             with self.assertRaises(RuntimeError):
                 module.trigger(token, tag, request=request)
 

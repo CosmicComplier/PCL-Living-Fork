@@ -1,0 +1,48 @@
+name: CNB release tooling checks
+
+on:
+  push:
+    branches: [migration/csharp-modern-dotnet]
+    paths:
+      - '.github/workflows/cnb-checks.yml'
+      - '.github/workflows/cnb-release.yml'
+      - 'scripts/ReleaseSyncState.py'
+      - 'scripts/Sync-CnbRelease.py'
+      - 'scripts/Test-CnbMirror.py'
+      - 'scripts/Test-CnbTrigger.py'
+      - 'scripts/Trigger-CnbSync.py'
+  pull_request:
+    branches: [migration/csharp-modern-dotnet]
+    paths:
+      - '.github/workflows/cnb-checks.yml'
+      - '.github/workflows/cnb-release.yml'
+      - 'scripts/ReleaseSyncState.py'
+      - 'scripts/Sync-CnbRelease.py'
+      - 'scripts/Test-CnbMirror.py'
+      - 'scripts/Test-CnbTrigger.py'
+      - 'scripts/Trigger-CnbSync.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Validate synthetic stable and preview mirroring
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify canonical artifacts and stable versus preview manifests
+        run: python scripts/Test-CnbMirror.py
+      - name: Verify receipt compatibility idempotence and bounded triggers
+        run: python scripts/Test-CnbTrigger.py

@@ -9,7 +9,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-from ReleaseSyncState import SOURCE, receipt_for, receipt_matches
+from ReleaseSyncState import SOURCE, receipt_for, receipt_matches, valid_tag
 
 REPOSITORY = "ddzmumo/PCL-Living-Fork"
 API = "https://api.cnb.cool/" + REPOSITORY + "/-/build/"
@@ -36,7 +36,7 @@ def public_json(url, missing=False):
 
 
 def trigger_if_changed(token, tag="", wait=False, read=public_json, request=None):
-    if tag and not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", tag):
+    if tag and not valid_tag(tag):
         raise RuntimeError("Invalid requested release tag")
     release = read("https://api.github.com/repos/" + SOURCE + "/releases/" + ("tags/" + quote(tag, safe="") if tag else "latest"))
     actual_tag = release.get("tag_name", "")
@@ -75,8 +75,8 @@ def request_json(url, token, data=None):
 def trigger(token, tag="", wait=False, request=request_json, sleep=time.sleep, clock=time.monotonic, timeout=600):
     if not token or any(character.isspace() for character in token):
         raise RuntimeError("CNB_TRIGGER_TOKEN is not configured or has an invalid format")
-    if tag and not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", tag):
-        raise RuntimeError("Only stable numbered release tags can be synchronized")
+    if tag and not valid_tag(tag):
+        raise RuntimeError("Only numbered release tags can be synchronized")
     payload = {"branch": "updates", "event": "api_trigger", "title": "GitHub Release sync" + (" " + tag if tag else ""), "sync": "false"}
     if tag:
         payload["env"] = {"GITHUB_RELEASE_TAG": tag}

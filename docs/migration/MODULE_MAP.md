@@ -58,6 +58,21 @@ CE许可按实际路径核对：`Plain Craft Launcher 2/**`使用该目录的`LI
 | C031c 事件/主题/签头/Identify | 原5DP owner/enum/private集合/Color字段单份、真正BuildCredentials/URI/签头/crypto与原设备fallback；新PSI显式保shell默认 | 应用事件/主题相关实现仅参考，不换CE主题/config；真正LF凭据服务及原策略保持 |
 | C027e modal/lazy | 原三Grid/BAML不动，现代三实际View与旧页用同一个C#controller；单份原状态、DP.AddOwner、warning/body/验证/大小/Err保留 | 应用Controls/MyMsg对应源码仅C#结构参照；不引CE新modal行为 |
 
+## LF main 后续功能同步（U001）
+
+初始LF `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`、PCL/CE固定来源保持。用户于2026-11-04提醒main新提交，本轮仅把LF只读源固定为`50b028da5fcad2226d74d901a41d8c43a249bfb2`逐模块适配；不切main、不覆盖已迁移Core/界面业务，不声称整批已验收。
+
+| LF固定提交 | 新LF范围与迁移去向 |
+| --- | --- |
+| `c2b98aa90c37e46ba23ba9711edc30c282b1689c` | 1.3.5-pre-1依赖索引/兼容后端与前端：接当前C# Inspector/Online/AutoFill/真实DTO，仍待本批适配和验证 |
+| `0ad8dca966baaf507bde0e70bd2c6896a9c335fd` | CNB预览同步与稳定指针隔离：原六个工具/工作流源按50末态字节复用，保署名与LF LICENCE；合成测试通过，不实际发布 |
+| `d205b9ffd054103c050c2f579d898590e97c9767` | 浅色/深色、更新源/通道：接现Theme/Settings/真实C#控件与XAML；不能只更新原None视图而漏native视图，当前适配中 |
+| `1a5b90441e7f756370318c14a11935fd31354e6c` | 真实字节文件进度与微软_LF注册表键隔离；按新LF明确不猜导入无client标记缓存，其它账号/事务回滚规则保留，当前适配中 |
+| `a06f84f2b424e399fd3711c662e2e31b730cb5d2` | 克隆进度及回到来源实例：接现clone/worker/页面导航；保真实负载结束/版本锁，当前适配中 |
+| `50b028da5fcad2226d74d901a41d8c43a249bfb2` | 1.3.5-pre-3品牌版本与预发行产物命名；待功能/assembly版本/原生发布和旧桥统一验证后生效 |
+
+已实现的LF新缓存/主题/更新能力属于本次功能保留，不授权新增MMC规则或独立性能改造。CNB Python改动有单独无凭据/无网络发布的合成CI；普通product/共用路由仍按既有影响范围测试。
+
 ## 现有工程边界与必须先守住的约束
 
 | 当前工程 | 实际目标与引用 | 迁移含义 |

@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository == 'DDZmumo/PCL-Living-Fork' && (github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease))
+    if: github.repository == 'DDZmumo/PCL-Living-Fork' && (github.event_name == 'workflow_dispatch' || !github.event.release.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
