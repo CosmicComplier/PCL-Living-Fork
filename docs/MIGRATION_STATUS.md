@@ -6,7 +6,7 @@
 
 - 目标状态：`in_progress`。用户已恢复任务，按完整功能链＋LF兼容＋定向测试推进。G005、资源整页C007与地图／回收链C008已实际验收；C009在线更新和C010备份引擎正在互不冲突文件中成组迁移。整个迁移目标未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 最新已验收检查点 `0df889ab3d6aa1695981855ebf6d5e8ca5df8c58`：Windows Build41795970888 Debug126460111396／Release126460111508各41步成功、无跳过，资源整页／地图回收／备份集成／截图异步与旧更新桥均通过；Migration41795970903双平台与严格v7通过。前一271d058实测381／425组，测试hook失败及修正保留。主产品仍net48／VB，不等于全产品现代化完成。
+- 最新已验收检查点 `8c706ee11d705006f6ce9055532214c6da5aef85`（含前一2304fc5）：Windows Build41798578440 Debug126468571779／Release126468571785各41步成功，原资源在线更新／备份EngineOnly／原生GUI与旧桥通过；Migration41798578476 Ubuntu126468575296 **388／388**、Windows126468575178 **439／439**，严格v7 397例无差异。主产品仍net48／VB，非现代全产品验收。
 - 当前交付批次：已验收的资源页typed Host／View／Controller作为后续界面整链先例，原XAML／控件／平台适配暂保，最终移除由C027／C029／R001汇总。当前C009在线匹配／下载替换与C010存档备份／恢复事务／UI命令成组实施；禁止将未推送或未验Windows的新代码写成完成。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原9组已验，C010追加独立world-backups第10组，resources始终只4组；备份源精确选新组＋10真实消费者，不拉无关Store大集。C009框架引用及C010路由／组定义本批合并一个完整检查点，后续具体页修复定向。
@@ -46,6 +46,8 @@
 资源整页／C008首轮 `271d0589273596f45959670b9fa8eccb91a006b4`：Migration [41794871750](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41794871750) 成功，Ubuntu126456557787 **381／381**、Windows126456557846 **425／425**，严格v7仍397例无差异；六个新增Windows回收／地图真实文件组已执行。Build [41794871590](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41794871590) 的Debug126456567159／Release126456567314完整产品编译成功，资源／地图回收／更新等前序检查成功；Release在Test-SaveBackupIntegration失败、Debug同一步被取消，原因是测试hook仍假定WorldBackupPoints等三项在页面上有转发属性，实际已整体进入Controller。修复范围限定测试读取真实Controller状态和BackupGroup.Element，不增加仅供测试的生产私有属性、不删行为断言；后续未运行步骤不记通过。固定提交当前清单311源文件，产品283／测试27／工具1，产品VB仍168文件／54,335行，非完成率。
 
 `0df889ab3d6aa1695981855ebf6d5e8ca5df8c58` 修正后的完整Windows [Build41795970888](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41795970888)成功：Debug126460111396／Release126460111508各41步成功、0跳过，真实Save/backup integration、回收站工具栏／选择／还原、原Screenshot gallery＋C#异步控制器及旧桥均通过。Migration [41795970903](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41795970903) Windows126460120303／Ubuntu126460120400成功，严格oracle通过；本提交无产品修改，生产同271d058。C007／C008业务与当前原控件适配闭环可关闭，最终VB源码清零／现代WPF／真实游戏和账号验收不在该结论内。
+
+C009／C010联合验收：`8c706ee11d705006f6ce9055532214c6da5aef85` 的 [Build41798578440](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41798578440) Debug126468571779／Release126468571785各41步成功、无跳过，实际Test-ResourceUpdates（原LF模型）、WorldBackups产品＋EngineOnly各自完整故障fixture、SaveBackupIntegration、截图与旧桥均通过。[Migration41798578476](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41798578476) Ubuntu126468575296为388／388，Windows126468575178为439／439、严格v7 397例零差异；Ubuntu只按OS跳过3个Windows专属工作流步骤，不记成运行。当前固定树318源文件，产品VB仍168／53,623行，不据行数或测试数计算完成度。
 
 本轮已推送的实现与验证检查点：
 
@@ -183,8 +185,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C006 | blocked | C006c、C027、C029a | a／b／c 已全通过；d 首页入口／动画／启动宿主等待可引用的 C# WPF 前置，不能以核心代替原整项验收 |
 | C007 | done | B001 | `0bee590`后端／截图与`271d058`整页主／Recycle／Backups控制器已C#接通，`0df889a` Windows各41步＋381／425及严格v7通过；原XAML、Loader、自定义控件和typed平台适配保留，最终VB门面／控件归C027／C029／R001，非现代主程序已完成 |
 | C008 | done | C007d2、C007e、C007u2 | `271d058` ResourceRecycleFiles／MapDownloadFiles接原入口，保PathUtils.IsSame、记录／链接／全预检／取消／同名／双暂存清理；425组含六新增Windows真实文件链，`0df889a`两配置原地图回收与整页消费者通过 |
-| C009 | in_progress | C007 | 完整OnlineFiles／Info／typed Host接原四入口，原平台模型与可注入Request／Fingerprint／Download保持；8新组注册resource-files，本地47／47及net48／测试编译零警告错误、独立终审通过，6新Windows链与原平台消费者待CI |
-| C010 | in_progress | C002、C003、C007 | 完整WorldBackupEngine／Restore事务／Workflow接原WorldBackups／Ui，VB仅185行typed平台适配，Gate／Busy／TestRoot／Changed无状态副本；Rebuild零警告错误、真实EngineOnly VB门面严格编译通过，world-backups新独立组5／5跨平台真实备份回滚通过，Windows锁与原产品／EngineOnly待CI |
+| C009 | done | C007 | `2304fc5`完整OnlineFiles／Info／typed Host接原四入口，原平台模型与注入保持；`8c706ee` Windows各41步含真实LF ResourceVersion／NetFile消费者通过，439组含8新样本，批次独立终审通过；无live HTTP／游戏，最终VB适配移除归R001 |
+| C010 | done | C002、C003、C007 | `8c706ee`完整备份／校验／保留／会话／恢复事务与UI命令接原入口，同一Gate／Busy／TestRoot／Changed；Windows各41步含原完整产品和EngineOnly真实门面／全部故障样本通过，388／439含5跨平台＋1Windows锁新增组；最终原控件／VB宿主移除与真实游戏仍归后续 |
 | C011 | todo | C003、C007 | 迁移 `EnvironmentHistory`／`RecentEnvironmentChanges` 与还原点界面链；恢复前留档、保留当前存档和崩溃对照回归 |
 | C012 | todo | C003、C007 | 迁移实例测试副本、来源分组与导出版本隔离；克隆、路径、版本选择折叠和导出隔离回归 |
 | C013 | todo | B001 | 迁移本地模组声明解析与 `ModDependencyInspector`；可靠声明、内嵌 JAR、依赖和冲突样本回归 |
@@ -237,7 +239,7 @@ C005 先按实际生产入口拆分，Save 与个人习惯合并写回的语义�
 | C005a | done | C004 | `a726586`：Save 核心和原四参数入口已接通，Windows Debug／Release 各 41 步、Ubuntu 156／Windows 162 组总矩阵与原 same-value backup 消费者断言通过；读／默认表／模型未在此批改动 |
 | C005b | done | C005a | `33a1c6a`：模型／31 默认／读取归属及原泛型／Save 保持，Windows 各 41 步与 Ubuntu 189／Windows 194 组总矩阵通过；七继承字段、原类型与实际标题委托已验证 |
 | C005c1 | done | C005b | `2f60f73`：View 已接通原两方法，21 组新金值令 Ubuntu 210／Windows 215 组总矩阵通过；net48 编译／VB 索引桥／独立终审、Windows 各 41 步及真实 KeybindingGroups 均通过 |
-| C005c2 | in_progress | C005c1、C007u2 | 按资源整页已验typed Host模式成组迁render／group／capture键鼠／确认后保存／Loader与订阅生命周期；新C#控制器已真实编译，原VB薄适配进行中，保持XAML和原控件，实际Windows与最终VB partial清理由后续验收 |
+| C005c2 | in_progress | C005c1、C007u2 | 整页render／group／capture键鼠／确认后保存／Loader进294行C#控制器，原VB204行仅typed控件平台适配＋状态转发；全Core Rebuild与新C#5实际WPF verifier预编译通过、独立终审通过，原native分组／顺序断言保留，Windows定向3消费者及新真实options保存场景待CI |
 
 页面前置以实际项目为证：`PCL-Living-Fork.vbproj` 显式编译旧后台及 XAML，主程序已经引用 PCLCS；页面继承主程序集的 `MyPageRight`，还依赖同程序集的自定义控件、`LocalResourceUi`、Loader、动画、实例与 `FormMain`。因此 `C029a` 是独立前置子任务，不继承 C029 的汇总依赖；`C005c2→C029a→C027` 与 `C029→C005c2` 无环。不得把 `C005c2` 依赖改成整个 C029／N003，否则会经 C031 回到自身。c2 阻塞期间母项不能标 done，按 goal 继续 C006 等最早 ready 核心任务；这不是需要用户处理的持久阻塞。
 
@@ -301,6 +303,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：已验收资源整页与C008，无需重做或重复全测；先完成C009在线更新批次编译／真实.NET10文件组与原Windows注入式平台消费者，再集成C010备份完整引擎／事务／UI命令和EngineOnly宿主。沿资源整页已验证的typed Host／原控件适配方式推进按键、Quick Play整页，不让所有通用控件先迁完成为可解耦页面的人工阻塞；最终控件／门面清理由C027／C029／R001验收。固定CE只作同源参考，LF特殊链无等价实现则直接迁现有代码，不换底座。现代主工程／真实账号／游戏和完整交互仍未完成。
+下次入口：C007／C008／C009／C010已真实验收，不重复全测。先收按键整页C005c2的定向Windows结果，推进C006d最近世界卡片／主页整链；同时把已迁真实LF C#全库／WPF控制器落实到现代.NET10编译与Windows运行前置（N002a），复用Shared固定源码，核Meloong.Wpf是否仅历史无用依赖，不换CE底座／不造空产品。后续C011及必要宿主按依赖选，最终控件／VB／现代主工程和真实账号游戏验收继续保留。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

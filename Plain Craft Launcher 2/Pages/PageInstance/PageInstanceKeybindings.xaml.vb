@@ -1,246 +1,204 @@
-﻿Public Class PageInstanceKeybindings
+﻿Imports KeybindingController = PCLCS.KeybindingPageController(Of PCL.ModMinecraft.McInstance, PCL.InstanceKeybinding)
+Imports KeybindingView = PCLCS.KeybindingPageView(Of PCL.InstanceKeybinding)
+Imports KeybindingHost = PCLCS.KeybindingPageHost(Of PCL.ModMinecraft.McInstance)
+
+Public Class PageInstanceKeybindings
     Implements IRefreshable
 
-    Private ReadOnly BindingsLoader As New LoaderTask(Of String, List(Of InstanceKeybinding))("读取版本按键", AddressOf ReadBindings)
-    Private Entries As New List(Of InstanceKeybinding)
-    Private Owner As McInstance
-    Private GameFolder As String
-    Private Captured As InstanceKeybinding
+    Private ReadOnly Controller As KeybindingController
+    Private ReadOnly BindingsLoader As LoaderTask(Of String, List(Of InstanceKeybinding))
     Private KeyboardOwner As FormMain
-    Private ConflictsOnly As Boolean
-    Private CaptureBarShownCount As Integer
-    Private ReadOnly KeyButtons As New Dictionary(Of String, MyButton)(StringComparer.Ordinal)
+    Private KeyboardKeyHandler As KeyEventHandler
+    Private KeyboardMouseHandler As MouseButtonEventHandler
 
-    Private Sub LoaderInit() Handles Me.Initialized
+    Public Sub New()
+        InitializeComponent()
         DisabledPageAnimControls.Add(CardCapture)
         BtnClear.Logo = Logo.IconButtonDelete
         BtnCancel.Logo = Logo.IconButtonCross
         BtnFilterAll.LabText.Margin = New Thickness(-2, 0, 8, 0)
         BtnFilterConflicts.LabText.Margin = New Thickness(-2, 0, 8, 0)
+        Controller = New KeybindingController(CreateView(), CreateHost())
+        BindingsLoader = New LoaderTask(Of String, List(Of InstanceKeybinding))("读取版本按键", AddressOf ReadBindings)
         PageLoaderInit(Load, PanLoad, PanBack, Nothing, BindingsLoader, AddressOf BindingsLoaded, AutoRun:=False)
     End Sub
-    Private Sub PageLoaded() Handles Me.Loaded
-        PanBack.ScrollToHome()
-        RefreshBindings()
-        If FrmMain IsNot Nothing AndAlso KeyboardOwner Is Nothing Then
-            KeyboardOwner = FrmMain
-            AddHandler KeyboardOwner.PreviewKeyDown, AddressOf CaptureKey
-            AddHandler KeyboardOwner.PreviewMouseDown, AddressOf HandleCapturedMouse
+
+    Private Function CreateView() As KeybindingView
+        Return New KeybindingView With {
+            .Root = Me, .CardBindings = CardBindings, .Bindings = PanBindings,
+            .CancelButton = BtnCancel, .ClearButton = BtnClear, .Empty = LabEmpty, .Capture = LabCapture,
+            .Search = Function() SearchBox.Text,
+            .SetAllText = Sub(Value) BtnFilterAll.Text = Value,
+            .SetConflictsText = Sub(Value) BtnFilterConflicts.Text = Value,
+            .ScrollHome = Sub() PanBack.ScrollToHome(),
+            .CreateButton = AddressOf CreateNativeButton,
+            .CreateGroup = AddressOf CreateNativeGroup,
+            .RefreshCaptureBar =
+                Function(Count, Previous, Animate)
+                    LocalResourceUi.RefreshSelectionBar(CardCapture, TransCapture, Count, Previous, "Keybinding Capture " & PageUuid, Animate)
+                    Return Previous
+                End Function}
+    End Function
+    Private Shared Function CreateNativeButton(Entry As InstanceKeybinding, Text As String, Conflict As Boolean, Tooltip As String, Clicked As Action) As PCLCS.KeybindingPageButton
+        Dim Button As New MyButton With {.Text = Text, .Width = 132, .Height = 32, .Padding = New Thickness(10, 0, 10, 0), .VerticalAlignment = VerticalAlignment.Center,
+            .ColorType = If(Conflict, MyButton.ColorState.Red, MyButton.ColorState.Normal), .Tag = Entry, .ToolTip = Tooltip}
+        AddHandler Button.Click, Sub() Clicked()
+        Return New PCLCS.KeybindingPageButton(Button, Sub(Value) Button.Text = Value,
+            Sub(Value) Button.ColorType = If(Value = PCLCS.KeybindingPageButtonState.Capturing, MyButton.ColorState.Highlight,
+                If(Value = PCLCS.KeybindingPageButtonState.Conflict, MyButton.ColorState.Red, MyButton.ColorState.Normal)))
+    End Function
+    Private Shared Function CreateNativeGroup(Title As String, Normalized As String) As PCLCS.KeybindingPageGroup
+        Dim Group As New MyCard With {.Title = Title, .Margin = New Thickness(0, 8, 0, 12), .Tag = Normalized}
+        Return New PCLCS.KeybindingPageGroup(Group,
+            Sub(Rows)
+                Dim Header = Group.MainTextBlock
+                Group.Children.Add(Rows)
+            End Sub)
+    End Function
+    Private Function CreateHost() As KeybindingHost
+        Return New KeybindingHost With {
+            .CurrentInstance = Function() PageInstanceLeft.Instance,
+            .GameFolder = Function(Value) Value.PathIndie,
+            .VersionPath = Function(Value) Value.PathVersion,
+            .AllowsInstance = Function(Value) ModModpackMode.AllowsInstance(Value.PathVersion),
+            .IsLocked = Function(Value) McInstanceLock.IsLocked(Value),
+            .VersionValid = Function(Value) Value.Version.Valid,
+            .VersionMajor = Function(Value) Value.Version.Vanilla.Major,
+            .HasRunningGame = Function() HasRunningMinecraft,
+            .IsCurrentPage = Function() FrmMain?.PageRight Is Me,
+            .AnimationEnabled = Function() AniControlEnabled = 0,
+            .LoaderFailed = Function() BindingsLoader.State = LoadState.Failed,
+            .StartLoader = Sub(Folder) BindingsLoader.Start(Folder, IsForceRestart:=True),
+            .CancelLoader = Sub() BindingsLoader.Cancel(),
+            .BindExternalEvents = AddressOf BindExternalEvents,
+            .BindingForVersion = AddressOf PersonalGameSettings.BindingForVersion,
+            .Save = AddressOf InstanceKeybindings.Save,
+            .CaptureEditedBinding = AddressOf PersonalGameSettings.CaptureEditedBinding,
+            .Message = Function(Text, Title, First, Second, Warning) MyMsgBox(Text, Title, First, Second, IsWarn:=Warning),
+            .Hint = Sub(Text, Success) Hint(Text, If(Success, HintType.Green, HintType.Red)),
+            .Warn = Sub(ErrorValue, Message) Logger.Warn(ErrorValue, Message),
+            .Error = Sub(ErrorValue, Message) Logger.Error(ErrorValue, Message, LogBehavior.Toast)}
+    End Function
+    Private Sub BindExternalEvents(Attach As Boolean, KeyHandler As KeyEventHandler, MouseHandler As MouseButtonEventHandler)
+        If Attach Then
+            If FrmMain IsNot Nothing AndAlso KeyboardOwner Is Nothing Then
+                KeyboardOwner = FrmMain
+                KeyboardKeyHandler = KeyHandler
+                KeyboardMouseHandler = MouseHandler
+                AddHandler KeyboardOwner.PreviewKeyDown, KeyboardKeyHandler
+                AddHandler KeyboardOwner.PreviewMouseDown, KeyboardMouseHandler
+            End If
+        ElseIf KeyboardOwner IsNot Nothing Then
+            RemoveHandler KeyboardOwner.PreviewKeyDown, KeyboardKeyHandler
+            RemoveHandler KeyboardOwner.PreviewMouseDown, KeyboardMouseHandler
+            KeyboardOwner = Nothing
+            KeyboardKeyHandler = Nothing
+            KeyboardMouseHandler = Nothing
         End If
+    End Sub
+
+    '原测试反射入口直接访问控制器状态，不维护页面状态副本。
+    Private Property Entries As List(Of InstanceKeybinding)
+        Get
+            Return Controller.Entries
+        End Get
+        Set(Value As List(Of InstanceKeybinding))
+            Controller.Entries = Value
+        End Set
+    End Property
+    Private ReadOnly Property KeyButtons As Dictionary(Of String, PCLCS.KeybindingPageButton)
+        Get
+            Return Controller.KeyButtons
+        End Get
+    End Property
+    Private Property Owner As McInstance
+        Get
+            Return Controller.Owner
+        End Get
+        Set(Value As McInstance)
+            Controller.Owner = Value
+        End Set
+    End Property
+    Private Property GameFolder As String
+        Get
+            Return Controller.GameFolder
+        End Get
+        Set(Value As String)
+            Controller.GameFolder = Value
+        End Set
+    End Property
+    Private Property Captured As InstanceKeybinding
+        Get
+            Return Controller.Captured
+        End Get
+        Set(Value As InstanceKeybinding)
+            Controller.Captured = Value
+        End Set
+    End Property
+    Private Property ConflictsOnly As Boolean
+        Get
+            Return Controller.ConflictsOnly
+        End Get
+        Set(Value As Boolean)
+            Controller.ConflictsOnly = Value
+        End Set
+    End Property
+
+    Private Sub PageLoaded() Handles Me.Loaded
+        Controller.PageLoaded()
     End Sub
     Private Sub PageUnloaded() Handles Me.Unloaded
-        BindingsLoader.Cancel()
-        CancelCapture()
-        If KeyboardOwner IsNot Nothing Then
-            RemoveHandler KeyboardOwner.PreviewKeyDown, AddressOf CaptureKey
-            RemoveHandler KeyboardOwner.PreviewMouseDown, AddressOf HandleCapturedMouse
-            KeyboardOwner = Nothing
-        End If
+        Controller.PageUnloaded()
     End Sub
     Public Sub RefreshBindings() Implements IRefreshable.Refresh
-        CancelCapture()
-        Owner = PageInstanceLeft.Instance
-        If Owner Is Nothing OrElse Not ModModpackMode.AllowsInstance(Owner.PathVersion) Then Return
-        GameFolder = Owner.PathIndie
-        BindingsLoader.Start(GameFolder, IsForceRestart:=True)
+        Controller.RefreshBindings()
     End Sub
     Private Sub ReadBindings(Loader As LoaderTask(Of String, List(Of InstanceKeybinding)))
         Loader.Output = InstanceKeybindings.ReadBindings(Loader.Input, Loader.CreateCancellationToken())
     End Sub
     Private Sub BindingsLoaded()
-        Entries = BindingsLoader.Output
-        If Owner IsNot Nothing AndAlso Owner.Version.Valid AndAlso Owner.Version.Vanilla.Major < 13 Then
-            For Each Entry In Entries.Where(Function(Item) Not Item.Saved)
-                Entry.Value = PersonalGameSettings.BindingForVersion(Entry.Value, False)
-            Next
-        End If
-        CardBindings.ToolTip = If(Entries.Any(Function(Item) Not Item.Saved), "尚未保存的原版按键显示默认键位。模组按键需在游戏内保存设置后才可识别。", Nothing)
-        RenderList()
+        Controller.BindingsLoaded(BindingsLoader.Output)
     End Sub
     Private Sub FilterChanged() Handles SearchBox.TextChanged
-        RenderList()
+        Controller?.RenderList()
     End Sub
     Private Sub FilterChecked(Sender As MyRadioButton, User As Boolean) Handles BtnFilterAll.Check, BtnFilterConflicts.Check
-        ConflictsOnly = Sender Is BtnFilterConflicts
-        RenderList()
+        Controller?.FilterChecked(Sender Is BtnFilterConflicts)
     End Sub
     Private Sub RenderList()
-        If PanBindings Is Nothing Then Return
-        PanBindings.Children.Clear()
-        KeyButtons.Clear()
-        Dim Query = SearchBox.Text.Trim()
-        Dim View = PCLCS.InstanceKeybindingView.BuildView(Entries, Query, ConflictsOnly)
-        BtnFilterAll.Text = If(Query = "", "全部", "搜索结果") & $" ({View.MatchingCount})"
-        BtnFilterConflicts.Text = $"同键占用 ({View.ConflictCount})"
-        LabEmpty.Visibility = If(View.VisibleCount > 0, Visibility.Collapsed, Visibility.Visible)
-        LabEmpty.Text = If(Entries.Count = 0, "暂无按键记录。请先启动一次该版本的游戏并保存设置。", "没有找到符合条件的按键。")
-        For Each Block In View.Blocks
-            If Not Block.IsGroup Then
-                PanBindings.Children.Add(CreateBindingRow(Block.Members(0)))
-                Continue For
-            End If
-            Dim Members = Block.Members
-            Dim Total = Block.TotalCount
-            Dim Group As New MyCard With {.Title = DisplayKey(Block.Normalized) & $" 键位 · 与 {Total - 1} 项共用", .Margin = New Thickness(0, 8, 0, 12), .Tag = Block.Normalized}
-            Dim Rows As New StackPanel With {.Margin = New Thickness(15, 36, 15, 12)}
-            For Each Member In Members
-                Rows.Children.Add(CreateBindingRow(Member))
-            Next
-            Dim Header = Group.MainTextBlock
-            Group.Children.Add(Rows)
-            PanBindings.Children.Add(Group)
-        Next
+        Controller.RenderList()
     End Sub
     Private Function CreateBindingRow(Entry As InstanceKeybinding) As Grid
-            Dim Row As New Grid With {.Height = 44, .Margin = New Thickness(5, 2, 4, 4)}
-            Row.ColumnDefinitions.Add(New ColumnDefinition With {.Width = New GridLength(1, GridUnitType.Star)})
-            Row.ColumnDefinitions.Add(New ColumnDefinition With {.Width = GridLength.Auto})
-            Dim Labels As New StackPanel With {.VerticalAlignment = VerticalAlignment.Center, .Margin = New Thickness(0, 0, 18, 0)}
-            Labels.Children.Add(New TextBlock With {.Text = Entry.Name, .FontSize = 13.5, .TextTrimming = TextTrimming.CharacterEllipsis})
-            Dim Detail = If(Entry.Owners = "Minecraft", "", Entry.Owners)
-            If Detail <> "" Then
-                Dim Description As New TextBlock With {.Text = Detail, .FontSize = 12, .TextTrimming = TextTrimming.CharacterEllipsis, .Margin = New Thickness(0, 2, 0, 0)}
-                Description.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray4")
-                Labels.Children.Add(Description)
-            End If
-            Row.Children.Add(Labels)
-            Dim Button As New MyButton With {.Text = DisplayKey(Entry.Normalized), .Width = 132, .Height = 32, .Padding = New Thickness(10, 0, 10, 0), .VerticalAlignment = VerticalAlignment.Center,
-                .ColorType = If(Entry.SharedCount > 1, MyButton.ColorState.Red, MyButton.ColorState.Normal), .Tag = Entry,
-                .ToolTip = Entry.Key & vbCrLf & Entry.Owners & If(Not Entry.Saved, vbCrLf & "原版默认键位", "")}
-            Grid.SetColumn(Button, 1)
-            AddHandler Button.Click, Sub() BeginCapture(Entry)
-            KeyButtons.Add(Entry.Key, Button)
-            Row.Children.Add(Button)
-        Return Row
+        Return Controller.CreateBindingRow(Entry)
     End Function
     Private Function DisplayKey(Value As String) As String
-        Return PCLCS.InstanceKeybindingView.DisplayKey(Value)
+        Return KeybindingController.DisplayKey(Value)
     End Function
     Private Sub BeginCapture(Entry As InstanceKeybinding)
-        If HasRunningMinecraft OrElse Owner Is Nothing OrElse McInstanceLock.IsLocked(Owner) Then
-            Hint("请先关闭游戏并等待版本修改完成，再编辑按键。", HintType.Red)
-            Return
-        End If
-        Captured = Entry
-        LabCapture.Text = Entry.Name & "：按下新按键，Esc 取消"
-        UpdateCaptureUi()
+        Controller.BeginCapture(Entry)
     End Sub
     Private Sub CancelCapture() Handles BtnCancel.Click
-        Captured = Nothing
-        UpdateCaptureUi()
+        Controller.CancelCapture()
     End Sub
     Private Sub UpdateCaptureUi()
-        For Each Button In KeyButtons.Values
-            Dim Entry = DirectCast(Button.Tag, InstanceKeybinding), Active = Entry Is Captured
-            Button.Text = If(Active, "请按键…", DisplayKey(Entry.Normalized))
-            Button.ColorType = If(Active, MyButton.ColorState.Highlight, If(Entry.SharedCount > 1, MyButton.ColorState.Red, MyButton.ColorState.Normal))
-        Next
-        LocalResourceUi.RefreshSelectionBar(CardCapture, TransCapture, If(Captured Is Nothing, 0, 1), CaptureBarShownCount, "Keybinding Capture " & PageUuid, IsLoaded AndAlso AniControlEnabled = 0)
-        CardBindings.Margin = New Thickness(0, 0, 0, If(Captured Is Nothing, 15, 95))
+        Controller.UpdateCaptureUi()
     End Sub
     Private Sub ClearBinding() Handles BtnClear.Click
-        If Captured IsNot Nothing Then SaveBinding("key.keyboard.unknown")
+        Controller.ClearBinding()
     End Sub
     Private Sub CaptureKey(Sender As Object, e As KeyEventArgs)
-        If Captured Is Nothing OrElse FrmMain?.PageRight IsNot Me Then Return
-        e.Handled = True
-        Dim Pressed = If(e.Key = Key.System, e.SystemKey, If(e.Key = Key.ImeProcessed, e.ImeProcessedKey, e.Key))
-        If Pressed = Key.Escape Then
-            CancelCapture()
-            Return
-        End If
-        Dim Name = KeyboardName(Pressed)
-        If Name IsNot Nothing Then SaveBinding("key.keyboard." & Name) Else Hint("暂不支持这个按键，请选择其他键。", HintType.Red)
+        Controller.CaptureKey(Sender, e)
     End Sub
     Private Sub HandleCapturedMouse(Sender As Object, e As MouseButtonEventArgs)
-        If Captured Is Nothing OrElse FrmMain?.PageRight IsNot Me Then Return
-        '保留取消和清空按钮的正常点击操作。
-        Dim Source = TryCast(e.OriginalSource, DependencyObject)
-        If Source IsNot Nothing AndAlso (BtnCancel.IsMouseOver OrElse BtnClear.IsMouseOver) Then Return
-        e.Handled = True
-        Select Case e.ChangedButton
-            Case MouseButton.Left : SaveBinding("key.mouse.left")
-            Case MouseButton.Right : SaveBinding("key.mouse.right")
-            Case MouseButton.Middle : SaveBinding("key.mouse.middle")
-            Case MouseButton.XButton1 : SaveBinding("key.mouse.4")
-            Case MouseButton.XButton2 : SaveBinding("key.mouse.5")
-        End Select
+        Controller.HandleCapturedMouse(Sender, e)
     End Sub
     Private Sub SaveBinding(Value As String)
-        Dim Entry = Captured
-        If Entry Is Nothing OrElse Owner Is Nothing Then Return
-        '确认弹窗也位于主窗口内，先停止捕获，避免弹窗点击被当成下一次绑定。
-        CancelCapture()
-        Try
-            If HasRunningMinecraft OrElse McInstanceLock.IsLocked(Owner) Then Throw New IO.IOException("请先关闭游戏并等待版本修改完成。")
-            If Not Owner.Version.Valid Then Throw New IO.IOException("无法确定此版本的按键格式，请在游戏内修改。")
-            Dim Separator = Entry.Value.IndexOf(":"c)
-            If Separator > 0 AndAlso Value <> "key.keyboard.unknown" Then Value &= Entry.Value.Substring(Separator)
-            Dim Existing = Entries.Where(Function(Item) Item IsNot Entry AndAlso Item.Normalized = Value AndAlso Value <> "key.keyboard.unknown").ToList()
-            If Existing.Count > 0 AndAlso MyMsgBox("这个键已用于：" & vbCrLf & String.Join(vbCrLf, Existing.Take(8).Select(Function(Item) Item.Name & " · " & Item.Owners)) & vbCrLf & "仍然使用这个键吗？", "同键占用", "仍然绑定", "取消", IsWarn:=True) <> 1 Then Return
-            Dim Encoded = PersonalGameSettings.BindingForVersion(Value, Owner.Version.Valid AndAlso Owner.Version.Vanilla.Major >= 13)
-            If Encoded Is Nothing Then Throw New IO.IOException("此游戏版本无法使用这个按键。")
-            InstanceKeybindings.Save(GameFolder, Entry.Key, If(Entry.Saved, Entry.Value, Nothing), Encoded)
-            Try
-                PersonalGameSettings.CaptureEditedBinding(Owner, Entry.Key, Encoded)
-            Catch ex As Exception
-                Logger.Warn(ex, "按键已保存，但更新个人同步档案失败")
-            End Try
-            CancelCapture()
-            Hint("按键已保存。", HintType.Green)
-            RefreshBindings()
-        Catch ex As Exception
-            CancelCapture()
-            Logger.Error(ex, "修改按键失败", LogBehavior.Toast)
-        End Try
+        Controller.SaveBinding(Value)
     End Sub
     Private Function KeyboardName(Value As Key) As String
-        If Value >= Key.A AndAlso Value <= Key.Z Then Return Value.ToString().ToLowerInvariant()
-        If Value >= Key.D0 AndAlso Value <= Key.D9 Then Return (CInt(Value) - CInt(Key.D0)).ToString()
-        If Value >= Key.NumPad0 AndAlso Value <= Key.NumPad9 Then Return "keypad." & (CInt(Value) - CInt(Key.NumPad0))
-        If Value >= Key.F1 AndAlso Value <= Key.F24 Then Return Value.ToString().ToLowerInvariant()
-        Select Case Value
-            Case Key.Space : Return "space"
-            Case Key.Return : Return "enter"
-            Case Key.Tab : Return "tab"
-            Case Key.Back : Return "backspace"
-            Case Key.LeftCtrl : Return "left.control"
-            Case Key.RightCtrl : Return "right.control"
-            Case Key.LeftShift : Return "left.shift"
-            Case Key.RightShift : Return "right.shift"
-            Case Key.LeftAlt : Return "left.alt"
-            Case Key.RightAlt : Return "right.alt"
-            Case Key.Left, Key.Right, Key.Up, Key.Down, Key.Home, Key.End, Key.Insert, Key.Delete : Return Value.ToString().ToLowerInvariant()
-            Case Key.PageUp : Return "page.up"
-            Case Key.PageDown : Return "page.down"
-            Case Key.OemMinus : Return "minus"
-            Case Key.OemPlus : Return "equal"
-            Case Key.Oem1 : Return "semicolon"
-            Case Key.Oem2 : Return "slash"
-            Case Key.Oem3 : Return "grave.accent"
-            Case Key.Oem4 : Return "left.bracket"
-            Case Key.Oem5 : Return "backslash"
-            Case Key.Oem6 : Return "right.bracket"
-            Case Key.Oem7 : Return "apostrophe"
-            Case Key.OemComma : Return "comma"
-            Case Key.OemPeriod : Return "period"
-            Case Key.Capital : Return "caps.lock"
-            Case Key.NumLock : Return "num.lock"
-            Case Key.Scroll : Return "scroll.lock"
-            Case Key.LWin : Return "left.win"
-            Case Key.RWin : Return "right.win"
-            Case Key.Apps : Return "menu"
-            Case Key.Pause : Return "pause"
-            Case Key.Snapshot : Return "print.screen"
-            Case Key.Add : Return "keypad.add"
-            Case Key.Subtract : Return "keypad.subtract"
-            Case Key.Multiply : Return "keypad.multiply"
-            Case Key.Divide : Return "keypad.divide"
-            Case Key.Decimal : Return "keypad.decimal"
-        End Select
-        Return Nothing
+        Return KeybindingController.KeyboardName(Value)
     End Function
     Private Sub RetryLoad() Handles Load.Click
-        If BindingsLoader.State = LoadState.Failed Then RefreshBindings()
+        Controller.RetryLoad()
     End Sub
 End Class
