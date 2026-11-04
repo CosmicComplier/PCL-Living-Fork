@@ -27,6 +27,24 @@ CNB_CHECK_PATHS = {
     "scripts/ReleaseSyncState.py", "scripts/Sync-CnbRelease.py",
     "scripts/Test-CnbMirror.py", "scripts/Test-CnbTrigger.py", "scripts/Trigger-CnbSync.py",
 }
+# These files belong only to the real C#/.NET10 launcher/tooling. They have
+# no legacy VB build inputs. The native workflow builds, packages and runs its
+# own cold-entry/facade checks; unknown future shared paths retain full fallback.
+NATIVE_ONLY_PREFIXES = (
+    "modern/Main/", "modern/BuildEvents/", "modern/BuildResources/",
+    "modern/Presentation/NativeWpf/", "modern/ThirdParty/",
+    "tests/PCLLF.Native.Facade.Tests/", "scripts/native-smoke/",
+    "scripts/native-update-inspector/",
+)
+NATIVE_ONLY_PATHS = {
+    ".github/workflows/native-main.yml",
+    "scripts/Build-NativeRelease.ps1", "scripts/Build-ModernRelease.ps1",
+    "scripts/Test-NativeLauncherSmoke.ps1",
+}
+
+NATIVE_ONLY_PATHS.add("scripts/Test-NativeUpdateBridge.ps1")
+NATIVE_ONLY_PREFIXES += ("scripts/native-upgrade/",)
+SELECTION_CHECK_PATHS = {"scripts/tests/Test-MigrationSelection.py", "scripts/tests/MigrationSelection.golden.json"}
 # Exact existing scripts; workflows keep their original static invocations/options.
 SCRIPTS = (
     "Test-Release", "Test-VersionListCancellation", "Test-AuditFixes", "Test-CustomEventAndSecret", "Test-LauncherActivation", "Test-MigratedControls",
@@ -166,6 +184,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
     scripts: set[str] = set()
     oracle = inventory = product = False
     modern_test_change = False
+    native = native_only_change = False
     cnb_tooling_change = False
     reasons = [reason]
     unknown = []
@@ -180,8 +199,18 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
     for name in paths:
         # Product directories are considered before documentation extensions.
         leaf = name.rsplit("/", 1)[-1]
-        if name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
+        # Common source changes affect the modern product as well as whatever
+        # precise legacy groups/scripts are already selected below.
+        if name.startswith(("PCLCS/", "presentation/", "MeloongCore/")) or name in {"MeloongCore", ".gitmodules"}:
+            native = True
+        if name in SELECTION_CHECK_PATHS:
+            # The native selection job always runs these real CLI regressions.
+            # Changes to its test inputs alone do not require a product build.
+            continue
+        elif name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
             inventory = True
+        elif name in NATIVE_ONLY_PATHS or name.startswith(NATIVE_ONLY_PREFIXES):
+            native = native_only_change = True
         elif name in CNB_CHECK_PATHS:
             cnb_tooling_change = True
         elif name.startswith("tests/PCLLF.Modern.Wpf.Tests/") or name == ".github/workflows/modern-wpf.yml":
@@ -314,6 +343,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             pass
         else:
             unknown.append(name)
+    if native_only_change:
+        reasons.append("native launcher/tooling changes run in native-main.yml without a legacy VB rebuild")
     if cnb_tooling_change:
         reasons.append("CNB release tooling changes run in cnb-checks.yml without network publication")
     if modern_test_change:
@@ -323,10 +354,10 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         reasons.append("unclassified/shared change: " + ", ".join(unknown))
     if full:
         groups, scripts = set(GROUPS), set(SCRIPTS)
-        oracle = inventory = product = True
+        oracle = inventory = product = native = True
     # Any product build retains credential, legacy-update build/handoff and artifact gates in build.yml.
     selected_scripts = [name for name in SCRIPTS if name in scripts]
-    return {"full": full, "product_build": product, "migration_run": bool(groups or oracle or inventory),
+    return {"full": full, "native_run": native, "product_build": product, "migration_run": bool(groups or oracle or inventory),
             "groups": [name for name in GROUPS if name in groups], "windows_scripts": selected_scripts,
             "world_checks": bool(scripts & BULK_CHECKS), "engine_only": "Test-WorldBackups" in scripts,
             "oracle": oracle, "inventory": inventory or full, "reasons": reasons, "changed_paths": paths}
@@ -382,7 +413,7 @@ def main() -> int:
         report.write_text(serialized, encoding="utf-8")
     if args.github_output:
         with Path(args.github_output).open("a", encoding="utf-8", newline="\n") as output:
-            for name in ("full", "product_build", "migration_run", "groups", "windows_scripts", "world_checks", "engine_only", "oracle", "inventory"):
+            for name in ("full", "native_run", "product_build", "migration_run", "groups", "windows_scripts", "world_checks", "engine_only", "oracle", "inventory"):
                 output.write(name + "=" + json.dumps(plan[name], separators=(",", ":")) + "\n")
     print(serialized, end="")
     return 0

@@ -1,0 +1,184 @@
+using System.Collections;
+using System.Reflection;
+using System.Windows;
+using PCLCS;
+
+namespace PCLLF.Native.Facade.Tests;
+// Only existing production platform delegates are replaced. Identity/Settings/Main stay genuine.
+internal sealed class FixtureEnvironment : IDisposable
+{
+    private readonly Stack<Action> restore = new();
+    private Application? application;
+    private int forbiddenIo;
+    private bool disposed;
+    internal readonly string Root;
+    internal string Data => Path.Combine(Root, "data");
+
+    internal FixtureEnvironment(string root)
+    {
+        Root = root;
+        Directory.CreateDirectory(Data);
+        try
+        {
+            Native.Check(Application.Current is null, "A previous Application exists before fixture guards.");
+            Native.Check(Assembly.GetEntryAssembly() == Assembly.GetExecutingAssembly() && Assembly.GetEntryAssembly() != Native.Main, "Facade host must retain its own EntryAssembly.");
+            Native.Check(Native.Main.GetName().Name == "LivingPCL", "Reference is not the genuine LF Main assembly.");
+            Application.ResourceAssembly = Native.Main;
+            InstallIdentityPrimitives(); // Before constructing the real Application, never retrospectively after an App constructor.
+            InstallSettingsGuardsAndCache();
+            application = (Application)(Activator.CreateInstance(Native.Type("PCL.Application"), true) ?? throw new InvalidOperationException("Real Application constructor failed."));
+            AssertNoForbiddenIo();
+            Native.Call(application.GetType(), "InitializeComponent", application);
+            // Same real removal contract as Test-MigratedControls. The separate theme group may Show/pump; file-tasks may drain its real task callbacks after these hooks are detached.
+            Native.Field(typeof(Application), "_startupUri").SetValue(application, null);
+            Remove("Startup", "Application_Startup");
+            Remove("DispatcherUnhandledException", "Application_DispatcherUnhandledException");
+            Remove("SessionEnding", "Application_SessionEnding");
+            application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Native.Check(ReferenceEquals(Application.ResourceAssembly, Native.Main) && application.StartupUri is null, "Main resource identity or disabled StartupUri was lost.");
+            object info = Native.Property(application.GetType(), "Info").GetValue(application)!;
+            Native.Check((string)Native.Property(info.GetType(), "AssemblyName").GetValue(info)! == Native.Main.GetName().Name, "My.Application.Info used the TestHost entry identity.");
+            string[] keys = ["CacheCow.Client", "CacheCow.Client.FileStore", "CacheCow.Common", "ThrottleDebounce", "Custom", "ForgeInstaller", "Help", "Imazen.WebP", "libwebp64", "MeloongCore", "Microsoft.Win32.Registry", "NAudio", "Newtonsoft.Json", "Ookii.Dialogs.Wpf", "PCLCS", "PCLLF.Presentation", "System.Net.Http.Formatting", "Transformer"];
+            var manager = (System.Resources.ResourceManager)Native.Property(Native.Type("PCL.My.Resources.Resources"), "ResourceManager").GetValue(null)!;
+            foreach (string key in keys)
+            {
+                object? value = manager.GetObject(key, System.Globalization.CultureInfo.InvariantCulture);
+                Native.Check(value is byte[] bytes && bytes.Length > 0, "Actual Main neutral resource missing: " + key);
+            }
+
+            Native.Check(manager.GetObject("MeloongCore.Wpf", System.Globalization.CultureInfo.InvariantCulture)is null, "Retired WPF assembly was rebound into modern resources.");
+            AssertNoForbiddenIo();
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
+    }
+
+    private void Remove(string eventName, string methodName)
+    {
+        EventInfo evt = typeof(Application).GetEvent(eventName, Native.Flags) ?? throw new MissingMemberException(eventName);
+        MethodInfo method = Native.Method(application!.GetType(), methodName);
+        evt.RemoveEventHandler(application, Delegate.CreateDelegate(evt.EventHandlerType!, application, method));
+    }
+
+    private T Forbidden<T>(string name)
+    {
+        Interlocked.Increment(ref forbiddenIo);
+        throw new InvalidOperationException("Forbidden real platform access in facade fixture: " + name);
+    }
+
+    private void ForbiddenVoid(string name)
+    {
+        Interlocked.Increment(ref forbiddenIo);
+        throw new InvalidOperationException("Forbidden real platform access in facade fixture: " + name);
+    }
+
+    private void Replace(object target, string name, object value)
+    {
+        FieldInfo field = Native.Field(target.GetType(), name);
+        object? previous = field.GetValue(target);
+        restore.Push(() => field.SetValue(target, previous));
+        field.SetValue(target, value);
+    }
+
+    private void InstallIdentityPrimitives()
+    {
+        object service = Native.Field(Native.Type("PCL.ModSecret"), "IdentityService").GetValue(null) ?? throw new InvalidOperationException("Real identity service missing.");
+        Native.Check(service.GetType().FullName == "PCLCS.LegacyDeviceIdentify", "Identity service was replaced with an unrelated implementation.");
+        object host = Native.Field(service.GetType(), "host").GetValue(service)!;
+        Replace(host, "ReadHardware", new Func<object>(() => "native-facade-synthetic-hardware"));
+        Replace(host, "ReadSeed", new Func<string>(() => "native-facade-synthetic-seed"));
+        Replace(host, "WriteSeed", new Action<string>(_ => ForbiddenVoid("identity seed persistence")));
+        Replace(host, "AvailablePhysicalMemory", new Func<ulong>(() => Forbidden<ulong>("identity physical-memory fallback")));
+    }
+
+    private void InstallSettingsGuardsAndCache()
+    {
+        object backend = Native.Field(Native.Type("PCL.Settings"), "Backend").GetValue(null)!;
+        object host = Native.Field(backend.GetType(), "host").GetValue(backend)!;
+        Replace(host, "ReadRegistry", new Func<string, string, string?, string?>((_, _, _) => Forbidden<string?>("Registry read")));
+        Replace(host, "WriteRegistry", new Action<string, string, string?>((_, _, _) => ForbiddenVoid("Registry write")));
+        Replace(host, "HasRegistry", new Func<string, string, bool>((_, _) => Forbidden<bool>("Registry Has")));
+        Replace(host, "OpenRegistry", new Func<string, bool, bool, ILegacySettingsStore?>((_, _, _) => Forbidden<ILegacySettingsStore?>("Registry open")));
+        Replace(host, "IdentifyCandidates", new Func<string, List<string>>(_ => Forbidden<List<string>>("Registry identity candidates")));
+        Func<string, string, string?, string?> read = (Func<string, string, string?, string?>)Native.Get(host, "ReadIni")!;
+        Action<string, string, string?> write = (Action<string, string, string?>)Native.Get(host, "WriteIni")!;
+        Action<string, string> delete = (Action<string, string>)Native.Get(host, "DeleteIni")!;
+        Func<string, string, bool> has = (Func<string, string, bool>)Native.Get(host, "HasIni")!;
+        Replace(host, "ReadIni", new Func<string, string, string?, string?>((file, key, fallback) =>
+        {
+            CheckIni(file);
+            return read(file, key, fallback);
+        }));
+        Replace(host, "WriteIni", new Action<string, string, string?>((file, key, value) =>
+        {
+            CheckIni(file);
+            write(file, key, value);
+        }));
+        Replace(host, "DeleteIni", new Action<string, string>((file, key) =>
+        {
+            CheckIni(file);
+            delete(file, key);
+        }));
+        Replace(host, "HasIni", new Func<string, string, bool>((file, key) =>
+        {
+            CheckIni(file);
+            return has(file, key);
+        }));
+        foreach (DictionaryEntry item in Native.Entries)
+        {
+            object entry = item.Value!;
+            IDictionary cache = (IDictionary)Native.Get(entry, "ValueCache")!;
+            List<DictionaryEntry> before = new();
+            foreach (DictionaryEntry value in cache)
+                before.Add(value);
+            restore.Push(() =>
+            {
+                cache.Clear();
+                foreach (var value in before)
+                    cache[value.Key] = value.Value;
+            });
+            object? fallback = Native.Get(entry, "DefaultValue");
+            Native.Check(fallback is not null, "Unexpected null real setting default.");
+            cache[""] = fallback!;
+        }
+
+        Native.Cache("Identify", "native-facade-synthetic-seed");
+        Native.Cache("SystemSystemCache", Path.Combine(Root, "cache") + Path.DirectorySeparatorChar);
+        Native.Cache("LaunchFolderSelect", Path.Combine(Root, "minecraft") + Path.DirectorySeparatorChar);
+    }
+
+    private void CheckIni(string file)
+    {
+        if (file == "Setup")
+            return;
+        string full = Native.Full(file);
+        if (!full.StartsWith(Native.Full(Root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            ForbiddenVoid("INI access outside GUID fixture");
+    }
+
+    internal void AssertNoForbiddenIo() => Native.Check(Volatile.Read(ref forbiddenIo) == 0, "A forbidden Registry/hardware-write/profile access was attempted, even if production caught the exception.");
+    public void Dispose()
+    {
+        if (disposed)
+            return;
+        disposed = true;
+        try
+        {
+            if (application is not null)
+            {
+                Native.Check(application.Windows.Count == 0, "Unexpected window before facade shutdown.");
+                application.Shutdown();
+            }
+        }
+        finally
+        {
+            while (restore.Count > 0)
+                restore.Pop()();
+        }
+
+        AssertNoForbiddenIo();
+    }
+}

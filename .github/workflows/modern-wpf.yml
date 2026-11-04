@@ -7,6 +7,12 @@ on:
     paths:
       - 'PCLCS/**'
       - 'modern/**'
+      # Complete Main/tooling-only edits execute in native-main.yml. They are
+      # not inputs of this independent Core/Presentation component test graph.
+      - '!modern/Main/**'
+      - '!modern/BuildEvents/**'
+      - '!modern/BuildResources/**'
+      - '!modern/ThirdParty/**'
       - 'presentation/**'
       - 'MeloongCore'
       - 'MeloongCore/**'
@@ -22,6 +28,12 @@ on:
     paths:
       - 'PCLCS/**'
       - 'modern/**'
+      # Complete Main/tooling-only edits execute in native-main.yml. They are
+      # not inputs of this independent Core/Presentation component test graph.
+      - '!modern/Main/**'
+      - '!modern/BuildEvents/**'
+      - '!modern/BuildResources/**'
+      - '!modern/ThirdParty/**'
       - 'presentation/**'
       - 'MeloongCore'
       - 'MeloongCore/**'

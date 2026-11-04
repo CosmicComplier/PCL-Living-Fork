@@ -68,7 +68,7 @@ Friend Module ModSecret
         .ReadHardware = Function() RegistryUtils.TryRead("HKEY_LOCAL_MACHINE\SYSTEM\HardwareConfig", "LastConfig", "Unknown"),
         .ReadSeed = Function() Settings.Get(Of String)("Identify"), .WriteSeed = Sub(Value) Settings.Set("Identify", Value),
         .SourceIdentify = AddressOf Settings.GetPclSourceIdentify, .Warn = Sub(Text) Logger.Warn(Text)})
-    Private ReadOnly PaletteService As New ThemeService(CreateThemeHost())
+    Friend ReadOnly PaletteService As New ThemeService(CreateThemeHost())
     Private Function ThemeField(Read As Func(Of MyColor), Write As Action(Of MyColor)) As ThemeSlot
         Return New ThemeSlot With {.Read = Read, .Write = Write}
     End Function
@@ -84,6 +84,13 @@ Friend Module ModSecret
             .Color8 = ThemeField(Function() Color8, Sub(Value) Color8 = Value),
             .Bg0 = ThemeField(Function() ColorBg0, Sub(Value) ColorBg0 = Value),
             .Bg1 = ThemeField(Function() ColorBg1, Sub(Value) ColorBg1 = Value),
+            .Gray1 = ThemeField(Function() ColorGray1, Sub(Value) ColorGray1 = Value),
+            .Gray2 = ThemeField(Function() ColorGray2, Sub(Value) ColorGray2 = Value),
+            .Gray3 = ThemeField(Function() ColorGray3, Sub(Value) ColorGray3 = Value),
+            .Gray5 = ThemeField(Function() ColorGray5, Sub(Value) ColorGray5 = Value),
+            .Gray6 = ThemeField(Function() ColorGray6, Sub(Value) ColorGray6 = Value),
+            .Gray7 = ThemeField(Function() ColorGray7, Sub(Value) ColorGray7 = Value),
+            .Gray8 = ThemeField(Function() ColorGray8, Sub(Value) ColorGray8 = Value),
             .Gray4 = ThemeField(Function() ColorGray4, Sub(Value) ColorGray4 = Value),
             .SemiTransparent = ThemeField(Function() ColorSemiTransparent, Sub(Value) ColorSemiTransparent = Value),
             .DefaultHue = DefaultThemeHue, .DefaultSaturation = DefaultThemeSat, .DefaultLight = DefaultThemeLight, .DefaultDelta = DefaultThemeDelta,
@@ -93,6 +100,12 @@ Friend Module ModSecret
             .Hsl = Function(H, S, L) New MyColor().FromHSL2(H, S, L), .Rgb = Function(R, G, B) New MyColor(R, G, B),
             .Alpha = Function(A, Color) New MyColor(A, Color), .Channels = Function(Color) New MyColor(Color.A, Color.R, Color.G, Color.B),
             .Resources = Function() Application.Current.Resources, .RunInUi = Sub(Work) RunInUi(Work),
+            .RunInUiWait = Sub(Work) RunInUiWait(Work),
+            .ColorMode = Function() Settings.Get(Of Integer)("UiLauncherColorMode"), .PanelOpacity = Function() Settings.Get(Of Integer)("UiPanelOpacity"),
+            .BackgroundOpacity = Function() Settings.Get(Of Integer)("UiBackgroundOpacity"),
+            .AddAnimationSuppression = Sub(Delta) AniControlEnabled += Delta,
+            .LoadBackgroundResource = Function(Resource) CType(New MyBitmap(PathImage & Resource), ImageBrush),
+            .InstallTooltipTheme = AddressOf ModernTooltipTheme.Install,
             .MainLoaded = Function() FrmMain IsNot Nothing AndAlso FrmMain.IsLoaded,
             .Colorful = Function() Settings.Get(Of Boolean)("UiBackgroundColorful"), .BackgroundMode = Function() Settings.Get(Of Integer)("UiBackgroundMode"),
             .SetTitleBackground = Sub(Brush) FrmMain.PanTitle.Background = Brush, .TitleBackground = Function() FrmMain.PanTitle.Background,
@@ -102,6 +115,9 @@ Friend Module ModSecret
     Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
         PaletteService.Refresh(NewTheme)
     End Sub
+    Friend Function CreateTitleBackground() As Brush
+        Return PaletteService.CreateTitleBackground()
+    End Function
     Public Sub ThemeRefreshMain()
         PaletteService.RefreshMain()
     End Sub

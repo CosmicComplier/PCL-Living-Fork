@@ -75,31 +75,24 @@ namespace PCL
         }
         private static global::System.Boolean LegacyLinkEnabled()
         {
-            /* TODO ERROR: Skipped IfDirectiveTrivia
-            #If LEGACY_LINK Then
-            *//* TODO ERROR: Skipped DisabledTextTrivia
-                    Return True
-            *//* TODO ERROR: Skipped ElseDirectiveTrivia
-            #Else
-            */
+#if LEGACY_LINK
+            return true;
+#else
             return false;
-            /* TODO ERROR: Skipped EndIfDirectiveTrivia
-            #End If
-            */
+#endif
         }
         private static global::PCLCS.LegacyAuxiliaryPageSlot LinkSlot()
         {
-            /* TODO ERROR: Skipped IfDirectiveTrivia
-            #If LEGACY_LINK Then
-            *//* TODO ERROR: Skipped DisabledTextTrivia
-                    Return New LegacyAuxiliaryPageSlot With {.Read=Function() FrmSetupLink,.Write=Sub(Page) FrmSetupLink=DirectCast(Page,PageSetupLink),.Create=Function() New PageSetupLink(),.Reset=Sub(Page) DirectCast(Page,PageSetupLink).Reset()}
-            *//* TODO ERROR: Skipped ElseDirectiveTrivia
-            #Else
-            */
-            return (global::PCLCS.LegacyAuxiliaryPageSlot)null;
-            /* TODO ERROR: Skipped EndIfDirectiveTrivia
-            #End If
-            */
+#if LEGACY_LINK
+            return new global::PCLCS.LegacyAuxiliaryPageSlot {
+                Read = () => global::PCL.ModMain.FrmSetupLink,
+                Write = page => global::PCL.ModMain.FrmSetupLink = (global::PCL.PageSetupLink)page,
+                Create = () => new global::PCL.PageSetupLink(),
+                Reset = page => ((global::PCL.PageSetupLink)page).Reset()
+            };
+#else
+            return null;
+#endif
         }
         internal static void RefreshHelp()
         {

@@ -1,0 +1,5 @@
+The native resource generator reads `LF.Resources.schema.json` and the actual C# Main project's explicit `Resource` items. It does not read legacy VB, vbproj or resx schemas. The retained `--lf-project` argument supplies only the fixed vendor resource root; `--schema` and `--native-project` are optional explicit overrides.
+
+The schema pins the 18 byte-array keys and typed getter order. Modern Core, Presentation, Shared, Newtonsoft and Windows Registry always come from the actual caller-selected artifacts; identity/framework/reference-assembly checks remain mandatory. Fixed vendor payloads are read as bytes. `MeloongCore.Wpf` stays excluded. Pack asset paths and links come from Native Main, including its real night background.
+
+Changing keys/interfaces requires explicit schema/code review. Generated getters preserve `PCL.Resources`, `ResourceManager` and `Culture`; the manifest records schema/project hashes and pinned LF provenance. No old-source parsing or placeholder payload is available as a fallback.

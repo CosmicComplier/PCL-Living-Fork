@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$OutputPath,
-    [switch]$NoObfuscation
+    [switch]$NoObfuscation,
+    [ValidateSet('VisualBasic', 'CSharp')][string]$SourceLanguage = 'VisualBasic'
 )
 $ErrorActionPreference='Stop'
 
@@ -11,6 +12,7 @@ function ConvertTo-FragmentExpression([byte[]]$Bytes) {
     $permutation=@(0..($parts.Count-1) | Get-Random -Count $parts.Count)
     $stored=@($permutation | ForEach-Object {'"'+$parts[$_]+'"'})
     $order=@(0..($parts.Count-1) | ForEach-Object {[Array]::IndexOf($permutation,$_ )})
+    if($SourceLanguage -eq 'CSharp'){return 'Assemble(new string[] {'+($stored -join ',')+'}, new int[] {'+($order -join ',')+'})'}
     return 'Assemble(New String() {'+($stored -join ',')+'}, New Integer() {'+($order -join ',')+'})'
 }
 
@@ -45,6 +47,7 @@ function New-EncryptedFactory([string]$Value,[string]$Method) {
         $blobExpression=ConvertTo-FragmentExpression $blob
         $aExpression=ConvertTo-FragmentExpression $shareA
         $bExpression=ConvertTo-FragmentExpression $shareB
+        if($SourceLanguage -eq 'CSharp'){return "        private static string $Method()`r`n        {`r`n            return Decode($blobExpression, $aExpression, $bExpression);`r`n        }"}
         return "    Private Shared Function $Method() As String`r`n        Return Decode($blobExpression, $aExpression, $bExpression)`r`n    End Function"
     } finally {
         foreach($bytes in @($plain,$material,$shareA,$shareB,$encryptionKey,$authenticationKey)){if($null -ne $bytes){[Array]::Clear($bytes,0,$bytes.Length)}}
@@ -61,9 +64,15 @@ foreach($inputSetting in @(
     if([string]::IsNullOrEmpty($value)){continue}
     if($value.Contains("`r") -or $value.Contains("`n") -or $value.Contains([char]0)){throw "Invalid multiline build setting: $($inputSetting.Variable)"}
     $method=if($NoObfuscation){'Load'+$inputSetting.Factory}else{'k'+[Guid]::NewGuid().ToString('N')}
+    if($SourceLanguage -eq 'CSharp'){$assignments+='            '+$inputSetting.Factory+' = '+$method+';'}else{
     $assignments+='        '+$inputSetting.Factory+' = AddressOf '+$method
+    }
     $methods+=New-EncryptedFactory $value $method
     $value=$null
 }
+if($SourceLanguage -eq 'CSharp') {
+    $source="using System;`r`n// Generated build-only credential material; contains no plaintext input.`r`nnamespace PCL`r`n{`r`n    internal sealed partial class BuildCredentials`r`n    {`r`n        static BuildCredentials()`r`n        {`r`n            CurseForgeFactory = null;`r`n            MicrosoftFactory = null;`r`n"+($assignments -join "`r`n")+"`r`n        }`r`n"+($methods -join "`r`n")+"`r`n    }`r`n}`r`n"
+} else {
 $source="Imports System`r`n' Generated build-only credential material; contains no plaintext input.`r`nFriend NotInheritable Partial Class BuildCredentials`r`n    Shared Sub New()`r`n"+($assignments -join "`r`n")+"`r`n    End Sub`r`n"+($methods -join "`r`n")+"`r`nEnd Class`r`n"
+}
 [IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputPath),$source,[Text.UTF8Encoding]::new($true))

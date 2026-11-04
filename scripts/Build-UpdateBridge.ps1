@@ -1,18 +1,43 @@
-﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath,[Parameter(Mandatory=$true)][string]$OutputPath)
-# Produces the legacy-repository EXE. No credentials are read: the already built
-# application is embedded byte-for-byte with an authenticated download checksum.
+﻿param(
+ [Parameter(Mandatory=$true)][string]$ExecutablePath,
+ [Parameter(Mandatory=$true)][string]$OutputPath,
+ [string]$DotNetPath='dotnet',
+ [string]$NativeInspectorProject,
+ [string]$NativeUpdaterSource
+)
+# The canonical old-client asset remains a managed LivingPCL bridge. Both normal
+# managed payloads and our genuine NET10 single-file payload use the same legacy
+# four-argument handoff, embedded bytes, checksum and replacement transaction.
 $ErrorActionPreference='Stop'
-$root=Split-Path $PSScriptRoot -Parent
 $ExecutablePath=[IO.Path]::GetFullPath($ExecutablePath)
 $OutputPath=[IO.Path]::GetFullPath($OutputPath)
-$identity=[Reflection.AssemblyName]::GetAssemblyName($ExecutablePath)
-$version=[Diagnostics.FileVersionInfo]::GetVersionInfo($ExecutablePath)
-if($identity.Name -ne 'LivingPCL' -or $version.ProductName -ne 'PCL Living Fork'){throw 'Bridge payload must be the normal PCL Living Fork build'}
-$parsed=[version]$version.FileVersion
-$hash=(Get-FileHash -LiteralPath $ExecutablePath -Algorithm SHA256).Hash.ToLowerInvariant()
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('PclUpdateBridge-'+[Guid]::NewGuid().ToString('N'))
 try{
  [IO.Directory]::CreateDirectory($temporary)|Out-Null
+ $identity=$null
+ try{$identity=[Reflection.AssemblyName]::GetAssemblyName($ExecutablePath)}catch{
+  if($_.Exception.GetBaseException() -isnot [BadImageFormatException]){throw}
+ }
+ if($null -ne $identity){
+  # Preserve the original managed candidate's exact identity/product checks.
+  $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($ExecutablePath)
+  if($identity.Name -ne 'LivingPCL' -or $version.ProductName -ne 'PCL Living Fork'){throw 'Bridge payload must be the normal PCL Living Fork build'}
+  $parsed=[version]$version.FileVersion
+ }else{
+  if(-not $NativeInspectorProject){$NativeInspectorProject=Join-Path $PSScriptRoot 'native-update-inspector/NativeUpdateInspector.csproj'}
+  $inspectorFolder=Join-Path $temporary 'Inspector'
+  $inspectArgs=@('build',[IO.Path]::GetFullPath($NativeInspectorProject),'-c','Release','--output',$inspectorFolder,'-warnaserror','-v:q')
+  if($NativeUpdaterSource){$inspectArgs+=('-p:LFNativeUpdaterSource='+[IO.Path]::GetFullPath($NativeUpdaterSource))}
+  & $DotNetPath @inspectArgs
+  if($LASTEXITCODE -ne 0){throw 'Native payload inspector compilation failed'}
+  $identityJson=& $DotNetPath (Join-Path $inspectorFolder 'NativeUpdateInspector.dll') $ExecutablePath
+  if($LASTEXITCODE -ne 0){throw 'Native bridge payload is not a supported genuine LF bundle'}
+  $nativeIdentity=($identityJson -join "`n")|ConvertFrom-Json
+  if($nativeIdentity.AssemblyName -ne 'LivingPCL' -or $nativeIdentity.Product -ne 'PCL Living Fork'){throw 'Bridge payload must be the normal PCL Living Fork build'}
+  # Use the actual embedded entry attribute, not the native shell's caption.
+  $parsed=[version]$nativeIdentity.FileVersion
+ }
+ $hash=(Get-FileHash -LiteralPath $ExecutablePath -Algorithm SHA256).Hash.ToLowerInvariant()
  $info=Join-Path $temporary 'PayloadInfo.cs'
  $text=@"
 using System.Reflection;

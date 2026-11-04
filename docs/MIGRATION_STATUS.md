@@ -91,6 +91,8 @@ C014本地集成：四C#完整pipeline／hash／匹配／HTTP与原50行typed VB
 
 8ff80de正式完整C#工程检查点已推送，旧[Build41894581233](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41894581233)、[Modern41894581388](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41894581388)、[Migration41894581414](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41894581414)均success。这些仍是原门禁，没有执行完整Native Main。随后U001原生真实联图初轮仅新下载上下文object.FindName未late绑定错误，修为原VB/既有Search同样dynamic后，最终两阶段0E/80W；Root核固定main120文件差分补两处只读导航BlocksNavigation接线及RAM三处Gray1角色。
 
+f237cd6已推送LF50主要生产适配。随后原生发布/资源/验收接线：真实完整默认Main再次publish成功、Registry/Core/PF/Shared/JSON嵌入身份校验通过；18生成+18实际Main资源blob、vendor-only无VB/resx/vbproj和8CLI拒绝实际Linux运行通过，真实54 getter/Culture明确PENDING，Native Windows CI默认强制，不用生成替身。六个实际Main数据/主题/文件链＋真实Registry独立族宿主strict0W0E，只跨编；真实Windows冷启、54getter与Registry运行结果等待CI。路由保原范围并补50个真实CLI/Git样本通过，空diff/未知/三点PR/输出转义验证；不把未选产品样本算通过。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -319,10 +321,10 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 正式modern/Main完整LF C#/.NET10 WPF工程已接入：实际主窗/页面/原资源与780 typed WithEvents，当前LF50薄门面收敛为单一Core/PF业务实现。正式命令build -c Release --no-restore -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -m:1 -nodeReuse:false跨编0E/80W；构建工具修真实CLI宿主/RID继承与投影#line/checksum基准，保原g文件与拒绝保护。独立嵌套pass2回归0W0E、Windows/UNC/Unicode指令9/9、原g不变/空map与手写冲突拒绝。未执行Windows完整Main；资源生成暂读旧VB designer/vbproj作为schema，待独立原生schema替换；U001/main50运行、发布/升级/数据与R001仍待完成，不据编译验收 |
-| N004 | todo | N003、C022 | 验证旧账号和配置数据、共享目录、版本隔离、备份／还原点与旧格式写回，保留脱敏样本和实际结果 |
-| N005 | todo | N003、N004 | 完整现代产品凭据/资源/发布脚本/命名/单实例/旧更新桥仍待验；N003并行准备已测必要vendor依赖/实际资源bytes，但不是正式产品加载。旧managed识别无法直接验native apphost：仅设计并准备有界bundle入口元数据适配和原4参桥，不改旧客户端选择/回滚策略，未发布或计验收 |
-| R001 | todo | N003、N005 | 逐项处理初始清单中所有 VB／生成／条件源码，检查当前产品 VB 数为零、项目声明完整及许可来源齐全 |
+| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF产品与当前LF50功能已接；默认false实际完整Release两阶段0E/80W，原LegacyLink=true补真条件/35typed部件/14事件与原UDP声明点初始化，正式LF50开启图0E/86W，未运行外部服务。资源生成已改显式现代18键/schema与57实际Main资产，不读VB/designer/vbproj/resx；manifest本机迁入。原生单文件实际publish成功（191484639bytes），bounded reader确认LivingPCL/PCL Living Fork/1.3.5-pre-3，凭据GUID清理0。Windows真实入口/主要交互仍待独立Native CI，未以跨编/旧CI验收 |
+| N004 | in_progress | N003、C022 | 真实Main设置/旧DES/实际Windows Registry适配器的registry-data独立族已接，sole/fresh hosted/GUID原子owner/unknown拒绝与只删本人标记边界；覆盖_LF隔离/旧格式升级退出/非MS迁移/原kind回滚/取消/INI与JSON保留。strict编译0W0E，实际Windows尚未执行；77内存平台隔离断言已在原settings族通过，不外推真实Registry |
+| N005 | in_progress | N003、N004 | 主程序复用唯一GUID凭据wrapper NativePayload发布；保持原VB默认生成及crypto片段/惰性工厂，临时源码/中间文件finally清理。默认原生EXE/ZIP+canonical managed旧桥/SHA+build-only角色索引，实际有界bundle身份读者、原四参程序不改。真实单文件与资源schema发布已成功/身份正确，桥完整打包/Windows交接与回滚待CI；无外部release发布。Native CI Debug/Release保Main警告可见、依赖/工具/验收宿主strict；Release冷启先于真实Registry/六族与原模式额外编译 |
+| R001 | in_progress | N003、N005 | 正式现代产品不编译/读取业务VB或vbproj；旧比较树仍留，最终产品VB文件退休/清单与必要旧脚本迁验未完成。原默认关闭联机的两页/条件/handles/UDP声明点语义已真正C#接线、开启/关闭图可编；不得靠开关关闭或源码统计认定功能验收。Native实际运行与旧版兼容通过后统一退役旧产品工程 |
 | R002 | todo | R001 | 迁移后的完整 Windows Debug／Release 自动化回归、现有 MMC 和普通整合包样本；每项保存真实命令、提交和 CI 结果 |
 | R003 | todo | R002 | 实际 Windows 运行与新旧 UI 对照；账号、游戏启动／退出、文件中断恢复、按钮、滚动、页面及动画行为验收 |
 | R004 | todo | R003 | 汇总全部完成证据和剩余限制，自审最终差异与远端状态；仅在目标全部验收后标 `completed` 并暂停续跑 |

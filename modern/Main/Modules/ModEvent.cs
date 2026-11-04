@@ -247,15 +247,11 @@ namespace PCL
                 FileExists = new Func<global::System.String, global::System.Boolean>(Path => global::MeloongCore.FileUtils.Exists(Path)),
                 DownloadFile = new Action<global::System.String, global::System.String>((Url, Path) => global::PCL.ModNet.NetDownloadByClient(Url, Path))
             };
-            /* TODO ERROR: Skipped IfDirectiveTrivia
-            #If LEGACY_LINK Then
-            *//* TODO ERROR: Skipped DisabledTextTrivia
-                    Host.LegacyLink = True
-                    Host.JoinDefault = Sub() PageLinkMain.Join()
-                    Host.Join = Sub(Arg) PageLinkMain.Join(Arg)
-            *//* TODO ERROR: Skipped EndIfDirectiveTrivia
-            #End If
-            */
+            #if LEGACY_LINK
+            Host.LegacyLink = true;
+            Host.JoinDefault = () => global::PCL.PageLinkMain.Join();
+            Host.Join = arg => global::PCL.PageLinkMain.Join(arg);
+#endif
             return Host;
         }
         public static void Raise(global::PCL.CustomEvent.EventType Type, global::System.String Arg)

@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseAppHost>true</UseAppHost>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>13.0</LangVersion>
+    <StartupObject>PCLLF.Native.Facade.Tests.Program</StartupObject>
+    <LauncherMainProject Condition="'$(LauncherMainProject)'==''">../../modern/Main/PCL-Living-Fork.Modern.csproj</LauncherMainProject>
+    <LauncherMainOutputDirectory Condition="'$(LauncherMainAssembly)'!=''">$([System.IO.Path]::GetDirectoryName('$(LauncherMainAssembly)'))</LauncherMainOutputDirectory>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(LauncherMainAssembly)'==''">
+    <ProjectReference Include="$(LauncherMainProject)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(LauncherMainAssembly)'!=''">
+    <Reference Include="LivingPCL">
+      <HintPath>$(LauncherMainAssembly)</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="PCLCS">
+      <HintPath>$(LauncherMainOutputDirectory)/PCLCS.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="PCLLF.Presentation">
+      <HintPath>$(LauncherMainOutputDirectory)/PCLLF.Presentation.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="MeloongCore">
+      <HintPath>$(LauncherMainOutputDirectory)/MeloongCore.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="System.IO" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <None Include="../../modern/Main/Images/Branding/DefaultBackground.png" Link="assets/DefaultBackground.png" CopyToOutputDirectory="PreserveNewest" />
+<None Include="../../modern/Main/Images/Branding/DefaultBackgroundNight.png" Link="assets/DefaultBackgroundNight.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="StageActualLauncherOutput" AfterTargets="Build">
+    <ItemGroup>
+      <_FacadeMainOutput Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Filename)'=='LivingPCL' and '%(ReferenceCopyLocalPaths.Extension)'=='.dll'" />
+    </ItemGroup>
+    <Error Condition="'@(_FacadeMainOutput)'==''" Text="Actual LF Main output is required; this host cannot validate a substitute assembly." />
+    <PropertyGroup>
+      <_FacadeMainDirectory>@(_FacadeMainOutput-&gt;'%(RootDir)%(Directory)')</_FacadeMainDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <_FacadeRuntime Include="$(_FacadeMainDirectory)**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_FacadeRuntime)" DestinationFiles="@(_FacadeRuntime-&gt;'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

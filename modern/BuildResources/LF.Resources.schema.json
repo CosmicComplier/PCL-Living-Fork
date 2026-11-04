@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "basename": "PCL.Resources",
+  "nativeMainProject": "../modern/Main/PCL-Living-Fork.Modern.csproj",
+  "provenance": {
+    "migrationCommit": "a1d2ee1ed215647ab7e38f11c9e45859fbb4fcf7",
+    "legacyResourceSha256": "d3c1f2f4842a0ad84546097250685a4dd8202b8b79e4bd8bb75f05078fe311c5",
+    "legacyTypedInterfaceSha256": "d25ab6032990133070c878436992bdc616ce97ef2db4fc313c27f2ccc63fa232",
+    "license": "LICENCE"
+  },
+  "payloads": [
+    {
+      "key": "CacheCow.Client",
+      "source": "Resources/CacheCow.Client.dll"
+    },
+    {
+      "key": "CacheCow.Client.FileStore",
+      "source": "Resources/CacheCow.Client.FileStore.dll"
+    },
+    {
+      "key": "CacheCow.Common",
+      "source": "Resources/CacheCow.Common.dll"
+    },
+    {
+      "key": "ThrottleDebounce",
+      "source": "Resources/ThrottleDebounce.dll"
+    },
+    {
+      "key": "Custom",
+      "source": "resources/custom.xaml"
+    },
+    {
+      "key": "ForgeInstaller",
+      "source": "Resources/forge-installer.jar"
+    },
+    {
+      "key": "Help",
+      "source": "Resources/Help.zip"
+    },
+    {
+      "key": "Imazen.WebP",
+      "source": "Resources/Imazen.WebP.dll"
+    },
+    {
+      "key": "libwebp64",
+      "source": "Resources/libwebp64.dll"
+    },
+    {
+      "key": "MeloongCore"
+    },
+    {
+      "key": "Microsoft.Win32.Registry"
+    },
+    {
+      "key": "NAudio",
+      "source": "Resources/NAudio.dll"
+    },
+    {
+      "key": "Newtonsoft.Json"
+    },
+    {
+      "key": "Ookii.Dialogs.Wpf",
+      "source": "resources/ookii.dialogs.wpf.dll"
+    },
+    {
+      "key": "PCLCS"
+    },
+    {
+      "key": "PCLLF.Presentation"
+    },
+    {
+      "key": "System.Net.Http.Formatting",
+      "source": "Resources/System.Net.Http.Formatting.dll"
+    },
+    {
+      "key": "Transformer",
+      "source": "Resources/transformer.jar"
+    }
+  ],
+  "typedProperties": [
+    {
+      "name": "CacheCow_Client",
+      "key": "CacheCow.Client"
+    },
+    {
+      "name": "CacheCow_Client_FileStore",
+      "key": "CacheCow.Client.FileStore"
+    },
+    {
+      "name": "CacheCow_Common",
+      "key": "CacheCow.Common"
+    },
+    {
+      "name": "ThrottleDebounce",
+      "key": "ThrottleDebounce"
+    },
+    {
+      "name": "Custom",
+      "key": "Custom"
+    },
+    {
+      "name": "ForgeInstaller",
+      "key": "ForgeInstaller"
+    },
+    {
+      "name": "Help",
+      "key": "Help"
+    },
+    {
+      "name": "Imazen_WebP",
+      "key": "Imazen.WebP"
+    },
+    {
+      "name": "libwebp64",
+      "key": "libwebp64"
+    },
+    {
+      "name": "MeloongCore",
+      "key": "MeloongCore"
+    },
+    {
+      "name": "NAudio",
+      "key": "NAudio"
+    },
+    {
+      "name": "Newtonsoft_Json",
+      "key": "Newtonsoft.Json"
+    },
+    {
+      "name": "Ookii_Dialogs_Wpf",
+      "key": "Ookii.Dialogs.Wpf"
+    },
+    {
+      "name": "PCLCS",
+      "key": "PCLCS"
+    },
+    {
+      "name": "System_Net_Http_Formatting",
+      "key": "System.Net.Http.Formatting"
+    },
+    {
+      "name": "Transformer",
+      "key": "Transformer"
+    },
+    {
+      "name": "Microsoft_Win32_Registry",
+      "key": "Microsoft.Win32.Registry"
+    },
+    {
+      "name": "PCLLF_Presentation",
+      "key": "PCLLF.Presentation"
+    }
+  ],
+  "excludedKeys": [
+    "MeloongCore.Wpf"
+  ]
+}

@@ -1,3 +1,4 @@
+// LF optional LegacyLink from f4aa0fae62c3ee8af24c81e61844c8fdd13c8983 / main50b028d (unchanged); LF LICENCE.
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -17,10 +18,15 @@ using Microsoft.VisualBasic;
 using Microsoft.VisualBasic.CompilerServices;
 using Newtonsoft.Json.Linq;
 
+using static PCL.ModMain;
+using static PCL.ModSecret;
+using static PCL.ModAnimation;
+using static PCL.ModBase;
+
 namespace PCL
 {
 
-    public class PageLinkMain
+    public partial class PageLinkMain
     {
         private const int INVITE_CODE_VERSION = 2;
 
@@ -41,12 +47,21 @@ namespace PCL
 
         public PageLinkMain()
         {
-            LinkLoader = new ModLoader.LoaderCombo<int>("联机", new[] { new ModLoader.LoaderTask<int, int>("获取配置", InitConfig) { ProgressWeight = 8d }, new ModLoader.LoaderTask<int, List<ModNet.NetFile>>("准备下载联机模块", InitPrepareDownload) { ProgressWeight = 2d }, new ModNet.LoaderDownload("下载联机模块", new List<ModNet.NetFile>()) { ProgressWeight = 40d }, new ModLoader.LoaderTask<int, int>("启动联机模块", InitLaunch) { ProgressWeight = 50d } });
+            Initialized += __LegacyInitialized;
+            PageEnter += UpdatePanelVisibility;
+            Loaded += __LegacyLoadedTimer;
+            Loaded += __LegacyLoadedUpdate;
+            FailReason = "准备初始化";
+            PathEasyTier = Paths.AppDataThenName + @"EasyTier\";
+            ClientAddress = null;
+            DiscoverNodeID = -1;
+            LinkLoader = new ModLoader.LoaderCombo<int>("联机", new ModLoader.LoaderBase[] { new ModLoader.LoaderTask<int, int>("获取配置", InitConfig) { ProgressWeight = 8d }, new ModLoader.LoaderTask<int, List<ModNet.NetFile>>("准备下载联机模块", InitPrepareDownload) { ProgressWeight = 2d }, new ModNet.LoaderDownload("下载联机模块", new List<ModNet.NetFile>()) { ProgressWeight = 40d }, new ModLoader.LoaderTask<int, int>("启动联机模块", InitLaunch) { ProgressWeight = 50d } });
+            LogHistory = new Queue<string>(10);
+            Peers = null;
+            NATType = NATTypes.Pending;
             RefreshPeerLoader = new ModLoader.LoaderTask<int, List<Peer>>("EasyTier CLI", (_) => RefreshPeer());
-            this.Initialized += LoaderInit;
-            this.PageEnter += UpdatePanelVisibility;
-            this.Loaded += StartTimerThread;
-            this.Loaded += Update;
+            FailCount = 0;
+            InitializeComponent();
         }
 
         /// <summary>
@@ -303,7 +318,7 @@ namespace PCL
             FrmLinkMain.LabLoadDesc.Text = Title;
         });
         }
-        private string FailReason = "准备初始化";
+        private string FailReason;
 
         // 取消加载
         private void BtnLoadCancel_Click()
@@ -366,7 +381,7 @@ namespace PCL
                 LabFinishPort.Visibility = Visibility.Visible;
                 BtnFinishIp.Visibility = Visibility.Collapsed;
                 LabFinishIp.Visibility = Visibility.Collapsed;
-                LabFinishPort.Text = ServerPort;
+                LabFinishPort.Text = Conversions.ToString(ServerPort);
             }
             else
             {
@@ -448,7 +463,7 @@ namespace PCL
         /// <summary>
     /// EasyTier 所在的文件夹路径，以 \ 结尾。
     /// </summary>
-        private string PathEasyTier = Paths.AppDataThenName + @"EasyTier\";
+        private string PathEasyTier;
         /// <summary>
     /// 当前是服务端还是客户端。
     /// </summary>
@@ -469,12 +484,12 @@ namespace PCL
     /// 在客户端映射后的地址。
     /// 除非已作为客户端启动 EasyTier，否则一直为 Nothing。
     /// </summary>
-        private string ClientAddress = null;
+        private string ClientAddress;
         /// <summary>
     /// 发现节点的 ID。
     /// 若必须设定自定义节点则为 -2；若等待选择则为 -1；选择回退节点则为 0；否则为对应节点的 ID。
     /// </summary>
-        private int DiscoverNodeID = -1;
+        private int DiscoverNodeID;
         /// <summary>
     /// 网络信息。
     /// </summary>
@@ -483,7 +498,12 @@ namespace PCL
 
         #region 加载
 
-        private ModLoader.LoaderCombo<int> LinkLoader;
+        private ModLoader.LoaderCombo<int> _linkLoader;
+        private ModLoader.LoaderCombo<int> LinkLoader {
+            get => _linkLoader;
+            [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.Synchronized)]
+            set => _linkLoader = value;
+        }
 
         // 1. 获取服务器配置
         private void InitConfig(ModLoader.LoaderTask<int, int> Task)
@@ -497,10 +517,10 @@ namespace PCL
             if (ServerConfig is null)
                 throw new Exception("无法从服务器获取配置");
             // 检查是否已禁用联机功能
-            var DisableReason = ServerConfig("Link")?["DisableReason2"]?.ToString;
+            var DisableReason = ServerConfig["Link"]?["DisableReason2"]?.ToString();
             if (!string.IsNullOrEmpty(DisableReason))
                 throw new Exception("$" + DisableReason); // TODO: 可能不会显示错误原因？
-            if (((JObject)ServerConfig("Link")).ContainsKey("MinVersionCode") && ModBase.VersionCode < ServerConfig("Link")("MinVersionCode").ToObject<int>)
+            if (((JObject)ServerConfig["Link"]).ContainsKey("MinVersionCode") && ModBase.VersionCode < ServerConfig["Link"]["MinVersionCode"].ToObject<int>())
             {
                 throw new Exception("$你的 PCL 版本太老了，请在更新 PCL 之后再联机！");
             }
@@ -512,7 +532,13 @@ namespace PCL
         {
             // 获取 CPU 架构
             UpdateLoadingPage("正在获取 CPU 架构……", "获取 CPU 架构");
-            string Architecture = ((int)typeof(string).Assembly.GetName().ProcessorArchitecture).ToString();
+            string Architecture = global::System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch {
+                global::System.Runtime.InteropServices.Architecture.X86 => "2",
+                global::System.Runtime.InteropServices.Architecture.X64 => "4",
+                global::System.Runtime.InteropServices.Architecture.Arm => "5",
+                global::System.Runtime.InteropServices.Architecture.Arm64 => "5",
+                _ => "0"
+            };
             switch (Architecture ?? "")
             {
                 case "2":
@@ -548,12 +574,12 @@ namespace PCL
                 Settings.Set("LinkEasyTierVersion", -1);
             }
             int LocalVersion = Settings.Get<int>("LinkEasyTierVersion");
-            ServerVersion = ServerConfig("Link")("EasyTierVersion");
+            ServerVersion = (int)ServerConfig["Link"]["EasyTierVersion"];
             var RequiredFiles = new List<ModNet.NetFile>();
             Logger.Info($"EasyTier 本地版本：{LocalVersion}，需求版本：{ServerVersion}");
             if (LocalVersion < ServerVersion)
             {
-                RequiredFiles.Add(new ModNet.NetFile(ServerConfig("Link")("Downloads").Select(UrlEntry => UrlEntry.ToString.Replace("{arch}", Architecture)), PathEasyTier + "EasyTier.zip", new FileChecker() { MinSize = 1024 * 1024 * 2 }));
+                RequiredFiles.Add(new ModNet.NetFile(ServerConfig["Link"]["Downloads"].Select(UrlEntry => UrlEntry.ToString().Replace("{arch}", Architecture)), PathEasyTier + "EasyTier.zip", new FileChecker() { MinSize = 1024 * 1024 * 2 }));
             }
             // 开始下载
             UpdateLoadingPage("正在下载联机模块……", "下载联机模块");
@@ -608,7 +634,7 @@ namespace PCL
             RPCPort = FreePorts[1];
             int ListenersPort = FreePorts[2]; // 它会占用【当前、当前 +1、当前 +2】共三个端口
                                               // 获取启动参数
-            string Arguments = ServerConfig("Link")("Argument");
+            string Arguments = (string)ServerConfig["Link"]["Argument"];
             Arguments += $" --network-name={NetworkName} --network-secret={NetworkSecret} --listeners {ListenersPort} --rpc-portal {RPCPort} --private-mode true";
             string HostName = (IsServerSide ? "Server-" : "Client-") + ModBase.Identify.GetStableHashCode().ConvertRadix(36).TrimStart('-').EnsureLength('0', 6);
             if (IsServerSide)
@@ -732,8 +758,8 @@ namespace PCL
         {
             var FinalPeers = new List<string>();
             int FinalDiscoverID = -1;
-            var FallbackDiscoverID = ServerConfig("Link")("DiscoverPeerId").ToObject<int>;
-            string FallbackDiscoverAddress = ServerConfig("Link")("DiscoverPeer").ToString();
+            var FallbackDiscoverID = ServerConfig["Link"]["DiscoverPeerId"].ToObject<int>();
+            string FallbackDiscoverAddress = ServerConfig["Link"]["DiscoverPeer"].ToString();
             try
             {
                 // 从 API 获取节点列表
@@ -751,7 +777,7 @@ namespace PCL
                 }
                 // 分析节点列表
                 var Nodes = new List<JObject>(); // 负载会添加在 load 字段上
-                List<string> BlackList = ServerConfig("Link")("PeersBlackList").Select(p => p.ToString).ToList();
+                List<string> BlackList = ServerConfig["Link"]["PeersBlackList"].Select(p => p.ToString()).ToList();
                 foreach (JObject Node in RawNodes["data"]["items"])
                 {
                     // 状态检查
@@ -815,7 +841,7 @@ namespace PCL
                 // 选取中继节点
                 if (ModBase.ModeDebug || !IsServerSide) // 房主只连接发现节点，不连接中继节点
                 {
-                    int RelayCount = ServerConfig("Link")("RandomPeer").ToObject<int>;
+                    int RelayCount = ServerConfig["Link"]["RandomPeer"].ToObject<int>();
                     var RelayNodes = Nodes.Where(n => n["allow_relay"].ToObject<bool>()).ToList();
                     if (RelayNodes.Count < RelayCount)
                         throw new Exception($"可用的中继节点数量不足，需要 {RelayCount} 个，实际 {RelayNodes.Count} 个");
@@ -826,7 +852,7 @@ namespace PCL
             {
                 ex.ThrowIfCanceled();
                 Logger.Error(ex, "获取节点列表失败，联机质量可能受到影响", LogBehavior.Toast);
-                FinalPeers.AddRange(ServerConfig("Link")("Peers").Select(p => p.ToString));
+                FinalPeers.AddRange(ServerConfig["Link"]["Peers"].Select(p => p.ToString()));
                 if (FinalDiscoverID <= 0)
                 {
                     FinalPeers.Add(FallbackDiscoverAddress);
@@ -834,14 +860,14 @@ namespace PCL
                 }
             }
             // 版本 1 兼容
-            if (((JObject)ServerConfig("Link")).ContainsKey("EnableForcedPeer"))
+            if (((JObject)ServerConfig["Link"]).ContainsKey("EnableForcedPeer"))
             {
                 FinalPeers.Add("tcp://mc1.easytier.cn:55558");
                 if (FinalDiscoverID <= 0)
                     FinalDiscoverID = 94;
             }
             // 强制添加的节点
-            FinalPeers.AddRange(ServerConfig("Link")("MandatoryPeers").Select(p => p.ToString));
+            FinalPeers.AddRange(ServerConfig["Link"]["MandatoryPeers"].Select(p => p.ToString()));
             // 结束
             DiscoverNodeID = FinalDiscoverID;
             return FinalPeers.Distinct().ToList();
@@ -970,7 +996,7 @@ namespace PCL
                 Update();
             }
         }
-        private Queue<string> LogHistory = new Queue<string>(10);
+        private Queue<string> LogHistory;
 
         #endregion
 
@@ -1076,11 +1102,11 @@ namespace PCL
     /// 当前的节点列表，使用 RefreshPeerLoader 来刷新。
     /// 若尚未成功获取过则为 Nothing，但保证在加载完成后至少是一个列表。
     /// </summary>
-        private List<Peer> Peers = null;
+        private List<Peer> Peers;
         /// <summary>
     /// 自己的 NAT 类型。
     /// </summary>
-        private NATTypes NATType = NATTypes.Pending;
+        private NATTypes NATType;
 
         /// <summary>
     /// 调用 EasyTier CLI 获取已连接节点信息。
@@ -1136,7 +1162,7 @@ namespace PCL
         /// <summary>
     /// CLI 调用连续失败的次数。
     /// </summary>
-        private int FailCount = 0;
+        private int FailCount;
 
         /// <summary>
     /// 根据当前的节点列表获取 Ping 值。
@@ -1225,7 +1251,34 @@ namespace PCL
             }
         }, "Link Timer");
         }
-        private Socket _Update_BroadcastSocket = new Socket(SocketType.Dgram, ProtocolType.Udp);
+        private Socket _Update_BroadcastSocket;
+        private StaticLocalInitFlag _Update_BroadcastSocket_Init;
+        private Socket GetBroadcastSocket()
+        {
+            if (_Update_BroadcastSocket_Init is null)
+                Interlocked.CompareExchange(ref _Update_BroadcastSocket_Init, new StaticLocalInitFlag(), null);
+            bool lockTaken = false;
+            try
+            {
+                Monitor.Enter(_Update_BroadcastSocket_Init, ref lockTaken);
+                if (_Update_BroadcastSocket_Init.State == 0)
+                {
+                    _Update_BroadcastSocket_Init.State = 2;
+                    _Update_BroadcastSocket = new Socket(SocketType.Dgram, ProtocolType.Udp);
+                }
+                else if (_Update_BroadcastSocket_Init.State == 2)
+                    throw new IncompleteInitialization();
+            }
+            finally
+            {
+                _Update_BroadcastSocket_Init.State = 1;
+                if (lockTaken) Monitor.Exit(_Update_BroadcastSocket_Init);
+            }
+            return _Update_BroadcastSocket;
+        }
+        private void __LegacyInitialized(object sender, EventArgs e) => LoaderInit();
+        private void __LegacyLoadedTimer(object sender, RoutedEventArgs e) => StartTimerThread();
+        private void __LegacyLoadedUpdate(object sender, RoutedEventArgs e) => Update();
 
         // 每秒或进入页面时触发
         private void Update()
@@ -1267,7 +1320,7 @@ namespace PCL
                         // 中继提示
             if (Connecting)
                 return; // 连接稳定过程中不显示提示
-            ;
+            var Server = GetTargetPeer();
             if (Server is null)
                 return;
             if (Server.Relay)
@@ -1305,7 +1358,7 @@ namespace PCL
                 return; // 自身的 NAT 为 2 或更好
             if (Server.NATType < NATTypes.PortRestricted)
                 return; // 房主的 NAT 为 3 或更差
-            ;
+            var OtherPlayers = Peers.Where(p => p.Type == Peer.Types.Client).ToList();
             if (!OtherPlayers.Any())
                 return; // 房间里还有其他玩家
             if (OtherPlayers.Any(p => p.Relay))
@@ -1336,7 +1389,7 @@ namespace PCL
             {
                 try
                 {
-                    _Update_BroadcastSocket.SendTo(Encoding.UTF8.GetBytes($"[MOTD]PCL 联机房间[/MOTD][AD]{ClientPort}[/AD]"), SocketFlags.None, new IPEndPoint(IPAddress.Loopback, 4445));
+                    GetBroadcastSocket().SendTo(Encoding.UTF8.GetBytes($"[MOTD]PCL 联机房间[/MOTD][AD]{ClientPort}[/AD]"), SocketFlags.None, new IPEndPoint(IPAddress.Loopback, 4445));
                 }
                 catch (Exception ex)
                 {

@@ -42,6 +42,8 @@ Friend NotInheritable Class SetupPageRuntime
         .MainBackground = Function() FrmMain.ImgBack,
         .TitleLogo = Function() FrmMain.ImageTitleLogo,
         .ApplyBackground = Sub(Panel, Image) ApplyMainBackground(Panel, Image),
+        .UseDefaultBackground = AddressOf ModTheme.UseDefaultBackground,
+        .MarkCustomBackground = AddressOf ModTheme.MarkCustomBackground,
         .UpdateBackgroundAndTitle = Sub() FrmMain.UpdateBackgroundAndTitleBar(),
         .RandomPicture = Function(Pictures) RandomOne(Pictures),
         .MusicAll = Function() MusicAllList,

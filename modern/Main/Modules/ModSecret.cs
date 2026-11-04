@@ -201,24 +201,11 @@ namespace PCL
         {
             global::PCL.ModLauncherUpdate.CheckForUpdates(false);
         }
-        /* TODO ERROR: Skipped IfDirectiveTrivia
-        #If LEGACY_LINK Then
-        *//* TODO ERROR: Skipped DisabledTextTrivia
-        #Region "旧联机配置预留"
-
-            ''' <summary>
-            ''' 联网获取的配置信息。
-            ''' 若获取失败或仍在获取中，可能为 Nothing。
-            ''' </summary>
-            Public ServerConfig As JObject
-
-            Public ServerLoader As New LoaderTask(Of Integer, Integer)("PCL 配置更新", Sub() Logger.Info("该版本中不包含更新通知功能……"), Priority:=ThreadPriority.BelowNormal) With
-                {.ReloadTimeout = 1000 * 60 * 60} '超时 1 小时
-
-        #End Region
-        *//* TODO ERROR: Skipped EndIfDirectiveTrivia
-        #End If
-        */
+        #if LEGACY_LINK
+        // LF's original open-source legacy link configuration hook.
+        public static JObject ServerConfig;
+        public static ModLoader.LoaderTask<int, int> ServerLoader = new("PCL 配置更新", _ => Logger.Info("该版本中不包含更新通知功能……"), Priority: ThreadPriority.BelowNormal) { ReloadTimeout = 1000 * 60 * 60 };
+#endif
         internal static global::System.String GetIdentify()
         {
             return global::PCL.ModSecret.IdentityService.Read();

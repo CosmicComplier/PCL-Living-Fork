@@ -2,11 +2,13 @@
 <TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting>
 <OutputType>WinExe</OutputType><AssemblyName>LivingPCL</AssemblyName><RootNamespace>PCL</RootNamespace><StartupObject>PCL.Application</StartupObject>
 <EnableDefaultCompileItems>false</EnableDefaultCompileItems><EnableDefaultPageItems>false</EnableDefaultPageItems><EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition><EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
-<GenerateAssemblyInfo>false</GenerateAssemblyInfo><Nullable>disable</Nullable><LangVersion>14.0</LangVersion><ImplicitUsings>enable</ImplicitUsings><Configurations>Debug;Release;Snapshot</Configurations><EnableLegacyLink>false</EnableLegacyLink><AllowUnsafeBlocks>true</AllowUnsafeBlocks><CheckForOverflowUnderflow>true</CheckForOverflowUnderflow><ApplicationManifest>../../Plain Craft Launcher 2/app.manifest</ApplicationManifest><ApplicationIcon>Images/Branding/LivingPCL.ico</ApplicationIcon>
+<GenerateAssemblyInfo>false</GenerateAssemblyInfo><Nullable>disable</Nullable><LangVersion>14.0</LangVersion><ImplicitUsings>enable</ImplicitUsings><Configurations>Debug;Release;Snapshot</Configurations><EnableLegacyLink>false</EnableLegacyLink><DefineConstants Condition="'$(EnableLegacyLink)' == 'true'">$(DefineConstants);LEGACY_LINK</DefineConstants><AllowUnsafeBlocks>true</AllowUnsafeBlocks><CheckForOverflowUnderflow>true</CheckForOverflowUnderflow><ApplicationManifest>app.manifest</ApplicationManifest><ApplicationIcon>Images/Branding/LivingPCL.ico</ApplicationIcon>
 </PropertyGroup>
 <PropertyGroup Condition="'$(Configuration)' == 'Debug'"><DefineConstants>$(DefineConstants);SNAPSHOT</DefineConstants></PropertyGroup>
 <PropertyGroup Condition="'$(Configuration)' == 'Release'"><DefineConstants>$(DefineConstants);RELEASE</DefineConstants></PropertyGroup>
 <PropertyGroup Condition="'$(Configuration)' == 'Snapshot'"><DefineConstants>$(DefineConstants);SNAPSHOT</DefineConstants><Optimize>true</Optimize></PropertyGroup>
+<!-- Main-only generated C# credential source/intermediate; before other build imports. -->
+<Import Project="CredentialBuild.targets" />
 <ItemGroup>
 <ProjectReference Include="../PCLCS/PCLCS.Modern.csproj"/><ProjectReference Include="../Presentation/PCLLF.Presentation.Modern.csproj"/>
 </ItemGroup><ItemGroup>
