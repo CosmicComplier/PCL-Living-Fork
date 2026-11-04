@@ -1,0 +1,202 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text.RegularExpressions;
+using System.Threading;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace PCLCS;
+
+// LF LaunchDependencyCheck.vb and ModDependencyAutoFill.vb, unchanged from
+// f4aa0fae62c3ee8af24c81e61844c8fdd13c8983, under the LF LICENCE.
+// PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8 has neither module.
+// Reviewed CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5
+// Plain Craft Launcher 2/Modules/Minecraft/ModCompDependency.cs and
+// PCL.Core/Minecraft/ResourceProject/ModDependencyResolver.cs (CE LICENSE/PCL LICENCE).
+// Their download confirmation and project selection do not implement LF's local
+// declaration recheck, acceptance stamp, disabled-JAR activation or transaction policy.
+public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile, TVersion, TNetFile, TItem, TPlan, TActivation, TOptions, TCache>
+    where TContext : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.ContextData, new()
+    where TMod : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.ModData, new()
+    where TDependency : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.DependencyData, new()
+    where TEdge : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.EdgeData, new()
+    where TIssue : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.IssueData, new()
+    where TImpact : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.ImpactData, new()
+    where TReport : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.ReportData, new()
+    where TOnlineProject : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.OnlineProjectData, new()
+    where TOnlineDependency : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.OnlineDependencyData, new()
+    where TOnlineFile : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.OnlineFileData, new()
+    where TVersion : class where TNetFile : class
+    where TItem : ModDependencyAutoFillItemData<TVersion, TItem>, new()
+    where TPlan : ModDependencyAutoFillPlanData<TReport, TItem, TActivation>, new()
+    where TActivation : DependencyActivationItemData<TMod>, new()
+    where TOptions : ModDependencyLookupOptions<TCache>, new()
+    where TCache : ModDependencyLookupCache, new() {
+    private readonly ModDependencyAutoFillHost<TReport, TVersion, TNetFile, TPlan, TOptions> host;
+    private readonly ConcurrentDictionary<string, Tuple<DateTime, JToken>> cached = new();
+    public ModDependencyAutoFillEngine(ModDependencyAutoFillHost<TReport, TVersion, TNetFile, TPlan, TOptions> host) { this.host = host; }
+    private sealed class Requirement {
+        internal string Platform = null!, Project = null!, Version = null!, Owner = null!;
+    }
+    private static string S(JToken? value) => value is null || value.Type == JTokenType.Null ? "" : value.ToString();
+    private static IEnumerable<JToken> A(JToken? value) => value as JArray ?? new JArray();
+    private static bool SameText(string? first, string? second) => string.Equals(first ?? "", second ?? "", StringComparison.Ordinal);
+    private static string Key(string? platform, string? project) => platform + "|" + project;
+    private static bool ValidId(string? platform, string? id) => Regex.IsMatch(id ?? "", SameText(platform, "CurseForge") ? @"\A[1-9][0-9]{0,12}\z" : @"\A[A-Za-z0-9_-]{1,64}\z");
+    private static ModLoaders Loader(TContext context) {
+        if (context.LoaderVersions.ContainsKey("quilt_loader")) return ModLoaders.Fabric;
+        if (context.LoaderVersions.ContainsKey("neoforge")) return ModLoaders.NeoForge;
+        if (context.LoaderVersions.ContainsKey("forge")) return ModLoaders.Forge;
+        if (context.LoaderVersions.ContainsKey("fabricloader")) return ModLoaders.Fabric;
+        if (context.LoaderVersions.ContainsKey("liteloader")) return ModLoaders.LiteLoader;
+        return ModLoaders.None;
+    }
+    private bool Compatible(TVersion? version, TContext context) {
+        if (version is null || host.ResourceType(version) != ResourceTypes.Mod || !host.DownloadAvailable(version) || host.Size(version) <= 0 ||
+            host.GameVersions(version) is null || !host.GameVersions(version)!.Contains(context.MinecraftVersion!, StringComparer.OrdinalIgnoreCase) ||
+            Loader(context) == ModLoaders.None || !host.ModLoaders(version).HasFlag(Loader(context))) return false;
+        if (!Regex.IsMatch(host.Hash(version) ?? "", @"\A(?:[0-9a-f]{40}|[0-9a-f]{32})\z")) return false;
+        try {
+            host.SafeName(host.FileName(version)!);
+            if (!host.FileName(version)!.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)) return false;
+            host.SetDownloadUrls(version, host.DownloadUrls(version).Where(value => {
+                if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? parsed)) return false;
+                Uri address = parsed!;
+                return address.Scheme == "https" && address.UserInfo == "" && address.IsDefaultPort &&
+                    (address.Host == "cdn.modrinth.com" || address.Host.EndsWith(".forgecdn.net", StringComparison.OrdinalIgnoreCase));
+            }).Distinct().ToList());
+            return host.DownloadUrls(version).Count > 0;
+        } catch { return false; }
+    }
+    private TVersion? ParseVersion(JObject raw, string platform) {
+        if (SameText(platform, "CurseForge")) {
+            if (!SameText(S(raw["gameId"]), "432") || SameText(S(raw["downloadUrl"]), "") || SameText(S(raw["isAvailable"]), "False")) return null;
+        } else {
+            List<JObject> files = A(raw["files"]).OfType<JObject>().ToList();
+            JObject? primary = files.FirstOrDefault(value => value["primary"]?.ToObject<bool>() == true);
+            if (primary is null && files.Count == 1) primary = files[0];
+            if (primary is null) return null;
+            raw = (JObject)raw.DeepClone(); raw["files"] = new JArray(primary.DeepClone());
+        }
+        TVersion version = host.ParseVersion(raw);
+        if (A(raw[SameText(platform, "Modrinth") ? "loaders" : "gameVersions"]).Any(value => S(value).Equals("quilt", StringComparison.OrdinalIgnoreCase)))
+            host.SetModLoaders(version, host.ModLoaders(version) | ModLoaders.Fabric);
+        return version;
+    }
+    private static IEnumerable<Requirement> Required(JObject raw, string platform, string owner) => A(raw["dependencies"])
+        .Where(value => SameText(platform, "Modrinth") ? SameText(S(value["dependency_type"]), "required") : SameText(S(value["relationType"]), "3"))
+        .Select(value => new Requirement { Platform = platform, Project = S(value[SameText(platform, "Modrinth") ? "project_id" : "modId"]),
+            Version = SameText(platform, "Modrinth") ? S(value["version_id"]) : "", Owner = owner }).ToList();
+    private static bool IsRange(JToken? value) {
+        if (value is JArray array) return array.Count > 0 && array.All(IsRange);
+        if (value is null || value.Type != JTokenType.String) return false;
+        string text = value.ToString();
+        return Regex.IsMatch(text, @"[<>~^*]|(?:^|\.)[xX](?:$|\.)") || (text.Contains(",") && (text.StartsWith("[") || text.StartsWith("(")));
+    }
+    public TPlan BuildPlan(string root, TReport report, CancellationToken token, TOptions? options = null) {
+        TPlan result = Prepare(root, report, token);
+        if (!report.Mods.Any(value => value.Enabled)) return result;
+        if (Loader(report.Context) == ModLoaders.None || string.IsNullOrEmpty(report.Context.MinecraftVersion)) {
+            result.Notes.Add("尚未确认当前 Minecraft 版本或加载器，未选择自动补全文件。"); return result;
+        }
+        TOptions configuration = options ?? new TOptions { ComparePlatformDependencies = true, MaxFiles = 512, MaxSearchFiles = 0,
+            MaxRequests = 40, TimeBudgetMs = 12000, MaxTotalBytes = 2L * 1024 * 1024 * 1024 };
+        configuration.ComparePlatformDependencies = true; configuration.MaxSearchFiles = 0;
+        using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+        budget.CancelAfter(20000);
+        host.Enrich(report, root, budget.Token, configuration);
+        HashSet<string> existing = new(report.OnlineFiles.Where(value => value.Enabled).SelectMany(value => value.Matches)
+            .Where(value => value.IsExact).Select(value => Key(value.Platform, value.ProjectId)), StringComparer.Ordinal);
+        HashSet<string> disabled = new(report.OnlineFiles.Where(value => !value.Enabled).SelectMany(value => value.Matches)
+            .Where(value => value.IsExact).Select(value => Key(value.Platform, value.ProjectId)), StringComparer.Ordinal);
+        Queue<Requirement> pending = new();
+        HashSet<string> flexibleProjects = new(StringComparer.Ordinal);
+        foreach (TOnlineFile file in report.OnlineFiles.Where(value => value.Enabled)) {
+            List<TOnlineProject> matches = file.Matches.Where(value => value.IsExact).OrderBy(value => SameText(value.Platform, "Modrinth") ? 0 : 1).ToList();
+            if (matches.Count == 0) continue;
+            TOnlineProject match = matches[0];
+            List<TIssue> missing = report.Issues.Where(issue => issue.KindValue == ModDependencyIssueKind.MissingRequired && SameFilePath(issue.Owner.RootPath, file.FullPath)).ToList();
+            bool localRanges = missing.Count > 0 && missing.All(issue => issue.Requirement is not null && !issue.Requirement.IsUnknown && issue.Requirement.Children.Count == 0 && IsRange(issue.Requirement.Versions));
+            foreach (TOnlineDependency dependency in match.Dependencies.Where(value => SameText(value.Kind, "required"))) {
+                pending.Enqueue(new Requirement { Platform = dependency.Platform, Project = dependency.ProjectId, Version = dependency.VersionId, Owner = match.ProjectName });
+                if (localRanges || string.IsNullOrEmpty(dependency.VersionId)) flexibleProjects.Add(Key(dependency.Platform, dependency.ProjectId));
+            }
+        }
+        Dictionary<string, TItem> selected = new(StringComparer.Ordinal);
+        HashSet<string> visited = new(StringComparer.Ordinal);
+        int requestCount = 0;
+        JToken? Request(string url) {
+            budget.Token.ThrowIfCancellationRequested();
+            if (options is null && cached.TryGetValue(url, out Tuple<DateTime, JToken>? saved) && saved.Item1 > DateTime.UtcNow) return saved.Item2.DeepClone();
+            requestCount = checked(requestCount + 1);
+            if (requestCount > 64) throw new IOException("依赖项目过多，已停止继续查询。");
+            JToken? data = (configuration.Request ?? host.DefaultRequest)(url, HttpMethod.Get, null, budget.Token);
+            if (options is null && data is not null) {
+                if (cached.Count > 256) cached.Clear();
+                cached[url] = Tuple.Create(DateTime.UtcNow.AddMinutes(10), data.DeepClone());
+            }
+            return data;
+        }
+        try {
+            while (pending.Count > 0 && visited.Count < 64) {
+                budget.Token.ThrowIfCancellationRequested();
+                Requirement need = pending.Dequeue();
+                if (SameText(need.Platform, "Modrinth") && SameText(need.Project, "") && ValidId(need.Platform, need.Version))
+                    need.Project = S(Request("https://api.modrinth.com/v2/version/" + Uri.EscapeDataString(need.Version))?["project_id"]);
+                if (!ValidId(need.Platform, need.Project)) continue;
+                string identity = Key(need.Platform, need.Project);
+                string? fixedVersion = flexibleProjects.Contains(identity) ? "" : need.Version;
+                if (existing.Contains(identity)) continue;
+                if (disabled.Contains(identity)) { result.Notes.Add(need.Project + " 已安装但被禁用，请在模组管理中启用。"); continue; }
+                if (selected.TryGetValue(identity, out TItem? entry)) {
+                    if (!SameText(fixedVersion, "") && !SameText(host.Id(entry.Version), fixedVersion)) throw new IOException("不同模组要求不同的固定依赖版本，需手动处理：" + entry.Name);
+                    if (SameText(fixedVersion, "") && !SameText(need.Version, "") && !SameText(host.Id(entry.Version), need.Version))
+                        result.Notes.Add(entry.Name + " 的平台记录指向较早文件；本次已合并未锁定的声明，安装前将核对各模组的实际版本要求。");
+                    if (!entry.RequiredBy.Contains(need.Owner)) entry.RequiredBy.Add(need.Owner);
+                    continue;
+                }
+                if (!visited.Add(identity)) continue;
+                string projectUrl = (SameText(need.Platform, "Modrinth") ? "https://api.modrinth.com/v2/project/" : "https://api.curseforge.com/v1/mods/") + Uri.EscapeDataString(need.Project);
+                JToken? project = Request(projectUrl);
+                if (SameText(need.Platform, "CurseForge")) project = project?["data"];
+                if (project is null || (SameText(need.Platform, "Modrinth") ? !SameText(S(project["project_type"]), "mod") : !SameText(S(project["classId"]), "6") || !SameText(S(project["gameId"]), "432"))) {
+                    result.Notes.Add("无法确认依赖项目的模组类型：" + need.Project); continue;
+                }
+                if (SameText(need.Platform, "Modrinth") && SameText(S(project["client_side"]), "unsupported")) {
+                    result.Notes.Add("此依赖仅支持服务端，未选择客户端安装：" + S(project["title"])); continue;
+                }
+                IEnumerable<JToken> rawFiles;
+                if (SameText(need.Platform, "Modrinth")) {
+                    if (!SameText(fixedVersion, "")) rawFiles = new[] { Request("https://api.modrinth.com/v2/version/" + Uri.EscapeDataString(fixedVersion!))! };
+                    else rawFiles = A(Request(projectUrl + "/version?game_versions=" + Uri.EscapeDataString(new JArray(report.Context.MinecraftVersion!).ToString(Formatting.None))));
+                } else rawFiles = A(Request(projectUrl + "/files?gameVersion=" + Uri.EscapeDataString(report.Context.MinecraftVersion!) + "&pageSize=50")?["data"]);
+                List<TItem> candidates = new();
+                foreach (JObject raw in rawFiles.OfType<JObject>()) {
+                    try {
+                        if (!SameText(S(raw[SameText(need.Platform, "Modrinth") ? "project_id" : "modId"]), need.Project)) continue;
+                        TVersion? version = ParseVersion(raw, need.Platform);
+                        if (!Compatible(version, report.Context) || (!SameText(fixedVersion, "") && !SameText(host.Id(version!), fixedVersion))) continue;
+                        candidates.Add(new TItem { Platform = need.Platform, ProjectId = need.Project, Name = S(project[SameText(need.Platform, "Modrinth") ? "title" : "name"]), Version = version!, Raw = raw });
+                    } catch (Exception error) when (error is not OperationCanceledException) { }
+                }
+                entry = candidates.OrderBy(value => host.ReleaseType(value.Version)).ThenByDescending(value => host.ReleaseDate(value.Version)).FirstOrDefault();
+                if (entry is null) { result.Notes.Add("没有找到匹配当前游戏版本和加载器的可下载前置：" + S(project[SameText(need.Platform, "Modrinth") ? "title" : "name"])); continue; }
+                if (SameText(fixedVersion, "")) entry.Alternatives.AddRange(candidates.Where(value => !ReferenceEquals(value, entry)).OrderBy(value => host.ReleaseType(value.Version)).ThenByDescending(value => host.ReleaseDate(value.Version)).Take(7));
+                entry.RequiredBy.Add(need.Owner); selected.Add(identity, entry); result.Items.Add(entry);
+                foreach (Requirement dependency in Required(entry.Raw, entry.Platform, entry.Name)) {
+                    if (string.IsNullOrEmpty(dependency.Version)) flexibleProjects.Add(Key(dependency.Platform, dependency.Project));
+                    pending.Enqueue(dependency);
+                }
+            }
+            if (pending.Count > 0) throw new IOException("必需前置数量超过本次自动补全上限，请分批管理模组。");
+        } catch (OperationCanceledException) {
+            if (token.IsCancellationRequested) throw;
+            result.Notes.Add("依赖查询超时，本次未准备自动安装。"); result.Items.Clear();
+        } catch (Exception error) { result.Notes.Add("依赖查询未完成：" + error.Message); result.Items.Clear(); }
+        return result;
+    }
+}
