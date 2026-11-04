@@ -22,10 +22,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}
-  cancel-in-progress: true
-
 jobs:
   select:
     name: Select affected checks (manual dispatch runs all)
@@ -58,6 +54,11 @@ jobs:
 
   build:
     needs: select
+    # A selector-only push must not cancel an older real validation/artifact job.
+    # Skipped jobs do not acquire this group; active matrix entries stay distinct.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}-${{ matrix.configuration }}
+      cancel-in-progress: true
     if: needs.select.outputs.product_build == 'true'
     name: Build
     runs-on: windows-latest
@@ -141,6 +142,13 @@ jobs:
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-AuditFixes')
       run: powershell -NoProfile -STA -File scripts/Test-AuditFixes.ps1 -ExecutablePath "$env:PCL_EXE"
 
+    - name: Verify original custom-event DP owners XAML and safe secret boundaries
+      if: contains(fromJSON(env.MIGRATION_CHECKS), 'Test-CustomEventAndSecret')
+      shell: pwsh
+      run: |
+        powershell -NoProfile -STA -File scripts/Test-CustomEventAndSecret.ps1 -ExecutablePath $env:PCL_EXE -RepositoryRoot $env:GITHUB_WORKSPACE
+        if ($LASTEXITCODE -ne 0) { throw 'Original custom-event and secret boundary checks failed.' }
+
     - name: Verify launcher window activation
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-LauncherActivation')
       run: powershell -NoProfile -STA -File scripts/Test-LauncherActivation.ps1 -ExecutablePath "$env:PCL_EXE"
@@ -149,9 +157,13 @@ jobs:
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-Toolbox')
       run: powershell -NoProfile -File scripts/Test-Toolbox.ps1 -ExecutablePath "$env:PCL_EXE"
 
-    - name: Verify memory helper permissions
+    - name: Verify memory helper permissions in product and isolated source modes
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-ToolboxMemory')
-      run: powershell -NoProfile -File scripts/Test-ToolboxMemory.ps1 -ExecutablePath "$env:PCL_EXE"
+      run: |
+        powershell -NoProfile -File scripts/Test-ToolboxMemory.ps1 -ExecutablePath "$env:PCL_EXE"
+        if ($LASTEXITCODE -ne 0) { throw 'Product memory helper checks failed.' }
+        powershell -NoProfile -File scripts/Test-ToolboxMemory.ps1
+        if ($LASTEXITCODE -ne 0) { throw 'Isolated source memory helper checks failed.' }
 
     - name: Verify native game resource management
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-InstanceResources')

@@ -19,6 +19,7 @@ using System.Windows.Controls;
 using System.Windows.Markup;
 using PCL;
 public static class LfCustomEventDpChecks {
+ public static Assembly BoundMainAssembly { get { return typeof(CustomEvent).Assembly; } }
  private static void Assert(bool value,string message){if(!value)throw new Exception(message);}
  public static void Run() {
   Type owner=typeof(CustomEventService),evt=typeof(CustomEvent);
@@ -66,8 +67,21 @@ public static class LfCustomEventDpChecks {
  }
 }
 '@
-$refs=@([IO.Path]::GetFullPath($ExecutablePath),(Join-Path $root 'PCLCS/bin/PCLCS.dll'),(Join-Path $root 'presentation/bin/PCLLF.Presentation.dll'),(Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'),[Windows.DependencyObject].Assembly.Location,[Windows.Controls.Button].Assembly.Location,[Windows.Media.Visual].Assembly.Location,[Windows.Markup.XamlReader].Assembly.Location,[System.Xaml.XamlServices].Assembly.Location,[Net.Http.HttpRequestMessage].Assembly.Location,'System.dll','System.Core.dll')
-Add-Type -TypeDefinition $source -ReferencedAssemblies $refs
-[LfCustomEventDpChecks]::Run()
-[LfCustomEventDpChecks]::Headers($asm)
+# Reuse the compiler-only DLL reference strategy already verified by the native-controls gate.
+# LoadFrom above retains the genuine EXE; these identical bytes never become a runtime replacement.
+$compiler=Join-Path ([IO.Path]::GetTempPath()) ('pcllf-custom-event-' + [Guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($compiler)|Out-Null
+    $mainReference=Join-Path $compiler ($asm.GetName().Name+'.dll')
+    [IO.File]::WriteAllBytes($mainReference,[IO.File]::ReadAllBytes($asm.Location))
+    $metadata=[Reflection.Assembly]::ReflectionOnlyLoad([IO.File]::ReadAllBytes($mainReference))
+    if($metadata.FullName -cne $asm.FullName -or $metadata.ManifestModule.ModuleVersionId -ne $asm.ManifestModule.ModuleVersionId){throw 'Compiler reference differs from the actual LF EXE.'}
+    $refs=@($mainReference,(Join-Path $root 'PCLCS/bin/PCLCS.dll'),(Join-Path $root 'presentation/bin/PCLLF.Presentation.dll'),(Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'),[Windows.DependencyObject].Assembly.Location,[Windows.Controls.Button].Assembly.Location,[Windows.Media.Visual].Assembly.Location,[Windows.Markup.XamlReader].Assembly.Location,[System.Xaml.XamlServices].Assembly.Location,[Net.Http.HttpRequestMessage].Assembly.Location,'System.dll','System.Core.dll')
+    Add-Type -TypeDefinition $source -ReferencedAssemblies $refs
+    if(-not [Object]::ReferenceEquals([LfCustomEventDpChecks]::BoundMainAssembly,$asm)){throw 'Custom-event verifier rebound away from the actual LF EXE.'}
+    [LfCustomEventDpChecks]::Run()
+    [LfCustomEventDpChecks]::Headers($asm)
+} finally {
+    if([IO.Directory]::Exists($compiler)){Remove-Item -LiteralPath $compiler -Recurse -Force}
+}
 Write-Output 'PASS actual LF custom-event five DP original owners/default/enum identity, private collection storage/enumerators, attached/Setter/collection XAML lookup; actual signer ByRef/Optional/LF UA/URI guard/explicit no-credentials and CDN marker.'

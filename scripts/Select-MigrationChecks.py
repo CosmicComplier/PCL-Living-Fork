@@ -21,7 +21,7 @@ GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "qu
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Exact existing scripts; workflows keep their original static invocations/options.
 SCRIPTS = (
-    "Test-Release", "Test-VersionListCancellation", "Test-AuditFixes", "Test-LauncherActivation", "Test-MigratedControls",
+    "Test-Release", "Test-VersionListCancellation", "Test-AuditFixes", "Test-CustomEventAndSecret", "Test-LauncherActivation", "Test-MigratedControls",
     "Test-Toolbox", "Test-ToolboxMemory", "Test-InstanceResources", "Test-MapInstallAndRecycle",
     "Test-BackgroundModes", "Test-ResourceUpdates", "Test-LocalGameFeatures", "Test-GameFeatureRegressions",
     "Test-ModpackUpdate", "Test-ModpackUpdateUx", "Test-ReviewFixes", "Test-EnvironmentHistory",
@@ -208,7 +208,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("settings",), (), build=False)
             elif stem == "LegacyValidationLoader":
                 include(("validation-loaders",), (), build=False)
-            elif stem == "LegacyFoundation":
+            elif stem in {"LegacyFoundation", "LegacyMainTermination"}:
                 include(("foundation",), (), build=False)
             elif stem == "LegacyJava":
                 include(("legacy-java",), (), build=False)

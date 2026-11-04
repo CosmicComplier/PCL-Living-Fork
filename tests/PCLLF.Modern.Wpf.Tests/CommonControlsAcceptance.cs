@@ -97,7 +97,18 @@ internal static class CommonControlsAcceptance {
             (string Name, Action<Window, Session> Run)[] checks = {
                 ("card", Card), ("hint", Hint), ("icon", (host, state) => Icon(host, state, palette)),
                 ("list", ListItems), ("virtualization", Virtualization), ("shadow", Shadow),
-                ("setup-flows", (_, _) => { PclSetupPageControllerChecks.Run(); Console.WriteLine("PASS C030 setup flows: real native controls, user/reentrant/canceled personal import, selected-instance modal identity, hidden state, culture tooltips and RAM labels/geometry/animation plans."); })
+                ("setup-flows", (_, _) => { PclSetupPageControllerChecks.Run(); Console.WriteLine("PASS C030 setup flows: real native controls, user/reentrant/canceled personal import, selected-instance modal identity, hidden state, culture tooltips and RAM labels/geometry/animation plans."); }),
+                ("shell-interop", (host, _) => {
+                    string priorTitle = host.Title, className = null, title = "LivingPCL-Shell-" + Guid.NewGuid().ToString("N");
+                    try {
+                        host.Title = title;
+                        IntPtr actual = new System.Windows.Interop.WindowInteropHelper(host).Handle;
+                        Require(actual != IntPtr.Zero && PCLLF.Presentation.Shell.MainWindowInterop.FindWindow(ref className, ref title) == actual,
+                            "Actual modern FindWindowA with original VBByRefStr ABI did not find the owned synthetic window.");
+                        Require(className == null && title == host.Title, "Original by-ref window lookup changed its managed arguments.");
+                    } finally { host.Title = priorTitle; }
+                    Console.WriteLine("PASS C031 shell interop: actual NET10 Win32 FindWindowA preserves the original by-ref marshal ABI on the owned window, with no external activation.");
+                })
             };
             foreach (var check in checks) {
                 session = new Session();

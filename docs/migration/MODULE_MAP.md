@@ -45,6 +45,19 @@ CE许可按实际路径核对：`Plain Craft Launcher 2/**`使用该目录的`LI
 | C026b `MyBitmap`／`ModBase.MyColor/MyRect` | 保LF pack URI扩展、静态cache、Imazen和原stream短读；Color/Rect同PCL | 应用`Modules/Base/MyBitmap.cs`／`ModBase.cs`仅转换参考；不引WIC/cache/Equals/HSL策略改变，复用LF既有G15适配 |
 | C027b 六通用控件及三XAML | LF原视觉、状态、事件/字段/DP/动画/懒加载与shadow cache保持 | 应用`Controls/MyDropShadow.cs`的C#翻译选择性复用，保Microsoft Reference Source署名；其它控件参考后从LF转换，不引CE BlurBorder/theme/scale-marker |
 
+本轮完整界面批次补充（均沿用上述LF/PCL/CE固定提交与许可；生产已接线不代表Windows验收）：
+
+| 批次／LF源 | LF保留及必要适配 | CE固定路径／实际使用 |
+| --- | --- | --- |
+| C028a-b 检索/详情/七组件安装页 | 原四资源类型/缓存/loader/组件选择/名称/取消；Tag用LF canonical Val，MainSwap按原分支延迟Init | 应用Pages/PageDownload对应文件仅翻译/结构参考；不导新source/搜索/Java或loader规则 |
+| C028c 修改/导航/文件夹/实例选择 | 保LF pack/lock/clone差异、原六override/唯一PendingComponents、原配置/文件/worker/双确认顺序 | 应用Pages/PageDownload/PageDownloadLeft.xaml.cs、Pages/PageSelectLeft.xaml.cs、Pages/PageSelectRight.xaml.cs仅结构；stable无PageDownloadModify对应物 |
+| C029/C029b 实例设置/概览/组件/本地Mod | 原界面/模型/loader/选择/资源行/锁及已有资源/备份/clone链复用，不另建状态 | 应用Pages/PageInstance对应页与Controls/MyLocalModItem.xaml.cs仅C#边界参照，保持LF自己业务 |
+| C030b 工具/帮助/关于/设置导航 | 原七XAML与LF品牌/可选页保留；三真实工具helper从LF迁，保暂存/回滚/清理范围/权限结构与原命令顺序 | 应用Pages/PageSetup/PageSetupLeft.xaml.cs、Pages/PageOther/PageOtherHelpDetail.xaml.cs及工具页结构参照，非导入CE工具政策 |
+| C031 主窗/Drag | LF07dd350历史修复、初始化/关闭/动画/缓存/窗口消息和原八native声明保留；原OnError逐语句与Err而非broad catch | 应用FormMain.xaml.cs仅同源参考，Core Utils/OS/DragHelper.cs仅Win32结构；原CSDN来源/署名独立保留 |
+| C031b Shell/ModMain/音乐 | 原提示/队列/clock/帮助/原NAudio与音频/事件顺序；原OnError Err及实际typed host接线 | 应用Modules/ModMain.cs及ModMusic.cs仅迁移参照；原LF音乐/异常/播放政策保持 |
+| C031c 事件/主题/签头/Identify | 原5DP owner/enum/private集合/Color字段单份、真正BuildCredentials/URI/签头/crypto与原设备fallback；新PSI显式保shell默认 | 应用事件/主题相关实现仅参考，不换CE主题/config；真正LF凭据服务及原策略保持 |
+| C027e modal/lazy | 原三Grid/BAML不动，现代三实际View与旧页用同一个C#controller；单份原状态、DP.AddOwner、warning/body/验证/大小/Err保留 | 应用Controls/MyMsg对应源码仅C#结构参照；不引CE新modal行为 |
+
 ## 现有工程边界与必须先守住的约束
 
 | 当前工程 | 实际目标与引用 | 迁移含义 |
