@@ -421,6 +421,7 @@
     <Compile Include="Pages\PageLaunch\PageLoginNide.xaml.vb">
       <DependentUpon>PageLoginNide.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageLaunch\LaunchPageRuntime.vb" />
     <Compile Include="Pages\PageLaunch\LoginPageRuntime.vb" />
     <Compile Include="Pages\PageLaunch\PageLoginLegacy.xaml.vb">
       <DependentUpon>PageLoginLegacy.xaml</DependentUpon>
