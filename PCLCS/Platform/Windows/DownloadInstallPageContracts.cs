@@ -45,7 +45,8 @@ public sealed class DownloadInstallForgeSource<TForge> {
     public Func<bool> Finished = null!;
 }
 public sealed class DownloadInstallComponentView {
-    public FrameworkElement Card = null!, MainSwap = null!, Clear = null!, Image = null!;
+    public FrameworkElement Card = null!, Clear = null!, Image = null!;
+    public Func<FrameworkElement> MainSwap = null!;
     public Grid Info = null!;
     public Panel Versions = null!;
     public TextBlock Label = null!;

@@ -93,7 +93,7 @@ Public Class PageDownloadInstall
         End Select
     End Function
     Private Shared Function NativeComponent(Card As MyCard, Info As Grid, Versions As StackPanel, Clear As FrameworkElement, Image As FrameworkElement, Label As TextBlock) As PCLCS.DownloadInstallComponentView
-        Return New PCLCS.DownloadInstallComponentView With {.Card = Card, .MainSwap = Card.MainSwap, .Info = Info,
+        Return New PCLCS.DownloadInstallComponentView With {.Card = Card, .MainSwap = Function() Card.MainSwap, .Info = Info,
             .Versions = Versions, .Clear = Clear, .Image = Image, .Label = Label,
             .IsSwapped = Function() Card.IsSwapped, .SetSwapped = Sub(Value) Card.IsSwapped = Value}
     End Function

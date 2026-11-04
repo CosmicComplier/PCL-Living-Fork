@@ -91,7 +91,7 @@ public sealed partial class DownloadInstallPageController<TOptiFine, TForgeLike,
     }
     private void RenderChoice(DownloadInstallComponent kind, string? error, Func<bool> hasSelected, Func<string?> text, Func<bool>? extraSwap = null) {
         DownloadInstallComponentView view = Component(kind);
-        view.MainSwap.Visibility = error is null ? Visibility.Visible : Visibility.Collapsed;
+        view.MainSwap().Visibility = error is null ? Visibility.Visible : Visibility.Collapsed;
         if (error is not null || (extraSwap is not null && extraSwap())) view.SetSwapped(true);
         SetPanelVisibility(view.Info, view.IsSwapped());
         bool has = hasSelected(); view.Clear.Visibility = has ? Visibility.Visible : Visibility.Collapsed; view.Image.Visibility = has ? Visibility.Visible : Visibility.Collapsed;

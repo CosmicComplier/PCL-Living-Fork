@@ -1,166 +1,164 @@
-﻿Public Class PageDownloadLeft
+﻿Imports NavigationCore = PCLCS.DownloadNavigationController(Of PCL.MyPageRight, PCL.FormMain.PageSubType, PCL.ModAnimation.AniData)
+
+Public Class PageDownloadLeft
     Implements IRefreshable
-
-#Region "页面切换"
-
-    ''' <summary>
-    ''' 当前页面的编号。
-    ''' </summary>
     Public PageID As FormMain.PageSubType = FormMain.PageSubType.DownloadInstall
-
-    ''' <summary>
-    ''' 勾选事件改变页面。
-    ''' </summary>
-    Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemInstall.Check, ItemMod.Check, ItemPack.Check, ItemResourcePack.Check, ItemShader.Check, ItemDataPack.Check, ItemMap.Check
-        '尚未初始化控件属性时，sender.Tag 为 Nothing，会导致切换到页面 0
-        '若使用 IsLoaded，则会导致模拟点击不被执行（模拟点击切换页面时，控件的 IsLoaded 为 False）
-        If sender.Tag IsNot Nothing Then PageChange(Val(sender.Tag))
-    End Sub
-
     Private MapPage As PageDownloadMap
-    Private Sub MapButtonInit() Handles Me.Initialized
-        Dim Button As New MyIconButton With {.Tag = 7, .ToolTip = "刷新", .LogoScale = 0.85, .Logo = Logo.IconButtonRefresh}
-        AddHandler Button.Click, AddressOf Refresh_Click
-        ItemMap.Buttons = {Button}
-    End Sub
-    Public Function PageGet(Optional ID As FormMain.PageSubType = -1)
-        If ID = -1 Then ID = PageID
-        Select Case ID
-            Case FormMain.PageSubType.DownloadMap
-                If MapPage Is Nothing Then MapPage = New PageDownloadMap
-                Return MapPage
-            Case FormMain.PageSubType.DownloadInstall
-                If FrmDownloadInstall Is Nothing Then FrmDownloadInstall = New PageDownloadInstall
-                Return FrmDownloadInstall
-            Case FormMain.PageSubType.DownloadMod
-                If FrmDownloadMod Is Nothing Then FrmDownloadMod = New PageDownloadMod
-                Return FrmDownloadMod
-            Case FormMain.PageSubType.DownloadPack
-                If FrmDownloadPack Is Nothing Then FrmDownloadPack = New PageDownloadPack
-                Return FrmDownloadPack
-            Case FormMain.PageSubType.DownloadResourcePack
-                If FrmDownloadResourcePack Is Nothing Then FrmDownloadResourcePack = New PageDownloadResourcePack
-                Return FrmDownloadResourcePack
-            Case FormMain.PageSubType.DownloadShader
-                If FrmDownloadShader Is Nothing Then FrmDownloadShader = New PageDownloadShader
-                Return FrmDownloadShader
-            Case FormMain.PageSubType.DownloadDataPack
-                If FrmDownloadDataPack Is Nothing Then FrmDownloadDataPack = New PageDownloadDataPack
-                Return FrmDownloadDataPack
-            Case Else
-                Throw New Exception("未知的下载子页面种类：" & ID)
+    Private Controller As NavigationCore
+    Private ReadOnly Property Service As NavigationCore
+        Get
+            If Controller Is Nothing Then Controller = New NavigationCore(CreateHost(), CreateAnimations())
+            Return Controller
+        End Get
+    End Property
+    Private Function CreateHost() As PCLCS.DownloadNavigationHost(Of MyPageRight, FormMain.PageSubType)
+        Dim Host = CreateFrameHost()
+        Host.PageId = Function() PageID
+        Host.SetPageId = Sub(Value) PageID = Value
+        Host.CurrentSub = Function() FrmMain.PageCurrentSub
+        Host.CachedPage = AddressOf ReadCached
+        Host.StorePage = AddressOf StoreCached
+        Host.NewPage = AddressOf NewPage
+        Host.ClearProjectCache = Sub() ResourceProject.Cache.Clear()
+        Host.ClearVersionCache = Sub() ResourceVersion.ProjectFilesCache.Clear()
+        Host.ForceLoader = AddressOf ForceLoader
+        Host.ResetStorage = Sub(Page) ResourceContent(Page).Storage = New ResourceSearcher.SearchResult
+        Host.SetResultPage = Sub(Page, Value) ResourceContent(Page).Page = Value
+        Host.Restart = Sub(Page) Page.PageLoaderRestart()
+        Host.CheckItem = Sub(Code, Value) NativeItem(Code).Checked = Value
+        Host.InstallChecked = Function() ItemInstall.Checked
+        Host.ExitInstallSelection = Sub() FrmDownloadInstall.ExitSelectPage()
+        Host.RefreshHint = Sub() Hint("正在刷新……", Log:=False)
+        Host.SenderTag = Function(Sender) Sender.Tag
+        Host.AddMapRefreshButton = AddressOf AddMapRefreshButton
+        Return Host
+    End Function
+    Private Shared Function CreateFrameHost() As PCLCS.DownloadNavigationHost(Of MyPageRight, FormMain.PageSubType)
+        Return New PCLCS.DownloadNavigationHost(Of MyPageRight, FormMain.PageSubType) With {
+            .PageRight = Function() FrmMain.PageRight, .VisibleRight = Function() DirectCast(FrmMain.PanMainRight.Child, MyPageRight),
+            .SetPageRight = Sub(Page) FrmMain.PageRight = Page, .SetVisibleRight = Sub(Page) FrmMain.PanMainRight.Child = Page,
+            .OnExit = Sub(Page) Page.PageOnExit(), .OnForceExit = Sub(Page) Page.PageOnForceExit(), .OnEnter = Sub(Page) Page.PageOnEnter()}
+    End Function
+    Private Function ReadCached(Code As Integer) As MyPageRight
+        Select Case Code
+            Case 7 : Return MapPage
+            Case 0 : Return FrmDownloadInstall
+            Case 2 : Return FrmDownloadMod
+            Case 3 : Return FrmDownloadPack
+            Case 5 : Return FrmDownloadResourcePack
+            Case 6 : Return FrmDownloadShader
+            Case 4 : Return FrmDownloadDataPack
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(Code))
         End Select
     End Function
-
-    ''' <summary>
-    ''' 切换现有页面。
-    ''' </summary>
+    Private Sub StoreCached(Code As Integer, Page As MyPageRight)
+        Select Case Code
+            Case 7 : MapPage = DirectCast(Page, PageDownloadMap)
+            Case 0 : FrmDownloadInstall = DirectCast(Page, PageDownloadInstall)
+            Case 2 : FrmDownloadMod = DirectCast(Page, PageDownloadMod)
+            Case 3 : FrmDownloadPack = DirectCast(Page, PageDownloadPack)
+            Case 5 : FrmDownloadResourcePack = DirectCast(Page, PageDownloadResourcePack)
+            Case 6 : FrmDownloadShader = DirectCast(Page, PageDownloadShader)
+            Case 4 : FrmDownloadDataPack = DirectCast(Page, PageDownloadDataPack)
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(Code))
+        End Select
+    End Sub
+    Private Shared Function NewPage(Code As Integer) As MyPageRight
+        Select Case Code
+            Case 7 : Return New PageDownloadMap
+            Case 0 : Return New PageDownloadInstall
+            Case 2 : Return New PageDownloadMod
+            Case 3 : Return New PageDownloadPack
+            Case 5 : Return New PageDownloadResourcePack
+            Case 6 : Return New PageDownloadShader
+            Case 4 : Return New PageDownloadDataPack
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(Code))
+        End Select
+    End Function
+    Private Function NativeItem(Code As Integer) As MyListItem
+        Select Case Code
+            Case 7 : Return ItemMap
+            Case 0 : Return ItemInstall
+            Case 2 : Return ItemMod
+            Case 3 : Return ItemPack
+            Case 5 : Return ItemResourcePack
+            Case 6 : Return ItemShader
+            Case 4 : Return ItemDataPack
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(Code))
+        End Select
+    End Function
+    Private Shared Function ResourceContent(Page As MyPageRight) As PageResource
+        Select Case True
+            Case TypeOf Page Is PageDownloadMap : Return DirectCast(Page, PageDownloadMap).Content
+            Case TypeOf Page Is PageDownloadMod : Return DirectCast(Page, PageDownloadMod).Content
+            Case TypeOf Page Is PageDownloadPack : Return DirectCast(Page, PageDownloadPack).Content
+            Case TypeOf Page Is PageDownloadResourcePack : Return DirectCast(Page, PageDownloadResourcePack).Content
+            Case TypeOf Page Is PageDownloadShader : Return DirectCast(Page, PageDownloadShader).Content
+            Case TypeOf Page Is PageDownloadDataPack : Return DirectCast(Page, PageDownloadDataPack).Content
+            Case Else : Throw New InvalidCastException("下载页面不包含资源搜索视图。")
+        End Select
+    End Function
+    Private Shared Sub ForceLoader(Code As Integer)
+        Select Case Code
+            Case 0 : DlClientListLoader.Start(IsForceRestart:=True)
+            Case 1 : DlOptiFineListLoader.Start(IsForceRestart:=True)
+            Case 2 : DlForgeListLoader.Start(IsForceRestart:=True)
+            Case 3 : DlNeoForgeListLoader.Start(IsForceRestart:=True)
+            Case 4 : DlLiteLoaderListLoader.Start(IsForceRestart:=True)
+            Case 5 : DlFabricListLoader.Start(IsForceRestart:=True)
+            Case 6 : DlFabricApiLoader.Start(IsForceRestart:=True)
+            Case 7 : DlOptiFabricLoader.Start(IsForceRestart:=True)
+            Case Else : Throw New ArgumentOutOfRangeException(NameOf(Code))
+        End Select
+    End Sub
+    Private Sub AddMapRefreshButton(Click As Action(Of Object))
+        Dim Button As New MyIconButton With {.Tag = 7, .ToolTip = "刷新", .LogoScale = 0.85, .Logo = Logo.IconButtonRefresh}
+        AddHandler Button.Click, Sub(Sender, Args) Click(Sender)
+        ItemMap.Buttons = {Button}
+    End Sub
+    Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemInstall.Check, ItemMod.Check, ItemPack.Check, ItemResourcePack.Check, ItemShader.Check, ItemDataPack.Check, ItemMap.Check
+        Service.Check(sender)
+    End Sub
+    Private Sub MapButtonInit() Handles Me.Initialized
+        Service.InitializeMapButton()
+    End Sub
+    Public Function PageGet(Optional ID As FormMain.PageSubType = -1)
+        Return Service.Get(ID)
+    End Function
     Public Sub PageChange(ID As FormMain.PageSubType)
-        If PageID = ID Then Return
-        AniControlEnabled += 1
-        Try
-            PageChangeRun(PageGet(ID))
-            PageID = ID
-        Catch ex As Exception
-            Logger.Error(ex, $"切换分页面失败（ID {ID}）")
-        Finally
-            AniControlEnabled -= 1
-        End Try
+        Service.Change(ID)
     End Sub
     Private Shared Sub PageChangeRun(Target As MyPageRight)
-        AniStop("FrmMain PageChangeRight") '停止主页面的右页面切换动画，防止它与本动画一起触发多次 PageOnEnter
-        If Target.Parent IsNot Nothing Then Target.SetValue(ContentPresenter.ContentProperty, Nothing)
-        FrmMain.PageRight = Target
-        CType(FrmMain.PanMainRight.Child, MyPageRight).PageOnExit()
-        AniStart({
-            AaCode(
-            Sub()
-                CType(FrmMain.PanMainRight.Child, MyPageRight).PageOnForceExit()
-                FrmMain.PanMainRight.Child = FrmMain.PageRight
-                FrmMain.PageRight.Opacity = 0
-            End Sub, 130),
-            AaCode(
-            Sub()
-                '延迟触发页面通用动画，以使得在 Loaded 事件中加载的控件得以处理
-                FrmMain.PageRight.Opacity = 1
-                FrmMain.PageRight.PageOnEnter()
-            End Sub, 30, True)
-        }, "PageLeft PageChange")
+        NavigationCore.Run(Target, CreateFrameHost(), CreateAnimations())
     End Sub
-
-#End Region
-
-    '强制刷新
-    Public Sub Refresh_Click(sender As Object, e As EventArgs) '由边栏按钮匿名调用
-        Refresh(Val(sender.Tag))
+    Public Sub Refresh_Click(sender As Object, e As EventArgs)
+        Service.RefreshClick(sender)
     End Sub
     Public Sub Refresh() Implements IRefreshable.Refresh
-        Refresh(FrmMain.PageCurrentSub)
+        Service.Refresh()
     End Sub
     Public Sub Refresh(SubType As FormMain.PageSubType)
-        ResourceProject.Cache.Clear()
-        ResourceVersion.ProjectFilesCache.Clear()
-        Select Case SubType
-            Case FormMain.PageSubType.DownloadMap
-                If MapPage IsNot Nothing Then
-                    MapPage.Content.Storage = New ResourceSearcher.SearchResult
-                    MapPage.Content.Page = 0
-                    MapPage.PageLoaderRestart()
-                End If
-                ItemMap.Checked = True
-            Case FormMain.PageSubType.DownloadInstall
-                DlClientListLoader.Start(IsForceRestart:=True)
-                DlOptiFineListLoader.Start(IsForceRestart:=True)
-                DlForgeListLoader.Start(IsForceRestart:=True)
-                DlNeoForgeListLoader.Start(IsForceRestart:=True)
-                DlLiteLoaderListLoader.Start(IsForceRestart:=True)
-                DlFabricListLoader.Start(IsForceRestart:=True)
-                DlFabricApiLoader.Start(IsForceRestart:=True)
-                DlOptiFabricLoader.Start(IsForceRestart:=True)
-                ItemInstall.Checked = True
-            Case FormMain.PageSubType.DownloadMod
-                If FrmDownloadMod IsNot Nothing Then
-                    FrmDownloadMod.Content.Storage = New ResourceSearcher.SearchResult
-                    FrmDownloadMod.Content.Page = 0
-                    FrmDownloadMod.PageLoaderRestart()
-                End If
-                ItemMod.Checked = True
-            Case FormMain.PageSubType.DownloadPack
-                If FrmDownloadPack IsNot Nothing Then
-                    FrmDownloadPack.Content.Storage = New ResourceSearcher.SearchResult
-                    FrmDownloadPack.Content.Page = 0
-                    FrmDownloadPack.PageLoaderRestart()
-                End If
-                ItemPack.Checked = True
-            Case FormMain.PageSubType.DownloadResourcePack
-                If FrmDownloadResourcePack IsNot Nothing Then
-                    FrmDownloadResourcePack.Content.Storage = New ResourceSearcher.SearchResult
-                    FrmDownloadResourcePack.Content.Page = 0
-                    FrmDownloadResourcePack.PageLoaderRestart()
-                End If
-                ItemResourcePack.Checked = True
-            Case FormMain.PageSubType.DownloadShader
-                If FrmDownloadShader IsNot Nothing Then
-                    FrmDownloadShader.Content.Storage = New ResourceSearcher.SearchResult
-                    FrmDownloadShader.Content.Page = 0
-                    FrmDownloadShader.PageLoaderRestart()
-                End If
-                ItemShader.Checked = True
-            Case FormMain.PageSubType.DownloadDataPack
-                If FrmDownloadDataPack IsNot Nothing Then
-                    FrmDownloadDataPack.Content.Storage = New ResourceSearcher.SearchResult
-                    FrmDownloadDataPack.Content.Page = 0
-                    FrmDownloadDataPack.PageLoaderRestart()
-                End If
-                ItemDataPack.Checked = True
-        End Select
-        Hint("正在刷新……", Log:=False)
+        Service.Refresh(SubType)
     End Sub
-
-    '点击返回
     Private Sub ItemInstall_Click(sender As Object, e As MouseButtonEventArgs) Handles ItemInstall.Click
-        If Not ItemInstall.Checked Then Return
-        FrmDownloadInstall.ExitSelectPage()
+        Service.InstallClick()
     End Sub
-
+    Private Shared Function CreateAnimations() As PCLCS.DownloadPageAnimationHost(Of AniData)
+        Return New PCLCS.DownloadPageAnimationHost(Of AniData) With {
+            .Disabled = Function() AniControlEnabled, .SetDisabled = Sub(Value) AniControlEnabled = Value,
+            .Opacity = Function(Target, Delta, Duration, Delay, Ease) AaOpacity(Target, Delta, Duration, Delay, ReadEase(Ease)),
+            .TranslateX = Function(Target, Delta, Duration, Delay, Ease) AaTranslateX(Target, Delta, Duration, Delay, ReadEase(Ease)),
+            .TranslateY = Function(Target, Delta, Duration, Delay, Ease) AaTranslateY(Target, Delta, Duration, Delay, ReadEase(Ease)),
+            .Scale = Function(Target, Delta, Duration, Delay, Ease, After) AaScaleTransform(Target, Delta, Duration, Delay, ReadEase(Ease), After),
+            .Color = Function(Target, [Property], Color, Duration, Delay, Ease) AaColor(Target, [Property], Color, Duration, Delay, ReadEase(Ease)),
+            .Code = Function(Work, Delay, After) AaCode(Sub() Work(), Delay, After),
+            .Start = Sub(Plan, Name, Refresh) AniStart(Plan.ToList(), Name, Refresh), .Stop = AddressOf AniStop}
+    End Function
+    Private Shared Function ReadEase(Value As PCLCS.DownloadPageEase) As AniEase
+        Select Case Value
+            Case PCLCS.DownloadPageEase.OutFluent : Return New AniEaseOutFluent()
+            Case PCLCS.DownloadPageEase.OutFluentExtraStrong : Return New AniEaseOutFluent(AniEasePower.ExtraStrong)
+            Case Else : Return Nothing
+        End Select
+    End Function
 End Class

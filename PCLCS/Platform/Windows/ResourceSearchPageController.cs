@@ -63,8 +63,8 @@ public sealed class ResourceSearchPageController<TInstance, TState, TCard, TProj
         TRequest request = host.Request(PageType, host.Storage(), checked((host.Page() + 1) * PageSize));
         string? version = Same(view.Version.Text, "全部 (也可自行输入)") ? null : view.Version.Text.Contains(".") || view.Version.Text.Contains("w") ? view.Version.Text : null;
         request.SearchText = view.Name.Text; request.GameVersion = version; request.Tag = Conversions.ToString(Tag(view.Tag))!;
-        request.ModLoaders = PageType == ResourceTypes.Mod ? (ModLoaders)Conversions.ToInteger(Conversion.Val(Tag(view.Loader)!)) : ModLoaders.None;
-        request.Sources = PageType == ResourceTypes.Map ? ResourcePlatforms.CurseForge : (ResourcePlatforms)Conversions.ToInteger(Conversion.Val(Tag(view.Source)!));
+        request.ModLoaders = PageType == ResourceTypes.Mod ? (ModLoaders)Conversions.ToInteger(LegacyBaseOperations.Val(Tag(view.Loader)!)) : ModLoaders.None;
+        request.Sources = PageType == ResourceTypes.Map ? ResourcePlatforms.CurseForge : (ResourcePlatforms)Conversions.ToInteger(LegacyBaseOperations.Val(Tag(view.Source)!));
         return request;
     }
     public void LoadOnFinish() {
