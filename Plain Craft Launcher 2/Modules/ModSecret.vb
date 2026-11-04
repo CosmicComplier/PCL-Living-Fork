@@ -1,4 +1,8 @@
-﻿'由于包含加解密等安全信息，本文件中的部分代码已被删除
+﻿Imports ThemeHost = PCLLF.Presentation.Foundation.LegacyThemeHost(Of PCL.ModBase.MyColor)
+Imports ThemeSlot = PCLLF.Presentation.Foundation.LegacyThemeColorSlot(Of PCL.ModBase.MyColor)
+Imports ThemeService = PCLLF.Presentation.Foundation.LegacyThemeService(Of PCL.ModBase.MyColor)
+
+'由于包含加解密等安全信息，本文件中的部分代码已被删除
 
 Friend Module ModSecret
 
@@ -19,36 +23,12 @@ Friend Module ModSecret
         End Get
     End Property
 
-#Region "网络鉴权"
-
     Friend Function SecretCdnSign(UrlWithMark As String) As String
-        If Not UrlWithMark.EndsWithF("{CDN}") Then Return UrlWithMark
-        Return UrlWithMark.Replace("{CDN}", "").Replace(" ", "%20")
+        Return PCLCS.LegacySecretNetwork.CdnSign(UrlWithMark)
     End Function
-    ''' <summary>
-    ''' 设置 Headers 的 UA、Referer。
-    ''' </summary>
     Friend Sub SecretHeadersSign(Url As String, ByRef Req As HttpRequestMessage, Optional SimulateBrowserHeaders As Boolean = False, Optional IncludeCredentials As Boolean = True)
-        If Not Req.Headers.UserAgent.Any Then
-            If Url.Contains("baidupcs.com") OrElse Url.Contains("baidu.com") Then
-                Req.Headers.Add("User-Agent", "LogStatistic")  '#4951
-            ElseIf SimulateBrowserHeaders Then
-                Req.Headers.Add("User-Agent", $"PCL-Living-Fork/{VersionBaseName}.{CInt(BuildType)} Mozilla/5.0 AppleWebKit/537.36 Chrome/63.0.3239.132 Safari/537.36")
-            Else
-                Req.Headers.Add("User-Agent", $"PCL-Living-Fork/{VersionBaseName}.{CInt(BuildType)}")
-            End If
-        End If
-        If Not SimulateBrowserHeaders Then Req.Headers.Add("Referer", $"http://{VersionCode}.open.pcl2.server/")
-        If IncludeCredentials AndAlso BuildCredentials.IsCurseForgeRequest(Req.RequestUri) AndAlso Not Req.Headers.Contains("x-api-key") Then
-            Dim ApiKey = CurseForgeAPIKey
-            If Not String.IsNullOrEmpty(ApiKey) Then Req.Headers.Add("x-api-key", ApiKey)
-        End If
+        NetworkSigner.SignHeaders(Url, Req, SimulateBrowserHeaders, IncludeCredentials)
     End Sub
-
-#End Region
-
-#Region "主题"
-
     '固定默认外观；旧自定义主题配置保留存储，不在本版本启用调色。
     Public Const DefaultThemeHue As Integer = 225
     Public Const DefaultThemeSat As Integer = 100
@@ -78,93 +58,59 @@ Friend Module ModSecret
 
     Public ColorHue As Integer = DefaultThemeHue, ColorSat As Integer = DefaultThemeSat, ColorLightAdjust As Integer = DefaultThemeLight - 20, ColorHueTopbarDelta As OneOf(Of Integer, Integer()) = DefaultThemeDelta - 90
 
+
+    Private ReadOnly NetworkSigner As New PCLCS.LegacySecretNetwork(New PCLCS.LegacySecretNetworkHost With {
+        .VersionName = Function() VersionBaseName, .BuildType = Function() CInt(BuildType), .VersionCode = Function() VersionCode,
+        .CurseForgeKey = Function() CurseForgeAPIKey, .IsCurseForgeRequest = AddressOf BuildCredentials.IsCurseForgeRequest})
+    Private ReadOnly IdentityService As New PCLCS.LegacyDeviceIdentify(New PCLCS.LegacyDeviceIdentifyHost With {
+        .ApplicationStartTick = Function() ApplicationStartTick, .Milliseconds = AddressOf GetTimeMs,
+        .AvailablePhysicalMemory = Function() My.Computer.Info.AvailablePhysicalMemory,
+        .ReadHardware = Function() RegistryUtils.TryRead("HKEY_LOCAL_MACHINE\SYSTEM\HardwareConfig", "LastConfig", "Unknown"),
+        .ReadSeed = Function() Settings.Get(Of String)("Identify"), .WriteSeed = Sub(Value) Settings.Set("Identify", Value),
+        .SourceIdentify = AddressOf Settings.GetPclSourceIdentify, .Warn = Sub(Text) Logger.Warn(Text)})
+    Private ReadOnly PaletteService As New ThemeService(CreateThemeHost())
+    Private Function ThemeField(Read As Func(Of MyColor), Write As Action(Of MyColor)) As ThemeSlot
+        Return New ThemeSlot With {.Read = Read, .Write = Write}
+    End Function
+    Private Function CreateThemeHost() As ThemeHost
+        Return New ThemeHost With {
+            .Color1 = ThemeField(Function() Color1, Sub(Value) Color1 = Value),
+            .Color2 = ThemeField(Function() Color2, Sub(Value) Color2 = Value),
+            .Color3 = ThemeField(Function() Color3, Sub(Value) Color3 = Value),
+            .Color4 = ThemeField(Function() Color4, Sub(Value) Color4 = Value),
+            .Color5 = ThemeField(Function() Color5, Sub(Value) Color5 = Value),
+            .Color6 = ThemeField(Function() Color6, Sub(Value) Color6 = Value),
+            .Color7 = ThemeField(Function() Color7, Sub(Value) Color7 = Value),
+            .Color8 = ThemeField(Function() Color8, Sub(Value) Color8 = Value),
+            .Bg0 = ThemeField(Function() ColorBg0, Sub(Value) ColorBg0 = Value),
+            .Bg1 = ThemeField(Function() ColorBg1, Sub(Value) ColorBg1 = Value),
+            .Gray4 = ThemeField(Function() ColorGray4, Sub(Value) ColorGray4 = Value),
+            .SemiTransparent = ThemeField(Function() ColorSemiTransparent, Sub(Value) ColorSemiTransparent = Value),
+            .DefaultHue = DefaultThemeHue, .DefaultSaturation = DefaultThemeSat, .DefaultLight = DefaultThemeLight, .DefaultDelta = DefaultThemeDelta,
+            .Hue = Function() ColorHue, .Saturation = Function() ColorSat, .Light = Function() ColorLightAdjust,
+            .SetHue = Sub(Value) ColorHue = Value, .SetSaturation = Sub(Value) ColorSat = Value, .SetLight = Sub(Value) ColorLightAdjust = Value,
+            .Delta = Function() ColorHueTopbarDelta, .SetDelta = Sub(Value) ColorHueTopbarDelta = Value,
+            .Hsl = Function(H, S, L) New MyColor().FromHSL2(H, S, L), .Rgb = Function(R, G, B) New MyColor(R, G, B),
+            .Alpha = Function(A, Color) New MyColor(A, Color), .Channels = Function(Color) New MyColor(Color.A, Color.R, Color.G, Color.B),
+            .Resources = Function() Application.Current.Resources, .RunInUi = Sub(Work) RunInUi(Work),
+            .MainLoaded = Function() FrmMain IsNot Nothing AndAlso FrmMain.IsLoaded,
+            .Colorful = Function() Settings.Get(Of Boolean)("UiBackgroundColorful"), .BackgroundMode = Function() Settings.Get(Of Integer)("UiBackgroundMode"),
+            .SetTitleBackground = Sub(Brush) FrmMain.PanTitle.Background = Brush, .TitleBackground = Function() FrmMain.PanTitle.Background,
+            .MainPanel = Function() FrmMain.PanForm, .BackgroundImage = Function() FrmMain.ImgBack,
+            .ErrorToast = Sub(Err, Text) Logger.Error(Err, Text, LogBehavior.Toast)}
+    End Function
     Public Sub ThemeRefresh(Optional NewTheme As Integer = -1)
-        Try
-            ColorHue = DefaultThemeHue
-            ColorSat = DefaultThemeSat
-            ColorLightAdjust = DefaultThemeLight - 20
-            ColorHueTopbarDelta = DefaultThemeDelta - 90
-
-            Color1 = New MyColor().FromHSL2(ColorHue, ColorSat * 0.2, 25 + ColorLightAdjust * 0.3)
-            Color2 = New MyColor().FromHSL2(ColorHue, ColorSat, 45 + ColorLightAdjust)
-            Color3 = New MyColor().FromHSL2(ColorHue, ColorSat, 55 + ColorLightAdjust)
-            Color4 = New MyColor().FromHSL2(ColorHue, ColorSat, 65 + ColorLightAdjust)
-            Color5 = New MyColor().FromHSL2(ColorHue, ColorSat, 80 + ColorLightAdjust * 0.4)
-            Color6 = New MyColor().FromHSL2(ColorHue, ColorSat, 91 + ColorLightAdjust * 0.1)
-            Color7 = New MyColor().FromHSL2(ColorHue, ColorSat, 95)
-            Color8 = New MyColor().FromHSL2(ColorHue, ColorSat, 97)
-            ColorBg0 = Color4 * 0.4 + Color5 * 0.4 + ColorGray4 * 0.2
-            ColorBg1 = New MyColor(190, Color7)
-
-            ColorSemiTransparent = New MyColor(1, Color8)
-            Application.Current.Resources("ColorBrush1") = New SolidColorBrush(Color1)
-            Application.Current.Resources("ColorBrush2") = New SolidColorBrush(Color2)
-            Application.Current.Resources("ColorBrush3") = New SolidColorBrush(Color3)
-            Application.Current.Resources("ColorBrush4") = New SolidColorBrush(Color4)
-            Application.Current.Resources("ColorBrush5") = New SolidColorBrush(Color5)
-            Application.Current.Resources("ColorBrush6") = New SolidColorBrush(Color6)
-            Application.Current.Resources("ColorBrush7") = New SolidColorBrush(Color7)
-            Application.Current.Resources("ColorBrush8") = New SolidColorBrush(Color8)
-            Application.Current.Resources("ColorBrushBg0") = New SolidColorBrush(ColorBg0)
-            Application.Current.Resources("ColorBrushBg1") = New SolidColorBrush(ColorBg1)
-            Application.Current.Resources("ColorObject1") = CType(Color1, Color)
-            Application.Current.Resources("ColorObject2") = CType(Color2, Color)
-            Application.Current.Resources("ColorObject3") = CType(Color3, Color)
-            Application.Current.Resources("ColorObject4") = CType(Color4, Color)
-            Application.Current.Resources("ColorObject5") = CType(Color5, Color)
-            Application.Current.Resources("ColorObject6") = CType(Color6, Color)
-            Application.Current.Resources("ColorObject7") = CType(Color7, Color)
-            Application.Current.Resources("ColorObject8") = CType(Color8, Color)
-            Application.Current.Resources("ColorObjectBg0") = CType(ColorBg0, Color)
-            Application.Current.Resources("ColorObjectBg1") = CType(ColorBg1, Color)
-            ThemeRefreshMain()
-        Catch ex As Exception
-            Logger.Error(ex, "刷新主题颜色失败", LogBehavior.Toast)
-        End Try
+        PaletteService.Refresh(NewTheme)
     End Sub
     Public Sub ThemeRefreshMain()
-        RunInUi(
-        Sub()
-            If FrmMain Is Nothing OrElse Not FrmMain.IsLoaded Then Return
-            '顶部条背景
-            Dim Brush = New LinearGradientBrush With {.EndPoint = New Point(1, 0), .StartPoint = New Point(0, 0)}
-            Dim Deltas = ColorHueTopbarDelta.Switch(Function(d) New Integer() {-d, 0, d}, Function(d) d)
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0, .Color = New MyColor().FromHSL2(ColorHue + Deltas(0), ColorSat, 48 + ColorLightAdjust)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.5, .Color = New MyColor().FromHSL2(ColorHue + Deltas(1), ColorSat, 54 + ColorLightAdjust)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 1, .Color = New MyColor().FromHSL2(ColorHue + Deltas(2), ColorSat, 48 + ColorLightAdjust)})
-            FrmMain.PanTitle.Background = Brush
-            FrmMain.PanTitle.Background.Freeze()
-            ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
-        End Sub)
+        PaletteService.RefreshMain()
     End Sub
-
     Friend Sub ApplyMainBackground(Panel As Panel, Image As UIElement)
-        Dim Plain = Settings.Get(Of Integer)("UiBackgroundMode") = 1
-        Image.Visibility = If(Plain, Visibility.Collapsed, Visibility.Visible)
-        If Plain Then
-            Panel.Background = Brushes.White
-        ElseIf Settings.Get(Of Boolean)("UiBackgroundColorful") Then
-            Dim Brush As New LinearGradientBrush With {.EndPoint = New Point(0.1, 1), .StartPoint = New Point(0.9, 0)}
-            Brush.GradientStops.Add(New GradientStop With {.Offset = -0.1, .Color = New MyColor().FromHSL2(ColorHue - 15, ColorSat * 0.8, 91)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 0.4, .Color = New MyColor().FromHSL2(ColorHue, ColorSat * 0.8, 91)})
-            Brush.GradientStops.Add(New GradientStop With {.Offset = 1.1, .Color = New MyColor().FromHSL2(ColorHue + 15, ColorSat * 0.8, 91)})
-            Panel.Background = Brush
-        Else
-            Panel.Background = New MyColor(245, 245, 245)
-        End If
-        Panel.Background.Freeze()
+        PaletteService.ApplyBackground(Panel, Image)
     End Sub
-
-#End Region
-
-#Region "更新"
-
     Friend Sub UpdateCheckByButton()
         ModLauncherUpdate.CheckForUpdates(False)
     End Sub
-
-#End Region
-
 #If LEGACY_LINK Then
 #Region "旧联机配置预留"
 
@@ -180,31 +126,7 @@ Friend Module ModSecret
 #End Region
 #End If
 
-#Region "兼容设备标识"
-
-    ''' <summary>
-    ''' 获取设备识别码。
-    ''' </summary>
     Friend Function GetIdentify() As String
-        Try
-            If ApplicationStartTick < 1 Then Return "0000-0000-0000-0000"
-            Dim Hardware As String = "Unknown"
-            Try
-                Hardware = Convert.ToString(RegistryUtils.TryRead("HKEY_LOCAL_MACHINE\SYSTEM\HardwareConfig", "LastConfig", "Unknown"), Globalization.CultureInfo.InvariantCulture)
-            Catch
-            End Try
-            Dim Seed = Settings.Get(Of String)("Identify")
-            If Seed.Length < 3 Then
-                Seed = CStr(GetTimeMs()) & CStr(My.Computer.Info.AvailablePhysicalMemory)
-                Settings.Set("Identify", Seed)
-            End If
-            Return Settings.GetPclSourceIdentify(Hardware, Seed)
-        Catch
-            Logger.Warn("无法读取官方 PCL 设备标识。")
-            Return "0000-0000-0000-0000"
-        End Try
+        Return IdentityService.Read()
     End Function
-
-#End Region
-
 End Module
