@@ -146,6 +146,36 @@ try{
  if(@([IO.Directory]::GetDirectories($saves,'.pcl-import-*')).Count){throw 'Canceled import left staging directories'}
  $packs=Invoke-Store 'Root' @($mc,$packKind);[IO.Directory]::CreateDirectory($packs)|Out-Null
  $pack=Join-Path $fixture 'Native Pack.zip';New-Zip $pack @{'pack.mcmeta'='{"pack":{"pack_format":46,"description":"Synthetic native pack"}}'}
+ $missingPackMessage='资源包缺少 pack.mcmeta，未替换原文件。'
+ $missingShaderMessage='光影包缺少 shaders 目录，未替换原文件。'
+ $unknownKind=[Enum]::ToObject($kindType,5)
+ $emptyPackage=Join-Path $fixture 'empty-package.zip';New-Zip $emptyPackage @{}
+ $wrongCasePackage=Join-Path $fixture 'wrong-case-package.zip';New-Zip $wrongCasePackage @{'Pack.mcmeta'='not JSON'}
+ $unparsedPackage=Join-Path $fixture 'unparsed-package.zip';New-Zip $unparsedPackage @{'pack.mcmeta'='not JSON'}
+ $shaderPackage=Join-Path $fixture 'shader-package.zip';New-Zip $shaderPackage @{'SHADERS/only.vert'='not inspected'}
+ $shaderDirectory=Join-Path $fixture 'shader-directory.zip';New-Zip $shaderDirectory @{'shaders/'=''}
+ $wrongShader=Join-Path $fixture 'wrong-shader-package.zip';New-Zip $wrongShader @{'nested/shaders/file.vert'='not root';'shaders\file.vert'='wrong separator'}
+ foreach($path in @($pack,$unparsedPackage)){Invoke-Store 'ValidatePackage' @($path,$packKind)|Out-Null}
+ foreach($path in @($shaderPackage,$shaderDirectory)){Invoke-Store 'ValidatePackage' @($path,$shaderKind)|Out-Null}
+ foreach($path in @($emptyPackage,$wrongCasePackage)){Assert-StoreException 'ValidatePackage' @($path,$packKind) ([IO.IOException]) $missingPackMessage}
+ foreach($path in @($emptyPackage,$wrongShader)){Assert-StoreException 'ValidatePackage' @($path,$shaderKind) ([IO.IOException]) $missingShaderMessage}
+ Invoke-Store 'ValidatePackage' @($emptyPackage,$unknownKind)|Out-Null
+ Assert-StoreException 'ValidatePackage' @((Join-Path $fixture 'missing-package.zip'),$unknownKind) ([IO.FileNotFoundException])
+ $badPackage=Join-Path $fixture 'bad-package.zip';[IO.File]::WriteAllText($badPackage,'not ZIP')
+ Assert-StoreException 'ValidatePackage' @($badPackage,$unknownKind) ([IO.InvalidDataException])
+ # A valid EOCD with a corrupt central directory verifies that unknown kinds do
+ # not start reading entries merely because archive opening has succeeded.
+ $lazyPackage=Join-Path $fixture 'lazy-central-package.zip';New-Zip $lazyPackage @{'file.txt'='owned'}
+ $lazyBytes=[IO.File]::ReadAllBytes($lazyPackage);$central=-1
+ for($i=0;$i -lt $lazyBytes.Length-3;$i++){if($lazyBytes[$i] -eq 0x50 -and $lazyBytes[$i+1] -eq 0x4b -and $lazyBytes[$i+2] -eq 0x01 -and $lazyBytes[$i+3] -eq 0x02){if($central -ne -1){throw 'Ambiguous synthetic central directory'};$central=$i}}
+ if($central -lt 0){throw 'Synthetic central directory was not found'}
+ $lazyBytes[$central]=0;[IO.File]::WriteAllBytes($lazyPackage,$lazyBytes)
+ Invoke-Store 'ValidatePackage' @($lazyPackage,$unknownKind)|Out-Null
+ Assert-StoreException 'ValidatePackage' @($lazyPackage,$packKind) ([IO.InvalidDataException])
+ Assert-StoreException 'ValidatePackage' @($lazyPackage,$shaderKind) ([IO.InvalidDataException])
+ foreach($path in @($pack,$emptyPackage,$wrongCasePackage,$unparsedPackage,$shaderPackage,$shaderDirectory,$wrongShader,$badPackage,$lazyPackage)){
+  $exclusive=[IO.FileStream]::new($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None);$exclusive.Dispose()
+ }
  Invoke-Store 'ImportFile' @($packs,$packs,$packKind,$pack,$none)|Out-Null
  $packEntries=Scan $packs $packKind
  if($packEntries.Count -ne 1 -or -not $packEntries[0].Description.Contains('Synthetic native pack')){throw 'Resource-pack metadata was not read'}
@@ -266,7 +296,7 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message and extension-filter/null/device contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message, extension-filter/null/device and package/lazy-directory/handle contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

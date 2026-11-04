@@ -51,10 +51,7 @@ Friend NotInheritable Class InstanceResourceStore
     End Sub
 
     Friend Shared Sub ValidatePackage(FileName As String, Kind As InstanceResourceKind)
-        Using Archive = ZipFile.OpenRead(FileName)
-            If Kind = InstanceResourceKind.ResourcePacks AndAlso Archive.GetEntry("pack.mcmeta") Is Nothing Then Throw New IOException("资源包缺少 pack.mcmeta，未替换原文件。")
-            If Kind = InstanceResourceKind.ShaderPacks AndAlso Not Archive.Entries.Any(Function(Entry) Entry.FullName.StartsWith("shaders/", StringComparison.OrdinalIgnoreCase)) Then Throw New IOException("光影包缺少 shaders 目录，未替换原文件。")
-        End Using
+        PCLCS.InstanceResourcePackageRules.ValidatePackage(FileName, CInt(Kind))
     End Sub
 
     Private Shared Function AcceptFile(Kind As InstanceResourceKind, FileName As String) As Boolean

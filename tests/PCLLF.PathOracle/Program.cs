@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Globalization;
+using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -12,7 +14,7 @@ using PCLCS;
 // Prefix implementation: real MeloongCore c774ae4c85fd94e0eaa171db21e78a65870df19b.
 // The old guard is compiled from git, not reimplemented in this driver.
 internal static class Program {
-    internal const string Protocol = "pcllf-resource-paths-v2";
+    internal const string Protocol = "pcllf-resource-paths-v3";
     private const string Lf = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983";
     private const string Shared = "c774ae4c85fd94e0eaa171db21e78a65870df19b";
     private const string Outside = "资源路径超出了当前目录。";
@@ -73,6 +75,16 @@ internal static class Program {
         CreateLink("resources\\directory-link", Path.Combine(fixture, "target"), true);
         CreateLink("resources\\file-link", Path.Combine(fixture, "target", "file.txt"), false);
         CreateLink("resources\\dangling-link", Path.Combine(fixture, "absent-target"), false);
+        // These are OpenRead/entry-decoding API probes, not a replacement baseline
+        // for the LF ValidatePackage business function. All ZIP IO is fixture-owned.
+        string ownedZip = Path.Combine(fixture, "owned.zip");
+        string utf8Zip = Path.Combine(fixture, "utf8-long-s.zip");
+        string noEfsZip = Path.Combine(fixture, "utf8-long-s-no-efs.zip");
+        string badZip = Path.Combine(fixture, "bad.zip");
+        CreateZipFixture(ownedZip, "shaders/entry");
+        CreateZipFixture(utf8Zip, "ſhaders/entry");
+        ClearFixtureEfs(utf8Zip, noEfsZip);
+        File.WriteAllText(badZip, "not-a-zip", Utf8);
 
         JArray cases = new();
         void Add(string id, string operation, string? value, JObject expected, string? parent = null, bool allowRoot = false, string? other = null, bool informational = false) {
@@ -249,6 +261,20 @@ internal static class Program {
             ("nul-difference", "A\0B", "a\0C"), ("nul-prefix", "A\0Btail", "a\0b"),
             ("high-surrogate", "\ud800A", "\ud800a"), ("low-surrogate", "\udc00A", "\udc00a") })
             Add("ordinal." + id, "ordinal", first, SystemOutcome("ok"), other: second, informational: true);
+        Add("ordinal.long-s-shaders", "ordinal", "ſhaders/entry", SystemOutcome("ok"), other: "shaders/", informational: true);
+        JObject ownedZipValue = new(new JProperty("entries", new JArray(new JObject(new JProperty("fullNameUtf16", new JArray("shaders/entry".Select(unit => (int)unit))), new JProperty("shaderPrefix", true)))));
+        Add("zip.owned", "zip-open-read", ownedZip, Ok(ownedZipValue.DeepClone()));
+        Add("zip.utf8-long-s", "zip-open-read", utf8Zip, SystemOutcome("ok"));
+        Add("zip.utf8-no-efs-long-s", "zip-open-read", noEfsZip, SystemOutcome("ok"));
+        Add("zip.pipe-collapsed", "zip-open-read", Path.Combine(fixture, "bad|segment", "..", "owned.zip"), Error("System.ArgumentException"));
+        Add("zip.question-collapsed", "zip-open-read", Path.Combine(fixture, "bad?segment", "..", "owned.zip"), Ok(ownedZipValue.DeepClone()));
+        Add("zip.pipe-kept", "zip-open-read", Path.Combine(fixture, "bad|name.zip"), Error("System.ArgumentException"));
+        Add("zip.nbsp", "zip-open-read", "\u00a0", Error("System.ArgumentException"));
+        Add("zip.unicode-space-2000", "zip-open-read", "\u2000", Error("System.ArgumentException"));
+        Add("zip.empty", "zip-open-read", "", Error("System.ArgumentException"));
+        Add("zip.null", "zip-open-read", null, Error("System.ArgumentNullException"));
+        Add("zip.bad", "zip-open-read", badZip, Error("System.IO.InvalidDataException"));
+        Add("zip.missing", "zip-open-read", Path.Combine(fixture, "missing.zip"), Error("System.IO.FileNotFoundException"));
 
         Save(Path.Combine(fixture, "cases.json"), new JObject(new JProperty("protocol", Protocol), new JProperty("fixture", fixture),
             new JProperty("cwd", cwd), new JProperty("profile", "LF-default"), new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("cases", cases)));
@@ -264,6 +290,9 @@ internal static class Program {
                 case "prefix": result = Ok(PathUtils.RemoveExtendedPrefix(value!)); break;
                 case "ensure": InstanceResourcePaths.EnsureWithin(Text(item["root"])!, value!, (bool)item["allowRoot"]!, PathUtils.RemoveExtendedPrefix); result = Ok(); break;
                 case "get-directory-name": result = Ok(InstanceResourcePathCompatibility.GetDirectoryName(value)); break;
+                case "zip-open-read":
+                    using (ZipArchive archive = InstanceResourcePackageRules.OpenRead(value!)) result = Ok(ZipSnapshot(archive));
+                    break;
                 case "ordinal":
                     value = OrdinalText(item, "value");
                     string other = OrdinalText(item, "other");
@@ -280,6 +309,41 @@ internal static class Program {
         }
         result["id"] = item["id"]!.DeepClone();
         return result;
+    }
+
+    private static void CreateZipFixture(string path, string entryName) {
+        using FileStream output = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        using ZipArchive archive = new(output, ZipArchiveMode.Create, leaveOpen: false, entryNameEncoding: Encoding.UTF8);
+        using Stream entry = archive.CreateEntry(entryName, CompressionLevel.NoCompression).Open();
+    }
+
+    private static void ClearFixtureEfs(string source, string destination) {
+        // This is a bounded edit of our one-entry, uncommented fixture. The stored
+        // UTF8 name bytes and all ZIP data remain unchanged in both headers.
+        byte[] data = File.ReadAllBytes(source);
+        int end = data.Length - 22;
+        if (end < 30 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan()) != 0x04034b50 ||
+            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(end)) != 0x06054b50 ||
+            BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(end + 10)) != 1 ||
+            BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(end + 20)) != 0)
+            throw new InvalidDataException("Unexpected single-entry ZIP fixture layout.");
+        int central = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(end + 16)));
+        if (central < 30 || central + 46 > end || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(central)) != 0x02014b50 ||
+            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(central + 42)) != 0)
+            throw new InvalidDataException("Unexpected ZIP fixture central directory.");
+        ushort localFlags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(6));
+        ushort centralFlags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(central + 8));
+        if ((localFlags & 0x0800) == 0 || (centralFlags & 0x0800) == 0) throw new InvalidDataException("UTF8 fixture was not written with EFS set in both headers.");
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(6), (ushort)(localFlags & ~0x0800));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(central + 8), (ushort)(centralFlags & ~0x0800));
+        File.WriteAllBytes(destination, data);
+    }
+
+    private static JObject ZipSnapshot(ZipArchive archive) {
+        JArray entries = new();
+        foreach (ZipArchiveEntry entry in archive.Entries) entries.Add(new JObject(new JProperty("fullNameUtf16", new JArray(entry.FullName.Select(unit => (int)unit))),
+            new JProperty("shaderPrefix", InstanceResourcePathText.StartsWithPathText(entry.FullName, "shaders/"))));
+        return new JObject(new JProperty("entries", entries));
     }
 
     private static string OrdinalText(JObject item, string name) {
@@ -300,6 +364,7 @@ internal static class Program {
     private static JObject Context() => new(new JProperty("runtime", RuntimeInformation.FrameworkDescription), new JProperty("clr", Environment.Version.ToString()),
         new JProperty("domainFramework", AppContext.TargetFrameworkName), new JProperty("assemblyFramework", Assembly.GetExecutingAssembly().GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName),
         new JProperty("cwd", Environment.CurrentDirectory), new JProperty("culture", CultureInfo.CurrentCulture.Name), new JProperty("is64Bit", Environment.Is64BitProcess), new JProperty("os", Environment.OSVersion.ToString()),
+        new JProperty("defaultEncodingCodePage", Encoding.Default.CodePage), new JProperty("zipArchiveAssembly", typeof(ZipArchive).Assembly.FullName), new JProperty("zipFileAssembly", typeof(ZipFile).Assembly.FullName),
         new JProperty("useLegacyPathHandling", Switch("Switch.System.IO.UseLegacyPathHandling")), new JProperty("blockLongPaths", Switch("Switch.System.IO.BlockLongPaths")));
 
     private static int Compare(string casesPath, string baselinePath, string reportPath, string mode) {
@@ -331,7 +396,7 @@ internal static class Program {
             JObject old = oldResults[index] as JObject ?? throw new InvalidDataException("Invalid result object.");
             string id = (string?)item["id"] ?? throw new InvalidDataException("Missing case id.");
             if (!ids.Add(id) || (string?)old["id"] != id) throw new InvalidDataException("Duplicate or reordered oracle case id.");
-            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name") || item["allowRoot"]?.Type != JTokenType.Boolean)
+            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read") || item["allowRoot"]?.Type != JTokenType.Boolean)
                 throw new InvalidDataException("Unknown operation or malformed request.");
             ValidateOutcome(old, (string)item["operation"]!);
             if ((string?)item["operation"] == "ordinal") {
@@ -373,6 +438,8 @@ internal static class Program {
         JObject report = new(new JProperty("protocol", Protocol), new JProperty("mode", mode), new JProperty("profile", manifest["profile"]!.DeepClone()),
             new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("caseCount", cases.Count), new JProperty("linkCount", JArray.Parse(File.ReadAllText(Path.Combine(fixture, "links.json"), Utf8)).Count),
             new JProperty("nativeComparisonCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "ordinal") * 4),
+            new JProperty("zipApiProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "zip-open-read")),
+            new JProperty("zipApiProbeScope", "Original CLR4 ZipFile.OpenRead plus entry snapshot; modern production InstanceResourcePackageRules.OpenRead plus entry snapshot. This is not the old ValidatePackage business function."),
             new JProperty("requests", cases.DeepClone()),
             new JProperty("baseline", baseline), new JProperty("modern", new JObject(new JProperty("context", Context()), new JProperty("results", modern))),
             new JProperty("contractFailures", failures), new JProperty("nativeCandidateFailures", nativeFailures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
@@ -389,8 +456,16 @@ internal static class Program {
         if ((string?)result["status"] == "ok") {
             if (result.Property("value") is null || result.Property("type") is not null) throw new InvalidDataException("Malformed successful baseline result.");
             JTokenType valueType = result["value"]!.Type;
-            if (operation == "ensure" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : valueType is not (JTokenType.String or JTokenType.Null))
+            if (operation == "ensure" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation == "zip-open-read" ? valueType != JTokenType.Object : valueType is not (JTokenType.String or JTokenType.Null))
                 throw new InvalidDataException("Baseline returned a value incompatible with the requested operation.");
+            if (operation == "zip-open-read") {
+                JArray entries = result["value"]?["entries"] as JArray ?? throw new InvalidDataException("Missing structured ZIP baseline entries.");
+                foreach (JToken token in entries) {
+                    if (token is not JObject entry || entry["shaderPrefix"]?.Type != JTokenType.Boolean || entry["fullNameUtf16"] is not JArray units ||
+                        units.Any(unit => unit.Type != JTokenType.Integer || (long)unit < 0 || (long)unit > char.MaxValue))
+                        throw new InvalidDataException("Malformed ZIP baseline entry snapshot.");
+                }
+            }
             if (operation == "ordinal" && new[] { "reverseValue", "startsWith", "reverseStartsWith" }.Any(field => result[field]?.Type != JTokenType.Boolean))
                 throw new InvalidDataException("Missing real String reverse/prefix baseline comparisons.");
         } else if ((string?)result["status"] == "exception") {

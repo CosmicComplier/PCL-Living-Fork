@@ -6,6 +6,7 @@ Imports System
 Imports System.ComponentModel
 Imports System.Globalization
 Imports System.IO
+Imports System.IO.Compression
 Imports System.Reflection
 Imports System.Runtime.InteropServices
 Imports System.Runtime.Versioning
@@ -43,7 +44,7 @@ Friend NotInheritable Class NativeOrdinalProbe
 End Class
 
 Friend Module OracleProgram
-    Private Const Protocol As String = "pcllf-resource-paths-v2"
+    Private Const Protocol As String = "pcllf-resource-paths-v3"
     Private Const Lf As String = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983"
     Private Const SharedRevision As String = "c774ae4c85fd94e0eaa171db21e78a65870df19b"
     Private ReadOnly Utf8 As New UTF8Encoding(False, True)
@@ -63,7 +64,8 @@ Friend Module OracleProgram
                 New JProperty("domainFramework", AppDomain.CurrentDomain.SetupInformation.TargetFrameworkName), New JProperty("assemblyFramework", Framework.FrameworkName),
                 New JProperty("cwd", Environment.CurrentDirectory), New JProperty("culture", CultureInfo.CurrentCulture.Name), New JProperty("is64Bit", Environment.Is64BitProcess),
                 New JProperty("useLegacyPathHandling", ReadSwitch("Switch.System.IO.UseLegacyPathHandling")), New JProperty("blockLongPaths", ReadSwitch("Switch.System.IO.BlockLongPaths")),
-                New JProperty("legacyTrimFields", ReadTrimFields()), New JProperty("os", Environment.OSVersion.ToString()))
+                New JProperty("legacyTrimFields", ReadTrimFields()), New JProperty("os", Environment.OSVersion.ToString()),
+                New JProperty("defaultEncodingCodePage", Encoding.Default.CodePage), New JProperty("zipArchiveAssembly", GetType(ZipArchive).Assembly.FullName), New JProperty("zipFileAssembly", GetType(ZipFile).Assembly.FullName))
             Dim Provenance = JObject.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "provenance.json"), Utf8))
             Dim Output As New JObject(New JProperty("protocol", Protocol), New JProperty("lf", Lf), New JProperty("shared", SharedRevision),
                 New JProperty("context", Context), New JProperty("provenance", Provenance), New JProperty("results", Results))
@@ -116,6 +118,11 @@ Friend Module OracleProgram
                     End Try
                 Case "get-directory-name"
                     Result = Ok(Path.GetDirectoryName(Value))
+                Case "zip-open-read"
+                    ' Real Framework API, not a translated/copied ValidatePackage business method.
+                    Using Archive = ZipFile.OpenRead(Value)
+                        Result = Ok(ZipSnapshot(Archive))
+                    End Using
                 Case Else
                     Throw New InvalidDataException("Unknown operation in path protocol.")
             End Select
@@ -126,6 +133,18 @@ Friend Module OracleProgram
         End Try
         Result("id") = Item("id").DeepClone()
         Return Result
+    End Function
+
+    Private Function ZipSnapshot(Archive As ZipArchive) As JObject
+        Dim Entries As New JArray()
+        For Each Entry As ZipArchiveEntry In Archive.Entries
+            Dim Units As New JArray()
+            For Each Unit As Char In Entry.FullName
+                Units.Add(Convert.ToInt32(Unit))
+            Next
+            Entries.Add(New JObject(New JProperty("fullNameUtf16", Units), New JProperty("shaderPrefix", Entry.FullName.StartsWith("shaders/", StringComparison.OrdinalIgnoreCase))))
+        Next
+        Return New JObject(New JProperty("entries", Entries))
     End Function
 
     Private Function OrdinalText(Item As JObject, Name As String) As String

@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `70f254528e70f4b62aeb4c1514861b20fb458665`：Windows 各 41 步、Ubuntu 327／Windows 356 组与 **RequireEquivalent** 137／52 全通过，原私有 AcceptFile／9 白名单／36 字符／null-device 及 Quick Play 消费者通过，C007c3 完成。此前 c2／c1／b2 已关闭；见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)。主产品仍 net48，非全部 BCL／现代 WPF 验收。
-- 当前只读审计 C007c4 的 ZIP 包内容校验／原 Using 和 Shader 前缀比较，待固定源结论再实施；前批生产与工作树已集成，未留下待提交代码。C005c2／C006d 的界面母项保持 blocked。
+- 当前 C007c4 原包校验已接 C#／VB 真委托，保 Using／两消息／Shader 旧 Ordinal；中断恢复后补齐真实 ZIP 测试，本地 339／339、三个工程零警告编译与完整独立终审通过，v3 旧 VB 驱动仅完成预编译。150 例／56 比较及 Windows 371 组仍待实跑；C005c2／C006d 的界面母项保持 blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -235,7 +235,7 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c1 | done | C007a | `8734df5`：两原入口／CInt 桥／原 enum／Root 保持，三组新金值，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及实际类型／入口／Root 异常顺序全通过 |
 | C007c2 | done | C007c1 | `2d111e1`：SafeName 原顺序／三文案／平台规则，8 组新增令 Ubuntu 319／Windows 347、严格 137／52、Windows 各 41 步及原消费者全通过；独立终审／零警告编译通过，不扩大保留名策略 |
 | C007c3 | done | C007c2 | `70f2545`：原 AcceptFile／9 白名单／null 先后、原 C6 字符共享与消费者接通，8 Unix／9 Windows 组令 327／356、严格 137／52、Windows 各 41 步全通过；独立终审／零警告编译通过，ZIP 内容校验未在本批迁 |
-| C007c4 | in_progress | C007c3、C007b2 | 只读固定源审计 ValidatePackage／ZIP OpenRead／Using 释放和原 Shader StartsWith；先确认旧 I/O 异常顺序、net48 引用与 modern Ordinal 必要边界，不顺带改扫描／导入策略 |
+| C007c4 | in_progress | C007c3、C007b2 | ValidatePackage 原入口／内部 OpenRead／Using、两消息与旧 Shader Prefix 已接通；保未知 kind 先打开且不读 central，Frame／Unix 原 API，现代 Win 原串检查后旧完整归约。真实 ZIP 共通 11＋Win4／Unix1，本地 339／339、零警告编译；v3 150 例／56 原 String→Win32及 ZIP API 待 Windows，不顺带改扫描／导入策略 |
 
 ## 当前批次与下一步
 
@@ -262,8 +262,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c1 | `8734df5` 已推送，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及真实 VB enum／入口／Root 原异常顺序全部通过；独立终审／零警告编译通过，脚本 BOM 保留 | 本批完成，不以字符串映射完成关闭整个 Store；Root 仍原 BCL Combine，更多现代 API 边界按实际消费另验 |
 | C007c2 | `2d111e1` 已推送；319／347 单元、严格 137／52、Windows 各 41 步／真实旧入口与原资源回归全通过，独立终审与零警告编译通过 | 本批完成，所有写入事务和原取消仍由既有流程执行；不以单规则关闭 Store |
 | C007c3 | `70f2545` 已推送；327／356、严格 137／52、Windows 各 41 步与原私有桥／null-device／资源和 Quick Play 消费者全通过；独立终审／零警告编译通过 | 本批完成，筛选不做 SafeName／完整路径归约；更多 ZIP 和扫描语义仍属后继 |
-| C007c4 | 已定位原函数及 InstanceResourceUpdates 唯一生产调用，正在只读源码／ZIP I/O 审计 | 待独立实施与真实 ZIP／句柄／旧消费者验证，不把审计或独立字符串对照当产品已迁 |
+| C007c4 | 原函数／更新消费者接口已接、补 net48 FileSystem 引用；真实 ZIP 测试和 PS 原桥含 exact／prefix／错误／惰性 central／句柄样本。恢复后三个工程零警告编译，本地 339／339、完整独立终审和注入原两方法的 v3 VB 驱动预编译通过 | 待 Windows 371 组／各 41 步及 v3 150／56，测试专用历史 VB 不计产品；EFS 编码只做真实探针，未据文档猜测改 encoding，OpenRead 快照不能代替未知 kind 业务惰性验收 |
 
-下次入口：C007c4 包内容校验／ZIP I/O；c3／c2／c1／b2 已全通过，不重复筛选／名称／映射／路径修复或重建基线。依独立审计结论实施真实校验与句柄回归，再推进扫描等；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
+下次入口：先收尾 C007c4 终审／提交与 Windows CI，核实 150／56 ZIP／路径报告，若有真实差异按证据适配；c3／c2／c1／b2 已全通过，不重复前批或重建基线。之后再拆扫描等；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

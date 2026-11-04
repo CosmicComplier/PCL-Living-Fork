@@ -75,4 +75,12 @@ oracle v2 保留原 75 例和期望，新增真实 Unicode guard、八 trim、�
 
 任何后续 path／text／候选／基线差异都应阻止严格检查通过；生产和 oracle 调相同适配入口，旧基线继续用固定 VB／真实 Framework，不改期望掩盖差异。短名展开时序、全部 raw BCL 输入、未来现代 WPF 完整运行未据此关闭，N002／R002 仍须按真实产品调用链验证。
 
+## C007c4 的 ZIP API 扩展待验证
+
+v3 保留上述 137 例／52 比较，追加 12 个实际 ZIP API 请求及 1 组 Shader 长 s 文本比较，共 150 例／56 比较。旧进程直接调用真实 Framework `ZipFile.OpenRead` 并记录成员名 UTF16 与真实 String 前缀；现代进程调用实际生产 `InstanceResourcePackageRules.OpenRead` 及 PathText。两端只记录 `Encoding.Default.CodePage` 和实际 ZIP 汇编，不凭 XML 注释推断解码或改编码；UTF8 `ſhaders/entry` 的 EFS 开／关两个文件只改变本地与中央头的 0x0800，名字字节不变。
+
+路径请求包括 owned、pipe／问号段归约、保留 pipe、NBSP／U2000、null／empty、坏 ZIP 和缺失；原管线的严格四类失败判定、固定原源码／config／manifest／Shared／Json 和先 unlink 清理不变。旧驱动引用补 Compression／FileSystem，现代项目链接真实 PackageRules／LegacyPathCharacters，provenance 记录新源哈希。
+
+这些是 **真实 OpenRead API 快照对照**，并非注入旧 ValidatePackage 业务函数；快照有意读取 Entries，不能代替未知 kind 不读中央目录的业务验收，后者由实际生产测试和原 VB 入口另行验证。当前仅本地 339／339、三个工程编译与 v3 旧驱动预编译通过，Windows 150／56 尚待执行；不将此前 137／52 证据外推。
+
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。

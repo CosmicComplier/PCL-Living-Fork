@@ -106,12 +106,13 @@ try {
     if ($LASTEXITCODE -ne 0 -or $compilerCandidates.Count -eq 0) { throw 'No installed Visual Basic compiler was found.' }
     $compiler = $compilerCandidates[0]
     $references = Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
-    foreach ($required in @('mscorlib.dll','System.dll','System.Core.dll','Facades/netstandard.dll')) {
+    foreach ($required in @('mscorlib.dll','System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll','Facades/netstandard.dll')) {
         if (-not [IO.File]::Exists((Join-Path $references $required))) { throw ('Missing net48 reference assembly: ' + $required) }
     }
     $compilerArguments = @('/nologo', '/codepage:65001', '/target:exe', '/platform:anycpu', '/optionstrict+', '/optionexplicit+', '/optioninfer+', '/optioncompare:binary',
         '/rootnamespace:PCLLF.PathOracleBaseline', '/main:PCLLF.PathOracleBaseline.OracleProgram', ('/sdkpath:' + $references), ('/out:' + $baselineExecutable), ('/win32manifest:' + $manifest),
         ('/reference:' + (Join-Path $references 'System.dll')), ('/reference:' + (Join-Path $references 'System.Core.dll')), ('/reference:' + (Join-Path $references 'Facades/netstandard.dll')),
+        ('/reference:' + (Join-Path $references 'System.IO.Compression.dll')), ('/reference:' + (Join-Path $references 'System.IO.Compression.FileSystem.dll')),
         ('/reference:' + $sharedAssembly), ('/reference:' + $newtonsoft), $driverPath)
     Invoke-Checked $compiler $compilerArguments
     $provenance = [ordered]@{
@@ -125,6 +126,8 @@ try {
         modernProductionSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePaths.cs') -Algorithm SHA256).Hash
         modernPathTextSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathText.cs') -Algorithm SHA256).Hash
         modernPathCompatibilitySourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathCompatibility.cs') -Algorithm SHA256).Hash
+        modernPackageRulesSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePackageRules.cs') -Algorithm SHA256).Hash
+        modernLegacyPathCharactersSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/LegacyPathCharacters.cs') -Algorithm SHA256).Hash
     }
     [IO.File]::WriteAllText((Join-Path $baselineDirectory 'provenance.json'), ($provenance | ConvertTo-Json -Depth 5), $utf8)
 
