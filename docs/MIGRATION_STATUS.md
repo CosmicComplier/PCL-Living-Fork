@@ -8,6 +8,7 @@
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `476eb42bb00e85b7cf8d4f800d1264740b8373c6`：Windows各41步、Ubuntu367／Windows399组及 **RequireEquivalent** 397／56全通过（metadata101／解析位值34／格式72），C007d1b与d1完成；前两轮18／4差异及修复证据保留。主产品仍net48，非全部BCL／CRT／现代WPF验收。
 - 当前最早ready为C007d2：迁移ReadPackInfo的目录／ZIP I/O与同步Icon派发，保1MiB／4MiB、ZIP Share.ReadWrite|Delete、五类catch、Icon先于JSON/ref更新、原WPF LoadImage／DecodeImage继续宿主；扫描／取消／图片解码另批，不以本项关闭Store。C005c2／C006d界面母项仍blocked。
+- 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标继续paused。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
