@@ -25,7 +25,28 @@ public sealed class LegacyPageSetupSystemController {
     private bool refreshingUpdateChannel = true;
     private LegacySetupPageHost Common => host.Common;
     public LegacyPageSetupSystemController(LegacySetupSystemHost host, LegacyPageSetupSystemView view) { this.host = host; View = view; }
+    // The retained LF f4 comparison tree has neither update-selection view
+    // delegates nor update-channel host delegates. Its original Reload remains
+    // valid. Native LF50 supplies the complete contract; any partial wiring fails.
+    private bool HasUpdateSelection() {
+        bool noView = View.ComboLauncherUpdateSource is null && View.ComboLauncherUpdateChannel is null && View.ConfirmPrereleaseUpdates is null;
+        bool noHost = host.PreferredUpdateChannel is null && host.ChangeUpdateChannel is null;
+        if (noView && noHost) {
+            // Missing delegates alone cannot identify the retained old UI: a
+            // Native page could accidentally omit every new callback as well.
+            // Require the actual old page's name scope to lack both LF50 parts.
+            if (View.Page is null || View.Page() is not FrameworkElement page)
+                throw new InvalidOperationException("Legacy launcher update selection requires a real page name scope.");
+            if (page.FindName("ComboLauncherUpdateSource") is not null || page.FindName("ComboLauncherUpdateChannel") is not null)
+                throw new InvalidOperationException("Launcher update selection controls exist but their view/host delegates are missing.");
+            return false;
+        }
+        if (View.ComboLauncherUpdateSource is null || View.ComboLauncherUpdateChannel is null || View.ConfirmPrereleaseUpdates is null || host.PreferredUpdateChannel is null || host.ChangeUpdateChannel is null)
+            throw new InvalidOperationException("Launcher update selection view/host delegates are only partially connected.");
+        return true;
+    }
     public void InitializeLauncherUpdates() {
+        if (!HasUpdateSelection()) return;
         Common.AddAnimationSuppression(1);
         try {
             Common.RefreshSettings(View.ComboLauncherUpdateSource());
@@ -33,11 +54,13 @@ public sealed class LegacyPageSetupSystemController {
         } finally { Common.AddAnimationSuppression(-1); }
     }
     public void RefreshUpdateChannel() {
+        if (!HasUpdateSelection()) return;
         refreshingUpdateChannel = true;
         try { View.ComboLauncherUpdateChannel().SelectedIndex = host.PreferredUpdateChannel(); }
         finally { refreshingUpdateChannel = false; }
     }
     public void UpdateChannelChanged() {
+        if (!HasUpdateSelection()) return;
         if (refreshingUpdateChannel || Common.AnimationSuppression() != 0 || View.ComboLauncherUpdateChannel().SelectedIndex < 0) return;
         try {
             if (!host.ChangeUpdateChannel(View.ComboLauncherUpdateChannel().SelectedIndex, View.ConfirmPrereleaseUpdates())) RefreshUpdateChannel();
@@ -69,7 +92,7 @@ public sealed class LegacyPageSetupSystemController {
     public void Reset() {
         try {
             Common.ResetSettings(View.Page());
-            Common.Reset("ToolLauncherUpdateChannel");
+            if (HasUpdateSelection()) Common.Reset("ToolLauncherUpdateChannel");
             Logger.Info("已初始化启动器页设置"); Common.Hint("已初始化启动器页设置！", LegacySetupHint.Green, false);
         } catch (Exception error) { Logger.Error(error, "初始化启动器页设置失败", LogBehavior.Alert); }
         Reload();

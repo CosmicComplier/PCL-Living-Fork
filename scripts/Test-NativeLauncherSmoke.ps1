@@ -76,6 +76,43 @@ function Write-OwnedCloseDiagnostic([object]$exitCode,[string]$text,[string]$pha
  [IO.File]::WriteAllText((Join-Path $fixture ('process-'+$phase+'-diagnostics.json')),($diagnostic|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
  Write-Output ('Actual Native Main bounded diagnostic: '+($diagnostic|ConvertTo-Json -Depth 4 -Compress))
 }
+
+function Assert-SyntheticPreferenceImport([bool]$expected,[string]$phase){
+ $official=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\PCL',$false);$legacy=$null
+ try{
+  $legacy=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\PCLDebug',$false)
+  if($null -eq $official -or $null -eq $legacy -or $official.GetValue($marker,$null) -cne $id -or $legacy.GetValue($marker,$null) -cne $id){throw 'Synthetic startup preference namespaces are not owned by this fixture.'}
+  if($legacy.GetValue('ToolDownloadThread',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -cne '9' -or $legacy.GetValueKind('ToolDownloadThread') -ne [Microsoft.Win32.RegistryValueKind]::String){throw 'Synthetic old preference source changed during actual entry.'}
+  $migrated=$legacy.GetValue('LivingPclSharedPreferencesMigrated',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+  $current=$official.GetValue('ToolDownloadThread',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+  if($expected){if($migrated -cne 'True' -or $current -cne '9' -or $legacy.GetValueKind('LivingPclSharedPreferencesMigrated') -ne [Microsoft.Win32.RegistryValueKind]::String -or $official.GetValueKind('ToolDownloadThread') -ne [Microsoft.Win32.RegistryValueKind]::String){throw ('Actual normal Main did not demonstrate that the preference fixture can observe import: '+$phase)}}
+  elseif($null -ne $migrated -or $null -ne $current){throw ('Actual --update utility imported old shared preferences: '+$phase)}
+ }finally{if($null -ne $legacy){$legacy.Dispose()};if($null -ne $official){$official.Dispose()}}
+}
+function Test-SafeUtilityImportExclusion {
+ # The real current Main rejects the original official --update option and
+ # Environment.Exit(Fail=1); this never dispatches GPU/memory or the four-arg LF
+ # replacement helper. Main/App is not loaded or invoked in this observer.
+ $record=[ordered]@{Argument='--update';Result='pending';ExpectedExitCode=1;Scope='Only safe refusal of the retired official updater; GPU/memory utility paths remain unexecuted.'}
+ $evidence.UtilityPreferenceImport=$record
+ Assert-SyntheticPreferenceImport $false 'before-safe-utility'
+ $info=[Diagnostics.ProcessStartInfo]::new($installed);$info.UseShellExecute=$false;$info.WorkingDirectory=$differentCwd;$info.Arguments='--update'
+ $info.EnvironmentVariables['DOTNET_BUNDLE_EXTRACT_BASE_DIR']=Join-Path $fixture 'BundleExtract'
+ $script:nativeProcess=[Diagnostics.Process]::Start($info);if($null -eq $script:nativeProcess){throw 'Actual safe utility entry did not start.'};$record.ProcessId=$script:nativeProcess.Id
+ $image=[PclLfNativeSmoke.Win32]::ObserveProcessImage($script:nativeProcess,$false);$record.ImageIdentity=$image;Assert-OwnedProcessImage $image $installed
+ $watch=[Diagnostics.Stopwatch]::StartNew()
+ while(-not $script:nativeProcess.HasExited -and $watch.ElapsedMilliseconds -lt 15000){
+  $windows=@([PclLfNativeSmoke.Win32]::Windows($script:nativeProcess.Id))
+  if($windows.Count -ne 0){$evidence.Result='pending';throw ('Unexpected actual utility window; never auto-clicked: '+$windows[0].Title+' / '+$windows[0].ClassName)}
+  Start-Sleep -Milliseconds 25;$script:nativeProcess.Refresh()
+ }
+ if(-not $script:nativeProcess.HasExited){throw 'Actual safe utility did not exit within the original bounded process observer.'}
+ $record.ElapsedMilliseconds=$watch.ElapsedMilliseconds;$record.ExitCode=$script:nativeProcess.ExitCode
+ if($record.ExitCode -ne 1){throw ('Actual official-update refusal lost its Fail=1 exit contract: '+$record.ExitCode)}
+ Assert-SyntheticPreferenceImport $false 'after-safe-utility'
+ $record.Result='passed';$script:nativeProcess.Dispose();$script:nativeProcess=$null
+}
+
 try{
  foreach($directory in @($fixture,$install,$differentCwd,$cache)){[IO.Directory]::CreateDirectory($directory)|Out-Null}
  [IO.File]::WriteAllText((Join-Path $fixture 'owner.txt'),$id)
@@ -104,7 +141,7 @@ try{
  $node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\PCL',$true)
  try{$node.SetValue('SystemSystemCache',$cache+'\',[Microsoft.Win32.RegistryValueKind]::String);$node.SetValue('LaunchFolders','Smoke Fixture>'+[IO.Path]::Combine($install,'.minecraft')+'\',[Microsoft.Win32.RegistryValueKind]::String)}finally{$node.Dispose()}
  $node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\PCLDebug',$true)
- try{$node.SetValue('SystemEulaVersion','2',[Microsoft.Win32.RegistryValueKind]::String)}finally{$node.Dispose()}
+ try{$node.SetValue('SystemEulaVersion','2',[Microsoft.Win32.RegistryValueKind]::String);$node.SetValue('ToolDownloadThread','9',[Microsoft.Win32.RegistryValueKind]::String)}finally{$node.Dispose()}
  # A synthetic already-accepted local test state, not a click accepting terms.
  # No encrypted/online account value is seeded: original default is empty Legacy.
  $ownedAppData=Join-Path $appData 'PCL';[IO.Directory]::CreateDirectory($ownedAppData)|Out-Null;[IO.File]::WriteAllText((Join-Path $ownedAppData $marker),$id)
@@ -116,6 +153,7 @@ try{
  if((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.sha256){throw 'Installed fixture bytes differ from actual candidate preflight.'}
  Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeWin32.cs') -ReferencedAssemblies System.Drawing.dll
  Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeFileRelease.cs')
+ Test-SafeUtilityImportExclusion
  $previousLogHash=$null
  foreach($pass in @(1,2)){
   $run=[ordered]@{Pass=$pass;ActualExe=$installed;WorkingDirectory=$differentCwd;NormalExit=$false;ExpectedInformationNoticeVisible=$false};$evidence.Runs+=,$run
@@ -148,6 +186,8 @@ try{
   $run.ReadyMilliseconds=$watch.ElapsedMilliseconds;$run.Window=@{Title=$mainWindow.Title;Class=$mainWindow.ClassName;Handle=$mainWindow.Handle.ToInt64();Left=$mainWindow.Left;Top=$mainWindow.Top;Right=$mainWindow.Right;Bottom=$mainWindow.Bottom}
   $run.ExpectedInformationNoticeVisible=$text.Contains('普通弹窗：'+$expectedNotice)
   foreach($name in $mutexNames){Check-Mutex $name $true}
+  Assert-SyntheticPreferenceImport $true ('normal-ready-'+$pass)
+  $run.SyntheticPreferenceImportObserved=$true
   $run.Screenshot=[PclLfNativeSmoke.Win32]::CaptureOwnWindow($mainWindow.Handle,(Join-Path $fixture ('main-'+$pass+'.png')))
   if($pass -eq 2){$rotated=Join-Path $install 'PCL/Log2.txt';if(-not [IO.File]::Exists($rotated) -or (Hash-OwnedFile $rotated) -cne $previousLogHash){throw 'Reopen did not preserve original LF log rotation.'}}
   $closeWatch=[Diagnostics.Stopwatch]::StartNew();$closeBudget=$CloseTimeoutSeconds*1000
@@ -190,4 +230,4 @@ finally{
  if([IO.Directory]::Exists($fixture)){[IO.File]::WriteAllText((Join-Path $fixture 'evidence.json'),($evidence|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false));Write-Output ('Native Main smoke evidence: '+(Join-Path $fixture 'evidence.json'))}
 }
 if($evidence.Result -ne 'passed'){throw ('Native Main smoke '+$evidence.Result+'; see evidence.json')}
-Write-Output 'PASS actual native PCL.Application Main: real startup/BAML/visible HWND in CI windowstation/log stages, WM_CLOSE normal controller exit, session/file locks, reopen/log rotation and synthetic data preservation. No update accepted.'
+Write-Output 'PASS actual native PCL.Application Main: real startup/BAML/visible HWND in CI windowstation/log stages, WM_CLOSE normal controller exit, session/file locks, reopen/log rotation, safe --update exclusion and synthetic preference/data preservation. No update accepted.'

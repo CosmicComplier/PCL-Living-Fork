@@ -26,7 +26,12 @@ internal static class Program
         ["dependency-graph"] = DependencyGraphChecks.Run,
         ["toolbox"] = ToolboxChecks.Run,
         ["visual-assets"] = VisualAssetChecks.Run,
-        ["launcher-lifecycle"] = LauncherLifecycleChecks.Run
+        ["launcher-lifecycle"] = LauncherLifecycleChecks.Run,
+        ["modpack-mode"] = ModpackModeChecks.Run,
+        ["review-fixes"] = ReviewFixesChecks.Run,
+        ["migrated-controls"] = ControlOriginalChecks.Run,
+        ["map-install-recycle"] = MapInstallChecks.Run,
+        ["resource-updates"] = ResourceUpdateChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)
