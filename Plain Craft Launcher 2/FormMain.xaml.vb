@@ -9,7 +9,7 @@ Public Class FormMain
     Private Sub ShowUpdateLog()
         RunInNewThread(
         Sub()
-            Dim Content = $"{LauncherDisplayName} {VersionBaseName}（预发布版）{vbCrLf}{vbCrLf}新增可复用的模组依赖树索引，手动更新时同时获取平台依赖声明。优化 Fabric、Forge、NeoForge 识别与旧版整合包检查，修复平台指定版本导致的重复依赖节点。启动器更新可选择 CNB 或 GitHub，并使用原生下载任务。"
+            Dim Content = $"{LauncherDisplayName} {VersionBaseName}（预发布版）{vbCrLf}{vbCrLf}改进备份、还原点、克隆和恢复任务的进度显示，返回时保留原来的版本子页。微软登录缓存独立保存，避免不同 PCL 分支互相覆盖；首次升级可能需要在 LF 重新登录一次。"
             If MyMsgBox(Content, LauncherDisplayName & " 更新说明", "确定", "查看更新日志") = 2 Then OpenWebsite(LauncherReleasesUrl)
         End Sub, "Fork UpdateLog Output")
     End Sub

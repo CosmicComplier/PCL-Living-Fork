@@ -2,7 +2,7 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.3.5-pre-2](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-2) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-2) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.3.5-pre-3](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-3) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-3) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
@@ -40,7 +40,7 @@ dotnet restore .\PCLCS\PCLCS.csproj
 .\scripts\Build-Release.ps1
 ```
 
-输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.5-pre-2.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.5-pre-3.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
 ## 国内发布同步
 
