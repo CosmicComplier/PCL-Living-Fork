@@ -4,12 +4,24 @@ import json
 import re
 
 SOURCE = "DDZmumo/PCL-Living-Fork"
+TAG_PATTERN = r"v\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?"
+
+
+def valid_tag(tag):
+    return isinstance(tag, str) and re.fullmatch(TAG_PATTERN, tag) is not None
+
+
+def validate_release(release):
+    tag = release.get("tag_name", "")
+    if not valid_tag(tag) or release.get("draft") is not False or type(release.get("prerelease")) is not bool:
+        raise RuntimeError("Only published numbered releases can be synchronized")
+    if "-" in tag and not release["prerelease"]:
+        raise RuntimeError("A suffixed release tag must be marked as a prerelease")
+    return tag
 
 
 def release_fingerprint(release):
-    tag = release.get("tag_name", "")
-    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", tag) or release.get("draft") is not False or release.get("prerelease") is not False:
-        raise RuntimeError("Only stable numbered releases can be synchronized")
+    tag = validate_release(release)
     expected = {"PCL-Living-Fork-" + tag[1:] + ".exe", "PCL-Living-Fork-" + tag[1:] + "-win-x64.zip", "SHA256SUMS.txt"}
     assets = []
     for name in sorted(expected):
@@ -18,6 +30,9 @@ def release_fingerprint(release):
             raise RuntimeError("Release attachments are incomplete or ambiguous")
         assets.append({"name": name, "size": found[0]["size"], "digest": found[0]["digest"]})
     value = {"tag_name": tag, "name": release.get("name", ""), "body": release.get("body", ""), "assets": assets}
+    # Preserve existing stable receipts exactly, while distinguishing a prerelease from a stable offer.
+    if release["prerelease"]:
+        value["prerelease"] = True
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 

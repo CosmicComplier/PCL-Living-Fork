@@ -44,9 +44,9 @@ dotnet restore .\PCLCS\PCLCS.csproj
 
 ## 国内发布同步
 
-国内下载入口：[CNB Releases](https://cnb.cool/ddzmumo/PCL-Living-Fork/-/releases)。后续包含同步工作流的标签发布或编辑正式 Release 后，Actions 立即触发 CNB 同步并等待结果；CNB 每 30 分钟的定时检查作为补偿。
+国内下载入口：[CNB Releases](https://cnb.cool/ddzmumo/PCL-Living-Fork/-/releases)。后续包含同步工作流的标签发布或编辑正式版、预发布版 Release 后，Actions 立即触发 CNB 同步并等待结果；CNB 每 30 分钟的定时检查作为正式版补偿。
 
-启动器更新默认使用 CNB，可在设置中保存 GitHub 偏好；更新提示中也可临时切换本次下载源。更新下载使用 PCL 原生任务界面。预发布版单独提供下载，不替换正式版更新清单。
+启动器更新默认使用 CNB，可在设置中保存 GitHub 偏好；更新提示中也可临时切换本次下载源。更新下载使用 PCL 原生任务界面。CNB 同步预发布附件并标记为预发布版，独立清单保存在 `updates` 分支的 `releases/<tag>.json`；正式版的 `latest.json` 不会被预发布版覆盖。
 
 同步按版本、说明和附件内容指纹去重。已完成且内容相同时直接跳过，不启动 CNB 任务，也不重复上传附件。旧标签若不含该工作流，可用手动补同步。
 

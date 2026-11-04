@@ -99,6 +99,8 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw 'Update source UI checks failed' }
         python scripts/Test-CnbMirror.py
         if ($LASTEXITCODE -ne 0) { throw 'CNB mirror checks failed' }
+        python scripts/Test-CnbTrigger.py
+        if ($LASTEXITCODE -ne 0) { throw 'CNB release trigger checks failed' }
 
     - name: Verify cancelled version scanning
       run: powershell -NoProfile -STA -File scripts/Test-VersionListCancellation.ps1 -ExecutablePath "$env:PCL_EXE"

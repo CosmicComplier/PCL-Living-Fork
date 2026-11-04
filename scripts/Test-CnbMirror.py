@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 spec = importlib.util.spec_from_file_location("cnb_mirror", Path(__file__).with_name("Sync-CnbRelease.py"))
@@ -20,8 +21,26 @@ class Response(io.BytesIO):
         self.close()
 
 
-class FakeHttp(mirror.Http):
+class FakeGit:
+    stable = b'{"tag_name":"v1.3.4","prerelease":false}\n'
+
     def __init__(self):
+        self.staged = []
+
+    def run(self, *arguments, cwd=None, optional=False):
+        if arguments[0] == "ls-remote":
+            return SimpleNamespace(stdout="stable refs/heads/updates\n", returncode=0)
+        if arguments[0] == "clone":
+            folder = Path(arguments[-1])
+            folder.mkdir()
+            (folder / "latest.json").write_bytes(self.stable)
+        if arguments[0] == "add":
+            self.staged = list(arguments[2:])
+        return SimpleNamespace(stdout="", returncode=1 if arguments[0] == "diff" else 0)
+
+
+class FakeHttp(mirror.Http):
+    def __init__(self, tag="v1.3.4", prerelease=False):
         super().__init__("synthetic-cnb-token", mirror.CNB_REPO)
         self.base = "https://api.cnb.cool/" + mirror.CNB_REPO + "/-/releases"
         self.release = None
@@ -29,23 +48,31 @@ class FakeHttp(mirror.Http):
         self.pending = None
         self.corrupt_anonymous = False
         self.cached = None
+        self.version_cached = None
+        self.latest_source = {"tag_name": "v1.3.4", "draft": False, "prerelease": False} if prerelease else None
         self.contents = {}
-        executable = "PCL-Living-Fork-1.3.4.exe"
-        archive = "PCL-Living-Fork-1.3.4-win-x64.zip"
+        executable = "PCL-Living-Fork-" + tag[1:] + ".exe"
+        archive = "PCL-Living-Fork-" + tag[1:] + "-win-x64.zip"
         data = {executable: b"synthetic public executable", archive: b"synthetic public archive"}
         data["SHA256SUMS.txt"] = "".join(hashlib.sha256(data[name]).hexdigest() + "  " + name + "\n" for name in (executable, archive)).encode()
         assets = []
         for name, value in data.items():
-            url = "https://github.com/" + mirror.GITHUB_REPO + "/releases/download/v1.3.4/" + name
+            url = "https://github.com/" + mirror.GITHUB_REPO + "/releases/download/" + tag + "/" + name
             self.contents[url] = value
             assets.append({"name": name, "size": len(value), "digest": "sha256:" + hashlib.sha256(value).hexdigest(), "browser_download_url": url})
-        self.source = {"tag_name": "v1.3.4", "name": "PCL Living Fork 1.3.4", "body": "source notes", "draft": False, "prerelease": False, "assets": assets}
+        self.source = {"tag_name": tag, "name": "PCL Living Fork " + tag[1:], "body": "source notes", "draft": False, "prerelease": prerelease, "assets": assets}
 
     def json(self, url, method="GET", data=None, auth=False, missing=False):
         self.calls.append((method, url, auth))
         if url == mirror.GITHUB_API + "/releases/latest":
             assert not auth
+            return copy.deepcopy(self.latest_source or self.source)
+        if url == mirror.GITHUB_API + "/releases/tags/" + self.source["tag_name"]:
+            assert not auth
             return copy.deepcopy(self.source)
+        if "/-/git/raw/updates/releases/" in url:
+            assert not auth
+            return copy.deepcopy(self.version_cached)
         if url.endswith("/-/git/raw/updates/latest.json"):
             assert not auth
             return copy.deepcopy(self.cached)
@@ -58,7 +85,7 @@ class FakeHttp(mirror.Http):
         elif "/asset-upload-confirmation/" in url:
             assert "ttl=0" in url
             name = self.pending["asset_name"]
-            download = "https://cnb.cool/" + mirror.CNB_REPO + "/-/releases/download/v1.3.4/" + name
+            download = "https://cnb.cool/" + mirror.CNB_REPO + "/-/releases/download/" + self.source["tag_name"] + "/" + name
             self.contents[download] = self.uploaded
             if self.pending.get("overwrite"):
                 self.release["assets"] = [asset for asset in self.release["assets"] if asset["name"] != name]
@@ -86,10 +113,10 @@ class MirrorTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             mirror.manifest_hash("a" * 64 + "  a.exe\n" + "b" * 64 + "  a.exe\n", "a.exe")
 
-    def test_source_is_own_stable_release(self):
+    def test_source_is_own_published_release(self):
         http = FakeHttp()
         self.assertEqual(len(mirror.source_files(http.source)), 3)
-        for field, value in (("draft", True), ("prerelease", True), ("tag_name", "v1.3.4-beta")):
+        for field, value in (("draft", True), ("prerelease", "true"), ("prerelease", None), ("tag_name", "v1.3.4-pre-"), ("tag_name", "v1.3.4-beta")):
             bad = copy.deepcopy(http.source)
             bad[field] = value
             with self.assertRaises(RuntimeError):
@@ -98,6 +125,52 @@ class MirrorTests(unittest.TestCase):
         bad["assets"][0]["browser_download_url"] = "https://github.com/other/repo/releases/download/v1.3.4/a.exe"
         with self.assertRaises(RuntimeError):
             mirror.source_files(bad)
+
+    def test_prerelease_is_mirrored_without_promotion_and_reuses_its_own_index(self):
+        http = FakeHttp("v1.3.5-pre-1", True)
+        source, latest = mirror.select_release(http, "v1.3.5-pre-1")
+        self.assertFalse(latest)
+        with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+            result = mirror.sync(http, mirror.CNB_REPO, directory, source, latest=True)
+        self.assertTrue(http.release["prerelease"])
+        self.assertTrue(result["prerelease"])
+        self.assertEqual(http.release["make_latest"], "false")
+        self.assertEqual(mirror.release_form(source, True)["make_latest"], "false")
+        self.assertTrue(all("v1.3.5-pre-1/" in item["browser_download_url"] for item in result["assets"]))
+        http.version_cached = result
+        http.calls.clear()
+        with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+            self.assertEqual(mirror.sync(http, mirror.CNB_REPO, directory, source), result)
+        self.assertFalse(any(method == "PUT" or "/releases/download/" in url for method, url, _ in http.calls))
+        self.assertFalse(any(url.endswith("/updates/latest.json") for _, url, _ in http.calls))
+
+    def test_prerelease_index_keeps_stable_bytes_and_separate_receipt(self):
+        http = FakeHttp("v1.3.5-pre-1", True)
+        git = FakeGit()
+        with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+            index = mirror.sync(http, mirror.CNB_REPO, directory, http.source)
+            mirror.publish_index(git, mirror.CNB_REPO, index, directory, False, latest=False, receipt=mirror.receipt_for(http.source))
+            control = Path(directory) / "control"
+            self.assertEqual((control / "latest.json").read_bytes(), git.stable)
+            self.assertEqual(json.loads((control / "releases/v1.3.5-pre-1.json").read_text()), index)
+            self.assertEqual(json.loads((control / "receipts/v1.3.5-pre-1.json").read_text()), mirror.receipt_for(http.source))
+            self.assertNotIn("latest.json", git.staged)
+        with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+            with self.assertRaisesRegex(RuntimeError, "cannot replace"):
+                mirror.publish_index(None, mirror.CNB_REPO, index, directory, False, latest=True)
+
+    def test_prerelease_note_edits_do_not_retransfer_or_promote(self):
+        http = FakeHttp("v1.3.5-rc.2", True)
+        with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+            http.version_cached = mirror.sync(http, mirror.CNB_REPO, directory, http.source)
+        http.source["body"] += " revised"
+        http.calls.clear()
+        with tempfile.TemporaryDirectory(prefix="pcl-cnb-test-") as directory:
+            mirror.sync(http, mirror.CNB_REPO, directory, http.source)
+        self.assertEqual(http.release["body"], http.source["body"])
+        self.assertTrue(http.release["prerelease"])
+        self.assertEqual(http.release["make_latest"], "false")
+        self.assertFalse(any(method == "PUT" or "/releases/download/" in url for method, url, _ in http.calls))
 
     def test_publication_and_anonymous_read_back(self):
         http = FakeHttp()

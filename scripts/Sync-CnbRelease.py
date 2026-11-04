@@ -16,7 +16,7 @@ import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-from ReleaseSyncState import receipt_for
+from ReleaseSyncState import receipt_for, valid_tag, validate_release
 
 GITHUB_REPO = "DDZmumo/PCL-Living-Fork"
 CNB_REPO = "ddzmumo/PCL-Living-Fork"
@@ -97,9 +97,7 @@ def manifest_hash(text, name):
 
 
 def source_files(release):
-    tag = release.get("tag_name", "")
-    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", tag) or release.get("draft") is not False or release.get("prerelease") is not False:
-        raise RuntimeError("Source is not a stable numbered release")
+    tag = validate_release(release)
     version = tag[1:]
     expected = ["PCL-Living-Fork-" + version + ".exe", "PCL-Living-Fork-" + version + "-win-x64.zip", "SHA256SUMS.txt"]
     result = []
@@ -182,14 +180,17 @@ def attribution():
 
 def download_readme(repository):
     return ("# PCL Living Fork 国内下载源\n\n"
-            "本仓库用于同步 PCL Living Fork 的正式版本说明、安装包及校验文件，供国内用户下载。\n\n"
-            "- [下载最新版本](https://cnb.cool/" + repository + "/-/releases)\n"
+            "本仓库用于同步 PCL Living Fork 的正式版与预发布版说明、安装包及校验文件，供国内用户下载。\n\n"
+            "- [下载正式版与预发布版](https://cnb.cool/" + repository + "/-/releases)\n"
             "- [源码与问题反馈](https://github.com/" + GITHUB_REPO + ")\n"
             "- [公开更新清单](https://cnb.cool/" + repository + "/-/git/raw/updates/latest.json)\n\n"
-            "完整源码在 GitHub 主仓库维护。`updates` 分支仅保留更新清单和发布同步配置。\n\n" + attribution())
+            "预发布版保留独立版本清单，不替换正式版更新清单。完整源码在 GitHub 主仓库维护。`updates` 分支仅保留更新清单和发布同步配置。\n\n" + attribution())
 
 
 def publish_index(git, repository, index, directory, bootstrap, latest=True, receipt=None):
+    tag = validate_release(index)
+    if latest and index["prerelease"]:
+        raise RuntimeError("A prerelease cannot replace the stable update index")
     remote = "https://cnb.cool/" + repository
     control = Path(directory) / "control"
     exists = bool(git.run("ls-remote", remote, "refs/heads/updates").stdout.strip())
@@ -199,12 +200,16 @@ def publish_index(git, repository, index, directory, bootstrap, latest=True, rec
         control.mkdir()
         git.run("init", "--initial-branch=updates", cwd=control)
         git.run("remote", "add", "origin", remote, cwd=control)
-    files = []
+    folder = control / "releases"
+    folder.mkdir(exist_ok=True)
+    version_index = "releases/" + tag + ".json"
+    (control / version_index).write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    files = [version_index]
     if latest:
         files.append("latest.json")
         (control / "latest.json").write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if receipt:
-        if not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", receipt.get("tag_name", "")):
+        if not valid_tag(receipt.get("tag_name", "")):
             raise RuntimeError("Invalid synchronization receipt tag")
         folder = control / "receipts"
         folder.mkdir(exist_ok=True)
@@ -215,7 +220,7 @@ def publish_index(git, repository, index, directory, bootstrap, latest=True, rec
         (control / "mirror.py").write_bytes(Path(__file__).read_bytes())
         (control / "ReleaseSyncState.py").write_bytes(Path(__file__).with_name("ReleaseSyncState.py").read_bytes())
         (control / ".cnb.yml").write_text(pipeline(repository), encoding="utf-8")
-        (control / "README.md").write_text("# PCL Living Fork 更新清单\n\n本分支保留公开更新清单和 Release 同步配置，发布时校验 GitHub SHA256，流水线使用 CNB 临时令牌。\n\n" + attribution(), encoding="utf-8")
+        (control / "README.md").write_text("# PCL Living Fork 更新清单\n\n`latest.json` 仅用于正式版更新；`releases/<tag>.json` 保存各正式版、预发布版的独立清单。同步按内容指纹去重，发布时校验 GitHub SHA256，流水线使用 CNB 临时令牌。\n\n" + attribution(), encoding="utf-8")
         files += ["mirror.py", "ReleaseSyncState.py", ".cnb.yml", "README.md"]
     git.run("add", "--", *files, cwd=control)
     if git.run("diff", "--cached", "--quiet", cwd=control, optional=True).returncode == 0:
@@ -227,11 +232,13 @@ def publish_index(git, repository, index, directory, bootstrap, latest=True, rec
 
 
 def cached_index(http, repository, source, items, release):
-    if not release or release.get("draft") is not False or release.get("prerelease") is not False:
+    if not release or release.get("draft") is not False or release.get("prerelease") is not source["prerelease"]:
         return None
     try:
-        value = http.json("https://cnb.cool/" + repository + "/-/git/raw/updates/latest.json", missing=True)
-        if not value or value.get("tag_name") != source["tag_name"] or value.get("draft") is not False or value.get("prerelease") is not False:
+        value = http.json("https://cnb.cool/" + repository + "/-/git/raw/updates/releases/" + quote(source["tag_name"], safe="") + ".json", missing=True)
+        if not value and not source["prerelease"]:
+            value = http.json("https://cnb.cool/" + repository + "/-/git/raw/updates/latest.json", missing=True)
+        if not value or value.get("tag_name") != source["tag_name"] or value.get("draft") is not False or value.get("prerelease") is not source["prerelease"]:
             return None
         if len(value.get("assets", [])) != len(items):
             return None
@@ -251,21 +258,20 @@ def cached_index(http, repository, source, items, release):
 
 
 def release_form(source, latest):
-    value = {"tag_name": source["tag_name"], "name": source["name"], "body": source["body"], "draft": False, "prerelease": False}
-    if latest:
-        value["make_latest"] = "true"
-    return value
+    validate_release(source)
+    return {"tag_name": source["tag_name"], "name": source["name"], "body": source["body"], "draft": False,
+            "prerelease": source["prerelease"], "make_latest": "true" if latest and not source["prerelease"] else "false"}
 
 
 def select_release(http, tag=""):
-    if tag and not re.fullmatch(r"v\d+\.\d+\.\d+(?:\.\d+)?", tag):
+    if tag and not valid_tag(tag):
         raise RuntimeError("Invalid requested release tag")
     current = http.json(GITHUB_API + "/releases/latest")
     source = current if not tag or tag == current["tag_name"] else http.json(GITHUB_API + "/releases/tags/" + quote(tag, safe=""))
     source_files(source)
     if tag and source["tag_name"] != tag:
         raise RuntimeError("Source response does not match the requested release")
-    return source, source["tag_name"] == current["tag_name"]
+    return source, not source["prerelease"] and source["tag_name"] == current["tag_name"]
 
 
 def sync(http, repository, directory, source=None, latest=True):
@@ -273,6 +279,7 @@ def sync(http, repository, directory, source=None, latest=True):
     if source is None:
         source = http.json(GITHUB_API + "/releases/latest")
     items = source_files(source)
+    latest = latest and not source["prerelease"]
     tag = source["tag_name"]
     release = http.json(api + "/tags/" + quote(tag, safe=""), auth=True, missing=True)
     cached = cached_index(http, repository, source, items, release)
@@ -294,7 +301,7 @@ def sync(http, repository, directory, source=None, latest=True):
                 raise RuntimeError("GitHub digest and SHA256SUMS disagree")
             http.download(item["browser_download_url"], cache / item["name"], item["size"], digest)
     if release is None:
-        release = http.json(api, "POST", {"tag_name": tag, "target_commitish": "main", "name": source["name"], "body": source["body"], "draft": True, "prerelease": False, "make_latest": "false"}, auth=True)
+        release = http.json(api, "POST", {"tag_name": tag, "target_commitish": "main", "name": source["name"], "body": source["body"], "draft": True, "prerelease": source["prerelease"], "make_latest": "false"}, auth=True)
     release_url = api + "/" + quote(str(release["id"]), safe="")
     for item in items:
         current = http.json(release_url, auth=True)
@@ -320,7 +327,9 @@ def sync(http, repository, directory, source=None, latest=True):
     promote = latest and http.json(GITHUB_API + "/releases/latest")["tag_name"] == tag
     http.json(release_url, "PATCH", release_form(source, promote), auth=True)
     release = http.json(release_url, auth=True)
-    index = {"tag_name": tag, "name": source["name"], "draft": False, "prerelease": False, "assets": []}
+    if release.get("draft") is not False or release.get("prerelease") is not source["prerelease"]:
+        raise RuntimeError("CNB publication does not preserve the release channel")
+    index = {"tag_name": tag, "name": source["name"], "draft": False, "prerelease": source["prerelease"], "assets": []}
     for item in items:
         candidates = [asset for asset in release.get("assets", []) if asset.get("name") == item["name"]]
         if len(candidates) != 1:
@@ -355,10 +364,10 @@ def main():
         git = Git(directory, token)
         release, latest = select_release(http, args.tag)
         index = sync(http, args.repository, directory, release, latest)
-        publish_latest = latest and http.json(GITHUB_API + "/releases/latest")["tag_name"] == release["tag_name"]
+        publish_latest = latest and not release["prerelease"] and http.json(GITHUB_API + "/releases/latest")["tag_name"] == release["tag_name"]
         publish_index(git, args.repository, index, directory, args.bootstrap_ci, latest=publish_latest, receipt=receipt_for(release))
         if not publish_latest:
-            print("Historical release synchronized; latest update index preserved")
+            print("Prerelease or historical release synchronized; stable update index preserved")
     print("CNB release mirror is ready: " + index["tag_name"])
 
 
