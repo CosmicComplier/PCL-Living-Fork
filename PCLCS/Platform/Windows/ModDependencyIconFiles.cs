@@ -10,7 +10,7 @@ namespace PCLCS;
 // LF Controls/ModDependencyIcon.vb at f4aa0fae62c3ee8af24c81e61844c8fdd13c8983,
 // unchanged through the C016 starting tree; LF LICENCE. PCL 5ef81e4 has no equivalent.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 MyLocalModItem.xaml.cs was reviewed
-// for C#/WPF image construction only (CE LICENSE/PCL LICENCE); no CE cache policy is used.
+// for C#/WPF image construction only (CE Plain Craft Launcher 2/LICENCE; LF LICENCE); no CE cache policy is used.
 public static class ModDependencyIconFiles {
     // Read-only archive access; eager decoding owns the pixels before both streams close.
     // The original has no shared icon cache: graph-level caching remains in its own controller.

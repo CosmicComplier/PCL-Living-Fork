@@ -10,7 +10,7 @@ namespace PCLLF.Presentation.Foundation;
 // LF ModBase.MyColor at f4aa0fae62c3ee8af24c81e61844c8fdd13c8983 is the
 // behavior source (LF LICENCE); the same region in PCL 5ef81e49 is unchanged.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModBase.cs is a C# syntax
-// reference (CE LICENSE/PCL LICENCE). LF constructor mutation order, Equals
+// reference (CE Plain Craft Launcher 2/LICENCE; LF LICENCE). LF constructor mutation order, Equals
 // interop, signed channels and six-digit Lerp remain LF, not CE replacements.
 public class LegacyColor {
     public double A = 255, R, G, B;

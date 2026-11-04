@@ -13,7 +13,7 @@ namespace PCLCS;
 // blob 4a112a072c8cd30cfba21d272167f97c6bf5ddab, under the repository LICENCE.
 // Absent from PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModLocalComp.cs/GetLogo was
-// checked as C# reference (CE Apache LICENSE and PCL LICENCE); there is no
+// checked as C# reference (CE Plain Craft Launcher 2/LICENCE; LF LICENCE); there is no
 // equivalent graph view. No CE implementation or graph policy is copied.
 /// <summary>LF's complete read-only dependency graph and native WPF view.</summary>
 public partial class ModDependencyGraphController<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile, TNode>

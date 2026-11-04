@@ -11,6 +11,7 @@ internal static class Program {
     private const string KindError = "未知的存档元数据类型。";
 
     private static int Main(string[] args) {
+        if (LegacyJavaTests.TryRunChild(args, out int javaExitCode)) return javaExitCode;
         // Factories keep unselected groups from constructing or enumerating cases.
         // Canonical order matches the original all-tests runner; aliases only
         // select groups, so overlapping/repeated selectors cannot duplicate cases.
@@ -35,7 +36,10 @@ internal static class Program {
             ("environment-history", EnvironmentHistoryPipelineTests.Cases),
             ("instance-clone", InstanceClonePipelineTests.Cases),
             ("mod-dependencies", ModDependencyInspectorPipelineTests.Cases),
-            ("mod-dependency-online", ModDependencyOnlinePipelineTests.Cases)
+            ("mod-dependency-online", ModDependencyOnlinePipelineTests.Cases),
+            ("settings", LegacySettingsTests.Cases),
+            ("validation-loaders", LegacyValidationLoaderTests.Cases),
+            ("legacy-java", LegacyJavaTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

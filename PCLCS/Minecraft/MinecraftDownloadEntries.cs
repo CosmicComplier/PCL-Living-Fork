@@ -46,7 +46,7 @@ public static class MinecraftDownloadEntries {
     public const string ForgeLoaderName = "Forge", NeoForgeLoaderName = "NeoForge", JarExtension = "jar";
     // Fixed CE ModDownload.cs constructor shape is reused selectively; exact LF
     // branch rules and NeoForge formatting are retained under the LF LICENCE.
-    // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 LICENSE/PCL LICENCE.
+    // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 Plain Craft Launcher 2/LICENCE.
     public static void InitializeForge<T>(T target, string version, string? branch, string inherit) where T : MinecraftForgelikeEntryData, IMinecraftForgeVersionFields {
         if (version == "11.15.1.2318" || version == "11.15.1.1902" || version == "11.15.1.1890") branch = "1.8.9";
         if (branch is null && inherit == "1.7.10" && Conversions.ToDouble(version.Split('.')[3]) >= 1300) branch = "1.7.10";

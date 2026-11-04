@@ -21,7 +21,7 @@ namespace PCLCS;
 // differs from PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8 and is retained.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5
 // Plain Craft Launcher 2/Modules/Base/MyBitmap.cs is a C# syntax/conversion
-// reference (CE LICENSE and PCL LICENCE). Its instance cache and WIC WebP
+// reference (CE Plain Craft Launcher 2/LICENCE; LF LICENCE). Its instance cache and WIC WebP
 // replacement are not reused: LF keeps the shared cache and original Imazen.
 /// <summary>Complete LF bitmap conversion, resource/file load, crop, rotation and PNG save.</summary>
 public class LegacyBitmap {

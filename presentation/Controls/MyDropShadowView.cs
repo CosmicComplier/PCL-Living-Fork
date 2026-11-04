@@ -1,6 +1,6 @@
 // LF Controls/MyDropShadow.vb (f4aa0fae62c3ee8af24c81e61844c8fdd13c8983); repository LICENCE.
 // Selectively adapted C# translation: CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5,
-// Controls/MyDropShadow.cs; CE LICENSE and Plain Craft Launcher 2/LICENCE apply to that source.
+// Controls/MyDropShadow.cs; CE Plain Craft Launcher 2/LICENCE applies to that source.
 // Original LF attribution: https://referencesource.microsoft.com/#PresentationFramework.Aero/parent/Shared/Microsoft/Windows/Themes/SystemDropShadowChrome.cs,6d9c27d92a8128c1
 using System;
 using System.Windows;

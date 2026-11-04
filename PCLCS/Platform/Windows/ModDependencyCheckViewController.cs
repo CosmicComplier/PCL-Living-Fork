@@ -13,7 +13,7 @@ namespace PCLCS;
 // LF Controls/ModDependencyCheckView.vb at f4aa0fae62c3ee8af24c81e61844c8fdd13c8983;
 // LF LICENCE. This LF-specific view is absent from PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 MyLocalModItem.xaml.cs and
-// ModCompDependency.cs were reviewed (CE LICENSE/PCL LICENCE); their layout/policy is not copied.
+// ModCompDependency.cs were reviewed (CE Plain Craft Launcher 2/LICENCE; LF LICENCE); their layout/policy is not copied.
 public static class ModDependencyCheckViewController<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile, TVersion, TDownload, TEnable, TPlan, TCard>
     where TContext : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.ContextData, new()
     where TMod : ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.ModData, new()

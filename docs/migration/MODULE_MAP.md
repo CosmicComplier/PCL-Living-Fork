@@ -14,6 +14,24 @@
 
 LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][lf-game]，**R** = [Modules/Resource][lf-resource]，**U** = [Controls][lf-controls]，**P** = [Pages][lf-pages]，均位于 `Plain Craft Launcher 2/` 下。下文脚本均位于 [scripts][scripts]。CE 的“候选”指需要核对行为、依赖和许可的源码；同名不代表等价，没有同名也不代表 CE 没有该能力。实际引入须记录提交、文件、署名、许可及 LF 修改。
 
+## 当前批量迁移的固定来源与适配
+
+下表接续原模块条目，仅记录本批实际采用的边界与来源；验收状态仍以进度账本为准。LF源码均固定于`f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`，PCL对照为`5ef81e490ae46b1100d61e33d0183094c7a80ca8`；本批CE参考均为稳定`1a7653127d578efdb2a9388999a3fdc67d9e49d5`，未改用CE工程或未固定dev。
+
+CE许可按实际路径核对：`Plain Craft Launcher 2/**`使用该目录的`LICENCE`；`PCL.Core/**`使用根`LICENSE`（Apache-2.0），不能用根Apache许可概括应用源码。LF根`LICENCE`和原署名继续保留。下表“参考”仅表示审阅；选择性复用另行明确。
+
+| 批次／LF源 | 相对PCL及保留范围 | CE固定路径／实际使用 |
+| --- | --- | --- |
+| C015 `LaunchDependencyCheck`／`ModDependencyAutoFill` | 两文件LF特有；保acceptance stamp、disabled-JAR闭包、候选重试、stage/hash/本地声明复查与混合回滚 | 应用`Modules/Minecraft/ModCompDependency.cs`及Core`Minecraft/ResourceProject/ModDependencyResolver.cs`仅确认/分层参考，不替换LF文件事务 |
+| C016 四依赖控件 | PCL无对应；保图分组／同node Tag／原DTO与icon并发和unload generation | 应用`ModLocalComp.cs`／`ModCompDependency.cs`／`MyLocalModItem.xaml.cs`仅C#图像/控件边界参照，无等价图组件可直接替换 |
+| C017 `ModJava`／`ModMinecraft` | Java原规则与PCL相同；Minecraft保LF pack scope、图标、recent worlds与取消安全扫描；原Java.cs/Configs/Shared不替换 | 应用`Modules/Minecraft/ModJava.cs`、`McInstance.cs`、`ModFolder.cs`、`ModInstanceList.cs`、`ModLibrary.cs`、`ModSkin.cs`仅C#迁移对照；不引新Java/MMC策略，GB18030仅局部provider |
+| C018 五资源模块 | Version/LocalFile/LocalLoaders同PCL；Project/Searcher保LF Map `/worlds/`、`/maps/`和class17差异 | 应用`ModComp.cs`的Project/File/Request/Storage和`ModLocalComp.cs`为结构参考；不引STJ、SQLite、ConcurrentDictionary或CE检索/更新政策 |
+| C019a `ModDownload` | 保LF删除19行更新通知及ToolUpdate写入；原6struct/20Loader字段不变 | 应用`Modules/Minecraft/ModDownload.cs`选择性适配C#构造/解析结构，保持LF分支和NeoForge格式；无Cleanroom或新源策略 |
+| C022 `Settings.*`／`SettingService` | 保LF共享账号/偏好/旧DES及205定义40回调；真实注册表/INI和字段唯一 | 应用`ModSetup.cs`和Core`App/Configuration/ConfigItem.cs`、`Storage/CatIniFileProvider.cs`仅边界参考；不迁CE profile/AES/deferred/JSON存储政策 |
+| C024a／C025 `ModValidate`／`ModLoader`／`LoaderFileOperation` | 校验同PCL，保Object父目录选项/Err；Loader保LF真实负载文件guard及取消收尾 | Core`Utils/Validate`仅分层参考，不换FluentValidation；应用`ModLoader.cs`仅C#组织参考，不换Task/Abort线程策略 |
+| C026b `MyBitmap`／`ModBase.MyColor/MyRect` | 保LF pack URI扩展、静态cache、Imazen和原stream短读；Color/Rect同PCL | 应用`Modules/Base/MyBitmap.cs`／`ModBase.cs`仅转换参考；不引WIC/cache/Equals/HSL策略改变，复用LF既有G15适配 |
+| C027b 六通用控件及三XAML | LF原视觉、状态、事件/字段/DP/动画/懒加载与shadow cache保持 | 应用`Controls/MyDropShadow.cs`的C#翻译选择性复用，保Microsoft Reference Source署名；其它控件参考后从LF转换，不引CE BlurBorder/theme/scale-marker |
+
 ## 现有工程边界与必须先守住的约束
 
 | 当前工程 | 实际目标与引用 | 迁移含义 |

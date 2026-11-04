@@ -10,7 +10,8 @@ namespace PCLCS;
 // PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8 is the base source.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModSetup.cs and
 // PCL.Core/App/Configuration/{ConfigItem,Storage/CatIniFileProvider}.cs
-// were reviewed as C# boundary references (CE LICENSE/PCL LICENCE).
+// were reviewed as C# boundary references: ModSetup uses the application
+// Plain Craft Launcher 2/LICENCE; PCL.Core uses the root LICENSE / Apache-2.0.
 // No CE profile, schema, provider, cache, key or implementation is imported.
 public enum LegacySettingSource { Normal, Registry, Instance }
 public enum LegacySettingsLogLevel { Trace, Info, Warning, Error }

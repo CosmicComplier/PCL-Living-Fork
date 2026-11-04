@@ -16,7 +16,8 @@ namespace PCLCS;
 // PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8 has neither module.
 // Reviewed CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5
 // Plain Craft Launcher 2/Modules/Minecraft/ModCompDependency.cs and
-// PCL.Core/Minecraft/ResourceProject/ModDependencyResolver.cs (CE LICENSE/PCL LICENCE).
+// PCL.Core/Minecraft/ResourceProject/ModDependencyResolver.cs were reviewed.
+// ModCompDependency uses Plain Craft Launcher 2/LICENCE; PCL.Core uses root LICENSE.
 // Their download confirmation and project selection do not implement LF's local
 // declaration recheck, acceptance stamp, disabled-JAR activation or transaction policy.
 public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile, TVersion, TNetFile, TItem, TPlan, TActivation, TOptions, TCache>

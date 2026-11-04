@@ -13,7 +13,7 @@ namespace PCLCS;
 // LF ModDownload.vb, under LF LICENCE. Its difference from fixed PCL 5ef81e49 is
 // removal of the 19-line update hint/settings block; do not reintroduce it.
 // Selective C# flow reference: CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5
-// Plain Craft Launcher 2/Modules/Minecraft/ModDownload.cs (CE LICENSE/PCL LICENCE).
+// Plain Craft Launcher 2/Modules/Minecraft/ModDownload.cs (CE Plain Craft Launcher 2/LICENCE; LF LICENCE).
 // Keep LF's exact "无" choice, cancellation, settings, timings and URL transformations.
 public sealed class MinecraftDownloadSources {
     public MinecraftDownloadSourceHost Host { get; }

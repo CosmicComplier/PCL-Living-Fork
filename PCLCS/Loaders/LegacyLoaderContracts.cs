@@ -10,7 +10,7 @@ namespace PCLCS.Loaders;
 // PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8 supplies the original loader;
 // LF's file guards/late closure/StartIfNeeded/InterruptOnCancel additions remain.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModLoader.cs was reviewed
-// as C# organization reference (CE Apache LICENSE/PCL LICENCE). Its Task/Abort
+// as C# organization reference (CE Plain Craft Launcher 2/LICENCE; LF LICENCE). Its Task/Abort
 // scheduler and token state do not replace LF's real Thread/identity semantics.
 public enum LegacyLoaderKind { Other, Task, Combo, Worker, Download }
 public enum LegacyLoaderFolderRunType { RunOnUpdated, ForceRun, UpdateOnly }

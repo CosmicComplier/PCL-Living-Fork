@@ -14,7 +14,7 @@ namespace PCLCS.Validation;
 // 56128d0b9a951280680bfcbd183acc49c771651a3e46a517dcaa9a041c4f88e7.
 // That module is identical in PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 PCL.Core/Utils/Validate
-// was reviewed as a C# organization reference only (CE Apache LICENSE/PCL LICENCE).
+// was reviewed as a C# organization reference only (CE root LICENSE / Apache-2.0; LF LICENCE).
 // Its FluentValidation rules, lengths, messages, reserved names and root policy
 // differ; none of those policy changes is reused. LF repository LICENCE applies.
 public static class LegacyValidation {

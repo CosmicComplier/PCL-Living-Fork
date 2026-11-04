@@ -7,9 +7,9 @@
 - 目标状态：`in_progress`。资源整页／回收／在线更新／存档备份、按键整页与近期世界Quick Play链均已按各自实际Windows证据验收；LF全C#库.NET10/WPF组件已双配置运行通过。C011环境历史／分析／还原点整页已在原Windows链验收；当前C026原生动画、C027a控件族与C012克隆整链集成，主程序与全产品现代化未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `3f04b63346a23dfeee4a9b301cc0778d7aec07fa`：Modern41804541772 Debug126488198216／Release126488197906各11步成功，真.NET10／Shared、四精确资源bytes、缩略图／按键保存／decoder运行通过；旧Build41804541653 Debug126488274095／Release126488274011各18成功23跳过，只按键／截图＋常驻门禁复验。C006近期动画／Quick Play使用同产品树b7493b8已成功的前序步骤，未把整个失败job写成功；先前完整388／439与严格oracle见8c706ee。
-- 当前交付批次：C013本地检查后端已在b84e6d2实际三流验收，C012整链与Shared初始化矩阵亦完整通过。当前C014在线匹配后端成组集成，另以隔离子进程补C026实际前台线程driver验证；原五组native动画与六控件门禁已有实证，不据手动帧声称原线程已启动验证。
+- 当前交付批次：C014在02ba2b2通过实际Windows原消费者、411／462纯样本及现代JSON严格v7；b7c8172现代两配置实际前台线程child通过。六子代理的大模块代码已统一接入：C015／C016／C017a-b／C018／C019a／C022／C024a／C025／C026b／C027b；两个Core与两套Presentation及现代WPF测试图均Release警告视错编译通过，原产品Windows整体验证与新行为样本尚待本批。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
-- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前14组（备份／历史／克隆／本地及在线依赖各独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
+- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前17组（另增设置／校验Loader／Java独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
 - 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
 
@@ -192,16 +192,23 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 ## 当前批次文件与协作归属
 
-远端859fd4f实际Windows原产品与现代WPF全部门禁成功；跨平台Shared初始化遗漏由e6e0470修复、待下一源码push实际复验。C013作者／测试／独立审查均冻结，主执行者集成；C014只在独立scratch预备，不据临时草稿记实现。
+六个生产子代理已冻结各自模块，主执行者统一集成、编译、自审、提交；当前继续补该批必要行为样本，不并行改同一源或固定输出。
 
-| 范围 | 执行归属／状态 |
+| 范围 | 执行归属／实际状态 |
 | --- | --- |
-| C011历史／分析／还原点整页 | 原Windows全链成功；最终VB事务／平台壳仍归后续任务 |
-| C012整链／C027a三控件／C026a动画 | 859fd4f两配置旧42步、现代11步全部success，含新真实克隆页／原事务回滚／六cold控件／五native动画；手工手感、无界线程实际启动和完整主工程仍后续 |
-| Shared纯测试依赖／CI | e6e0470已前移固定Shared初始化，首push500重试成功但暂未生成新run；不改生产或断言，下一源码批检查双平台／oracle |
-| C013四C#＋VB壳／六真实fixture | net48／modern与真实Strict facade／原Online编译通过，C#测试0警告错误、6／6及独立终审通过；旧模型single storage／DTO identity保持，Windows原消费者待验 |
-| C013测试选择与fallback | 第13 mod-dependencies独立组，五精确源仅5必要原Windows消费者；旧12组／43脚本／资源4组不变。两noEXE模式改引用真实Core，原stub／fixtures／断言逐字保留，模式实跑未做 |
-| docs／集成／实际Windows结果 | 主执行者统一提交推送；全主产品VB清零、.NET10主窗／账号／游戏／发布未完成 |
+| C015／C019a | resource_ui_chain：依赖补全与下载目录/源/客户端整模块，主执行者集成原模型/Loader平台边界 |
+| C016／C027b | g005_runner：依赖四视图及六通用控件；共享动画工厂/项目Page接线由主执行者合并 |
+| C017a-b | g005_ci：Java/实例完整后端和目录loader；原FolderScope所有GUID fixture/断言/cleanup逐字保留，新wrapper引用实际Core/Shared/JSON并Strict编译通过 |
+| C018 | clone_review：五原资源模块成组迁移，原字段/ByRef/Optional/WithEvents及典型真实下游隔离编译通过；许可证按CE路径校准 |
+| C024a／C025 | validate_chain：完整验证器/Loader族；nullable仅编译注解保持Nothing及原转换异常，补可持续真实payload故障链 |
+| C026b／C022 | bitmap_chain：图像/颜色/矩形及完整设置/账号/偏好/Binding；原Imazen/native加载保留，新测试只用GUID存储，不触真实账号 |
+| 项目／提交／Windows | 主执行者：两个Core、两个Presentation与modern test完整图Release警告视错通过。Linux旧vbproj直接Compile缺WPF生成target/BAML及netstandard而失败，不能据此判原产品通过或回归；实际原Windows构建/运行待本批CI |
+
+b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41831770480)两配置各11步成功，实际原ThreadDriver在隔离子进程启动。Build41831770664／Migration41831770692仅选择job通过，产品/纯测试job按范围skipped；复用02ba2b2实际全纯测试/原Windows结果，不把跳过写成功。
+
+本批实际本地验证：SDK10.0.403，`dotnet build tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj -c Release --no-restore -warnaserror`零警告错误；仓库runner定向`--group settings --group validation-loaders`实际18／18、`--group legacy-java`实际6／6，未选旧14组未重复计通过。设置只在具体`RegistryValueKind`元数据语句局部抑制CA1416，不掩盖真实Registry API；Java六child首触Configs前设置GUID真实provider，异常/超时退出均向父传递，未触用户目录。新增真实现代图像五组与六控件交互/渲染样本已编译接线，Windows运行待CI。
+
+完整旧VB调用图补充编译：临时SDK net48 WPF工程使用实际原167个生效VB、61Page+Application、原Imports/RootNamespace/MyType/条件与实际四库产物，产生62份真实BAML与EXE。Linux仅在临时resx修正19个FileRef路径的磁盘大小写，仓库resx/资源bytes未改；最终0错误／1条原Newtonsoft6→13绑定warning。这是辅助编译证据，不能替代原Windows工程、正式产物或GUI运行；不依赖该临时工程续跑。
 
 ## 任务依赖与验收
 
@@ -232,22 +239,28 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C012a | done | C003、C007、C011a | 六C#生产源＋三VB typed壳，保原Gate／128KiB复制／Flush(true)／stale双快照／MC变化备份／Capture／原ApplyTransaction及双版本锁；独立源码审无回归。Release纯测试0警告错误，克隆6＋历史5定向11／11；真实McVersion／McComponents／ModLoaders与固定Shared接线，JSON引用／CopyLocal／字节保持LF DLL（SHA E1E27AF7…44FA9D），未以替身模型过关。第12组instance-clone与9精确生产路径／7原Windows消费者路由，resources仍固定4组。859fd4f两配置Windows事务／回滚／原隔离与历史消费者成功；b84两OS新组及完整矩阵已实际通过 |
 | C012b | done | C012a、C029a | 完整克隆页面与版本选择来源分组呈现成组迁移，保原XAML／MyCard懒构建／事件／展开折叠与其它选择器区段；两C# controller／presenter与两typed VB页面已接通，原分类／空页／行点击及删除区段逐字保留，独立终审无行为差异；net48 Core与完整现代test图Release -warnaserror均0警告／0错误。原Groups脚本保全部断言并新增真实PageInstanceClone构造／validator／原生选项／来源卡片／同owner和换owner命名／invalid与stale guard／Changed attach-detach样本，StartupUri清除且owner finally恢复，无成功克隆／迁回命令或游戏启动。859fd4f两配置原真实MyCard／lazy行／选择器及新页Windows样本成功，b84两OS矩阵及v7亦成功 |
 | C013 | done | B001 | 原完整Inspector解析／版本三态／图／可靠度／移除影响／说明迁四份C#及166行原DTO／Context typed VB壳；原10个嵌套类型闭包、enum字段／List／引用身份／缓存JSON ABI保持。net48／现代Core及原facade＋Online strict警告作错编译成功，独立终审无回归；Release纯test六组真实JAR／TOML／嵌套／预算／取消6／6。第13组及5精确生产路径→5实际Windows消费者，b84实际legacy两配置各42步成功，原Inspector93／Online72断言、Graph／启动修复／Activation及6控件／旧桥通过；pure405／456、modern双11与v7空差异成功。noEXE两fallback新增真Core构建／引用／加载但该可选测试模式未Windows实跑，明确后验，不冒充已跑 |
-| C014 | in_progress | C013 | 完整在线匹配／真实哈希与CF指纹／Session预算／缓存／候选／关系映射／HTTP移四C#及50行原typed VB壳；Options16字段、Cache单份与私有HttpFailure反射入口保留，原签头ByRef语义不变。net48／modern Core与真实原stub Strict桥编译0警告错误，独立终审无回归。首轮6样本中5个因测试误加载Framework JSON缺Security.Permissions而中断；同断言换实际现代13.0.3资产后6／6通过，正式纯runner对齐现代产品包并全14组411／411通过，原Windows消费者／现代线程child及现代JSON v7待本批；未访问live平台 |
-| C015 | todo | C013、C014 | 迁移 `LaunchDependencyCheck`／`ModDependencyAutoFill` 与开关入口；启用禁用文件、确认、补全、复查和本次会话去重回归 |
-| C016 | todo | C013、C015 | 迁移依赖图标、关系图、影响确认与检查控件；保持交互、分组和原生动效，完整调用链回归 |
-| C017 | todo | B001 | 迁移 Java、版本和组件识别；覆盖 `ModJava`、`ModMinecraft`、PCLCS 现有模型与加载器版本，既有 Java 选择和组件显示回归 |
-| C018 | todo | B001 | 迁移资源项目／版本／搜索和在线下载规则；保留网络适配与下载任务生命周期，资源入口和详情回归 |
-| C019 | todo | C017、C018 | 迁移下载与安装的现有完整功能链；按加载器和原版安装拆子任务，安装、失败、取消及目录隔离回归 |
+| C014 | done | C013 | 02ba2b2完整在线匹配／哈希／CF指纹／Session预算／缓存／候选／关系映射／HTTP接四C#与原typed壳；实际Windows消费者两配置成功、Ubuntu411／Windows462及14组通过，实际现代JSON13.0.3 v7严格397例无差异。原Framework DLL保持独立CLR4基线；无live平台HTTP，最终VB壳清理由R001验 |
+| C015 | in_progress | C013、C014 | 完整AutoFill/Activation/Install迁四C#、原LaunchDependencyCheck及ModDependencyAutoFill薄桥；16候选重试、64轮启用闭包、会话stamp、真实C013复查、stage/hash/下载/回滚/finally保持。net48／NET10 Core警告视错编译通过；原/新真实薄桥vbc零诊断，83项原public/Friend metadata全一致；原Windows启动补全／混合启用与取消故障消费者待本批验收 |
+| C016 | in_progress | C013、C015 | 七C#承载关系图layout/render/icon并发／检查视图／影响确认，四原名VB壳保GraphCanvas/Groups/Details/Cards及真实node Tag。两Core已编译；原100节点／图标／对话框与启动消费者Windows运行待验 |
+| C017 | in_progress | B001 | a四C#完整Java需求／选择／下载计划及原WithEvents桥；b八C#完整实例/目录/继承/隔离/skins/libs/assets与原字段桥，另提取同一真实FolderLoader便于原fixture执行。LF新增目录作用域/图标/近期世界/取消安全保留；两Core与Strict桥编译通过，Windows消费者与Java配置隔离样本待验 |
+| C017a | in_progress | B001 | 完整Java原需求/选择/旧设置迁移/下载计划已C#接线，原Java.cs缓存/扫描模型和RefreshWorker保留；仓库runner六条真实Config provider/Java模型/Worker链全部通过（逐条隔离child），Windows消费者待验，不新增Java规则 |
+| C017b | in_progress | B001 | 完整Minecraft目录/实例/继承/隔离/缓存/skins/libs/assets接线；全路径构造惰性初始化，原_McInstanceSelected单份字段、NextUuid Integer及ShouldIgnoreFileCheck Object保持；原FolderScope fixture逐字保留且真实wrapper Strict编译通过，Windows运行待验 |
+| C018 | in_progress | B001 | 十五C#完整资源项目/版本/cache/wiki/title/tag/列表/下载追踪、双语分页搜索与真实本地文件hash/INI/JSON/更新MR-CF workers；五VB原类型薄桥保唯一字段/列表/缓存/事件。原枚举/ByRef/Optional/WithEvents真调用者Strict编译通过；LF Map两处扩展保留，现代Core已编译，Windows整链待本批 |
+| C019 | in_progress | C017、C018 | a完整ModDownload目录/源切换/六加载器版本解析/client Jar/libs/assets工作体移五C#，原六结果结构与20 LoaderTask字段保留，两Core编译通过；117项原public成员/参数名/Optional metadata零差异；原版和各loader安装及取消/失败Windows验收待后续，不能以目录后端完成关闭安装整链 |
+| C019a | in_progress | C017a、C017b、C018 | ModDownload整个模块C#后端/源任务/目录/客户端补全及原结构体/loader字段桥已接通；安装其它模块/页面仍属母项，实际Windows消费待验 |
 | C020 | todo | C007、C011、C019 | 迁移 `ModModpack`／更新／更新流／整合包模式及对应页面；保持现有 MMC 等格式，个人修改保留、回滚和实际进度回归 |
 | C021 | todo | C004、C006c、C010、C015、C017 | 迁移 `ModLaunch`／`ModWatcher`／`ModCrash` 的生命周期与适配；Quick Play 所需核心已由 C006c提供，页面剩余归 C006d，不用 UI 母项阻塞核心；按预检、进程、监控拆子任务，启动、退出和崩溃对照回归 |
-| C022 | todo | B001 | 迁移设置存储、兼容和账号规则；覆盖 `Settings.*`／`SettingService`、共享 `Setup.ini`、旧账号数据和证书策略，保留格式和密钥边界 |
+| C022 | in_progress | B001 | 六C# Settings后端+真实Registry/Binding两平台类接原四VB；205定义/40回调、同一Entries/Source/ValueCache、旧DES wire、账号组事务/marker-last/回滚与偏好显式空值保留。两Core编译成功，新增10条真实store故障/独立DES固定密文样本已由仓库runner全部通过；Windows临时Registry/INI消费者待本批，未读写真实用户账号 |
 | C023 | todo | C017、C021、C022 | 迁移登录页、皮肤和主页的生产调用；脱敏账号旧数据、取消、错误、刷新及启动交接验证，实际账号行为单独记录 |
-| C024 | todo | B001 | 迁移基础校验、网络和日志规则及其适配；旧异常语义、重定向凭据、编码和日志回归 |
-| C025 | todo | C024 | 迁移 Loader 与文件操作生命周期；等待实际任务结束、取消、回滚、恢复和版本占用的故障场景回归 |
+| C024 | in_progress | B001 | a完整14校验器与有序pipeline迁LegacyValidationRules、保原typed VB ctor/属性及5行OnErrorResumeNext primitive；Object父目录选项/延迟枚举/Err91保留。两Core编译与同NET10原源差分1303输入+7pipeline通过；原Windows消费者待验，网络/日志完整模块仍后续，母项不关闭 |
+| C024a | in_progress | B001 | 完整校验族及原入口已迁，真实Core双目标零警告错误；与C025合并八条真实文件/延迟枚举/异常短路/取消payload样本已由仓库runner全部通过，原Windows工具/克隆校验待验 |
+| C025 | in_progress | C024a | 五C#完整Loader Base/Task/Worker/Combo/Taskbar/目录时间戳/FileOperation接原VB，保真实Shared IWorker/RedoableWorker、事件/Thread identity、中止/实际结束与文件guard语义。两Core警告视错编译通过；同NET10差分与真实payload取消已有隔离结果，仓库八条集中真实链已全部通过、零skip；原Windows锁/工作流故障回归待本批 |
 | C026 | in_progress | C026a、C025 | a完整动画引擎与真实.NET10宿主已成组迁移，窗口／位图／Loader其它平台适配及人工手感仍后续；不以局部自动化关闭母项 |
-| C026a | in_progress | B001、C029a | 原完整帧／线程／工厂／缓动迁入八C#源，原AniData／AniGroups／AniLastTick／公开API与typed primitive Host保留；NativeHost／NativeRuntime真实原生C#实例承载同内核。LF与固定PCL该模块逐行相同，CE稳定ModAnimation.cs仅缓动／C#语法参考，未换并发字典／调度模型。两目标与现代test完整图Release零警告错误、独立审无回归；859fd4f现代两配置实际五组及legacy六族／原消费者／中帧成功；原无界线程未在fixture启动、手工调度／手感仍归母项与R003。独立子项不等待整个C025，以原Net／UI／日志primitive边界避免人工阻塞，无反向依赖 |
+| C026a | done | B001、C029a | 完整八C#动画引擎/NativeHost/NativeRuntime及原AniData/AniGroups/API typed壳已接通；859fd4f五native组及legacy中帧成功。b7c8172 Modern41831770480 Release126580471404／Debug126580472047各11步成功，含隔离子进程实际前台ThreadDriver；fixture增量1.25触原[0,1]clamp，未改断言/阈值/生产帧舍入。手工手感与主宿主仍C026/R003 |
+| C026b | in_progress | B001、C029a | Bitmap/Color/Rect全组C#及原操作符/单份Pic/ARGB、LF pack URI/cache、原Imazen与native WebP、短读/stream政策保留；固定Drawing10.0.14及canonical G15接现代图，两Core/Presentation/modern test编译通过。真实像素/PNG-BMP/锁/pack/native WebP Windows样本待验；未改decoder/性能策略 |
 | C027 | in_progress | C029a | a先迁3常用控件完整视图／业务与原typed动画Host，原名壳保现XAML接线；其余控件成族推进。现代实际动画引擎由C026a承载且待本批Windows，最终薄壳／事件类型清理由C031／R001验，不用空host关闭母项 |
 | C027a | done | B001、C029a | 三完整C#view／原LF视觉XAML／Services与真实AniData Host／两WPF项目／原名VB壳／设置事件／单exe嵌入接线完成；net48与NET10实际XAML编译0警告错误，独立终审通过；859fd4f实际legacy两配置全部42步与无sidecar冷进程／BAML／原页面／六族事件设置主题AniTimer成功；Modern41817913425两配置真实动画五组与三C#view成功。其余控件、主现代主题／窗口及人工手感不在a完成范围 |
+| C027b | in_progress | C026a、C029a | 六完整C#控件Card/DropShadow/Hint/IconButton/ListItem/VirtualizingElement及三实际BAML接原六薄壳；原ContentHandler字段/事件/DP/懒加载/阴影缓存/布局/Height marker保留，真实动画工厂扩充；两Presentation完整图与六Strict桥编译通过，新增真实交互/渲染及原消费者Windows待验 |
 | C028 | todo | C018、C019、C027 | 完成下载页面的 C# 后台与 XAML 调用，确认没有残留 VB 功能实现和重复入口 |
 | C029a | done | C005b、C007u2 | 资源与按键整页已实证LF C# WPF标准视图／惰性typed Host单向边界，无main反引；3f在Frame实际native壳及NET10同源live控制器双配置通过，足以解除独立页面人工阻塞。完整原生控件／主C#工程与最终VB清理仍归C027／N003／R001 |
 | C029 | todo | C005c2、C008、C010、C011、C012、C016、C020、C027 | 完成实例页面和资源页面 C# 后台／XAML 的最终汇总，已有先行页面只验收集成，不与 C029a 宿主前置相互等待 |

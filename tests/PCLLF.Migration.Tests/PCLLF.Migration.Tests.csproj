@@ -58,6 +58,18 @@
     <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.Files.cs" Link="Production/ModDependencyOnlinePipeline.Files.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.Matches.cs" Link="Production/ModDependencyOnlinePipeline.Matches.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyTransport.cs" Link="Production/ModDependencyTransport.cs" />
+    <!-- Complete settings and loader engines: storage/UI remain controlled host boundaries. -->
+    <Compile Include="../../PCLCS/Settings/*.cs" Link="Production/Settings/%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Validation/LegacyValidationRules.cs" Link="Production/LegacyValidationRules.cs" />
+    <Compile Include="../../PCLCS/Loaders/LegacyLoader*.cs" Link="Production/Loaders/%(Filename)%(Extension)" />
+    <!-- Java chain uses the actual cache/config/models in an isolated process. -->
+    <Compile Include="../../PCLCS/Java.cs" Link="Production/Java.cs" />
+    <Compile Include="../../PCLCS/Configs.cs" Link="Production/Configs.cs" />
+    <Compile Include="../../PCLCS/Minecraft/MCUtils.cs" Link="Production/Minecraft/MCUtils.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyJavaContracts.cs" Link="Production/Minecraft/LegacyJavaContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyJavaRequirements.cs" Link="Production/Minecraft/LegacyJavaRequirements.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyJavaSelection.cs" Link="Production/Minecraft/LegacyJavaSelection.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyJavaService.cs" Link="Production/Minecraft/LegacyJavaService.cs" />
     <!-- Keep the real Minecraft/component/loader models and pinned Shared helpers. -->
     <Compile Include="../../PCLCS/Constants.cs" Link="Production/Constants.cs" />
     <Compile Include="../../PCLCS/Minecraft/McVersion.cs" Link="Production/McVersion.cs" />
@@ -76,5 +88,6 @@
     <Using Include="MeloongCore" />
     <Using Include="MeloongCore.Extensions" />
     <Using Include="System.Text.RegularExpressions" />
+    <Using Include="System.Collections.Concurrent" />
   </ItemGroup>
 </Project>
