@@ -16,7 +16,7 @@ import sys
 
 BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Exact existing scripts; workflows keep their original static invocations/options.
@@ -116,6 +116,20 @@ INSTANCE_CLONE_CHECKS = {
     "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-ExportVersionIsolation",
     "Test-EnvironmentHistory", "Test-RecentEnvironmentChanges", "Test-EnvironmentCoverage", "Test-BackupRetention",
 }
+# Exact local-inspector sources; the online/graph and launch repair/activation
+# checks consume its real report, path, version and provider contracts.
+# Toggle layout and world/modpack backup suites do not execute the inspector.
+MOD_DEPENDENCY_PATHS = {
+    "PCLCS/Minecraft/ModDependencyInspection.Contracts.cs",
+    "PCLCS/Minecraft/ModDependencyInspection.Archives.cs",
+    "PCLCS/Minecraft/ModDependencyInspection.Resolution.cs",
+    "PCLCS/Minecraft/ModDependencyVersions.cs",
+    "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb",
+}
+MOD_DEPENDENCY_CHECKS = {
+    "Test-ModDependencies", "Test-ModDependencyOnline", "Test-ModDependencyGraph",
+    "Test-LaunchDependencies", "Test-DependencyActivation",
+}
 # Store is the shared path/transaction facade consumed by these existing chains.
 STORE_CHECKS = RESOURCE_CHECKS | WORLD_CHECKS | LOCAL_CHECKS | {
     "Test-ReviewFixes", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-RecentEnvironmentChanges",
@@ -174,6 +188,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("environment-history",), (), build=False)
             elif stem == "InstanceClonePipeline":
                 include(("instance-clone",), (), build=False)
+            elif stem == "ModDependencyInspectorPipeline":
+                include(("mod-dependencies",), (), build=False)
             elif stem.startswith("PersonalOptions"):
                 include(("personal-options",), (), build=False)
             elif stem.startswith("InstanceKeybinding"):
@@ -200,6 +216,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(("environment-history",), ENVIRONMENT_HISTORY_CHECKS)
         elif name in INSTANCE_CLONE_PATHS:
             include(("instance-clone",), INSTANCE_CLONE_CHECKS)
+        elif name in MOD_DEPENDENCY_PATHS:
+            include(("mod-dependencies",), MOD_DEPENDENCY_CHECKS)
         elif name == "PCLCS/Platform/Windows/KeybindingPageController.cs":
             include(("keybindings",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-KeybindingGroups"})
         elif name in {"PCLCS/Platform/Windows/RecentWorldPageController.cs", "PCLCS/Platform/Windows/RecentWorldQuickPlay.cs"}:

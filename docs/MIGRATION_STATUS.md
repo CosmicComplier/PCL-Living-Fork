@@ -7,9 +7,9 @@
 - 目标状态：`in_progress`。资源整页／回收／在线更新／存档备份、按键整页与近期世界Quick Play链均已按各自实际Windows证据验收；LF全C#库.NET10/WPF组件已双配置运行通过。C011环境历史／分析／还原点整页已在原Windows链验收；当前C026原生动画、C027a控件族与C012克隆整链集成，主程序与全产品现代化未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `3f04b63346a23dfeee4a9b301cc0778d7aec07fa`：Modern41804541772 Debug126488198216／Release126488197906各11步成功，真.NET10／Shared、四精确资源bytes、缩略图／按键保存／decoder运行通过；旧Build41804541653 Debug126488274095／Release126488274011各18成功23跳过，只按键／截图＋常驻门禁复验。C006近期动画／Quick Play使用同产品树b7493b8已成功的前序步骤，未把整个失败job写成功；先前完整388／439与严格oracle见8c706ee。
-- 当前交付批次：C026a完整动画内核／工厂／缓动／线程与真实现代NativeHost；C012a克隆／迁回／分组／导出后端及b两页面。C027a三控件BAML冷构造与所有原页面消费者已实证，末端新族测试错误包装器身份断言已修，后续事件／逐帧仍待验；现代原生动画新增五组真实WPF运行门禁待CI。
+- 当前交付批次：C012完整克隆／来源分组／页面与C026a真实动画、C027a三控件已在859fd4f实际Windows两配置验收（旧42步／现代11步）；跨平台新Shared引用的初始化顺序已修e6e0470，尚无新run，随下一源码批复验。当前C013完整本地依赖检查后端成组迁移，LF所有原格式／预算／三态保留，真实六组文件测试已通过。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
-- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前12组（备份／历史／克隆各独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
+- 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前13组（备份／历史／克隆／依赖检查各独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
 - 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
 
@@ -183,17 +183,16 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 ## 当前批次文件与协作归属
 
-远端98f81fe已实证公共BAML冷构造和所有原产品消费者；只有新增族错误身份断言失败，修复与C012a已本地提交等待同批推送。子代理按文件互斥、主执行者集成；禁止reset／clean覆盖，不切共享分支。
+远端859fd4f实际Windows原产品与现代WPF全部门禁成功；跨平台Shared初始化遗漏由e6e0470修复、待下一源码push实际复验。C013作者／测试／独立审查均冻结，主执行者集成；C014只在独立scratch预备，不据临时草稿记实现。
 
 | 范围 | 执行归属／状态 |
 | --- | --- |
-| C011历史／分析／还原点整页 | 98f81fe两配置所有原消费者成功，母项在原功能链范围验收；最终VB事务／平台壳仍归后续任务 |
-| C027三C#view／原XAML／VB壳／单EXE | 跨程序集公共BAML loader已实证构造、XAML属性／原页面和无sidecar identity／SHA；新族InlineCollection身份误判修成双向实际内容验证，后续组待Windows |
-| C026八C#动画源／原VB API壳／两视图项目 | 作者冻结、独立终审无回归；legacy和modern呈现库及modern test完整图Release -warnaserror 0警告错误，原字典／字段／帧／clock真实单份，无noop |
-| C026测试 | 两旧脚本仅私有状态hook改原公开property；现代五组真实NativeHost／Runtime／WPF控件中帧终态／取消／故障／颜色／资源／After冻结，Windows待验 |
-| C012a六C#＋三VB／测试与路由 | 4f12693本地提交；net48与纯测试编译通过，克隆6＋历史5定向11／11、JSON真实LF字节核对通过；Windows原事务／锁／回滚待验 |
-| C012b页面与来源分组 | 四源冻结，原XAML与选择器非来源分组区段逐字保留；net48 Core／现代test完整图Release 0警告错误、独立终审通过；真实页面与列表Windows样本待CI |
-| docs／集成／实际Windows结果 | 主执行者统一提交推送；C026／C027／C012母项未关闭，主C#工程／账号／游戏／发布最终验收未完成 |
+| C011历史／分析／还原点整页 | 原Windows全链成功；最终VB事务／平台壳仍归后续任务 |
+| C012整链／C027a三控件／C026a动画 | 859fd4f两配置旧42步、现代11步全部success，含新真实克隆页／原事务回滚／六cold控件／五native动画；手工手感、无界线程实际启动和完整主工程仍后续 |
+| Shared纯测试依赖／CI | e6e0470已前移固定Shared初始化，首push500重试成功但暂未生成新run；不改生产或断言，下一源码批检查双平台／oracle |
+| C013四C#＋VB壳／六真实fixture | net48／modern与真实Strict facade／原Online编译通过，C#测试0警告错误、6／6及独立终审通过；旧模型single storage／DTO identity保持，Windows原消费者待验 |
+| C013测试选择与fallback | 第13 mod-dependencies独立组，五精确源仅5必要原Windows消费者；旧12组／43脚本／资源4组不变。两noEXE模式改引用真实Core，原stub／fixtures／断言逐字保留，模式实跑未做 |
+| docs／集成／实际Windows结果 | 主执行者统一提交推送；全主产品VB清零、.NET10主窗／账号／游戏／发布未完成 |
 
 ## 任务依赖与验收
 
@@ -223,7 +222,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C012 | in_progress | C003、C007 | a完整克隆／迁回／分组／导出隔离引擎及真实事务typed适配已迁，b两页面及选择器来源分组呈现正在迁；859fd4f两配置真实原链及页面通过，跨平台矩阵因Shared初始化未运行，修复后收尾 |
 | C012a | in_progress | C003、C007、C011a | 六C#生产源＋三VB typed壳，保原Gate／128KiB复制／Flush(true)／stale双快照／MC变化备份／Capture／原ApplyTransaction及双版本锁；独立源码审无回归。Release纯测试0警告错误，克隆6＋历史5定向11／11；真实McVersion／McComponents／ModLoaders与固定Shared接线，JSON引用／CopyLocal／字节保持LF DLL（SHA E1E27AF7…44FA9D），未以替身模型过关。第12组instance-clone与9精确生产路径／7原Windows消费者路由，resources仍固定4组。859fd4f两配置Windows事务／回滚／原隔离与历史消费者成功；跨平台新组因Shared初始化尚未CI执行 |
 | C012b | in_progress | C012a、C029a | 完整克隆页面与版本选择来源分组呈现成组迁移，保原XAML／MyCard懒构建／事件／展开折叠与其它选择器区段；两C# controller／presenter与两typed VB页面已接通，原分类／空页／行点击及删除区段逐字保留，独立终审无行为差异；net48 Core与完整现代test图Release -warnaserror均0警告／0错误。原Groups脚本保全部断言并新增真实PageInstanceClone构造／validator／原生选项／来源卡片／同owner和换owner命名／invalid与stale guard／Changed attach-detach样本，StartupUri清除且owner finally恢复，无成功克隆／迁回命令或游戏启动。859fd4f两配置原真实MyCard／lazy行／选择器及新页Windows样本成功，跨平台矩阵修复后收尾 |
-| C013 | todo | B001 | 迁移本地模组声明解析与 `ModDependencyInspector`；可靠声明、内嵌 JAR、依赖和冲突样本回归 |
+| C013 | in_progress | B001 | 原完整Inspector解析／版本三态／图／可靠度／移除影响／说明迁四份C#及166行原DTO／Context typed VB壳；原10个嵌套类型闭包、enum字段／List／引用身份／缓存JSON ABI保持。net48／现代Core及原facade＋Online strict警告作错编译成功，独立终审无回归；Release纯test六组真实JAR／TOML／嵌套／预算／取消6／6。第13组及5精确生产路径→5实际Windows消费者，原Windows待本批；noEXE两fallback新增真Core构建／引用／加载但未Windows实跑，明确后验 |
 | C014 | todo | C013 | 迁移在线依赖匹配与 `ModDependencyOnline`；精确平台匹配、超时、本地降级与缓存语义回归 |
 | C015 | todo | C013、C014 | 迁移 `LaunchDependencyCheck`／`ModDependencyAutoFill` 与开关入口；启用禁用文件、确认、补全、复查和本次会话去重回归 |
 | C016 | todo | C013、C015 | 迁移依赖图标、关系图、影响确认与检查控件；保持交互、分组和原生动效，完整调用链回归 |
@@ -340,6 +339,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：已验C005／C006／C007／C008／C009／C010／C011和N002a不重复全测；先收尾当前C026a原生动画＋C027a六族门禁及C012a／b整链实际Windows集成，针对实际失败修复并保留原样本。C026a独立primitive Host已解除整个Loader／C025的人工前置阻塞，NativeHost真实运行同内核；原VB事务及平台薄壳最终由后续对应任务清理。随后按依赖继续C013等整链，主程序／账号／游戏／发布最终仍未完成。
+下次入口：已验C005～C012原产品链、C027a三控件与C026a真实动画不重复无关全测；当前先复验C013完整本地检查后端＋e6固定Shared初始化的实际双平台／Windows矩阵，具体失败按真实影响修复。原noEXE脚本模式补引用后实际Windows尚未运行，不能冒称该模式通过。之后接C014在线匹配与C015启动补全整链（准备稿不是实现），C016依赖UI同步按链补齐；原VB平台薄壳／全主产品现代化及账号／游戏／发布最终仍后续。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

@@ -33,7 +33,8 @@ internal static class Program {
                 .Concat(InstanceResourcePackMetadataTests.Cases()).Concat(InstanceResourceMetadataRuntimeTests.Cases())),
             ("world-backups", WorldBackupPipelineTests.Cases),
             ("environment-history", EnvironmentHistoryPipelineTests.Cases),
-            ("instance-clone", InstanceClonePipelineTests.Cases)
+            ("instance-clone", InstanceClonePipelineTests.Cases),
+            ("mod-dependencies", ModDependencyInspectorPipelineTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

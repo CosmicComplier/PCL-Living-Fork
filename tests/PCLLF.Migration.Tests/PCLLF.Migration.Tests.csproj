@@ -50,6 +50,10 @@
     <Compile Include="../../PCLCS/Minecraft/InstanceCloneWorkflow.cs" Link="Production/InstanceCloneWorkflow.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceCloneGroupsEngine.cs" Link="Production/InstanceCloneGroupsEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceCloneExportIsolation.cs" Link="Production/InstanceCloneExportIsolation.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Contracts.cs" Link="Production/ModDependencyInspection.Contracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Archives.cs" Link="Production/ModDependencyInspection.Archives.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Resolution.cs" Link="Production/ModDependencyInspection.Resolution.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyVersions.cs" Link="Production/ModDependencyVersions.cs" />
     <!-- Keep the real Minecraft/component/loader models and pinned Shared helpers. -->
     <Compile Include="../../PCLCS/Constants.cs" Link="Production/Constants.cs" />
     <Compile Include="../../PCLCS/Minecraft/McVersion.cs" Link="Production/McVersion.cs" />

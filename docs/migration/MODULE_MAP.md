@@ -129,6 +129,7 @@ LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][
 - **CE 候选：** [Minecraft][ce-game] 的 `ModCompDependency.cs`、`ModJarInJar*.cs`、`McConstraintMatcher.cs`、`MavenComparableVersion.cs`、`ModLocalComp.cs`；[Core/ResourceProject/ModDependencyResolver.cs][ce-dependency] 和其 [测试][ce-dependency-test]。CE resolver 的平台项目请求／安装列表是参考，不能单独替换 LF 的本地声明、禁用文件、内嵌组件及交互确认全链。
 - **前置／保留：** 先元数据／版本约束／提供者模型，再本地扫描、平台查询与缓存、补全文件计划；网络／下载适配来自 M05，目录／事务来自 M02、M06。保留不精确平台结果或超时回退、本地可靠声明、依赖／冲突／被依赖、内嵌组件按所属 JAR 归组、禁用且兼容前置可启用、精确环境指纹及本次进程内已接受问题缓存；首次默认开启并保留后续开关选择。
 - **批次／禁止倒依赖：** 本地 Inspector → Online 适配 → Activation／AutoFill → 启动复查 → 图及影响确认；`LaunchDependencyCheck` 与 `AutoFill` 当前互相使用类型，应先提出共享计划／指纹模型。用户确认和两列红框留在 UI，规则不得主动请求平台或修改文件；补全确认后提交并复查才可启动。
+- **已实施边界（C013）：** 本地Inspector完整解析／版本／图／可靠度／移除影响迁四份`PCLCS/Minecraft/ModDependencyInspection.*`／`ModDependencyVersions.cs`，原VB仅10个闭包DTO、旧enum映射、Context适配和入口。固定PCL无此LF模块；固定CE的JarInJar／LocalComp仅同源C#参照，其5层512节点及较大字节预算／缓存／选择策略不导入，LF保4层256个64MiB、strict UTF8／1MiB与三态。原DTO列表／引用身份／online缓存字段保持，C014网络未迁。两Core与Strict原适配／Online编译及六组真实文件测试通过，Windows原消费者待本批。
 - **回归：** `Test-ModDependencies.ps1`、`Test-ModDependencyOnline.ps1`、`Test-ModDependencyGraph.ps1`、`Test-DependencyActivation.ps1`、`Test-LaunchDependencies.ps1`、`Test-DependencyToggles.ps1`；离线固定平台响应、版本不匹配、禁用文件及内嵌组件样本先通过，再做受控在线验证。
 
 ### M10 整合包导入、更新、导出、隔离与模式
