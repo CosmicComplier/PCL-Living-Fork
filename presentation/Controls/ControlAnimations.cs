@@ -5,7 +5,7 @@ using System.Windows;
 
 namespace PCLLF.Presentation.Controls;
 
-public enum ControlEase { Linear, OutFluent, InFluent, OutBack, OutFluentWithInitial, InBack, OutElastic }
+public enum ControlEase { Linear, OutFluent, InFluent, OutBack, OutFluentWithInitial, InBack, OutElastic, InoutFluent }
 public enum ControlEasePower { Weak, Middle, Strong, ExtraStrong }
 
 public readonly struct ControlAnimationSpec {
@@ -14,10 +14,12 @@ public readonly struct ControlAnimationSpec {
     public readonly ControlEasePower Power;
     public readonly bool After;
     public readonly double InitialSpeed, TotalSeconds, TotalDistance;
+    public readonly int? RawPower;
+    public readonly double Middle;
     public ControlAnimationSpec(int duration, int delay = 0, ControlEase ease = ControlEase.Linear,
         ControlEasePower power = ControlEasePower.Middle, bool after = false) {
         Duration = duration; Delay = delay; Ease = ease; Power = power; After = after;
-        InitialSpeed = 0; TotalSeconds = 0; TotalDistance = 0;
+        InitialSpeed = 0; TotalSeconds = 0; TotalDistance = 0; RawPower = null; Middle = .5;
     }
     private ControlAnimationSpec(int duration, double initialSpeed, double totalSeconds, double totalDistance, bool after)
         : this(duration, 0, ControlEase.OutFluentWithInitial, ControlEasePower.Middle, after) {
@@ -25,6 +27,13 @@ public readonly struct ControlAnimationSpec {
     }
     public static ControlAnimationSpec FluentWithInitial(int duration, double initialSpeed, double totalSeconds, double totalDistance, bool after = true) =>
         new(duration, initialSpeed, totalSeconds, totalDistance, after);
+    private ControlAnimationSpec(int duration, int delay, ControlEase ease, int rawPower, bool after)
+        : this(duration, delay, ease, ControlEasePower.Middle, after) { RawPower = rawPower; }
+    private ControlAnimationSpec(int duration, ControlEasePower power, double middle)
+        : this(duration, 0, ControlEase.InoutFluent, power) { Middle = middle; }
+    public static ControlAnimationSpec WithRawPower(int duration, int rawPower, int delay = 0, ControlEase ease = ControlEase.OutFluent, bool after = false) =>
+        new(duration, delay, ease, rawPower, after);
+    public static ControlAnimationSpec InoutFluent(int duration, ControlEasePower power, double middle = .5) => new(duration, power, middle);
     // Original VB animation parameters round floating durations and delays to even.
     public ControlAnimationSpec(double duration, double delay = 0, ControlEase ease = ControlEase.Linear,
         ControlEasePower power = ControlEasePower.Middle, bool after = false)
@@ -41,6 +50,8 @@ public abstract class ControlAnimations {
     public abstract ControlAnimation ScaleTransform(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract double Speed { get; }
     public abstract ControlAnimation Width(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation TranslateX(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation TranslateY(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation X(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation Y(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation Height(FrameworkElement target, double value, ControlAnimationSpec spec);
@@ -49,7 +60,7 @@ public abstract class ControlAnimations {
     public abstract ControlAnimation Double(Action<double> work, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation Code(Action work, int delay = 0, bool after = false);
     public abstract void Start(IEnumerable<ControlAnimation> animations, string name, bool refreshTime = false);
-    public void Start(ControlAnimation animation, string name, bool refreshTime = false) => Start(new[] { animation }, name, refreshTime);
+    public void Start(ControlAnimation animation, string name = "", bool refreshTime = false) => Start(new[] { animation }, name, refreshTime);
     public abstract void Stop(string name);
 }
 
@@ -65,6 +76,8 @@ public sealed class ControlAnimationHost<TAnimation> : ControlAnimations where T
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateScaleTransform = null!;
     public Func<double> ReadSpeed = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateWidth = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateTranslateX = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateTranslateY = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateX = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateY = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateHeight = null!;
@@ -81,6 +94,8 @@ public sealed class ControlAnimationHost<TAnimation> : ControlAnimations where T
     public override ControlAnimation ScaleTransform(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateScaleTransform(target, value, spec));
     public override double Speed => ReadSpeed();
     public override ControlAnimation Width(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateWidth(target, value, spec));
+    public override ControlAnimation TranslateX(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateTranslateX(target, value, spec));
+    public override ControlAnimation TranslateY(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateTranslateY(target, value, spec));
     public override ControlAnimation X(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateX(target, value, spec));
     public override ControlAnimation Y(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateY(target, value, spec));
     public override ControlAnimation Height(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateHeight(target, value, spec));

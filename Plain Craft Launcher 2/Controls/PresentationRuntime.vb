@@ -15,6 +15,8 @@ Friend NotInheritable Class PresentationRuntime
                 .CreateScaleTransform = Function(Target, Value, Spec) AaScaleTransform(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .ReadSpeed = Function() AniSpeed,
                 .CreateWidth = Function(Target, Value, Spec) AaWidth(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
+                .CreateTranslateX = Function(Target, Value, Spec) AaTranslateX(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
+                .CreateTranslateY = Function(Target, Value, Spec) AaTranslateY(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateX = Function(Target, Value, Spec) AaX(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateY = Function(Target, Value, Spec) AaY(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateHeight = Function(Target, Value, Spec) AaHeight(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
@@ -57,19 +59,22 @@ Friend NotInheritable Class PresentationRuntime
     End Function
 
     Private Shared Function ToEase(Spec As ControlAnimationSpec) As AniEase
+        Dim Power = If(Spec.RawPower.HasValue, CType(Spec.RawPower.GetValueOrDefault(), AniEasePower), ToPower(Spec.Power))
         Select Case Spec.Ease
             Case ControlEase.Linear
                 Return New AniEaseLinear
             Case ControlEase.OutFluent
-                Return New AniEaseOutFluent(ToPower(Spec.Power))
+                Return New AniEaseOutFluent(Power)
             Case ControlEase.InFluent
-                Return New AniEaseInFluent(ToPower(Spec.Power))
+                Return New AniEaseInFluent(Power)
             Case ControlEase.OutBack
-                Return New AniEaseOutBack(ToPower(Spec.Power))
+                Return New AniEaseOutBack(Power)
+            Case ControlEase.InoutFluent
+                Return New AniEaseInoutFluent(Power, Spec.Middle)
             Case ControlEase.InBack
-                Return New AniEaseInBack(ToPower(Spec.Power))
+                Return New AniEaseInBack(Power)
             Case ControlEase.OutElastic
-                Return New AniEaseOutElastic(ToPower(Spec.Power))
+                Return New AniEaseOutElastic(Power)
             Case ControlEase.OutFluentWithInitial
                 Return New AniEaseOutFluentWithInitial(Spec.InitialSpeed, Spec.TotalSeconds, Spec.TotalDistance)
             Case Else

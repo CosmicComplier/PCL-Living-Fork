@@ -5,6 +5,7 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <OutputType>Library</OutputType>
     <OutDir>bin\</OutDir>
@@ -36,4 +37,6 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Snapshot|AnyCPU'">
     <Optimize>true</Optimize>
   </PropertyGroup>
+  <!-- Keep WPF names unambiguous while directly calling the real WinForms clipboard. -->
+  <ItemGroup><Using Remove="System.Windows.Forms;System.Drawing" /></ItemGroup>
 </Project>

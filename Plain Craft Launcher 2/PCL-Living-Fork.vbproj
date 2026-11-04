@@ -475,14 +475,14 @@
     <Compile Include="Pages\PageSpeedRight.xaml.vb">
       <DependentUpon>PageSpeedRight.xaml</DependentUpon>
     </Compile>
-    <Page Include="Controls\MyExtraTextButton.xaml">
+    <None Include="Controls\MyExtraTextButton.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Controls\MyExtraButton.xaml">
+    </None>
+    <None Include="Controls\MyExtraButton.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
-    </Page>
+    </None>
     <None Include="Controls\MyHint.xaml" />
     <None Include="Controls\MyListItem.xaml" />
     <None Include="Controls\MyIconButton.xaml" />
@@ -500,10 +500,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <None Include="Controls\MyRadioBox.xaml" />
-    <Page Include="Controls\MyIconTextButton.xaml">
+    <None Include="Controls\MyIconTextButton.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
-    </Page>
+    </None>
     <Page Include="Controls\MySearchBox.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

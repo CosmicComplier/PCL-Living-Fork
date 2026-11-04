@@ -44,6 +44,8 @@ public sealed class AnimationNativeRuntime {
                 spec.Duration, spec.Delay, ToEase(spec), spec.After),
             ReadSpeed = () => Engine.AniSpeed,
             CreateWidth = (target, value, spec) => Factories.AaWidth(target, value, spec.Duration, spec.Delay, ToEase(spec), spec.After),
+            CreateTranslateX = (target, value, spec) => Factories.AaTranslateX(target, value, spec.Duration, spec.Delay, ToEase(spec), spec.After),
+            CreateTranslateY = (target, value, spec) => Factories.AaTranslateY(target, value, spec.Duration, spec.Delay, ToEase(spec), spec.After),
             CreateX = (target, value, spec) => Factories.AaX(target, value, spec.Duration, spec.Delay, ToEase(spec), spec.After),
             CreateY = (target, value, spec) => Factories.AaY(target, value, spec.Duration, spec.Delay, ToEase(spec), spec.After),
             CreateHeight = (target, value, spec) => Factories.AaHeight(target, value,
@@ -61,7 +63,7 @@ public sealed class AnimationNativeRuntime {
     };
 
     private static AnimationEase ToEase(ControlAnimationSpec spec) {
-        AnimationEasePower power = spec.Power switch {
+        AnimationEasePower power = spec.RawPower.HasValue ? (AnimationEasePower)spec.RawPower.Value : spec.Power switch {
             ControlEasePower.Weak => AnimationEasePower.Weak,
             ControlEasePower.Middle => AnimationEasePower.Middle,
             ControlEasePower.Strong => AnimationEasePower.Strong,
@@ -73,6 +75,7 @@ public sealed class AnimationNativeRuntime {
             ControlEase.OutFluent => new AnimationEaseOutFluent(power),
             ControlEase.InFluent => new AnimationEaseInFluent(power),
             ControlEase.OutBack => new AnimationEaseOutBack(power),
+            ControlEase.InoutFluent => new AnimationEaseInoutFluent(power, spec.Middle),
             ControlEase.InBack => new AnimationEaseInBack(power),
             ControlEase.OutElastic => new AnimationEaseOutElastic(power),
             ControlEase.OutFluentWithInitial => new AnimationEaseOutFluentWithInitial(spec.InitialSpeed, spec.TotalSeconds, spec.TotalDistance),
