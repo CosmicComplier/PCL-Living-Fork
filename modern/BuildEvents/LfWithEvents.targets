@@ -1,0 +1,14 @@
+<Project>
+ <PropertyGroup><LfHandlesTaskProject>$(MSBuildThisFileDirectory)filter-task/Lf.Build.Tasks.csproj</LfHandlesTaskProject><LfHandlesTaskAssembly>$(MSBuildThisFileDirectory)filter-task/bin/Release/net10.0/Lf.Build.Tasks.dll</LfHandlesTaskAssembly></PropertyGroup>
+ <UsingTask TaskName="LfFilterWithEvents" AssemblyFile="$(LfHandlesTaskAssembly)"/>
+ <Target Name="LfBuildHandlesTask" Condition="'$(LfWithEventsMap)' != ''">
+  <MSBuild Projects="$(LfHandlesTaskProject)" Targets="Restore;Build" Properties="Configuration=Release" RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PlatformTarget;PublishSingleFile;PublishTrimmed;PublishReadyToRun;TargetFramework;TargetFrameworks;OutputPath;OutDir;IntermediateOutputPath;BaseIntermediateOutputPath;MSBuildProjectExtensionsPath;AssemblyName;RootNamespace;UseWPF;UseWindowsForms;DefineConstants"/>
+ </Target>
+ <Target Name="LfProjectTypedWithEvents" BeforeTargets="GenerateTemporaryTargetAssembly;CoreCompile" DependsOnTargets="LfBuildHandlesTask" Condition="'$(LfWithEventsMap)' != ''">
+  <ItemGroup><_LfFilteredCompile Remove="@(_LfFilteredCompile)"/><_LfFilteredGenerated Remove="@(_LfFilteredGenerated)"/></ItemGroup>
+  <LfFilterWithEvents CompileFiles="@(Compile)" GeneratedFiles="@(_GeneratedCodeFiles)" MapFile="$(LfWithEventsMap)" OutputDirectory="$(IntermediateOutputPath)WithEventsProjected">
+   <Output TaskParameter="FilteredCompile" ItemName="_LfFilteredCompile"/><Output TaskParameter="FilteredGenerated" ItemName="_LfFilteredGenerated"/>
+  </LfFilterWithEvents>
+  <ItemGroup><Compile Remove="@(Compile)"/><Compile Include="@(_LfFilteredCompile)"/><_GeneratedCodeFiles Remove="@(_GeneratedCodeFiles)"/><_GeneratedCodeFiles Include="@(_LfFilteredGenerated)"/></ItemGroup>
+ </Target>
+</Project>

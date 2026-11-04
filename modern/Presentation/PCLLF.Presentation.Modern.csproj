@@ -32,6 +32,7 @@
     <Compile Include="../../presentation/Mods/**/*.cs" Link="Mods/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Shell/**/*.cs" Link="Shell/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Window/**/*.cs" Link="Window/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="NativeWpf/**/*.cs" />
     <Compile Include="../../presentation/Dialogs/**/*.cs" Link="Dialogs/%(RecursiveDir)%(Filename)%(Extension)" />
     <Page Include="../../presentation/Dialogs/*.xaml" Link="Dialogs/%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Accounts/**/*.cs" Link="Accounts/%(RecursiveDir)%(Filename)%(Extension)" />
@@ -57,4 +58,7 @@
   </PropertyGroup>
   <!-- Keep WPF names unambiguous while directly calling the real WinForms clipboard. -->
   <ItemGroup><Using Remove="System.Windows.Forms;System.Drawing" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+  </ItemGroup>
 </Project>

@@ -20,6 +20,12 @@ public static class LegacyBaseXaml {
             "assembly=" + assemblyName, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         text = Regex.Replace(text, "(?<=[\"'])(?:pack://application:,,,/|/)(?:Plain(?: |%20)Craft(?: |%20)Launcher(?: |%20)2|LivingPCL);component/",
             match => normalizeResourceUri(match.Value), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+#if !NETFRAMEWORK
+        // Actual historical LF home/help declarations retain their CLR namespace;
+        // the fixed used WPF services and converter aliases now live in modern PF.
+        text = Regex.Replace(text, "(?<=;)assembly=MeloongCore\\.Wpf(?=[\"';])",
+            "assembly=PCLLF.Presentation", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+#endif
         text = text.Replace("EventType=\"", "local:CustomEventService.EventType=\"").Replace("EventData=\"", "local:CustomEventService.EventData=\"")
             .Replace("EventType='", "local:CustomEventService.EventType='").Replace("EventData='", "local:CustomEventService.EventData='")
             .Replace("Property=\"EventType\"", "Property=\"local:CustomEventService.EventType\"").Replace("Property=\"EventData\"", "Property=\"local:CustomEventService.EventData\"")

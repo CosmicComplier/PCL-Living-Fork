@@ -87,6 +87,8 @@ C014本地集成：四C#完整pipeline／hash／匹配／HTTP与原50行typed VB
 
 02ba2b2实际自动CI：Migration41825028416 Windows126557566519为462／462、Ubuntu126557566806为411／411，14canonical组均实际执行；现代JSON包资产下v7严格397case零baseline／native／path／text差异（实际modern端已与产品同13.0.3包，原LF CLR4 DLL不变）。旧Build41825028388 Debug126557526963／Release126557527028全success，原在线／图／启动消费者、真实克隆页、六cold控件及旧桥通过。Modern41825028405 Debug126557455671／Release126557455884：全部原组件及动画1～5实际通过，新worker child已真启动并验证线程／STA，随后终值断言失败，Release实际0.9999979999999995。原LF每帧七位四舍五入累积不保证增量1最后恰为1；保持全部断言／Near阈值和生产算法，仅把worker样本增量改1.25，使用原[0,1]clamp让期望终值1成为真实LF约定，仍要求中帧／callback／foreground／priority／UI。该fixture修复仅现代测试定向复验，不重跑已通过业务全量。新并行C015／C016／C017／C018／C024／C026代码另批集成，未把未提交源码混计到本次运行。
 
+6eef06b实际精确Windows复验：[Build41888366238](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41888366238) Debug126778940921／Release126778940793均success；真实资源bulk（含原MapDetails三断言）、凭据与旧桥通过，其余未选择步骤为skipped，不记全量通过。Migration41888366118为success。N003正式Main首次真实完整跨编0错误/80警告（Linux SDK10.0.403、win-x64 self-contained两阶段），只证明编译，Windows Native运行待新独立门禁。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -315,7 +317,7 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 原1.3.4真实完整C# WPF临时+正式两阶段第6轮跨编0E/90warnings，产物PE/PDB为实际C#输入，56原图像字体/56BAML/18byte资源与真实库逐字验证，无业务VB/vbproj/旧Wpf实现引用；不是Windows运行。完整WithEvents/3modal重设、a1最新typed源去重复收敛及U001/main50同步正在集成，正式现代主项目未交付；不得据编译关闭本项 |
+| N003 | in_progress | N002、C031 | 正式modern/Main完整LF C#/.NET10 WPF工程已接入：实际主窗/页面/原资源与780 typed WithEvents，当前a1薄门面收敛为单一Core/PF业务实现。正式命令build -c Release --no-restore -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -m:1 -nodeReuse:false跨编0E/80W；构建工具修真实CLI宿主/RID继承与投影#line/checksum基准，保原g文件与拒绝保护。独立嵌套pass2回归0W0E、Windows/UNC/Unicode指令9/9、原g不变/空map与手写冲突拒绝。未执行Windows完整Main；资源生成暂读旧VB designer/vbproj作为schema，待独立原生schema替换；U001/main50、发布/升级/数据与R001仍待完成，不据编译验收 |
 | N004 | todo | N003、C022 | 验证旧账号和配置数据、共享目录、版本隔离、备份／还原点与旧格式写回，保留脱敏样本和实际结果 |
 | N005 | todo | N003、N004 | 完整现代产品凭据/资源/发布脚本/命名/单实例/旧更新桥仍待验；N003并行准备已测必要vendor依赖/实际资源bytes，但不是正式产品加载。旧managed识别无法直接验native apphost：仅设计并准备有界bundle入口元数据适配和原4参桥，不改旧客户端选择/回滚策略，未发布或计验收 |
 | R001 | todo | N003、N005 | 逐项处理初始清单中所有 VB／生成／条件源码，检查当前产品 VB 数为零、项目声明完整及许可来源齐全 |

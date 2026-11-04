@@ -2,7 +2,7 @@
 
 当前目标是将 PCLLF 已有产品实现迁移到 C#、.NET 10 和 WPF，完成功能等价、数据兼容、资源依赖、发布产物及旧版更新桥的验证。做到本目标的全部验收项后停止自动续跑。本目标不自动转入新增 MMC 兼容或性能阶段。
 
-当前状态：`in_progress`。2026-11-04用户再次明确继续并要求关注main新提交。原1.3.4全C#主源码首次在私有完整WPF图跨编成功（0错误/90警告），正式主工程/完整事件、当前typed源收敛及Windows运行仍未完成；不是完整产品验收。并行适配LF main固定50b028d的1.3.5-pre-3新增功能，保初始基线与LF行为；旧数据升级、正式发布与最终验收仍未完成，新增MMC/性能/Rust/C++保持deferred。
+当前状态：`in_progress`。2026-11-04用户再次明确继续并要求关注main新提交。正式完整modern/Main C#/.NET10 WPF工程与780 typed WithEvents已接入，真实win-x64 Release跨编0错误/80警告；当前Core/PF薄门面收敛，未把编译当Windows运行验收。固定LF main50b028d的1.3.5-pre-3增量继续分模块适配；资源原生schema、数据升级、正式发布/旧桥、Windows验收和VB退休仍待完成。新增MMC/性能/Rust/C++保持deferred。
 
 完整工程背景见 [MIGRATION.md](MIGRATION.md)。可执行任务、进度、验证证据和下次入口只维护在 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)，续跑时从账本继续，不重新建立同一套计划。
 
