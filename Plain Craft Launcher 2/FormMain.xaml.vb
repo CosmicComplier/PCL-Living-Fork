@@ -9,7 +9,7 @@ Public Class FormMain
     Private Sub ShowUpdateLog()
         RunInNewThread(
         Sub()
-            Dim Content = $"{LauncherDisplayName} {VersionBaseName}{vbCrLf}{vbCrLf}新增启动前模组依赖检查和自动补全，优化整合包更新界面与下载进度，支持可选的还原点自动清理。手动还原点和手动存档备份不自动清理。"
+            Dim Content = $"{LauncherDisplayName} {VersionBaseName}（预发布版）{vbCrLf}{vbCrLf}新增可复用的模组依赖树索引，手动更新时同时获取平台依赖声明。优化 Fabric、Forge、NeoForge 识别与旧版整合包检查，修复平台指定版本导致的重复依赖节点。启动器更新可选择 CNB 或 GitHub，并使用原生下载任务。"
             If MyMsgBox(Content, LauncherDisplayName & " 更新说明", "确定", "查看更新日志") = 2 Then OpenWebsite(LauncherReleasesUrl)
         End Sub, "Fork UpdateLog Output")
     End Sub
@@ -175,7 +175,7 @@ Public Class FormMain
             End Try
             '开源版本提示
             If VersionBranchMain = "OpenSource" Then
-                MyMsgBox($"{LauncherDisplayName} {VersionBaseName} 是基于 PCL 官方开源版的第三方版本。{vbCrLf}{vbCrLf}- 首页可开关模组依赖检查与自动补全{vbCrLf}- 整合包更新按分类预览，下载显示实际进度{vbCrLf}- 还原点可选设置自动清理上限，手动记录单独保留", $"{LauncherDisplayName} {VersionBaseName} 版本说明")
+                MyMsgBox($"{LauncherDisplayName} {VersionBaseName} 是基于 PCL 官方开源版的第三方预发布版本。{vbCrLf}{vbCrLf}- 依赖树索引可复用，手动更新时一并获取平台声明{vbCrLf}- 优化三种主流加载器及旧版 Forge 整合包检查{vbCrLf}- 启动器更新默认使用 CNB，可切换 GitHub", $"{LauncherDisplayName} {VersionBaseName} 版本说明")
             End If
             ModLauncherUpdate.CheckForUpdates(True)
         End Sub, "初始化", ThreadPriority.Lowest)

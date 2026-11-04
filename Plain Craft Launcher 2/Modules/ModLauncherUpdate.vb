@@ -5,21 +5,70 @@ Public Module ModLauncherUpdate
     Private Const Repository As String = LauncherRepository
     Private Const CompatibilityRepository As String = "DDZmumo/LivingPCL2-Re"
     Private Const ReleasePage As String = LauncherReleasesUrl & "/latest"
+    Friend Const CnbManifestUrl As String = LauncherCnbUrl & "/-/git/raw/updates/latest.json"
+    Friend Const GitHubLatestUrl As String = "https://api.github.com/repos/" & Repository & "/releases/latest"
     Private CheckRunning As Integer
+
+    Friend Enum UpdateSource
+        Cnb = 0
+        GitHub = 1
+    End Enum
+
+    Friend Function PreferredUpdateSource() As UpdateSource
+        Return If(Settings.Get(Of Integer)("ToolLauncherUpdateSource") = CInt(UpdateSource.GitHub), UpdateSource.GitHub, UpdateSource.Cnb)
+    End Function
+
+    Private Function UpdateSourceName(Source As UpdateSource) As String
+        Return If(Source = UpdateSource.GitHub, "GitHub", "CNB")
+    End Function
+
+    Friend NotInheritable Class UpdatePromptView
+        Inherits StackPanel
+        Friend ReadOnly Property PreferredWidth As Double = 570
+        Friend ReadOnly SourcePicker As New MyComboBox With {.Width = 240, .Height = 30, .HorizontalAlignment = HorizontalAlignment.Left, .Margin = New Thickness(18, 0, 0, 0)}
+        Friend ReadOnly Property SelectedSource As UpdateSource
+            Get
+                Return If(SourcePicker.SelectedIndex = 1, UpdateSource.GitHub, UpdateSource.Cnb)
+            End Get
+        End Property
+        Friend Sub New(Tag As String, Source As UpdateSource)
+            Children.Add(New TextBlock With {.Text = "当前版本：" & VersionBaseName & vbCrLf & "最新正式版：" & Tag, .Margin = New Thickness(2, 0, 2, 18), .LineHeight = 24})
+            SourcePicker.Items.Add(New MyComboBoxItem With {.Content = "CNB（国内）"})
+            SourcePicker.Items.Add(New MyComboBoxItem With {.Content = "GitHub Releases"})
+            SourcePicker.SelectedIndex = CInt(Source)
+            Dim Row As New DockPanel With {.Margin = New Thickness(2, 0, 2, 16)}
+            Row.Children.Add(New TextBlock With {.Text = "本次下载源", .VerticalAlignment = VerticalAlignment.Center})
+            Row.Children.Add(SourcePicker) : Children.Add(Row)
+            Dim Note As New TextBlock With {.Text = "下载源选择仅本次生效。下载并校验完成后，启动器将自动替换并重新启动。", .TextWrapping = TextWrapping.Wrap, .Margin = New Thickness(2, 0, 2, 0)}
+            Note.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3") : Children.Add(Note)
+        End Sub
+    End Class
+
+    Friend NotInheritable Class UpdateTransport
+        Friend ReadJson As Func(Of String, JObject) = Function(Url) JObject.Parse(NetRequestByClient(Url, Accept:="application/json", Timeout:=5000, RequireJson:=True))
+        Friend ReadText As Func(Of String, String) = Function(Url) NetRequestByClient(Url, Timeout:=8000)
+        Friend Download As Action(Of String, String, FileChecker) = AddressOf DownloadWithTask
+    End Class
 
     Friend Function NewerRelease(Tag As String, Current As String) As Boolean
         Dim LatestVersion As System.Version = Nothing, CurrentVersion As System.Version = Nothing
-        If Not System.Version.TryParse(Tag?.TrimStart("v"c, "V"c), LatestVersion) OrElse Not System.Version.TryParse(Current, CurrentVersion) Then Return False
+        'Update sources offer stable releases. A stable release also supersedes its own prereleases.
+        Dim CurrentMatch = System.Text.RegularExpressions.Regex.Match(If(Current, ""), "\A(\d+\.\d+\.\d+(?:\.\d+)?)(-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\z")
+        If Not CurrentMatch.Success OrElse Not System.Version.TryParse(Tag?.TrimStart("v"c, "V"c), LatestVersion) OrElse
+            Not System.Version.TryParse(CurrentMatch.Groups(1).Value, CurrentVersion) Then Return False
         LatestVersion = New System.Version(LatestVersion.Major, LatestVersion.Minor, Math.Max(0, LatestVersion.Build), Math.Max(0, LatestVersion.Revision))
         CurrentVersion = New System.Version(CurrentVersion.Major, CurrentVersion.Minor, Math.Max(0, CurrentVersion.Build), Math.Max(0, CurrentVersion.Revision))
-        Return LatestVersion > CurrentVersion
+        Return LatestVersion > CurrentVersion OrElse (LatestVersion = CurrentVersion AndAlso CurrentMatch.Groups(2).Success)
     End Function
 
     Friend Function ValidAssetUrl(Value As String) As Boolean
         Dim Url As Uri = Nothing
-        Return Uri.TryCreate(Value, UriKind.Absolute, Url) AndAlso Url.Scheme = "https" AndAlso Url.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) AndAlso
-            (Url.AbsolutePath.StartsWith("/" & Repository & "/releases/download/", StringComparison.OrdinalIgnoreCase) OrElse
-             Url.AbsolutePath.StartsWith("/" & CompatibilityRepository & "/releases/download/", StringComparison.OrdinalIgnoreCase)) AndAlso Url.UserInfo = "" AndAlso Url.IsDefaultPort
+        If Not Uri.TryCreate(Value, UriKind.Absolute, Url) OrElse Url.Scheme <> "https" OrElse Url.UserInfo <> "" OrElse Not Url.IsDefaultPort OrElse Url.Fragment <> "" Then Return False
+        If Url.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) Then
+            Return Url.AbsolutePath.StartsWith("/" & Repository & "/releases/download/", StringComparison.OrdinalIgnoreCase) OrElse
+                Url.AbsolutePath.StartsWith("/" & CompatibilityRepository & "/releases/download/", StringComparison.OrdinalIgnoreCase)
+        End If
+        Return Url.Host.Equals("cnb.cool", StringComparison.OrdinalIgnoreCase) AndAlso Url.AbsolutePath.StartsWith("/" & LauncherCnbRepository & "/-/releases/download/", StringComparison.OrdinalIgnoreCase)
     End Function
 
     Friend Function ShouldPromptForUpdate(Tag As String, Current As String, IgnoredTag As String) As Boolean
@@ -55,15 +104,134 @@ Public Module ModLauncherUpdate
         Throw New Exception("发布附件缺少对应的 SHA256 校验值。")
     End Function
 
+    Private Function HashAsset(Info As JObject) As JObject
+        Dim Asset = DirectCast(Info("assets"), JArray).OfType(Of JObject)().SingleOrDefault(Function(Item) Item("name")?.ToString() = "SHA256SUMS.txt")
+        If Asset Is Nothing OrElse Not ValidAssetUrl(Asset("browser_download_url")?.ToString()) Then Throw New Exception("发布中没有可信的校验文件。")
+        Return Asset
+    End Function
+
+    Private Sub ValidateReleaseInfo(Info As JObject, Cnb As Boolean)
+        If Info Is Nothing OrElse Not System.Text.RegularExpressions.Regex.IsMatch(If(Info("tag_name")?.ToString(), ""), "\A[vV]?\d+\.\d+\.\d+(?:\.\d+)?\z") Then Throw New Exception("发布标签不是可识别的版本号。")
+        Dim Parsed As System.Version = Nothing
+        If Not System.Version.TryParse(Info("tag_name").ToString().TrimStart("v"c, "V"c), Parsed) Then Throw New Exception("发布版本号无效。")
+        For Each Field In {"draft", "prerelease"}
+            If Info(Field) Is Nothing OrElse Info(Field).Type <> JTokenType.Boolean OrElse CBool(Info(Field)) Then Throw New Exception("更新源尚无可用的正式发布。")
+        Next
+        Dim Executable = ReleaseExecutable(Info), Manifest = HashAsset(Info)
+        If Executable("size")?.Type <> JTokenType.Integer OrElse CLng(Executable("size")) <= 0 OrElse CLng(Executable("size")) > 1024L * 1024 * 1024 Then Throw New Exception("更新附件大小无效。")
+        For Each Asset In {Executable, Manifest}
+            Dim Url As New Uri(Asset("browser_download_url").ToString()), Name = Asset("name").ToString()
+            If System.IO.Path.GetFileName(Name) <> Name OrElse Url.Host <> If(Cnb, "cnb.cool", "github.com") Then Throw New Exception("更新附件与所选更新源不一致。")
+            Dim Prefix = If(Cnb, "/" & LauncherCnbRepository & "/-/releases/download/", "/" & Repository & "/releases/download/")
+            Dim Expected = Prefix & Uri.EscapeDataString(Info("tag_name").ToString()) & "/" & Uri.EscapeDataString(Name)
+            If Not String.Equals(Url.AbsolutePath, Expected, StringComparison.Ordinal) Then Throw New Exception("更新附件不属于所选发布版本。")
+        Next
+    End Sub
+
+    Friend Function FindLatestRelease(Current As String, Optional Transport As UpdateTransport = Nothing) As JObject
+        Return FindLatestReleaseForSource(Current, PreferredUpdateSource(), Transport)
+    End Function
+
+    Friend Function FindLatestReleaseForSource(Current As String, Source As UpdateSource, Optional Transport As UpdateTransport = Nothing) As JObject
+        If Transport Is Nothing Then Transport = New UpdateTransport
+        Dim Best As JObject = Nothing, Failure As Exception = Nothing
+        Dim Endpoints = If(Source = UpdateSource.GitHub, {GitHubLatestUrl, CnbManifestUrl}, {CnbManifestUrl, GitHubLatestUrl})
+        For Each Endpoint In Endpoints
+            Try
+                Dim Info = Transport.ReadJson(Endpoint)
+                ValidateReleaseInfo(Info, Endpoint = CnbManifestUrl)
+                If Best Is Nothing OrElse NewerRelease(Info("tag_name").ToString(), Best("tag_name").ToString()) Then Best = Info
+                If Source = UpdateSource.GitHub AndAlso Endpoint = GitHubLatestUrl Then Return Info
+                If NewerRelease(Info("tag_name").ToString(), Current) Then Return Info
+            Catch ex As Exception
+                ex.ThrowIfCanceled()
+                Failure = ex
+                Logger.Info("更新源暂不可用：" & If(Endpoint = CnbManifestUrl, "CNB", "GitHub"))
+            End Try
+        Next
+        If Best IsNot Nothing Then Return Best
+        Throw New Exception("CNB 与 GitHub 更新源均未返回可用发布。", Failure)
+    End Function
+
+    Friend Function DownloadUpdate(Info As JObject, Staged As String, Optional Transport As UpdateTransport = Nothing) As String
+        If Transport Is Nothing Then Transport = New UpdateTransport
+        Dim Cnb = (New Uri(ReleaseExecutable(Info)("browser_download_url").ToString())).Host = "cnb.cool"
+        ValidateReleaseInfo(Info, Cnb)
+        Dim ExpectedHash As String = Nothing
+        Try
+            ExpectedHash = ManifestHash(Transport.ReadText(HashAsset(Info)("browser_download_url").ToString()), ReleaseExecutable(Info)("name").ToString())
+            DownloadCandidate(Info, Staged, ExpectedHash, Transport)
+            Return ExpectedHash
+        Catch ex As Exception
+            ex.ThrowIfCanceled()
+            Logger.Info(If(Cnb, "CNB", "GitHub") & " 下载未完成，尝试备用源的同版本附件。")
+        End Try
+        Dim Fallback = ReleaseForDownloadSource(Info, If(Cnb, UpdateSource.GitHub, UpdateSource.Cnb), Transport)
+        Dim FallbackHash = ManifestHash(Transport.ReadText(HashAsset(Fallback)("browser_download_url").ToString()), ReleaseExecutable(Fallback)("name").ToString())
+        If ExpectedHash IsNot Nothing AndAlso Not String.Equals(ExpectedHash, FallbackHash, StringComparison.OrdinalIgnoreCase) Then Throw New Exception("CNB 与 GitHub 的更新校验值不一致，已停止更新。")
+        DownloadCandidate(Fallback, Staged, FallbackHash, Transport)
+        Return FallbackHash
+    End Function
+
+    Friend Function ReleaseForDownloadSource(Info As JObject, Source As UpdateSource, Optional Transport As UpdateTransport = Nothing) As JObject
+        If Transport Is Nothing Then Transport = New UpdateTransport
+        Dim Cnb = (New Uri(ReleaseExecutable(Info)("browser_download_url").ToString())).Host = "cnb.cool"
+        ValidateReleaseInfo(Info, Cnb)
+        If Cnb = (Source = UpdateSource.Cnb) Then Return DirectCast(Info.DeepClone(), JObject)
+        Dim Selected As JObject
+        If Source = UpdateSource.GitHub Then
+            Selected = Transport.ReadJson("https://api.github.com/repos/" & Repository & "/releases/tags/" & Uri.EscapeDataString(Info("tag_name").ToString()))
+        Else
+            Selected = DirectCast(Info.DeepClone(), JObject)
+            For Each Asset As JObject In DirectCast(Selected("assets"), JArray).OfType(Of JObject)()
+                Dim Name = Asset("name")?.ToString()
+                If Name Is Nothing OrElse System.IO.Path.GetFileName(Name) <> Name Then Throw New Exception("备用附件名称无效。")
+                Asset("browser_download_url") = LauncherCnbUrl & "/-/releases/download/" & Uri.EscapeDataString(Selected("tag_name").ToString()) & "/" & Uri.EscapeDataString(Name)
+            Next
+        End If
+        ValidateReleaseInfo(Selected, Source = UpdateSource.Cnb)
+        If Selected("tag_name").ToString() <> Info("tag_name").ToString() Then Throw New Exception("所选源的发布版本与已确认版本不一致。")
+        Return Selected
+    End Function
+
+    Friend Function CreateUpdateDownloadTask(Url As String, Target As String, Check As FileChecker) As LoaderCombo(Of Integer)
+        Dim Source = If((New Uri(Url)).Host = "cnb.cool", "CNB", "GitHub")
+        Dim Version = System.Text.RegularExpressions.Regex.Match(Url, "/(v[0-9.]+)/", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups(1).Value
+        Dim Download As New LoaderDownload("下载启动器更新", {New NetFile({Url}, Target, Check)}) With {.ProgressWeight = 1}
+        Return New LoaderCombo(Of Integer)("下载启动器更新：" & Version & "（" & Source & "）", New List(Of LoaderBase) From {Download}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
+    End Function
+
+    Private Sub DownloadWithTask(Url As String, Target As String, Check As FileChecker)
+        Dim Work = CreateUpdateDownloadTask(Url, Target, Check)
+        If FrmMain Is Nothing Then
+            Work.WaitForExit()
+        Else
+            RunInUiWait(Sub()
+                Work.Start(1)
+                LoaderTaskbarAdd(Work)
+                FrmMain.BtnExtraDownload.ShowRefresh()
+                FrmMain.BtnExtraDownload.Ribble()
+            End Sub)
+            Work.WaitForExit(StartIfNeeded:=False)
+        End If
+    End Sub
+
+    Private Sub DownloadCandidate(Info As JObject, Staged As String, Hash As String, Transport As UpdateTransport)
+        Dim Asset = ReleaseExecutable(Info)
+        Transport.Download(Asset("browser_download_url").ToString(), Staged, New FileChecker With {.Hash = Hash, .ActualSize = CLng(Asset("size"))})
+        ValidateExecutable(Staged, Hash)
+    End Sub
+
     Friend Sub CheckForUpdates(Startup As Boolean)
         If Interlocked.CompareExchange(CheckRunning, 1, 0) <> 0 Then
             If Not Startup Then Hint("正在检查更新，请稍候……")
             Return
         End If
-        If Not Startup Then Hint("正在检查 PCL Living Fork 的 GitHub Releases……")
+        Dim Source = PreferredUpdateSource()
+        If Not Startup Then Hint("正在通过 " & UpdateSourceName(Source) & " 检查 PCL Living Fork 更新……")
         RunInNewThread(Sub()
             Try
-                Dim Info As JObject = NetRequestByClientRetry("https://api.github.com/repos/" & Repository & "/releases/latest", Accept:="application/vnd.github+json", RequireJson:=True).DeserializeJson()
+                Dim Info As JObject = FindLatestReleaseForSource(VersionBaseName, Source)
                 Dim Tag = Info("tag_name")?.ToString()
                 Dim ParsedVersion As System.Version = Nothing
                 If String.IsNullOrWhiteSpace(Tag) OrElse Not System.Version.TryParse(Tag.TrimStart("v"c, "V"c), ParsedVersion) Then Throw New Exception("发布标签不是可识别的版本号。")
@@ -74,10 +242,14 @@ Public Module ModLauncherUpdate
                 End If
                 Dim IgnoredTag = Settings.Get(Of String)("ToolLauncherUpdateIgnoredTag")
                 If Startup AndAlso Not ShouldPromptForUpdate(Tag, VersionBaseName, IgnoredTag) Then Return
-                Dim Choice = MyMsgBox($"当前版本：{VersionBaseName}{vbCrLf}最新正式版：{Tag}{vbCrLf}{vbCrLf}下载并校验更新后，启动器将自动替换并重新启动。", "发现 PCL Living Fork 新版本", "下载并更新", "暂不更新")
+                Dim View As UpdatePromptView = Nothing, DownloadSource = Source
+                Dim Choice = MyMsgBoxConfirmContent("请选择本次更新的下载源。", "发现 PCL Living Fork 新版本", "下载并更新", Function()
+                    View = New UpdatePromptView(Tag, Source) : Return View
+                End Function, "暂不更新", IsWarn:=False)
                 If Choice = 1 Then
+                    RunInUiWait(Sub() DownloadSource = View.SelectedSource)
                     Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice))
-                    DownloadAndUpdate(Info)
+                    DownloadAndUpdate(Info, DownloadSource)
                 ElseIf Choice = 2 Then
                     Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice))
                 End If
@@ -93,19 +265,13 @@ Public Module ModLauncherUpdate
         End Sub, "PCL Living Fork 更新检查", ThreadPriority.BelowNormal)
     End Sub
 
-    Private Sub DownloadAndUpdate(Info As JObject)
+    Private Sub DownloadAndUpdate(Info As JObject, Source As UpdateSource)
         Try
-            Dim Asset = ReleaseExecutable(Info)
-            Dim HashAsset = TryCast(Info("assets"), JArray).OfType(Of JObject)().SingleOrDefault(Function(Item) Item("name")?.ToString() = "SHA256SUMS.txt")
-            If HashAsset Is Nothing OrElse Not ValidAssetUrl(HashAsset("browser_download_url")?.ToString()) Then Throw New Exception("发布中没有可信的校验文件。")
-            Dim Manifest As String = NetRequestByClientRetry(HashAsset("browser_download_url").ToString())
-            Dim ExpectedHash = ManifestHash(Manifest, Asset("name").ToString())
             Dim Folder = System.IO.Path.Combine(Paths.Base, "PCL", "Updates")
             Directory.CreateDirectory(Folder)
             Dim Staged = System.IO.Path.Combine(Folder, LauncherExecutableName)
             Hint("正在下载 PCL Living Fork 更新……")
-            NetDownloadByLoader(Asset("browser_download_url").ToString(), Staged, Check:=New FileChecker With {.Hash = ExpectedHash, .ActualSize = CLng(Asset("size"))})
-            ValidateExecutable(Staged, ExpectedHash)
+            Dim ExpectedHash = DownloadUpdate(ReleaseForDownloadSource(Info, Source), Staged)
             If HasDownloadingTask() Then Throw New Exception("仍有下载任务正在进行。请等待任务结束后重试更新。")
             Dim Target = Process.GetCurrentProcess().MainModule.FileName
             Dim Arguments = $"--livingpcl-update {Process.GetCurrentProcess().Id} ""{System.IO.Path.GetFileName(Target)}"" {ExpectedHash}"
@@ -113,13 +279,21 @@ Public Module ModLauncherUpdate
             If Helper Is Nothing Then Throw New Exception("无法启动更新替换程序。")
             If Helper.WaitForExit(500) Then Throw New Exception("更新替换程序未能正常启动。")
             RunInUi(Sub() FrmMain.EndProgram(SendWarning:=False))
+        Catch ex As OperationCanceledException
+            Hint("已取消启动器更新。")
+        Catch ex As ThreadInterruptedException
+            Hint("已取消启动器更新。")
         Catch ex As Exception
             UpdateFailure(ex.Message)
         End Try
     End Sub
 
     Private Sub UpdateFailure(Reason As String)
-        If MyMsgBox("更新未完成，现有启动器已保留。" & vbCrLf & vbCrLf & Reason, "PCL Living Fork 更新失败", "打开发布页", "取消", IsWarn:=True) = 1 Then OpenWebsite(ReleasePage)
+        Dim GitHubFirst = PreferredUpdateSource() = UpdateSource.GitHub
+        Select Case MyMsgBox("更新未完成，现有启动器已保留。" & vbCrLf & vbCrLf & Reason, "PCL Living Fork 更新失败", If(GitHubFirst, "GitHub 下载页", "国内下载页"), If(GitHubFirst, "CNB 备用", "GitHub 备用"), "取消", IsWarn:=True)
+            Case 1 : OpenWebsite(If(GitHubFirst, ReleasePage, LauncherCnbUrl & "/-/releases"))
+            Case 2 : OpenWebsite(If(GitHubFirst, LauncherCnbUrl & "/-/releases", ReleasePage))
+        End Select
     End Sub
 
     Friend Sub ValidateExecutable(FileName As String, ExpectedHash As String)

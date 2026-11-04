@@ -365,6 +365,7 @@ Partial Public Class Settings
         New Setting("ToolDownloadMod", 2, Source:=Sources.Registry),
         New Setting("ToolModLocalNameStyle", 0, Source:=Sources.Registry),
         New Setting("ToolLauncherUpdateIgnoredTag", "", Source:=Sources.Registry),
+        New Setting("ToolLauncherUpdateSource", 0),
         New Setting("UiLauncherTransparent", 600, OnChanged:=Sub(Value As Integer) If FrmMain IsNot Nothing Then FrmMain.Opacity = Value / 1000 + 0.4), '避免与 PCL1 设置冲突（UiLauncherOpacity）
         New Setting("UiLauncherHue", DefaultThemeHue),
         New Setting("UiLauncherSat", DefaultThemeSat),

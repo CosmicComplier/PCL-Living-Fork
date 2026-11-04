@@ -7,7 +7,27 @@ Public Class MyLocalModItem
     '游戏资源页复用此控件的排版、悬停、选择和滑动多选，不伪造 Mod 文件。
     Friend ResourceEntry As InstanceResourceEntry
     Friend RestorePoint As JObject
+    Private _LoaderWarning As String = ""
+    Private LoaderWarningOriginalTip As Object
+    Friend ReadOnly Property LoaderWarning As String
+        Get
+            Return _LoaderWarning
+        End Get
+    End Property
+    Friend Sub RefreshLoaderWarning(Folder As String, Context As ModDependencyInspector.InspectionContext)
+        Dim Message = If(Entry Is Nothing OrElse Not Entry.IsEnabled, "", ModDependencyInspector.LoaderWarningFor(Folder, Entry.File.FullName, Context))
+        SetLoaderWarning(Message)
+    End Sub
+    Private Sub SetLoaderWarning(Message As String)
+        Message = If(Message, "")
+        If Message = _LoaderWarning Then Return
+        If _LoaderWarning = "" Then LoaderWarningOriginalTip = ToolTip
+        _LoaderWarning = Message
+        LoaderWarningBorder.Visibility = If(Message = "", Visibility.Collapsed, Visibility.Visible)
+        ToolTip = If(Message = "", LoaderWarningOriginalTip, Message)
+    End Sub
     Friend Sub BindRestorePoint(Value As JObject)
+        SetLoaderWarning("")
         ResourceEntry = Nothing
         Entry = Nothing
         RestorePoint = Value
@@ -24,6 +44,7 @@ Public Class MyLocalModItem
     End Property
 
     Friend Sub BindResource(Value As InstanceResourceEntry, Info As InstanceResourceOnlineInfo)
+        SetLoaderWarning("")
         RestorePoint = Nothing
         ResourceEntry = Value
         ResourceInfo = Info
@@ -386,6 +407,7 @@ Public Class MyLocalModItem
         Refresh()
     End Sub
     Public Sub Refresh()
+        If Entry Is Nothing OrElse Not Entry.IsEnabled Then SetLoaderWarning("")
         If RestorePoint IsNot Nothing Then
             Title = RestorePoint("label").ToString()
             SubTitle = "  |  " & CDate(RestorePoint("created")).ToLocalTime().ToString("yyyy-MM-dd HH:mm")

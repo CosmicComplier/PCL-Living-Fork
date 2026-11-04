@@ -91,6 +91,15 @@ jobs:
     - name: Verify account migration and updater
       run: powershell -NoProfile -STA -File scripts/Test-Release.ps1 -ExecutablePath "$env:PCL_EXE"
 
+    - name: Verify CNB update fallback and mirror publication
+      run: |
+        powershell -NoProfile -STA -File scripts/Test-UpdateSources.ps1 -ExecutablePath "$env:PCL_EXE"
+        if ($LASTEXITCODE -ne 0) { throw 'Update source checks failed' }
+        powershell -NoProfile -STA -File scripts/Test-LauncherUpdateSettings.ps1 -ExecutablePath "$env:PCL_EXE"
+        if ($LASTEXITCODE -ne 0) { throw 'Update source UI checks failed' }
+        python scripts/Test-CnbMirror.py
+        if ($LASTEXITCODE -ne 0) { throw 'CNB mirror checks failed' }
+
     - name: Verify cancelled version scanning
       run: powershell -NoProfile -STA -File scripts/Test-VersionListCancellation.ps1 -ExecutablePath "$env:PCL_EXE"
 

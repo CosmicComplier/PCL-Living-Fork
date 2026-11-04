@@ -50,7 +50,8 @@ Public Class MyMsgText
         Dim Impacts = TryCast(Body, ModDependencyImpactView)
         Dim Dependencies = TryCast(Body, ModDependencyCheckView)
         Dim Modpack = TryCast(Body, ModpackDialogView)
-        Width = Math.Min(If(Modpack IsNot Nothing, Modpack.PreferredWidth, If(Dependencies IsNot Nothing, Dependencies.PreferredWidth, If(Graph IsNot Nothing, Graph.PreferredWidth, If(Impacts IsNot Nothing, Impacts.PreferredWidth, 980)))), Math.Max(0, If(Host Is Nothing, 1000, Host.ActualWidth) - 50))
+        Dim Update = TryCast(Body, ModLauncherUpdate.UpdatePromptView)
+        Width = Math.Min(If(Update IsNot Nothing, Update.PreferredWidth, If(Modpack IsNot Nothing, Modpack.PreferredWidth, If(Dependencies IsNot Nothing, Dependencies.PreferredWidth, If(Graph IsNot Nothing, Graph.PreferredWidth, If(Impacts IsNot Nothing, Impacts.PreferredWidth, 980))))), Math.Max(0, If(Host Is Nothing, 1000, Host.ActualWidth) - 50))
         MaxHeight = Math.Max(0, If(Host Is Nothing, 740, Host.ActualHeight) - 50)
         If Body IsNot Nothing Then Body.MaxHeight = Math.Max(0, MaxHeight - 156)
     End Sub

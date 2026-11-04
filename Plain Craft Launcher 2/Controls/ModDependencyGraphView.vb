@@ -17,6 +17,7 @@ Friend NotInheritable Class ModDependencyGraphView
         Public IsCandidate As Boolean
         Public IsPlatformRequirement As Boolean
         Public NeedsAttention As Boolean
+        Public NeedsVersionReview As Boolean
         Public FileName As String
         Public IconPath As String
         Public Height As Double = 50
@@ -72,12 +73,13 @@ Friend NotInheritable Class ModDependencyGraphView
         End Function).ToList()
         For Each File In Report.OnlineFiles.Where(Function(Item) Item.Enabled AndAlso Not Inspector.SameFilePath(Item.FullPath, FullPath))
             Dim Required = File.Matches.Where(Function(Item) Item.IsExact).SelectMany(Function(Item) Item.Dependencies).
-                Where(Function(Item) Item.Kind = "required" AndAlso Item.EnabledPaths.Any(Function(Path) Inspector.SameFilePath(Path, FullPath))).ToList()
+                Where(Function(Item) Item.Kind = "required" AndAlso Item.EnabledPaths.Concat(Item.ProjectPaths).Any(Function(Path) Inspector.SameFilePath(Path, FullPath))).ToList()
             If Required.Count = 0 Then Continue For
             Dim Owner = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Inspector.SameFilePath(Item.RootPath, File.FullPath))
-            LeftNodes.Add(New GraphNode With {.Title = If(Owner?.Name, IO.Path.GetFileName(File.FullPath)), .Condition = "平台声明 · " & If(Owner?.Version, ""),
+            Dim VersionReview = Required.Any(Function(Item) Item.ProjectPaths.Count > 0 AndAlso Item.MatchedPaths.Count = 0 AndAlso Not String.IsNullOrEmpty(Item.VersionId))
+            LeftNodes.Add(New GraphNode With {.Title = If(Owner?.Name, IO.Path.GetFileName(File.FullPath)), .Condition = "平台声明 · " & If(Owner?.Version, "") & If(VersionReview, " · 指定版本待核对", ""), .IsCandidate = VersionReview,
                 .FileName = File.FullPath, .IconPath = Owner?.IconPath, .IsPlatformRequirement = True,
-                .Details = String.Join(vbCrLf, Required.Select(Function(Item) Item.Platform & " 必需前置：" & If(Item.ProjectName, Item.ProjectId)).Distinct())})
+                .Details = String.Join(vbCrLf, Required.Select(Function(Item) Item.Platform & " 必需前置：" & If(Item.ProjectName, Item.ProjectId) & vbCrLf & Item.Status).Distinct())})
         Next
         Dim RightNodes = Needed.Select(Function(Requirement)
             Dim Owner = Focus.First(Function(Item) Item.Dependencies.Contains(Requirement))
@@ -108,12 +110,18 @@ Friend NotInheritable Class ModDependencyGraphView
                 Identity = "choice:" & Requirement.Syntax & ":" & Requirement.Display
                 Condition = "提供方待确认"
             End If
+            Dim RuntimeOwner = Inspector.RuntimeOwnerId(Requirement.Id, Report.Context)
+            If RuntimeOwner <> "" Then
+                Title = Inspector.RuntimeDisplayName(RuntimeOwner)
+                Identity = "builtin:" & RuntimeOwner
+                If Inspector.IsInternalLoaderId(Requirement.Id) Then Condition = "加载器内置支持"
+            End If
             Select Case Requirement.Id
                 Case "fabricloader" : Title = "Fabric Loader"
                 Case "minecraft" : Title = "Minecraft"
                 Case "java" : Title = "Java"
             End Select
-            Return New GraphNode With {.Identity = Identity, .Title = Title, .Condition = Condition, .Details = "本地声明：" & Requirement.Display,
+            Return New GraphNode With {.Identity = Identity, .Title = Title, .Condition = Condition, .Details = "本地声明：" & Inspector.RequirementDisplay(Requirement, Report.Context),
                 .IsCandidate = Identity.StartsWith("choice:", StringComparison.Ordinal), .FileName = IconFile, .IconPath = IconPath}
         End Function).Where(Function(Item) Item IsNot Nothing).GroupBy(Function(Item) Item.Identity, StringComparer.Ordinal).
             Select(Function(Group) New GraphNode With {.Identity = Group.Key, .Title = Group.First().Title,
@@ -126,26 +134,32 @@ Friend NotInheritable Class ModDependencyGraphView
         For Each Requirement In PlatformRequirements
             Dim Local = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Requirement.EnabledPaths.Any(Function(Path) Inspector.SameFilePath(Path, Item.RootPath)))
             If Local Is Nothing Then Local = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Requirement.MatchedPaths.Any(Function(Path) Inspector.SameFilePath(Path, Item.RootPath)))
+            If Local Is Nothing Then Local = Report.Mods.FirstOrDefault(Function(Item) Not Item.IsNested AndAlso Requirement.ProjectPaths.Any(Function(Path) Inspector.SameFilePath(Path, Item.RootPath)))
+            Dim VersionReview = Requirement.ProjectPaths.Count > 0 AndAlso Requirement.MatchedPaths.Count = 0 AndAlso Not String.IsNullOrEmpty(Requirement.VersionId)
             If Local IsNot Nothing AndAlso Inspector.SameFilePath(Local.RootPath, FullPath) Then Continue For
-            Dim Key = If(Local Is Nothing, "platform:" & Requirement.Platform & ":" & Requirement.ProjectId,
+            Dim PlatformKey = If(Not String.IsNullOrEmpty(Requirement.ProjectId), Requirement.ProjectId,
+                If(Not String.IsNullOrEmpty(Requirement.VersionId), "version:" & Requirement.VersionId, "file:" & Requirement.DisplayName))
+            Dim Key = If(Local Is Nothing, "platform:" & Requirement.Platform & ":" & PlatformKey,
                 "jar:" & Inspector.FilePathKey(Local.RootPath).ToUpperInvariant())
-            '同名未确认声明仅在显示层合并，保留平台 ID，不作为安装匹配证据。
-            If Local Is Nothing AndAlso Not String.IsNullOrWhiteSpace(Requirement.ProjectName) AndAlso Requirement.ProjectName <> Requirement.ProjectId Then Key = "unconfirmed:" & Requirement.ProjectName.Trim().ToUpperInvariant()
+            '未确认的跨平台同名项目不能当作同一模组；已精确识别的同一 JAR 才合并。
             Dim Existing = RightNodes.FirstOrDefault(Function(Item) Item.Identity = Key)
-            Dim Detail = Requirement.Platform & " 精确版本：必需前置 " & If(Requirement.ProjectName, Requirement.ProjectId) & " [" & Requirement.ProjectId & "]"
+            Dim Detail = Requirement.Platform & " 精确版本：必需前置 " & Requirement.DisplayName & " [" & Requirement.ProjectId & "]" &
+                If(String.IsNullOrEmpty(Requirement.VersionId), "", "；指定平台版本 " & If(String.IsNullOrEmpty(Requirement.VersionName), "", Requirement.VersionName & " ") & "[" & Requirement.VersionId & "]")
             If Existing IsNot Nothing Then
                 Existing.IsPlatformRequirement = True
-                Existing.NeedsAttention = Existing.NeedsAttention OrElse Local Is Nothing OrElse Not Local.Enabled
+                Existing.NeedsAttention = Existing.NeedsAttention OrElse (Local IsNot Nothing AndAlso Not Local.Enabled)
+                Existing.NeedsVersionReview = Existing.NeedsVersionReview OrElse VersionReview
+                Existing.IsCandidate = Existing.IsCandidate OrElse Local Is Nothing OrElse VersionReview
                 Existing.Details &= vbCrLf & Detail & vbCrLf & Requirement.Status
             Else
-                RightNodes.Add(New GraphNode With {.Identity = Key, .Title = If(Local?.Name, If(Requirement.ProjectName, Requirement.ProjectId)),
+                RightNodes.Add(New GraphNode With {.Identity = Key, .Title = If(Local?.Name, Requirement.DisplayName),
                     .Condition = If(Local Is Nothing, "安装状态待确认", If(Local.Enabled, Local.Version, "已禁用 · " & Local.Version)), .Details = Detail & vbCrLf & Requirement.Status,
-                    .NeedsAttention = Local Is Nothing OrElse Not Local.Enabled,
+                    .NeedsAttention = Local IsNot Nothing AndAlso Not Local.Enabled, .NeedsVersionReview = VersionReview, .IsCandidate = Local Is Nothing OrElse VersionReview,
                     .IsPlatformRequirement = True, .FileName = Local?.RootPath, .IconPath = Local?.IconPath})
             End If
         Next
         For Each Node In RightNodes.Where(Function(Item) Item.IsPlatformRequirement)
-            Node.Condition = "平台前置 · " & Node.Condition
+            Node.Condition = "平台前置 · " & Node.Condition & If(Node.NeedsVersionReview, " · 指定版本待核对", "")
         Next
         For Each Node In RightNodes.Where(Function(Item) Not Item.IsPlatformRequirement)
             Node.Condition = "本地参考 · " & Node.Condition
@@ -160,8 +174,10 @@ Friend NotInheritable Class ModDependencyGraphView
             If Focus.Contains(Edge.Owner) Then
                 For Each Provider In Edge.Providers.Where(Function(Item) Item.IsBuiltin OrElse Not Inspector.SameFilePath(Item.RootPath, FullPath))
                     Dim Container = If(Provider.IsBuiltin, Provider, ContainerMod(Report, Provider))
-                    ConflictNodes.Add(New GraphNode With {.Identity = If(Provider.IsBuiltin, "builtin:" & Provider.Id, "jar:" & Inspector.FilePathKey(Provider.RootPath).ToUpperInvariant()),
-                        .Title = Container.Name, .Condition = Container.Version, .Details = Edge.Requirement.Display, .IsConflict = True,
+                    ConflictNodes.Add(New GraphNode With {.Identity = If(Provider.IsBuiltin, "builtin:" & If(Inspector.RuntimeOwnerId(Provider.Id, Report.Context) = "", Provider.Id, Inspector.RuntimeOwnerId(Provider.Id, Report.Context)), "jar:" & Inspector.FilePathKey(Provider.RootPath).ToUpperInvariant()),
+                        .Title = If(Provider.IsBuiltin AndAlso Inspector.RuntimeOwnerId(Provider.Id, Report.Context) <> "", Inspector.RuntimeDisplayName(Inspector.RuntimeOwnerId(Provider.Id, Report.Context)), Container.Name),
+                        .Condition = If(Provider.IsBuiltin AndAlso Inspector.IsInternalLoaderId(Provider.Id), "加载器内置支持", Container.Version),
+                        .Details = Inspector.RequirementDisplay(Edge.Requirement, Report.Context), .IsConflict = True,
                         .FileName = If(Provider.IsBuiltin, Nothing, Container.RootPath), .IconPath = Container.IconPath})
                 Next
             Else

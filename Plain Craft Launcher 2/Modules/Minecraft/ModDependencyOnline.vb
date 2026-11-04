@@ -25,6 +25,8 @@ Friend NotInheritable Class ModDependencyOnline
         'A detail view may request a specific file; startup leaves this unset.
         Public TargetFile As String
         Public ComparePlatformDependencies As Boolean
+        Public RefreshAllFiles As Boolean
+        Public Progress As Action(Of Integer, Integer)
         Public TimeBudgetMs As Integer = 6000
         Public RequestTimeoutMs As Integer = 2000
         Public MaxRequests As Integer = 12
@@ -72,6 +74,9 @@ Friend NotInheritable Class ModDependencyOnline
         End Sub
     End Class
     Private Shared ReadOnly SharedCache As New LookupCache
+    Friend Shared Sub ResetIndexLookups()
+        SharedCache.Clear()
+    End Sub
 
     Private Class FileData
         Public Info As ModDependencyInspector.OnlineFileInfo
@@ -111,25 +116,36 @@ Friend NotInheritable Class ModDependencyOnline
             CallerToken = Token
             Cache = If(Options.Cache, SharedCache)
             Deadline = CancellationTokenSource.CreateLinkedTokenSource(Token)
-            Deadline.CancelAfter(Math.Max(100, Math.Min(10000, Options.TimeBudgetMs)))
+            Deadline.CancelAfter(TimeLimitMs)
         End Sub
+        Public ReadOnly Property TimeLimitMs As Integer
+            Get
+                Return Math.Max(100, Math.Min(If(Options.RefreshAllFiles, 180000, 10000), Options.TimeBudgetMs))
+            End Get
+        End Property
+        Public ReadOnly Property FileLimit As Integer
+            Get
+                Return Math.Max(1, Math.Min(If(Options.RefreshAllFiles, 4096, 512), Options.MaxFiles))
+            End Get
+        End Property
         Public Function Now() As DateTime
             Return If(Options.Clock, Function() DateTime.UtcNow)().ToUniversalTime()
         End Function
         Public Sub Check()
             Deadline.Token.ThrowIfCancellationRequested()
-            If Timer.ElapsedMilliseconds >= Math.Max(100, Math.Min(10000, Options.TimeBudgetMs)) Then Throw New OperationCanceledException(Deadline.Token)
+            If Timer.ElapsedMilliseconds >= TimeLimitMs Then Throw New OperationCanceledException(Deadline.Token)
         End Sub
         Public Function Ask(Platform As String, Url As String, Method As HttpMethod, Body As String) As JToken
             Check()
             If Not IsAllowedApi(Url) Then Throw New ArgumentException("Unsupported dependency API address.")
             If Blocked.Contains(Platform) Then Return Nothing
             If Cache.Read("cooldown|" & Platform, Now()) IsNot Nothing Then
+                Report.OnlineIncomplete = True
                 Note(Platform & " 暂缓请求；已保留缓存和本地结果。")
                 Blocked.Add(Platform)
                 Return Nothing
             End If
-            If Report.OnlineRequests >= Math.Max(1, Math.Min(20, Options.MaxRequests)) Then Throw New LookupBudgetException()
+            If Report.OnlineRequests >= Math.Max(1, Math.Min(If(Options.RefreshAllFiles, 256, 20), Options.MaxRequests)) Then Throw New LookupBudgetException()
             Report.OnlineRequests += 1
             Using RequestDeadline = CancellationTokenSource.CreateLinkedTokenSource(Deadline.Token)
                 RequestDeadline.CancelAfter(Math.Max(50, Math.Min(3000, Options.RequestTimeoutMs)))
@@ -137,20 +153,24 @@ Friend NotInheritable Class ModDependencyOnline
                     Dim Request = If(Options.Request, AddressOf DefaultRequest)
                     Dim Result = Request(Url, Method, Body, RequestDeadline.Token)
                     Check()
+                    If Result Is Nothing Then Report.OnlineIncomplete = True
                     Return Result
                 Catch ex As OperationCanceledException
                     If Deadline.IsCancellationRequested OrElse CallerToken.IsCancellationRequested Then Throw
+                    Report.OnlineIncomplete = True
                     Blocked.Add(Platform)
                     Cache.Write("cooldown|" & Platform, New JValue(True), Now(), TimeSpan.FromSeconds(30))
                     Note(Platform & " 查询超时；保留本地检查结果。")
                     Return Nothing
                 Catch ex As HttpFailure
+                    Report.OnlineIncomplete = True
                     Blocked.Add(Platform)
                     Dim Seconds = If(ex.Code = 429, Math.Max(60, Math.Min(900, ex.RetrySeconds)), 30)
                     Cache.Write("cooldown|" & Platform, New JValue(True), Now(), TimeSpan.FromSeconds(Seconds))
                     Note(Platform & If(ex.Code = 429, " 请求过于频繁，已停止本轮查询。", " 查询失败（HTTP " & ex.Code & "）；保留本地结果。"))
                     Return Nothing
                 Catch ex As Exception
+                    Report.OnlineIncomplete = True
                     Blocked.Add(Platform)
                     Cache.Write("cooldown|" & Platform, New JValue(True), Now(), TimeSpan.FromSeconds(30))
                     Note(Platform & " 暂不可用；保留本地检查结果。")
@@ -175,6 +195,19 @@ Friend NotInheritable Class ModDependencyOnline
         Return Enrich(ModDependencyInspector.Inspect(ModsFolder, Context, Token), ModsFolder, Token, Options)
     End Function
 
+    'Manual refresh covers enabled and disabled files, with larger bounded batches than startup checks.
+    Friend Shared Function RebuildWithOnline(ModsFolder As String, Context As ModDependencyInspector.InspectionContext,
+                                            Optional Token As CancellationToken = Nothing, Optional Options As LookupOptions = Nothing) As ModDependencyInspector.InspectionReport
+        ResetIndexLookups()
+        Dim Report = ModDependencyInspector.RebuildIndex(ModsFolder, Context, Token)
+        If Report.IndexReadFailed Then Return Report
+        Dim Settings = If(Options, New LookupOptions())
+        Settings.RefreshAllFiles = True : Settings.ComparePlatformDependencies = True : Settings.TargetFile = Nothing
+        Settings.TimeBudgetMs = 180000 : Settings.MaxRequests = 256 : Settings.MaxFiles = 4096 : Settings.MaxSearchFiles = 0
+        Settings.MaxFileBytes = 512L * 1024 * 1024 : Settings.MaxTotalBytes = 16L * 1024 * 1024 * 1024
+        Return Enrich(Report, ModsFolder, Token, Settings)
+    End Function
+
     Friend Shared Function Enrich(Report As ModDependencyInspector.InspectionReport, ModsFolder As String,
                                  Optional Token As CancellationToken = Nothing, Optional Options As LookupOptions = Nothing) As ModDependencyInspector.InspectionReport
         If Report Is Nothing Then Throw New ArgumentNullException(NameOf(Report))
@@ -182,9 +215,19 @@ Friend NotInheritable Class ModDependencyOnline
         Dim TargetFile = ExplicitTarget(Settings.TargetFile, ModsFolder, Report, Settings.ComparePlatformDependencies)
         If Not String.IsNullOrWhiteSpace(Settings.TargetFile) AndAlso TargetFile Is Nothing Then Return Report
         If Not Report.MetadataIncomplete AndAlso TargetFile Is Nothing AndAlso Not Settings.ComparePlatformDependencies Then Return Report
+        Dim CanCache = Settings.Request Is Nothing AndAlso Settings.Fingerprint Is Nothing
+        If CanCache AndAlso Report.OnlineAttempted AndAlso Not Report.OnlineCancelled AndAlso
+            ((TargetFile Is Nothing AndAlso (Report.OnlineIndexScope = "all-files" OrElse Report.OnlineIndexScope = If(Settings.ComparePlatformDependencies, "all", "incomplete"))) OrElse
+             (TargetFile IsNot Nothing AndAlso Report.OnlineFiles.Any(Function(Item) Item.IsSupplementTarget AndAlso ModDependencyInspector.SameFilePath(Item.FullPath, TargetFile)))) Then
+            Token.ThrowIfCancellationRequested()
+            Report.OnlineRequests = 0
+            Return Report
+        End If
+        Dim PreviousFiles = If(CanCache, Report.OnlineFiles.ToList(), New List(Of ModDependencyInspector.OnlineFileInfo)), PreviousScope = Report.OnlineIndexScope
         Report.OnlineAttempted = True
         Report.OnlineCancelled = False
         Report.OnlineTimedOut = False
+        Report.OnlineIncomplete = False
         Report.OnlineRequests = 0
         Report.OnlineFiles.Clear()
         Report.OnlineNotes.Clear()
@@ -205,15 +248,25 @@ Friend NotInheritable Class ModDependencyOnline
                 ResolveProjects(Files, "CurseForge", Work)
                 SearchCandidates(Files, Work)
             Catch ex As OperationCanceledException
+                Report.OnlineIncomplete = True
                 Report.OnlineCancelled = Token.IsCancellationRequested
                 Report.OnlineTimedOut = Not Report.OnlineCancelled
                 Work.Note(If(Report.OnlineCancelled, "联网补充已取消，本地检查结果已保留。", "联网补充达到总时间预算，已停止后续请求。"))
             Catch ex As LookupBudgetException
+                Report.OnlineIncomplete = True
                 Work.Note("联网补充达到请求数量上限，已停止后续请求。")
             Catch ex As Exception
+                Report.OnlineIncomplete = True
                 Work.Note("联网补充未完成，本地检查结果已保留。")
             Finally
+                If CanCache Then
+                    For Each Previous In PreviousFiles
+                        If Not Report.OnlineFiles.Any(Function(Item) ModDependencyInspector.SameFilePath(Item.FullPath, Previous.FullPath)) Then Report.OnlineFiles.Add(Previous)
+                    Next
+                    Report.OnlineIndexScope = If(TargetFile Is Nothing, If(Settings.RefreshAllFiles, "all-files", If(Settings.ComparePlatformDependencies, "all", "incomplete")), If(PreviousScope = "all" OrElse PreviousScope = "all-files", PreviousScope, "file"))
+                End If
                 MapRelations(Report)
+                If CanCache Then ModDependencyIndex.RememberOnline(ModsFolder, Report, Token)
             End Try
         End Using
         Return Report
@@ -230,15 +283,16 @@ Friend NotInheritable Class ModDependencyOnline
         End If
         Dim Targets = Paths.ToDictionary(Function(Value) Value,
             Function(Value) If(Work.TargetFile IsNot Nothing, ModDependencyInspector.SameFilePath(Value, Work.TargetFile),
-                IsEnabledFile(Value) AndAlso (Work.Options.ComparePlatformDependencies OrElse NeedsSupplement(Value, Work.Report))), StringComparer.OrdinalIgnoreCase)
+                Work.Options.RefreshAllFiles OrElse (IsEnabledFile(Value) AndAlso (Work.Options.ComparePlatformDependencies OrElse NeedsSupplement(Value, Work.Report)))), StringComparer.OrdinalIgnoreCase)
         If Not Targets.Values.Any(Function(Value) Value) Then Return Result
-        Dim Total As Long
-        For Each FullPath In Paths.OrderByDescending(Function(Value) Targets(Value)).ThenBy(Function(Value) Value, StringComparer.OrdinalIgnoreCase).Take(Math.Max(1, Math.Min(512, Work.Options.MaxFiles)))
+        Dim Total As Long, Visited As Integer
+        For Each FullPath In Paths.OrderByDescending(Function(Value) Targets(Value)).ThenBy(Function(Value) Value, StringComparer.OrdinalIgnoreCase).Take(Work.FileLimit)
             Work.Check()
             Try
                 Dim Info As New FileInfo(FullPath)
                 If (Info.Attributes And FileAttributes.ReparsePoint) <> 0 Then Continue For
                 If Info.Length > Math.Max(1, Work.Options.MaxFileBytes) OrElse Info.Length > Math.Max(1, Work.Options.MaxTotalBytes) - Total Then
+                    Work.Report.OnlineIncomplete = True
                     Work.Note("部分文件超过联网哈希读取上限，未据此判定缺失依赖。")
                     Continue For
                 End If
@@ -247,10 +301,17 @@ Friend NotInheritable Class ModDependencyOnline
             Catch ex As OperationCanceledException
                 Throw
             Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException
+                Work.Report.OnlineIncomplete = True
                 Work.Note("部分本地文件无法读取，未据此判定缺失依赖。")
+            Finally
+                Visited += 1
+                Work.Options.Progress?.Invoke(Visited, Paths.Count)
             End Try
         Next
-        If Paths.Count > Math.Max(1, Math.Min(512, Work.Options.MaxFiles)) Then Work.Note("联网补充达到文件数量上限；本次平台映射可能不完整。")
+        If Paths.Count > Work.FileLimit Then
+            Work.Report.OnlineIncomplete = True
+            Work.Note("联网补充达到文件数量上限；本次平台映射可能不完整。")
+        End If
         Return Result
     End Function
     Private Shared Function IsModFile(Value As String) As Boolean
@@ -365,96 +426,113 @@ Friend NotInheritable Class ModDependencyOnline
     Private Shared Sub MatchModrinth(Files As List(Of FileData), Work As Session)
         Dim Pending = Files.Where(Function(Item) Not CachedMatches(Item, "Modrinth", Work)).ToList()
         If Pending.Count = 0 Then Return
-        Dim Response = TryCast(Work.Ask("Modrinth", "https://api.modrinth.com/v2/version_files", HttpMethod.Post,
-            New JObject(New JProperty("algorithm", "sha1"), New JProperty("hashes", New JArray(Pending.Select(Function(Item) Item.Info.Sha1).Distinct()))).ToString(Formatting.None)), JObject)
-        If Response Is Nothing Then Return
-        For Each File In Pending
-            Dim Version = TryCast(Response(File.Info.Sha1), JObject)
-            If Version IsNot Nothing AndAlso ValidModrinthId(S(Version("project_id"))) AndAlso ValidModrinthId(S(Version("id"))) AndAlso
-                A(Version("files")).Any(Function(Item) S(Item("hashes")?("sha1")).Equals(File.Info.Sha1, StringComparison.OrdinalIgnoreCase) AndAlso
-                    (Item("size") Is Nothing OrElse S(Item("size")) = File.Length.ToString(Globalization.CultureInfo.InvariantCulture))) Then
-                Dim Match As New ModDependencyInspector.OnlineProjectInfo With {.Platform = "Modrinth", .ProjectId = S(Version("project_id")), .VersionId = S(Version("id")),
-                    .ProjectName = S(Version("project_id")), .VersionName = Caption(S(Version("version_number"))), .IsExact = True, .MatchBasis = "SHA1 精确文件匹配",
-                    .Website = "https://modrinth.com/mod/" & Uri.EscapeDataString(S(Version("project_id")))}
-                For Each Requirement In A(Version("dependencies")).Take(64)
-                    Dim Id = S(Requirement("project_id")), VersionId = S(Requirement("version_id")), Kind = S(Requirement("dependency_type"))
-                    If Not {"required", "optional", "incompatible", "embedded"}.Contains(Kind) Then Continue For
-                    Match.Dependencies.Add(New ModDependencyInspector.OnlineDependency With {.Platform = "Modrinth", .ProjectId = If(ValidModrinthId(Id), Id, ""),
-                        .VersionId = If(ValidModrinthId(VersionId), VersionId, ""), .FileName = Caption(S(Requirement("file_name"))), .Kind = Kind})
-                Next
-                File.Info.Matches.Add(Match)
-            End If
-            StoreMatches(File, "Modrinth", Work)
+        For Offset = 0 To Pending.Count - 1 Step 100
+            Dim Batch = Pending.Skip(Offset).Take(100).ToList()
+            Dim Response = TryCast(Work.Ask("Modrinth", "https://api.modrinth.com/v2/version_files", HttpMethod.Post,
+                New JObject(New JProperty("algorithm", "sha1"), New JProperty("hashes", New JArray(Batch.Select(Function(Item) Item.Info.Sha1).Distinct()))).ToString(Formatting.None)), JObject)
+            If Response Is Nothing Then Return
+            For Each File In Batch
+                Dim Version = TryCast(Response(File.Info.Sha1), JObject)
+                If Version IsNot Nothing AndAlso ValidModrinthId(S(Version("project_id"))) AndAlso ValidModrinthId(S(Version("id"))) AndAlso
+                    A(Version("files")).Any(Function(Item) S(Item("hashes")?("sha1")).Equals(File.Info.Sha1, StringComparison.OrdinalIgnoreCase) AndAlso
+                        (Item("size") Is Nothing OrElse S(Item("size")) = File.Length.ToString(Globalization.CultureInfo.InvariantCulture))) Then
+                    Dim Match As New ModDependencyInspector.OnlineProjectInfo With {.Platform = "Modrinth", .ProjectId = S(Version("project_id")), .VersionId = S(Version("id")),
+                        .ProjectName = S(Version("project_id")), .VersionName = Caption(S(Version("version_number"))), .IsExact = True, .MatchBasis = "SHA1 精确文件匹配",
+                        .Website = "https://modrinth.com/mod/" & Uri.EscapeDataString(S(Version("project_id")))}
+                    For Each Requirement In A(Version("dependencies")).Take(64)
+                        Dim Id = S(Requirement("project_id")), VersionId = S(Requirement("version_id")), Kind = S(Requirement("dependency_type"))
+                        If Not {"required", "optional", "incompatible", "embedded"}.Contains(Kind) Then Continue For
+                        Match.Dependencies.Add(New ModDependencyInspector.OnlineDependency With {.Platform = "Modrinth", .ProjectId = If(ValidModrinthId(Id), Id, ""),
+                            .VersionId = If(ValidModrinthId(VersionId), VersionId, ""), .FileName = Caption(S(Requirement("file_name"))), .Kind = Kind})
+                    Next
+                    File.Info.Matches.Add(Match)
+                End If
+                StoreMatches(File, "Modrinth", Work)
+            Next
         Next
     End Sub
     Private Shared Sub MatchCurseForge(Files As List(Of FileData), Work As Session)
         Dim Pending = Files.Where(Function(Item) Not CachedMatches(Item, "CurseForge", Work)).ToList()
         If Pending.Count = 0 Then Return
-        For Each File In Pending
-            Work.Check()
-            Fingerprint(File, Work)
-        Next
-        Dim Response = Work.Ask("CurseForge", "https://api.curseforge.com/v1/fingerprints/432", HttpMethod.Post,
-            New JObject(New JProperty("fingerprints", New JArray(Pending.Select(Function(Item) Item.Fingerprint).Distinct()))).ToString(Formatting.None))
-        If Response Is Nothing Then Return
-        For Each Raw In A(Response("data")?("exactMatches"))
-            Dim Version = TryCast(Raw("file"), JObject), Id = S(Raw("id"))
-            If Version Is Nothing OrElse Not ValidCurseForgeId(Id) OrElse S(Version("modId")) <> Id OrElse Not ValidCurseForgeId(S(Version("id"))) Then Continue For
-            If Version("gameId") IsNot Nothing AndAlso S(Version("gameId")) <> "432" Then Continue For
-            For Each File In Pending
-                If S(Version("fileFingerprint")) <> File.Fingerprint.ToString(Globalization.CultureInfo.InvariantCulture) OrElse
-                    (Version("fileLength") IsNot Nothing AndAlso S(Version("fileLength")) <> File.Length.ToString(Globalization.CultureInfo.InvariantCulture)) OrElse
-                    Not A(Version("hashes")).Any(Function(Hash) (S(Hash("algo")) = "1" AndAlso S(Hash("value")).Equals(File.Info.Sha1, StringComparison.OrdinalIgnoreCase)) OrElse
-                        (S(Hash("algo")) = "2" AndAlso S(Hash("value")).Equals(File.Md5, StringComparison.OrdinalIgnoreCase))) Then Continue For
-                Dim Match As New ModDependencyInspector.OnlineProjectInfo With {.Platform = "CurseForge", .ProjectId = Id, .VersionId = S(Version("id")), .ProjectName = Id,
-                    .VersionName = Caption(S(Version("displayName"))), .IsExact = True, .MatchBasis = "指纹及内容哈希精确匹配", .Website = "https://www.curseforge.com/projects/" & Id}
-                For Each Requirement In A(Version("dependencies")).Take(64)
-                    Dim DependencyId = S(Requirement("modId")), Kind As String
-                    Select Case S(Requirement("relationType"))
-                        Case "2" : Kind = "optional"
-                        Case "3" : Kind = "required"
-                        Case "5" : Kind = "incompatible"
-                        Case "1", "6" : Kind = "embedded"
-                        Case Else : Continue For
-                    End Select
-                    If ValidCurseForgeId(DependencyId) Then Match.Dependencies.Add(New ModDependencyInspector.OnlineDependency With {.Platform = "CurseForge", .ProjectId = DependencyId, .Kind = Kind})
-                Next
-                If Not File.Info.Matches.Any(Function(Item) Item.Platform = "CurseForge" AndAlso Item.ProjectId = Id AndAlso Item.VersionId = Match.VersionId) Then File.Info.Matches.Add(Match)
+        For Offset = 0 To Pending.Count - 1 Step 100
+            Dim Batch = Pending.Skip(Offset).Take(100).ToList()
+            For Each File In Batch
+                Work.Check()
+                Fingerprint(File, Work)
             Next
-        Next
-        For Each File In Pending
-            StoreMatches(File, "CurseForge", Work)
+            Dim Response = Work.Ask("CurseForge", "https://api.curseforge.com/v1/fingerprints/432", HttpMethod.Post,
+                New JObject(New JProperty("fingerprints", New JArray(Batch.Select(Function(Item) Item.Fingerprint).Distinct()))).ToString(Formatting.None))
+            If Response Is Nothing Then Return
+            For Each Raw In A(Response("data")?("exactMatches"))
+                Dim Version = TryCast(Raw("file"), JObject), Id = S(Raw("id"))
+                If Version Is Nothing OrElse Not ValidCurseForgeId(Id) OrElse S(Version("modId")) <> Id OrElse Not ValidCurseForgeId(S(Version("id"))) Then Continue For
+                If Version("gameId") IsNot Nothing AndAlso S(Version("gameId")) <> "432" Then Continue For
+                For Each File In Batch
+                    If S(Version("fileFingerprint")) <> File.Fingerprint.ToString(Globalization.CultureInfo.InvariantCulture) OrElse
+                        (Version("fileLength") IsNot Nothing AndAlso S(Version("fileLength")) <> File.Length.ToString(Globalization.CultureInfo.InvariantCulture)) OrElse
+                        Not A(Version("hashes")).Any(Function(Hash) (S(Hash("algo")) = "1" AndAlso S(Hash("value")).Equals(File.Info.Sha1, StringComparison.OrdinalIgnoreCase)) OrElse
+                            (S(Hash("algo")) = "2" AndAlso S(Hash("value")).Equals(File.Md5, StringComparison.OrdinalIgnoreCase))) Then Continue For
+                    Dim Match As New ModDependencyInspector.OnlineProjectInfo With {.Platform = "CurseForge", .ProjectId = Id, .VersionId = S(Version("id")), .ProjectName = Id,
+                        .VersionName = Caption(S(Version("displayName"))), .IsExact = True, .MatchBasis = "指纹及内容哈希精确匹配", .Website = "https://www.curseforge.com/projects/" & Id}
+                    For Each Requirement In A(Version("dependencies")).Take(64)
+                        Dim DependencyId = S(Requirement("modId")), Kind As String
+                        Select Case S(Requirement("relationType"))
+                            Case "2" : Kind = "optional"
+                            Case "3" : Kind = "required"
+                            Case "5" : Kind = "incompatible"
+                            Case "1", "6" : Kind = "embedded"
+                            Case Else : Continue For
+                        End Select
+                        If ValidCurseForgeId(DependencyId) Then Match.Dependencies.Add(New ModDependencyInspector.OnlineDependency With {.Platform = "CurseForge", .ProjectId = DependencyId, .Kind = Kind})
+                    Next
+                    If Not File.Info.Matches.Any(Function(Item) Item.Platform = "CurseForge" AndAlso Item.ProjectId = Id AndAlso Item.VersionId = Match.VersionId) Then File.Info.Matches.Add(Match)
+                Next
+            Next
+            For Each File In Batch
+                StoreMatches(File, "CurseForge", Work)
+            Next
         Next
     End Sub
 
     Private Shared Sub ResolveVersionProjects(Files As List(Of FileData), Work As Session)
         Dim Requirements = Files.SelectMany(Function(File) File.Info.Matches).Where(Function(Match) Match.Platform = "Modrinth").SelectMany(Function(Match) Match.Dependencies).
-            Where(Function(Item) Item.ProjectId = "" AndAlso ValidModrinthId(Item.VersionId)).ToList()
+            Where(Function(Item) ValidModrinthId(Item.VersionId)).ToList()
         Dim Ids As New List(Of String)
         For Each Requirement In Requirements
-            Dim Cached = Work.Cache.Read("version|Modrinth|" & Requirement.VersionId, Work.Now())
-            If Cached IsNot Nothing Then
-                Requirement.ProjectId = S(Cached)
+            Dim Cached = TryCast(Work.Cache.Read("version|Modrinth|" & Requirement.VersionId, Work.Now()), JObject)
+            If Cached IsNot Nothing AndAlso (Requirement.ProjectId = "" OrElse Requirement.ProjectId = S(Cached("project"))) Then
+                Requirement.ProjectId = S(Cached("project"))
+                Requirement.VersionName = S(Cached("name"))
             ElseIf Not Ids.Contains(Requirement.VersionId) Then
                 Ids.Add(Requirement.VersionId)
             End If
         Next
         If Ids.Count = 0 Then Return
-        Dim Response = Work.Ask("Modrinth", "https://api.modrinth.com/v2/versions?ids=" & JsonIds(Ids.Take(100)), HttpMethod.Get, Nothing)
-        If Response Is Nothing Then Return
-        For Each Version In A(Response)
-            Dim Id = S(Version("id")), Project = S(Version("project_id"))
-            If Not Ids.Contains(Id) OrElse Not ValidModrinthId(Project) Then Continue For
-            Work.Cache.Write("version|Modrinth|" & Id, New JValue(Project), Work.Now(), Work.Lifetime(True))
-            For Each Requirement In Requirements.Where(Function(Item) Item.VersionId = Id)
-                Requirement.ProjectId = Project
+        For Offset = 0 To Ids.Count - 1 Step 100
+            Dim Batch = Ids.Skip(Offset).Take(100).ToList()
+            Dim Response = Work.Ask("Modrinth", "https://api.modrinth.com/v2/versions?ids=" & JsonIds(Batch), HttpMethod.Get, Nothing)
+            If Response Is Nothing Then Return
+            For Each Version In A(Response)
+                Dim Id = S(Version("id")), Project = S(Version("project_id"))
+                If Not Batch.Contains(Id) OrElse Not ValidModrinthId(Project) Then Continue For
+                Dim Name = Caption(S(Version("version_number")))
+                Work.Cache.Write("version|Modrinth|" & Id, New JObject(New JProperty("project", Project), New JProperty("name", Name)), Work.Now(), Work.Lifetime(True))
+                For Each Requirement In Requirements.Where(Function(Item) Item.VersionId = Id)
+                    If Requirement.ProjectId = "" OrElse Requirement.ProjectId = Project Then
+                        Requirement.ProjectId = Project
+                        Requirement.VersionName = Name
+                    Else
+                        Work.Report.OnlineIncomplete = True
+                        Work.Note("平台依赖的项目与指定版本不一致，已保留原始声明供核对。")
+                    End If
+                Next
             Next
         Next
     End Sub
     Private Shared Sub ResolveProjects(Files As List(Of FileData), Platform As String, Work As Session)
         Dim Matches = Files.SelectMany(Function(File) File.Info.Matches).Where(Function(Match) Match.Platform = Platform).ToList()
         Dim Requirements = Matches.SelectMany(Function(Match) Match.Dependencies).ToList()
-        Dim Ids = Matches.Select(Function(Match) Match.ProjectId).Concat(Requirements.Select(Function(Item) Item.ProjectId)).Where(Function(Id) Id <> "").Distinct().Take(100).ToList()
+        Dim Ids = Matches.Select(Function(Match) Match.ProjectId).Concat(Requirements.Select(Function(Item) Item.ProjectId)).Where(Function(Id) Id <> "").Distinct().ToList()
         Dim Projects As New Dictionary(Of String, JObject)(StringComparer.Ordinal), Pending As New List(Of String)
         For Each Id In Ids
             Dim Cached = TryCast(Work.Cache.Read("project|" & Platform & "|" & Id, Work.Now()), JObject)
@@ -465,23 +543,26 @@ Friend NotInheritable Class ModDependencyOnline
             End If
         Next
         If Pending.Count > 0 Then
-            Dim Response As JToken
-            If Platform = "Modrinth" Then
-                Response = Work.Ask(Platform, "https://api.modrinth.com/v2/projects?ids=" & JsonIds(Pending), HttpMethod.Get, Nothing)
-            Else
-                Response = Work.Ask(Platform, "https://api.curseforge.com/v1/mods", HttpMethod.Post,
-                    New JObject(New JProperty("modIds", New JArray(Pending.Select(Function(Id) Integer.Parse(Id, Globalization.CultureInfo.InvariantCulture))))).ToString(Formatting.None))
-                Response = Response?("data")
-            End If
-            For Each Project In A(Response)
-                Dim Id = S(Project("id"))
-                If Not Pending.Contains(Id) Then Continue For
-                Dim Valid = If(Platform = "Modrinth", S(Project("project_type")) = "mod", IsCurseForgeModProject(Project))
-                Dim Title = Caption(If(Platform = "Modrinth", S(Project("title")), S(Project("name"))))
-                Dim Website = If(Platform = "Modrinth", "https://modrinth.com/mod/" & Uri.EscapeDataString(Id), If(IsCurseForgeWebsite(S(Project("links")?("websiteUrl"))), S(Project("links")("websiteUrl")), "https://www.curseforge.com/projects/" & Id))
-                Dim Slim As New JObject(New JProperty("valid", Valid), New JProperty("title", Title), New JProperty("website", Website))
-                Projects(Id) = Slim
-                Work.Cache.Write("project|" & Platform & "|" & Id, Slim, Work.Now(), Work.Lifetime(True))
+            For Offset = 0 To Pending.Count - 1 Step 100
+                Dim Batch = Pending.Skip(Offset).Take(100).ToList()
+                Dim Response As JToken
+                If Platform = "Modrinth" Then
+                    Response = Work.Ask(Platform, "https://api.modrinth.com/v2/projects?ids=" & JsonIds(Batch), HttpMethod.Get, Nothing)
+                Else
+                    Response = Work.Ask(Platform, "https://api.curseforge.com/v1/mods", HttpMethod.Post,
+                        New JObject(New JProperty("modIds", New JArray(Batch.Select(Function(Id) Integer.Parse(Id, Globalization.CultureInfo.InvariantCulture))))).ToString(Formatting.None))
+                    Response = Response?("data")
+                End If
+                For Each Project In A(Response)
+                    Dim Id = S(Project("id"))
+                    If Not Batch.Contains(Id) Then Continue For
+                    Dim Valid = If(Platform = "Modrinth", S(Project("project_type")) = "mod", IsCurseForgeModProject(Project))
+                    Dim Title = Caption(If(Platform = "Modrinth", S(Project("title")), S(Project("name"))))
+                    Dim Website = If(Platform = "Modrinth", "https://modrinth.com/mod/" & Uri.EscapeDataString(Id), If(IsCurseForgeWebsite(S(Project("links")?("websiteUrl"))), S(Project("links")("websiteUrl")), "https://www.curseforge.com/projects/" & Id))
+                    Dim Slim As New JObject(New JProperty("valid", Valid), New JProperty("title", Title), New JProperty("website", Website))
+                    Projects(Id) = Slim
+                    Work.Cache.Write("project|" & Platform & "|" & Id, Slim, Work.Now(), Work.Lifetime(True))
+                Next
             Next
         End If
         For Each File In Files
@@ -544,11 +625,14 @@ Friend NotInheritable Class ModDependencyOnline
             File.Status = If(File.Matches.Count > 0, "已按内容精确匹配到下载源版本。", "未找到精确匹配；候选项目需要手动核对。")
             For Each Match In File.Matches.Where(Function(Item) Item.IsExact)
                 For Each Requirement In Match.Dependencies
+                    Requirement.ProjectPaths.Clear()
                     Requirement.MatchedPaths.Clear()
                     Requirement.EnabledPaths.Clear()
                     If Requirement.ProjectId <> "" Then
-                        For Each Provider In Report.OnlineFiles.Where(Function(Item) Item.Matches.Any(Function(Project) Project.IsExact AndAlso Project.Platform = Requirement.Platform AndAlso
-                            Project.ProjectId = Requirement.ProjectId AndAlso (Requirement.VersionId = "" OrElse Project.VersionId = Requirement.VersionId)))
+                        For Each Provider In Report.OnlineFiles.Where(Function(Item) Item.Matches.Any(Function(Project) Project.IsExact AndAlso Project.Platform = Requirement.Platform AndAlso Project.ProjectId = Requirement.ProjectId))
+                            Requirement.ProjectPaths.Add(Provider.FullPath)
+                            If Requirement.VersionId <> "" AndAlso Not Provider.Matches.Any(Function(Project) Project.IsExact AndAlso Project.Platform = Requirement.Platform AndAlso
+                                Project.ProjectId = Requirement.ProjectId AndAlso Project.VersionId = Requirement.VersionId) Then Continue For
                             Requirement.MatchedPaths.Add(Provider.FullPath)
                             If Provider.Enabled Then Requirement.EnabledPaths.Add(Provider.FullPath)
                         Next
@@ -557,6 +641,9 @@ Friend NotInheritable Class ModDependencyOnline
                         Requirement.Status = "精确映射到启用文件：" & String.Join("、", Requirement.EnabledPaths.Select(Function(Value) Path.GetFileName(Value)))
                     ElseIf Requirement.MatchedPaths.Count > 0 Then
                         Requirement.Status = "仅映射到禁用文件，需核对：" & String.Join("、", Requirement.MatchedPaths.Select(Function(Value) Path.GetFileName(Value)))
+                    ElseIf Requirement.ProjectPaths.Count > 0 Then
+                        Requirement.Status = "已安装同一项目的其他版本：" & String.Join("、", Requirement.ProjectPaths.Select(Function(Value) Path.GetFileName(Value))) &
+                            "；平台指定版本 " & If(String.IsNullOrEmpty(Requirement.VersionName), "", Requirement.VersionName & " ") & "[" & Requirement.VersionId & "]，需核对版本声明，以本地加载器检查结果为准。"
                     Else
                         Requirement.Status = "未在本次精确匹配中找到，需核对；未据此判定缺失或版本错误"
                     End If

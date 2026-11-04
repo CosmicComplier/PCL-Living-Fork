@@ -67,7 +67,7 @@ try {
 
 $updater=$asm.GetType('PCL.ModLauncherUpdate',$true)
 $new=$updater.GetMethod('NewerRelease',$flags)
-foreach($case in @(@('v1.0.1','1.0.0',$true),@('v1.0.1.0','1.0.1',$false),@('v0.9.9','1.0.1',$false),@('v1.0.2-beta','1.0.1',$false))) {
+foreach($case in @(@('v1.0.1','1.0.0',$true),@('v1.0.1.0','1.0.1',$false),@('v0.9.9','1.0.1',$false),@('v1.0.2-beta','1.0.1',$false),@('v1.3.5','1.3.5-pre-1',$true),@('v1.3.6','1.3.5-pre-1',$true),@('v1.3.4','1.3.5-pre-1',$false),@('v1.3.5-pre-2','1.3.5-pre-1',$false),@('v1.3.5','1.3.5-pre-',$false))) {
  if($new.Invoke($null,@($case[0],$case[1])) -ne $case[2]) { throw 'Version comparison failed' }
 }
 $valid=$updater.GetMethod('ValidAssetUrl',$flags)

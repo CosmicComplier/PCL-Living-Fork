@@ -39,6 +39,8 @@ public sealed class ModDependencyOnlineFixtureNetwork {
  public readonly List<string> Calls=new List<string>();
  public readonly List<string> Bodies=new List<string>();
  public readonly List<string> Unexpected=new List<string>();
+ public readonly List<int> ProgressCounts=new List<int>();
+ public void Progress(int done,int total){if(done>total)throw new InvalidOperationException("Invalid indexing progress");ProgressCounts.Add(done);}
  public JToken Versions=new JObject(), Fingerprints=JObject.Parse("{\"data\":{\"exactMatches\":[]}}");
  public JToken Projects=new JArray(), CfProjects=JObject.Parse("{\"data\":[]}"), VersionProjects=new JArray();
  public JToken Search=JObject.Parse("{\"hits\":[]}"), CfSearch=JObject.Parse("{\"data\":[]}");
@@ -108,7 +110,7 @@ End Module
 '@)
   $ExecutablePath=Join-Path $fixture 'ModDependencyOnlineFixture.dll'
   $refs=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll','System.Net.Http.dll')|ForEach-Object {Join-Path $framework $_}
-  & $VbcPath @('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($refs -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb'),$stub)
+  & $VbcPath @('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($refs -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb'),$stub)
   if($LASTEXITCODE -ne 0){throw 'Isolated online dependency compilation failed.'}
  }else {
   foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll')){
@@ -117,6 +119,7 @@ End Module
  }
  $asm=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes([IO.Path]::GetFullPath($ExecutablePath)))
  $inspector=$asm.GetType('PCL.ModDependencyInspector',$true)
+ $asm.GetType('PCL.ModDependencyIndex').GetProperty('CacheDirectory',$flags).SetValue($null,(Join-Path $fixture 'dependency-index'),$null)
  $online=$asm.GetType('PCL.ModDependencyOnline',$true)
  $contextType=$asm.GetType('PCL.ModDependencyInspector+InspectionContext',$true)
  $optionType=$asm.GetType('PCL.ModDependencyOnline+LookupOptions',$true)
@@ -233,7 +236,7 @@ End Module
  $folder=Folder 'failure';$unknown=Jar $folder 'offline.jar';$null=Jar $folder 'duplicate-one.jar' 'duplicate';$null=Jar $folder 'duplicate-two.jar' 'duplicate'
  $network=[ModDependencyOnlineFixtureNetwork]::new();$network.Fail=$true;$options=Options $network;$local=Scan $folder;$beforeErrors=$local.Issues.Count
  $report=Enrich $local $folder $options
- Assert ($report.HasErrors -and $report.Issues.Count -eq $beforeErrors -and $report.OnlineNotes.Count -gt 0) 'Offline failure changed existing definite local errors.'
+ Assert ($report.HasErrors -and $report.Issues.Count -eq $beforeErrors -and $report.OnlineNotes.Count -gt 0 -and $report.OnlineIncomplete) 'Offline failure changed existing definite local errors or silently reported a complete refresh.'
  $calls=$network.Calls.Count;$report=Enrich (Scan $folder) $folder $options
  Assert ($network.Calls.Count -eq $calls) 'Network failure cooldown repeatedly requested the same platform.'
  $network=[ModDependencyOnlineFixtureNetwork]::new();$httpType=$asm.GetType('PCL.ModDependencyOnline+HttpFailure',$true)
@@ -295,6 +298,55 @@ End Module
  $mixed=Folder 'mixed-disabled';$null=Jar $mixed 'active-unknown.jar';$mixedDisabled=Jar $mixed 'disabled-unknown.jar.disabled';$network=[ModDependencyOnlineFixtureNetwork]::new()
  $report=Enrich (Scan $mixed) $mixed (Options $network)
  Assert ($report.OnlineAttempted -and -not (FileInfo $report $mixedDisabled).IsSupplementTarget) 'Startup treated an unread disabled peer as a lookup/search target.'
+ $indexedFolder=Folder 'persistent-lookup';$indexedFile=Jar $indexedFolder 'indexed.jar' 'indexed_mod';$indexed=Scan $indexedFolder
+ $info=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineFileInfo'));$info.FullPath=$indexedFile;$info.Enabled=$true;$info.IsSupplementTarget=$true
+ $project=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$project.Platform='Modrinth';$project.ProjectId='indexed_project';$project.ProjectName='Cached project';$project.IsExact=$true;$info.Matches.Add($project)
+ $indexed.OnlineFiles.Add($info);$indexed.OnlineAttempted=$true;$indexed.OnlineIndexScope='all';$indexed.OnlineCheckedAtUtc=[DateTime]::SpecifyKind([DateTime]::Parse('2020-01-01'),[DateTimeKind]::Utc)
+ $indexType=$asm.GetType('PCL.ModDependencyIndex');Invoke-Static $indexType 'RememberOnline' @($indexedFolder,$indexed,$none)|Out-Null;Invoke-Static $indexType 'ClearMemory' @()|Out-Null
+ $saved=Scan $indexedFolder;$lease=[IO.File]::Open($indexedFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+ try{
+  $cachedOptions=[Activator]::CreateInstance($optionType);$cachedOptions.ComparePlatformDependencies=$true
+  $reused=Enrich $saved $indexedFolder $cachedOptions
+  Assert ($reused.OnlineFiles.Count -eq 1 -and $reused.OnlineFiles[0].Matches[0].ProjectName -eq 'Cached project' -and $reused.OnlineRequests -eq 0 -and $reused.OnlineCheckedAtUtc.Year -eq 2020 -and $reused.OnlineNotes.Count -eq 0) 'Persistent platform mapping was rehashed or queried again for unchanged mods.'
+ }finally{$lease.Dispose()}
+ $rebuilt=Invoke-Static $inspector 'RebuildIndex' @($indexedFolder,$saved.Context,$none)
+ Assert (-not $rebuilt.OnlineAttempted -and $rebuilt.OnlineFiles.Count -eq 0) 'Manual tree rebuild retained stale platform lookup results.'
+ # Manual refresh must fetch declarations for the entire folder, including disabled and reliable files.
+ # More than two API pages locks down the old 64-file and 100-project truncation together.
+ $refreshFolder=Folder 'refresh-all';$network=[ModDependencyOnlineFixtureNetwork]::new();$values=@{};$projects=@();$cfFiles=@();$cfProjects=@();$versionProjects=@()
+ for($i=0;$i -lt 205;$i++){
+  $suffix=if($i%31 -eq 0){'.jar.disabled'}else{'.jar'};$path=Jar $refreshFolder ('batch-'+$i+$suffix) ('batch_'+$i)
+  $values[(Get-FileHash -LiteralPath $path -Algorithm SHA1).Hash.ToLowerInvariant()]=MrVersion $path ('BatchP'+$i) ('BatchV'+$i) @(@{version_id=('ExternalV'+$i);dependency_type='optional'})
+  $projects+=@{id=('BatchP'+$i);title=('Batch project '+$i);project_type='mod'}
+  $projects+=@{id=('ExternalP'+$i);title=('External project '+$i);project_type='mod'}
+  $versionProjects+=@{id=('ExternalV'+$i);project_id=('ExternalP'+$i);version_number=('2.0.'+$i)}
+  $cfFiles+=@{id=(1000+$i);file=(CfFile $path (1000+$i) (2000+$i))};$cfProjects+=@{id=(1000+$i);name=('CF batch project '+$i);classId=6}
+ }
+ $network.Versions=Json $values;$network.Projects=Json $projects;$network.VersionProjects=Json $versionProjects;$network.Fingerprints=Json @{data=@{exactMatches=$cfFiles}};$network.CfProjects=Json @{data=$cfProjects};$options=Options $network
+ $options.Progress=[Delegate]::CreateDelegate([Action[int,int]],$network,$network.GetType().GetMethod('Progress'))
+ $before=Scan $refreshFolder;$batch=Invoke-Static $online 'RebuildWithOnline' @($refreshFolder,$before.Context,$none,$options)
+ Assert ($batch.OnlineFiles.Count -eq 205 -and @($batch.OnlineFiles|Where-Object {$_.IsSupplementTarget -and $_.Matches.Count -eq 2}).Count -eq 205) 'Manual index refresh omitted complete or disabled mod declarations after the old file cap.'
+ Assert (@($batch.OnlineFiles|Where-Object {-not $_.Enabled -and $_.IsSupplementTarget}).Count -eq 7) 'Disabled mods were not indexed as manual declaration targets.'
+ Assert (@($batch.OnlineFiles.Matches|Where-Object ProjectName -eq 'Batch project 204').Count -eq 1 -and @($batch.OnlineFiles.Matches|Where-Object ProjectName -eq 'CF batch project 204').Count -eq 1) 'Project titles beyond the first 100 IDs were not resolved on both platforms.'
+ Assert (@($batch.OnlineFiles.Matches.Dependencies|Where-Object ProjectId -eq 'ExternalP204').Count -eq 1) 'Version-only dependency projects after the first 100 IDs were not resolved.'
+ Assert (@($batch.OnlineFiles.Matches.Dependencies|Where-Object VersionName -eq '2.0.204').Count -eq 1) 'A pinned version lost its readable version number.'
+ Assert ($batch.Mods.Count -eq $before.Mods.Count -and $batch.Issues.Count -eq $before.Issues.Count -and -not $batch.OnlineIncomplete) 'Manual declaration refresh changed local checks or silently omitted a batch.'
+ Assert ($network.ProgressCounts.Count -eq 205 -and $network.ProgressCounts[204] -eq 205) 'Whole-folder declaration indexing did not report progress through the final file.'
+ Assert (@($network.Calls|Where-Object {$_ -eq 'https://api.modrinth.com/v2/version_files'}).Count -eq 3 -and @($network.Calls|Where-Object {$_ -like 'https://api.modrinth.com/v2/projects?*'}).Count -eq 5 -and @($network.Calls|Where-Object {$_ -eq 'https://api.curseforge.com/v1/mods'}).Count -eq 3) 'Full-folder matches and both platforms project metadata were not requested in batches.'
+ for($i=0;$i -lt $network.Calls.Count;$i++){
+  if($network.Calls[$i] -eq 'https://api.modrinth.com/v2/version_files'){Assert ((ConvertFrom-Json $network.Bodies[$i]).hashes.Count -le 100) 'A version-hash API request exceeded its batch size.'}
+ }
+ # Persist the injected fixture explicitly; default transports must reuse it without hashing or HTTP.
+ $batch.OnlineIndexScope='all-files';Invoke-Static $indexType 'RememberOnline' @($refreshFolder,$batch,$none)|Out-Null;Invoke-Static $indexType 'ClearMemory' @()|Out-Null
+ $cachedBatch=Scan $refreshFolder;$cachedOptions=[Activator]::CreateInstance($optionType);$cachedOptions.TargetFile=$batch.OnlineFiles[204].FullPath;$cachedOptions.ComparePlatformDependencies=$true
+ $lease=[IO.File]::Open($cachedOptions.TargetFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+ try{$reused=Enrich $cachedBatch $refreshFolder $cachedOptions;Assert ($reused.OnlineRequests -eq 0 -and $reused.OnlineFiles.Count -eq 205 -and $reused.OnlineIndexScope -eq 'all-files') 'A detail lookup after full refresh rehashed or queried unchanged files.'}finally{$lease.Dispose()}
+ $pinned=$batch.OnlineFiles[0].Matches[0];$provider=$batch.OnlineFiles[1]
+ $required=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$required.Platform='Modrinth';$required.Kind='required';$required.ProjectId=$provider.Matches[0].ProjectId;$required.VersionId='DifferentPinnedVersion';$required.ProjectName=$provider.Matches[0].ProjectName;$pinned.Dependencies.Add($required)
+ Invoke-Static $online 'MapRelations' @($batch)|Out-Null
+ Assert ($required.ProjectPaths.Count -eq 1 -and $required.MatchedPaths.Count -eq 0 -and $required.EnabledPaths.Count -eq 0 -and $required.Status.Contains('DifferentPinnedVersion')) 'Installed project identity was confused with satisfaction of a platform-pinned version.'
+ $provider.Matches[0].ProjectId='UnrelatedProjectWithTheSameTitle';Invoke-Static $online 'MapRelations' @($batch)|Out-Null
+ Assert ($required.ProjectPaths.Count -eq 0) 'Matching titles were incorrectly accepted as platform project identity.'
  foreach($url in @('https://api.modrinth.com/v2/version_files','https://api.curseforge.com/v1/fingerprints/432')){Assert ([bool](Invoke-Static $online 'IsAllowedApi' @($url))) 'Official dependency API was rejected.'}
  foreach($url in @('http://api.curseforge.com/v1/mods','https://evil.invalid/v1/mods','https://api.curseforge.com.evil.invalid/v1/mods','https://api.curseforge.com:444/v1/mods','https://user@api.curseforge.com/v1/mods','https://cdn.modrinth.com/v2/version_files')){Assert (-not [bool](Invoke-Static $online 'IsAllowedApi' @($url))) 'Credential boundary accepted a foreign host, port, protocol or userinfo.'}
  Write-Output ("Online dependency fixtures passed: "+$script:checks+" assertions; exact SHA1/fingerprint+hash matches, both platforms, required/optional and reverse links, conservative candidates, unchanged local errors, content cache/expiry, failure/429/cancellation/time/request caps and API host boundaries. No live HTTP.")

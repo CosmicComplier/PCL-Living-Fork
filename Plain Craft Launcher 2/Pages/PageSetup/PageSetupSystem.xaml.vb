@@ -1,5 +1,13 @@
 Public Class PageSetupSystem
 
+    Private Sub InitLauncherUpdateSource() Handles Me.Initialized
+        AniControlEnabled += 1
+        Try
+            SettingService.RefreshSettings(ComboLauncherUpdateSource)
+        Finally
+            AniControlEnabled -= 1
+        End Try
+    End Sub
 
     Private Sub PageSetupSystem_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
 

@@ -13,6 +13,7 @@ $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Thr
 $settings=$asm.GetType('PCL.Settings').GetField('Entries').GetValue($null);foreach($entry in $settings.Values){$entry.ValueCache['']=$entry.DefaultValue};$settings['Identify'].ValueCache['']='launch-dependencies-fixture'
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclLaunchDependencies-'+[Guid]::NewGuid().ToString('N'))
 $inspector=$asm.GetType('PCL.ModDependencyInspector');$service=$asm.GetType('PCL.ModDependencyAutoFill');$session=$asm.GetType('PCL.LaunchDependencyCheck');$none=[Threading.CancellationToken]::None
+$asm.GetType('PCL.ModDependencyIndex').GetProperty('CacheDirectory',$flags).SetValue($null,(Join-Path $fixture 'dependency-index'),$null)
 function Call($type,$name,[object[]]$arguments){$values=New-Object object[] $arguments.Count;for($i=0;$i -lt $values.Length;$i++){if($null -ne $arguments[$i]){$values[$i]=$arguments[$i].PSObject.BaseObject}};return ,$type.GetMethod($name,$flags).Invoke($null,$values)}
 function Json($value){return ,([Newtonsoft.Json.Linq.JToken]::Parse((ConvertTo-Json -InputObject $value -Depth 25 -Compress)))}
 function Jar($path,$id,$depends){[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null;$zip=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create);try{$w=[IO.StreamWriter]::new($zip.CreateEntry('fabric.mod.json').Open());try{$w.Write((@{schemaVersion=1;id=$id;name=$id;version='1.0.0';depends=$depends}|ConvertTo-Json -Depth 10))}finally{$w.Dispose()}}finally{$zip.Dispose()}}
@@ -148,6 +149,75 @@ try{
   if($modal.FindName('Btn1').ColorType.ToString() -eq 'Red' -or $modal.FindName('Btn3').ColorType.ToString() -ne 'Red'){throw 'Danger styling is not attached to the explicit continue-launch action'}
   Render $modal 'dependency-dialog.png' 820 620
  }
+ $foreignRoot=Join-Path $fixture 'foreign-mods';[IO.Directory]::CreateDirectory($foreignRoot)|Out-Null
+ foreach($loader in @('forge','neoforge')){
+  $zip=[IO.Compression.ZipFile]::Open((Join-Path $foreignRoot ($loader+'-only.jar')),[IO.Compression.ZipArchiveMode]::Create)
+  try{$metadata=if($loader -eq 'forge'){'META-INF/mods.toml'}else{'META-INF/neoforge.mods.toml'};$writer=[IO.StreamWriter]::new($zip.CreateEntry($metadata).Open());try{$writer.Write("[[mods]]`nmodId=`"$($loader)_fixture`"`nversion=`"1.0`"`ndisplayName=`"$loader fixture`"")}finally{$writer.Dispose()}}finally{$zip.Dispose()}
+ }
+ $foreignReport=Call $inspector 'Inspect' @($foreignRoot,$context,$none)
+ if(@($foreignReport.Issues|Where-Object {$_.Kind.ToString() -eq 'LoaderMismatch'}).Count -ne 2){throw 'Startup scan did not detect Forge/NeoForge files in a Fabric instance'}
+ $requestCount=$script:Requests.Count;$foreignPlan=Call $service 'BuildPlan' @($foreignRoot,$foreignReport,$none,(Options))
+ if($foreignPlan.Items.Count -or $foreignPlan.Enables.Count -or $script:Requests.Count -ne $requestCount){throw 'A wrong-loader mod triggered dependency downloads or automatic activation'}
+ $foreignView=($viewType.GetConstructors($flags)|Where-Object {$_.GetParameters().Count -eq 2}|Select-Object -First 1).Invoke(@($foreignReport,$foreignPlan))
+ if(-not @($viewType.GetField('Groups',$flags).GetValue($foreignView).Children|Where-Object {$_.GetType().Name -eq 'MyCard' -and $_.Title -like '加载器不匹配*'}).Count){throw 'Loader mismatch has no separate native UI group'}
+ Render $foreignView 'loader-mismatch.png' 740 500
+ if($PreviewDirectory){
+  $converter=[Activator]::CreateInstance($asm.GetType('PCL.ModMain+MyMsgBoxConverter'));$converter.Title='启动前模组检查';$converter.Text='请检查以下模组问题。';$converter.Button1='返回 Mod 管理';$converter.Button2='取消启动';$converter.Button3='仍然启动';$converter.IsWarn=$true;$converter.WarningButton=3
+  $converter.ContentFactory=[Func[Windows.FrameworkElement]]{return $foreignView}
+  $modal=[Activator]::CreateInstance($asm.GetType('PCL.MyMsgText'),@($converter));$modal.FindName('TransformRotate').Angle=0;$modal.FindName('TransformPos').Y=0
+  Render $modal 'loader-mismatch-dialog.png' 820 620
+ }
+ $runtimeRoot=Join-Path $fixture 'runtime-components';[IO.Directory]::CreateDirectory($runtimeRoot)|Out-Null
+ foreach($id in @('runtime_one','runtime_two')){
+  $zip=[IO.Compression.ZipFile]::Open((Join-Path $runtimeRoot ($id+'.jar')),[IO.Compression.ZipArchiveMode]::Create)
+  try{$writer=[IO.StreamWriter]::new($zip.CreateEntry('META-INF/mods.toml').Open());try{$writer.Write("modLoader=`"javafml`"`nloaderVersion=`"[48,)`"`n[[mods]]`nmodId=`"$id`"`nversion=`"1`"`n[[dependencies.$id]]`nmodId=`"forge`"`nmandatory=true`nversionRange=`"[47,)`"`n[[dependencies.$id]]`nmodId=`"lowcodefml`"`nmandatory=true`nversionRange=`"[48,)`"")}finally{$writer.Dispose()}}finally{$zip.Dispose()}
+ }
+ $runtimeContext=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionContext'));$runtimeContext.MinecraftVersion='1.20.1';$runtimeContext.LoaderKnown=$true;$runtimeContext.LoaderVersions.Add('forge','47.2.0')
+ $runtimeReport=Call $inspector 'Inspect' @($runtimeRoot,$runtimeContext,$none);$requestCount=$script:Requests.Count
+ $runtimePlan=Call $service 'BuildPlan' @($runtimeRoot,$runtimeReport,$none,(Options))
+ if($runtimePlan.Items.Count -or $script:Requests.Count -ne $requestCount){throw 'Loader internal components were selected as independent mod downloads'}
+ $runtimeView=($viewType.GetConstructors($flags)|Where-Object {$_.GetParameters().Count -eq 2}|Select-Object -First 1).Invoke(@($runtimeReport,$runtimePlan))
+ $runtimeCards=@($viewType.GetField('Groups',$flags).GetValue($runtimeView).Children|Where-Object {$_.GetType().Name -eq 'MyCard' -and $_.Title -like '运行环境要求不满足*'})
+ if($runtimeCards.Count -ne 1 -or $runtimeCards[0].Title -notlike '*（1）*'){throw 'Internal FML requirements were not merged under the owning loader'}
+ if($runtimeReport.ToSummary().Contains('javafml') -or $runtimeReport.ToSummary().Contains('lowcodefml')){throw 'Internal component IDs leaked into the player-facing summary'}
+ $runtimeGraphType=$asm.GetType('PCL.ModDependencyGraphView');$runtimeGraph=($runtimeGraphType.GetConstructors($flags)|Where-Object {$_.GetParameters().Count -eq 2}|Select-Object -First 1).Invoke(@($runtimeReport,[string](Join-Path $runtimeRoot 'runtime_one.jar')))
+ $graphCanvas=$runtimeGraph.GetType().GetField('GraphCanvas',$flags).GetValue($runtimeGraph);$runtimeNodes=@($graphCanvas.Children|Where-Object {$_ -is [Windows.Controls.Border]}|ForEach-Object {$_.Tag})
+ if(@($runtimeNodes|Where-Object {$_.Title -eq 'Forge'}).Count -ne 1 -or @($runtimeNodes|Where-Object {$_.Title -in @('javafml','lowcodefml')}).Count){throw 'Dependency graph shows loader components as separate mods'}
+ Render $runtimeView 'loader-components-grouped.png' 740 420
+ Write-Output 'PASS: loader-owned components grouped as one runtime requirement and one graph node; no independent component downloads.'
+
+ $modPage=[Activator]::CreateInstance($asm.GetType('PCL.PageInstanceMod'));$indexButton=$modPage.FindName('BtnManageIndex')
+ if($null -eq $indexButton -or $indexButton.Text -ne '更新依赖索引'){throw 'Manual dependency-tree indexing is absent from Mod management'}
+ $manage=$modPage.FindName('PanManage');([Windows.Controls.Panel][Windows.LogicalTreeHelper]::GetParent($manage)).Children.Remove($manage)
+ Render $manage 'mod-dependency-index-actions.png' 740 130
+ $nativeRows=[Windows.Controls.StackPanel]::new();$nativeRows.Margin=[Windows.Thickness]::new(15)
+ $rowType=$asm.GetType('PCL.MyLocalModItem');$entryType=$asm.GetType('PCL.LocalResourceFile');$refreshWarning=$rowType.GetMethod('RefreshLoaderWarning',$flags)
+ foreach($file in [IO.Directory]::GetFiles($foreignRoot,'*.jar')){
+  $row=[Activator]::CreateInstance($rowType);$row.Entry=$entryType.GetConstructor(@([string])).Invoke(@([string]$file));$row.Title=[IO.Path]::GetFileNameWithoutExtension($file);$row.Description=[IO.Path]::GetFileName($file)
+  $refreshWarning.Invoke($row,@([string]$foreignRoot,$context))|Out-Null
+  if($row.FindName('LoaderWarningBorder').Visibility -ne 'Visible' -or $row.FindName('LoaderWarningBorder').IsHitTestVisible -or -not $row.ToolTip.ToString().Contains('Fabric')){throw 'Wrong-loader mod lacks a non-blocking red frame and explanation in the native mod list'}
+  $row.Checked=$true;$row.Checked=$false
+  if($row.FindName('LoaderWarningBorder').Visibility -ne 'Visible'){throw 'Selecting a mod cleared the loader warning'}
+  $nativeRows.Children.Add($row)|Out-Null
+ }
+ $normal=Join-Path $foreignRoot 'fabric-correct.jar';Jar $normal 'correct_loader' @{};Call $inspector 'Inspect' @($foreignRoot,$context,$none)|Out-Null
+ $row=[Activator]::CreateInstance($rowType);$row.Entry=$entryType.GetConstructor(@([string])).Invoke(@([string]$normal));$row.Title='Fabric compatible';$row.Description='fabric-correct.jar';$refreshWarning.Invoke($row,@([string]$foreignRoot,$context))|Out-Null
+ if($row.FindName('LoaderWarningBorder').Visibility -ne 'Collapsed'){throw 'A compatible Fabric mod was marked red'};$nativeRows.Children.Add($row)|Out-Null
+ Render $nativeRows 'loader-mismatch-mod-list.png' 740 230
+ $wrongRow=$nativeRows.Children[0];$changedContext=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionContext'));$changedContext.MinecraftVersion='1.21.1';$changedContext.LoaderKnown=$true;$changedContext.LoaderVersions.Add('neoforge','21.1.100')
+ $refreshWarning.Invoke($wrongRow,@([string]$foreignRoot,$changedContext))|Out-Null
+ if($wrongRow.FindName('LoaderWarningBorder').Visibility -ne 'Collapsed'){throw 'Changing the loader kept a red frame from the prior inspection'}
+ $enabledPath=$wrongRow.Entry.File.FullName;$disabledPath=$enabledPath+'.disabled';[IO.File]::Move($enabledPath,$disabledPath);$wrongRow.Entry=$entryType.GetConstructor(@([string])).Invoke(@([string]$disabledPath));$refreshWarning.Invoke($wrongRow,@([string]$foreignRoot,$context))|Out-Null
+ if($wrongRow.FindName('LoaderWarningBorder').Visibility -ne 'Collapsed'){throw 'A disabled wrong-loader mod retained its red frame'}
+ Write-Output 'PASS: native mod-list red frames, tooltip, selection/hover hit-testing, compatible rows and disabled/changed-loader clearing.'
+ $legacyContext=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionContext'));$legacyContext.MinecraftVersion='1.12.2';$legacyContext.LoaderKnown=$true;$legacyContext.LoaderVersions.Add('forge','14.23.5.2855')
+ $emptyLegacy=Call $inspector 'Inspect' @((Join-Path $fixture 'empty-legacy'),$legacyContext,$none)
+ $description=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+ModInfo'));$description.Id='legacy_fixture';$description.Enabled=$true;$description.RootPath=Join-Path $fixture 'legacy-fixture.jar';$emptyLegacy.Mods.Add($description)
+ $requestCount=$script:Requests.Count;$legacyPlan=Call $service 'BuildPlan' @($foreignRoot,$emptyLegacy,$none,(Options))
+ if($legacyPlan.Items.Count -or $script:Requests.Count -ne $requestCount){throw 'A complete legacy pack queried platform records and proposed extra dependencies'}
+ $uncertain=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionIssue'));$uncertain.Kind=[Enum]::Parse($uncertain.Kind.GetType(),'MissingRequired');$uncertain.Owner=$description;$uncertain.Requirement=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+Dependency'));$uncertain.Requirement.Id='runtime_unconfirmed';$emptyLegacy.MetadataIncomplete=$true;$emptyLegacy.Issues.Add($uncertain)
+ $legacyPlan=Call $service 'BuildPlan' @($foreignRoot,$emptyLegacy,$none,(Options))
+ if($legacyPlan.Items.Count -or $script:Requests.Count -ne $requestCount -or -not @($legacyPlan.Notes|Where-Object {$_ -like '*运行时声明尚未确认*'}).Count){throw 'Unconfirmed legacy runtime providers triggered speculative dependency downloads'}
  foreach($key in @('LaunchModDependencyCheck','LaunchModDependencyAutoFill')){if($settings[$key].Source.ToString() -ne 'Normal'){throw 'Launch preference is not persistent local configuration'}}
  Write-Output 'PASS: native homepage placement, conditional/persistent switches, disabled launch bypass, grouped modal and collapsed diagnostics.'
 }finally{

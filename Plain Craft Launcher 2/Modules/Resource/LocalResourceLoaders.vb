@@ -83,6 +83,18 @@ Public Module LocalResourceLoaders
             '排序
             ModList = ModList.OrderBy(Function(m) m.File.Name).ToList
 
+            'Offline loader compatibility also applies when opening Mod management without launching the game.
+            Dim Target = PageInstanceLeft.Instance
+            If Target IsNot Nothing AndAlso PathUtils.IsSame(Loader.Input, IO.Path.Combine(Target.PathIndie, "mods")) Then
+                Try
+                    ModDependencyInspector.Inspect(Loader.Input, ModDependencyInspector.ContextForInstance(Target), Loader.CreateCancellationToken())
+                Catch ex As OperationCanceledException
+                    Throw
+                Catch ex As Exception
+                    Logger.Warn(ex, "检查 Mod 列表的加载器兼容性失败，仍显示本地文件")
+                End Try
+            End If
+
             '回设
             If Loader.IsCanceled Then Return
             Loader.Output = ModList

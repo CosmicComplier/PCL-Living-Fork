@@ -7,13 +7,15 @@ Public Module ModBase
 #Region "声明"
 
     '下列版本信息由更新器自动修改
-    Public Const VersionBaseName As String = "1.3.4" 'LivingPCL 显示用版本名；内部兼容码沿用代码基线。
+    Public Const VersionBaseName As String = "1.3.5-pre-1" 'LivingPCL 显示用版本名；内部兼容码沿用代码基线。
     Public Const LauncherDisplayName As String = "PCL Living Fork"
     Public Const LauncherExecutableName As String = "PCL-Living-Fork-" & VersionBaseName & ".exe"
     Public Const LauncherRepository As String = "DDZmumo/PCL-Living-Fork"
     Public Const LauncherRepositoryUrl As String = "https://github.com/" & LauncherRepository
     Public Const LauncherIssuesUrl As String = LauncherRepositoryUrl & "/issues"
     Public Const LauncherReleasesUrl As String = LauncherRepositoryUrl & "/releases"
+    Public Const LauncherCnbRepository As String = "ddzmumo/PCL-Living-Fork"
+    Public Const LauncherCnbUrl As String = "https://cnb.cool/" & LauncherCnbRepository
     Public Const CommitHash As String = "" 'Commit Hash，由 GitHub Workflow 自动替换
 #If RELEASE Then
     Public Const VersionCode As Integer = 411 '正式版
@@ -27,7 +29,7 @@ Public Module ModBase
     Public Const BuildTypeDisplay As String = "开发版"
     Public Const BuildType As BuildTypes = BuildTypes.Debug
 #ElseIf RELEASE Then
-    Public Const BuildTypeDisplay As String = "正式版"
+    Public Const BuildTypeDisplay As String = "预发布版"
     Public Const BuildType As BuildTypes = BuildTypes.Release
 #Else
     Public Const BuildTypeDisplay As String = "快照版"

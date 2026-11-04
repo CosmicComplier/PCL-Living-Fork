@@ -13,6 +13,7 @@ $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Thr
 $entries=$asm.GetType('PCL.Settings').GetField('Entries').GetValue($null);foreach($entry in $entries.Values){$entry.ValueCache['']=$entry.DefaultValue};$entries['Identify'].ValueCache['']='dependency-graph-fixture'
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclDependencyGraph-'+[Guid]::NewGuid().ToString('N'))
 $graphType=$asm.GetType('PCL.ModDependencyGraphView',$true);$inspector=$asm.GetType('PCL.ModDependencyInspector',$true)
+$asm.GetType('PCL.ModDependencyIndex').GetProperty('CacheDirectory',$flags).SetValue($null,(Join-Path $fixture 'dependency-index'),$null)
 function Jar([string]$id,[string]$name,[string]$version,[hashtable]$extra=@{}){
  $path=Join-Path $fixture ($id+'.jar');$zip=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
  try{
@@ -135,6 +136,37 @@ try{
  foreach($platform in @('Modrinth','CurseForge')){$d=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$d.Platform=$platform;$d.Kind='required';$d.ProjectId=$platform+'Config';$d.ProjectName='Disabled config';$d.MatchedPaths.Add($disabledPath);$match.Dependencies.Add($d)}
  $attention=@((Nodes (Graph $report $selected))|Where-Object {$_.Tag.Title -eq 'Disabled config'})
  if($attention.Count -ne 1 -or -not $attention[0].Tag.NeedsAttention -or -not $attention[0].Tag.Details.Contains('Modrinth') -or -not $attention[0].Tag.Details.Contains('CurseForge')){throw 'Disabled dual-platform declarations were not merged and highlighted'}
+ # Iris pins an older Modrinth version, while both platforms identify the installed Sodium JAR.
+ # This is one installed project with a version declaration to review, not a second missing mod.
+ $pinned=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionReport'));$pinned.Context=$report.Context;$pinned.OnlineAttempted=$true
+ foreach($pair in @(@('iris','Iris','1.10.7'),@('sodium','Sodium','0.8.12'))){
+  $m=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+ModInfo'));$m.Id=$pair[0];$m.Name=$pair[1];$m.Version=$pair[2];$m.RootPath=Join-Path $fixture ($pair[0]+'.jar');$m.Enabled=$true;$pinned.Mods.Add($m)
+  $f=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineFileInfo'));$f.FullPath=$m.RootPath;$f.Enabled=$true;$f.IsSupplementTarget=$true;$pinned.OnlineFiles.Add($f)
+ }
+ foreach($platform in @('Modrinth','CurseForge')){
+  $ownerMatch=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$ownerMatch.Platform=$platform;$ownerMatch.ProjectId=$platform+'Iris';$ownerMatch.VersionId='IrisVersion';$ownerMatch.IsExact=$true
+  $sodiumMatch=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$sodiumMatch.Platform=$platform;$sodiumMatch.ProjectId=$platform+'Sodium';$sodiumMatch.VersionId='InstalledVersion';$sodiumMatch.IsExact=$true
+  $d=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$d.Platform=$platform;$d.Kind='required';$d.ProjectId=$sodiumMatch.ProjectId;$d.ProjectName='Sodium';$d.VersionId=if($platform -eq 'Modrinth'){'PinnedOlderVersion'}else{''};$ownerMatch.Dependencies.Add($d)
+  $pinned.OnlineFiles[0].Matches.Add($ownerMatch);$pinned.OnlineFiles[1].Matches.Add($sodiumMatch)
+ }
+ $asm.GetType('PCL.ModDependencyOnline').GetMethod('MapRelations',$flags).Invoke($null,@($pinned))|Out-Null
+ $pinnedNodes=Nodes (Graph $pinned $pinned.Mods[0].RootPath);$sodiumNodes=@($pinnedNodes|Where-Object {$_.Tag.Title -eq 'Sodium'})
+ if($sodiumNodes.Count -ne 1 -or $pinnedNodes.Count -ne 2){throw 'A pinned platform version duplicated the installed Sodium project as a missing mod'}
+ if($sodiumNodes[0].Tag.NeedsAttention -or -not $sodiumNodes[0].Tag.Condition.Contains('0.8.12') -or -not $sodiumNodes[0].Tag.Details.Contains('PinnedOlderVersion') -or -not $sodiumNodes[0].Tag.Details.Contains('CurseForge')){throw 'A platform version difference became a missing-mod error or lost either source declaration'}
+ if($pinned.OnlineFiles[0].Matches[0].Dependencies[0].EnabledPaths.Count -ne 0){throw 'An installed different version incorrectly satisfied a pinned platform version'}
+ $incomingPinned=Nodes (Graph $pinned $pinned.Mods[1].RootPath)
+ if(@($incomingPinned|Where-Object {$_.Tag.Title -eq 'Iris' -and $_.Tag.IsCandidate}).Count -ne 1){throw 'Reverse relationships lost a known project when its pinned version differed'}
+ foreach($platform in @('Modrinth','CurseForge')){
+  $unknown=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$unknown.Platform=$platform;$unknown.Kind='required';$unknown.ProjectId=$platform+'Unrelated';$unknown.ProjectName='Same display title';$pinned.OnlineFiles[0].Matches[0].Dependencies.Add($unknown)
+ }
+ $unknownNodes=@((Nodes (Graph $pinned $pinned.Mods[0].RootPath))|Where-Object {$_.Tag.Title -eq 'Same display title'})
+ if($unknownNodes.Count -ne 2 -or @($unknownNodes|Where-Object {$_.Tag.NeedsAttention -or -not $_.Tag.IsCandidate}).Count){throw 'Unverified same-name platform projects were merged or falsely highlighted as definite missing mods'}
+ foreach($name in @('external-one.jar','external-two.jar')){
+  $externalRequirement=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$externalRequirement.Platform='Modrinth';$externalRequirement.Kind='required';$externalRequirement.ProjectId='';$externalRequirement.FileName=$name;$pinned.OnlineFiles[0].Matches[0].Dependencies.Add($externalRequirement)
+ }
+ $externalNodes=Nodes (Graph $pinned $pinned.Mods[0].RootPath)
+ if(@($externalNodes|Where-Object {$_.Tag.Title -in @('external-one.jar','external-two.jar')}).Count -ne 2){throw 'External dependencies without project IDs were blank or incorrectly merged'}
+ if($PreviewDirectory){[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null;Render (Graph $pinned $pinned.Mods[0].RootPath) (Join-Path $PreviewDirectory 'platform-version-review.png') 760 480}
  # Two bundles carry a selectable copy of the same library. Neither bundle requires the other.
  $bundles=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionReport'));$bundles.Context=$report.Context
  foreach($name in @('api_bundle','menu_bundle')){
@@ -176,7 +208,6 @@ try{
  $last=$largeNodes|Where-Object {$_.Tag.Title -eq 'Needed 39'}|Select-Object -First 1
  if([Windows.Controls.Canvas]::GetTop($last)+$last.Height -gt $largeScroll.VerticalOffset+$largeScroll.ViewportHeight+1){throw 'The last required node cannot be reached by scrolling'}
  $impactFixtureReport=$report
- if($ModFile){$report=Scan ([IO.Path]::GetDirectoryName($ModFile));$selected=$ModFile}
  $impactType=$asm.GetType('PCL.ModDependencyImpactView',$true)
  $platformPeer.IsSupplementTarget=$true
  $requiresOwner=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$requiresOwner.Platform='Modrinth';$requiresOwner.Kind='required';$requiresOwner.ProjectName='Selected mod';$requiresOwner.EnabledPaths.Add($selected);$peerMatch.Dependencies.Add($requiresOwner)
@@ -190,6 +221,7 @@ try{
  $cards=$impactType.GetField('Cards',$flags).GetValue($impactView)
  if($cards.ColumnDefinitions.Count -ne 2 -or $cards.Children.Count -ne 32){throw 'Impact warning is not a complete two-column card layout'}
  for($i=0;$i -lt $cards.Children.Count;$i++){if([Windows.Controls.Grid]::GetColumn($cards.Children[$i]) -ne ($i%2) -or $cards.Children[$i].BorderThickness.Left -le 0){throw 'Impact cards lost their border or two-column placement'}}
+ if($ModFile){$report=Scan ([IO.Path]::GetDirectoryName($ModFile));$selected=$ModFile}
  if($PreviewDirectory -and $ModFile){
   [IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null
   $actualImpacts=$impactType.GetMethod('Collect',$flags).Invoke($null,@($report,[string[]]@($selected)))
@@ -206,6 +238,9 @@ try{
   $listType=$report.GetType().GetField('OnlineFiles',$flags).FieldType
   $report.OnlineFiles=[Newtonsoft.Json.JsonConvert]::DeserializeObject([IO.File]::ReadAllText([IO.Path]::GetFullPath($PlatformSnapshot)),$listType)
   $report.OnlineAttempted=$true
+  $asm.GetType('PCL.ModDependencyOnline').GetMethod('MapRelations',$flags).Invoke($null,@($report))|Out-Null
+  $replayedNodes=Nodes (Graph $report $selected)
+  Write-Output ('Read-only snapshot nodes: '+(($replayedNodes|ForEach-Object {$_.Tag.Title+' ['+$_.Tag.Condition+']'}) -join '; '))
  }
  $converter=[Activator]::CreateInstance($asm.GetType('PCL.ModMain+MyMsgBoxConverter'))
  $converter.Title=-join ([char[]]@(0x6A21,0x7EC4,0x4F9D,0x8D56,0x5173,0x7CFB));$converter.Text=$report.DescribeFile($selected)

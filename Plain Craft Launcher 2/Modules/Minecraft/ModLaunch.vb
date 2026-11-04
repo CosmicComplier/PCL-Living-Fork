@@ -230,6 +230,7 @@ NextInner:
         Dim Token = Loader.CreateCancellationToken()
         Dim CheckThread = Thread.CurrentThread
         Dim Report = ModDependencyInspector.Inspect(ModsFolder, Context, Token)
+        RunInUi(Sub() FrmInstanceMod?.ApplyLoaderWarnings())
         If Loader.IsCanceled OrElse Token.IsCancellationRequested Then Return
         If LaunchDependencyCheck.WasAccepted(ModsFolder, Report) Then Return
         Dim Plan = If(Settings.Get(Of Boolean)("LaunchModDependencyAutoFill"), ModDependencyAutoFill.BuildPlan(ModsFolder, Report, Token), ModDependencyActivation.Prepare(ModsFolder, Report, Token))
@@ -253,6 +254,7 @@ NextInner:
             InstallLaunchDependencies(Target, Plan, Token)
             Token.ThrowIfCancellationRequested()
             Report = ModDependencyInspector.Inspect(ModsFolder, Context, Token)
+            RunInUi(Sub() FrmInstanceMod?.ApplyLoaderWarnings())
             If Not Report.HasErrors Then Return
             RunInUiWait(Sub()
                 If Not Token.IsCancellationRequested Then Choice = MyMsgBoxConfirmContent("前置已处理，仍有以下问题。", "启动前模组检查", "返回 Mod 管理", Function() New ModDependencyCheckView(Report), "取消启动", "仍然启动", WarningButton:=3)

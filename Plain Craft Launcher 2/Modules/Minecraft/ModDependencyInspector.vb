@@ -43,6 +43,7 @@ Friend NotInheritable Class ModDependencyInspector
         VersionMismatch
         Incompatible
         Recommendation
+        LoaderMismatch
     End Enum
 
     Friend Class InspectionContext
@@ -71,6 +72,11 @@ Friend NotInheritable Class ModDependencyInspector
         Public IsNested As Boolean
         Public IsBuiltin As Boolean
         Public IsCandidate As Boolean
+        'Legacy mcmod.info is descriptive; only a discovered @Mod (or runtime container) establishes a loaded ID.
+        Public IsMetadataOnly As Boolean
+        Public IsRuntimeCandidate As Boolean
+        Public IncompatibleLoader As Boolean
+        Public LoaderMismatchDetail As String
         Public Provides As New Dictionary(Of String, String)(StringComparer.Ordinal)
         Public Dependencies As New List(Of Dependency)
         Public ReadOnly Property Key As String
@@ -154,13 +160,23 @@ Friend NotInheritable Class ModDependencyInspector
         Public Platform As String
         Public ProjectId As String
         Public VersionId As String
+        Public VersionName As String
         Public ProjectName As String
         Public Website As String
         Public FileName As String
         Public Kind As String
+        'Exact project identity regardless of a platform-pinned version; never used to satisfy that version.
+        Public ProjectPaths As New List(Of String)
         Public MatchedPaths As New List(Of String)
         Public EnabledPaths As New List(Of String)
         Public Status As String = "尚未映射到本地文件，需核对"
+        <JsonIgnore>
+        Public ReadOnly Property DisplayName As String
+            Get
+                Dim Caption = {ProjectName, ProjectId, FileName, VersionName, VersionId}.FirstOrDefault(Function(Value) Not String.IsNullOrWhiteSpace(Value))
+                Return If(Caption, "未命名依赖")
+            End Get
+        End Property
     End Class
     Friend Class OnlineFileInfo
         Public FullPath As String
@@ -173,6 +189,13 @@ Friend NotInheritable Class ModDependencyInspector
     End Class
 
     Friend Class InspectionReport
+        Friend IndexHit As Boolean
+        Friend IndexReevaluated As Boolean
+        Friend IndexPersisted As Boolean
+        Friend IndexReadFailed As Boolean
+        Friend IndexFile As String
+        Friend IndexFingerprint As String
+        Friend IndexGeneration As String
         Public Context As InspectionContext
         Public Mods As New List(Of ModInfo)
         Public Builtins As New List(Of ModInfo)
@@ -183,10 +206,12 @@ Friend NotInheritable Class ModDependencyInspector
         Public OnlineAttempted As Boolean
         Public OnlineCancelled As Boolean
         Public OnlineTimedOut As Boolean
+        Public OnlineIncomplete As Boolean
         Public OnlineRequests As Integer
         Public OnlineCheckedAtUtc As DateTime
         Public OnlineFiles As New List(Of OnlineFileInfo)
         Public OnlineNotes As New List(Of String)
+        Public OnlineIndexScope As String
         Public ReverseDependencies As New Dictionary(Of String, List(Of DependencyEdge))(StringComparer.Ordinal)
         Public ReadOnly Property HasErrors As Boolean
             Get
@@ -233,7 +258,7 @@ Friend NotInheritable Class ModDependencyInspector
                     If Not String.IsNullOrEmpty(Match.Website) Then Lines.Add("  " & Match.Website)
                     If Match.Dependencies.Count = 0 Then Lines.Add("  该平台版本没有声明项目依赖。")
                     For Each Requirement In Match.Dependencies.Take(40)
-                        Dim Caption = If(Requirement.ProjectName, If(Requirement.ProjectId, If(Requirement.FileName, "未提供项目 ID")))
+                        Dim Caption = Requirement.DisplayName
                         Lines.Add("  • [" & OnlineKind(Requirement.Kind) & "] " & Caption & "：" & Requirement.Status)
                         If Not String.IsNullOrEmpty(Requirement.Website) Then Lines.Add("    " & Requirement.Website)
                     Next
@@ -306,10 +331,14 @@ Friend NotInheritable Class ModDependencyInspector
         If Libraries IsNot Nothing Then
             For Each Library As JObject In Libraries.OfType(Of JObject)()
                 Dim Coordinate = Text(Library("name"))
-                If Not Coordinate.StartsWith("org.quiltmc:quilt-loader:", StringComparison.Ordinal) Then Continue For
-                Result.LoaderVersions.Remove("fabricloader")
-                Result.LoaderVersions("quilt_loader") = Coordinate.Substring("org.quiltmc:quilt-loader:".Length).Split(":"c)(0)
-                Result.LoaderVersions("fabricloader") = Nothing
+                If Coordinate.StartsWith("org.quiltmc:quilt-loader:", StringComparison.Ordinal) Then
+                    Result.LoaderVersions.Remove("fabricloader")
+                    Result.LoaderVersions("quilt_loader") = Coordinate.Substring("org.quiltmc:quilt-loader:".Length).Split(":"c)(0)
+                    Result.LoaderVersions("fabricloader") = Nothing
+                ElseIf Result.LoaderVersions.ContainsKey("neoforge") AndAlso Coordinate.StartsWith("net.neoforged.fancymodloader:loader:", StringComparison.Ordinal) Then
+                    'BuiltInLanguageLoader uses the FML loader JAR version, independently of the NeoForge platform version.
+                    Result.AdditionalBuiltins("javafml") = Coordinate.Split(":"c)(2)
+                End If
             Next
         End If
         Dim ForgeVersion As String = Nothing
@@ -341,6 +370,17 @@ Friend NotInheritable Class ModDependencyInspector
 
     Friend Shared Function Inspect(ModsFolder As String, Optional Context As InspectionContext = Nothing,
                                    Optional Token As CancellationToken = Nothing) As InspectionReport
+        Dim Result = ModDependencyIndex.Inspect(ModsFolder, If(Context, New InspectionContext()), Token, False)
+        RememberLoaderWarnings(ModsFolder, Result)
+        Return Result
+    End Function
+    Friend Shared Function RebuildIndex(ModsFolder As String, Optional Context As InspectionContext = Nothing,
+                                      Optional Token As CancellationToken = Nothing) As InspectionReport
+        Dim Result = ModDependencyIndex.Inspect(ModsFolder, If(Context, New InspectionContext()), Token, True)
+        RememberLoaderWarnings(ModsFolder, Result)
+        Return Result
+    End Function
+    Friend Shared Function ScanRaw(ModsFolder As String, Context As InspectionContext, Token As CancellationToken, Optional ForceFresh As Boolean = False) As InspectionReport
         Dim Result As New InspectionReport With {.Context = If(Context, New InspectionContext())}
         Result.Builtins = CreateBuiltins(Result.Context)
         If Not Directory.Exists(ModsFolder) Then Return Result
@@ -360,6 +400,7 @@ Friend NotInheritable Class ModDependencyInspector
                 End If
                 Files = Directory.EnumerateFiles(Folder, "*", SearchOption.TopDirectoryOnly).Where(Function(Item) IsModFile(Item)).OrderBy(Function(Item) Item, StringComparer.OrdinalIgnoreCase).ToArray()
             Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException
+                Result.IndexReadFailed = True
                 Incomplete(Result, "无法枚举模组目录：" & ex.Message)
                 Continue For
             End Try
@@ -370,13 +411,14 @@ Friend NotInheritable Class ModDependencyInspector
                     If (File.GetAttributes(FullPath) And FileAttributes.ReparsePoint) <> 0 Then Throw New IOException("跳过链接文件")
                     Using Stream As New FileStream(FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete),
                           Archive As New ZipArchive(Stream, ZipArchiveMode.Read, False)
-                        Dim Budget As New ReadBudget
+                        Dim Budget As New ReadBudget With {.ForceFresh = ForceFresh}
                         ReadArchive(Archive, Path.GetFullPath(FullPath), "", Enabled, False, 0, Result, Budget, Token)
                     End Using
                 Catch ex As OperationCanceledException
                     Throw
                 Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is InvalidDataException OrElse
                     TypeOf ex Is UnauthorizedAccessException OrElse TypeOf ex Is JsonException OrElse TypeOf ex Is FormatException OrElse TypeOf ex Is DecoderFallbackException
+                    If (TypeOf ex Is IOException AndAlso Not TypeOf ex Is InvalidDataException) OrElse TypeOf ex Is UnauthorizedAccessException Then Result.IndexReadFailed = True
                     If Enabled Then
                         Incomplete(Result, Path.GetFileName(FullPath) & "：无法完整读取元数据（" & ex.Message & "）。")
                     Else
@@ -388,13 +430,63 @@ Friend NotInheritable Class ModDependencyInspector
         BuildReport(Result, Token)
         Return Result
     End Function
+    Friend Shared Sub Reevaluate(Report As InspectionReport, Context As InspectionContext, Token As CancellationToken)
+        Report.Context = Context : Report.Builtins = CreateBuiltins(Context)
+        Report.Edges.Clear() : Report.Issues.Clear() : Report.ReverseDependencies.Clear()
+        BuildReport(Report, Token)
+        Report.Notices = Report.Notices.Distinct().ToList()
+    End Sub
+
+    Private Class LoaderWarningMark
+        Public Length As Long
+        Public LastWrite As Long
+        Public Message As String
+    End Class
+    Private Class LoaderWarningSnapshot
+        Public ContextKey As String
+        Public Files As New Dictionary(Of String, LoaderWarningMark)(StringComparer.OrdinalIgnoreCase)
+    End Class
+    Private Shared ReadOnly LoaderWarnings As New System.Collections.Concurrent.ConcurrentDictionary(Of String, LoaderWarningSnapshot)(StringComparer.OrdinalIgnoreCase)
+    Private Shared Function LoaderContextKey(Context As InspectionContext) As String
+        Return Context.LoaderKnown & "|" & Context.MinecraftVersion & "|" & String.Join(";", Context.LoaderVersions.OrderBy(Function(Pair) Pair.Key).
+            Select(Function(Pair) Pair.Key & "=" & Pair.Value))
+    End Function
+    Private Shared Sub RememberLoaderWarnings(Folder As String, Report As InspectionReport)
+        Dim Snapshot As New LoaderWarningSnapshot With {.ContextKey = LoaderContextKey(Report.Context)}
+        For Each Issue In Report.Issues.Where(Function(Value) Value.Kind = IssueKind.LoaderMismatch)
+            Try
+                Dim Info As New FileInfo(Issue.Owner.RootPath)
+                If Info.Exists Then Snapshot.Files(FilePathKey(Info.FullName)) = New LoaderWarningMark With {.Length = Info.Length,
+                    .LastWrite = Info.LastWriteTimeUtc.Ticks, .Message = "加载器不匹配" & vbCrLf & Issue.Message}
+            Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException
+                'A changed or removed file will be checked again on refresh.
+            End Try
+        Next
+        If LoaderWarnings.Count > 32 Then LoaderWarnings.Clear()
+        LoaderWarnings(FilePathKey(Folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) = Snapshot
+    End Sub
+    Friend Shared Function LoaderWarningFor(Folder As String, FullPath As String, Context As InspectionContext) As String
+        If Context Is Nothing Then Return ""
+        Dim Snapshot As LoaderWarningSnapshot = Nothing, Mark As LoaderWarningMark = Nothing
+        If Not LoaderWarnings.TryGetValue(FilePathKey(Folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), Snapshot) OrElse Snapshot.ContextKey <> LoaderContextKey(Context) OrElse
+            Not Snapshot.Files.TryGetValue(FilePathKey(FullPath), Mark) Then Return ""
+        Try
+            Dim Info As New FileInfo(FullPath)
+            If Info.Exists AndAlso (Info.Attributes And FileAttributes.ReparsePoint) = 0 AndAlso Info.Length = Mark.Length AndAlso
+                Info.LastWriteTimeUtc.Ticks = Mark.LastWrite Then Return Mark.Message
+        Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException
+            'Never keep a red marker for a file that no longer matches the inspected content.
+        End Try
+        Return ""
+    End Function
 
     Private Class ReadBudget
+        Public ForceFresh As Boolean
         Public Bytes As Long
         Public Count As Integer
     End Class
 
-    Private Shared Function IsModFile(FullPath As String) As Boolean
+    Friend Shared Function IsModFile(FullPath As String) As Boolean
         Dim Name = FullPath
         If Name.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) OrElse Name.EndsWith(".old", StringComparison.OrdinalIgnoreCase) Then Name = Path.GetFileNameWithoutExtension(Name)
         Return {".jar", ".zip", ".litemod"}.Contains(Path.GetExtension(Name).ToLowerInvariant())
@@ -421,35 +513,49 @@ Friend NotInheritable Class ModDependencyInspector
     Private Shared Sub ReadArchive(Archive As ZipArchive, RootPath As String, NestedPath As String, Enabled As Boolean,
                                   Nested As Boolean, Depth As Integer, Report As InspectionReport, Budget As ReadBudget, Token As CancellationToken)
         Token.ThrowIfCancellationRequested()
+        If IsLegacyForge(Report.Context) Then
+            Dim Before = Report.Mods.Count
+            ReadLegacyArchive(Archive, RootPath, NestedPath, Enabled, Nested, Depth, Report, Budget, Token)
+            If Report.Mods.Skip(Before).Any(Function(Value) Not Value.IsMetadataOnly) OrElse
+                Not {"fabric.mod.json", "quilt.mod.json", "META-INF/mods.toml", "META-INF/neoforge.mods.toml"}.Any(Function(Name) Archive.GetEntry(Name) IsNot Nothing) Then Return
+            'A modern-only mod in a legacy instance still needs a loader mismatch warning.
+            Report.Mods.RemoveRange(Before, Report.Mods.Count - Before)
+        End If
         Dim Choices As New List(Of String)
         Dim Loaders = Report.Context.LoaderVersions
         If Loaders.ContainsKey("quilt_loader") Then Choices.Add("quilt.mod.json")
         If Loaders.ContainsKey("fabricloader") OrElse Loaders.ContainsKey("quilt_loader") Then Choices.Add("fabric.mod.json")
-        If Loaders.ContainsKey("neoforge") Then Choices.Add("META-INF/neoforge.mods.toml")
+        If Loaders.ContainsKey("neoforge") AndAlso NeoModernMetadata(Report.Context).GetValueOrDefault(True) Then Choices.Add("META-INF/neoforge.mods.toml")
         If Loaders.ContainsKey("forge") OrElse Loaders.ContainsKey("neoforge") Then Choices.Add("META-INF/mods.toml")
         Choices.AddRange({"quilt.mod.json", "fabric.mod.json", "META-INF/neoforge.mods.toml", "META-INF/mods.toml", "mcmod.info", "litemod.json"})
         Dim Metadata = Choices.Distinct(StringComparer.Ordinal).Select(Function(Name) Archive.GetEntry(Name)).FirstOrDefault(Function(Entry) Entry IsNot Nothing)
         If Metadata Is Nothing Then
-            If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & If(Nested, "!" & NestedPath, "") & "：没有可读取的本地模组声明。")
+            Dim Before = Report.Mods.Count
+            ReadLegacyArchive(Archive, RootPath, NestedPath, Enabled, Nested, Depth, Report, Budget, Token)
+            For Each Item In Report.Mods.Skip(Before)
+                Item.IncompatibleLoader = Not LoaderAccepts("legacy", Report.Context)
+            Next
             Return
         End If
-        Dim Items As New List(Of ModInfo), NestedJars As New List(Of String), Content = ReadText(Metadata)
+        Dim Items As New List(Of ModInfo), NestedJars As New List(Of String), Content = ReadText(Metadata), DeclaredPlatform As String = ""
         Select Case Metadata.FullName
             Case "fabric.mod.json"
                 Dim Json = JObject.Parse(Content)
-                If Text(Json("schemaVersion")) <> "1" AndAlso Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：Fabric 元数据并非受支持的 schemaVersion 1。")
-                For Each Name In {"depends", "recommends", "suggests", "breaks", "conflicts"}
+                Dim Schema = If(Json("schemaVersion") Is Nothing, "0", Text(Json("schemaVersion"))), Supported = Schema = "0" OrElse Schema = "1"
+                If Not Supported AndAlso Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：Fabric schemaVersion 未受支持，未推断其中的依赖声明。")
+                For Each Name In If(Schema = "0", {"requires", "recommends", "conflicts"}, {"depends", "recommends", "suggests", "breaks", "conflicts"})
                     If Json(Name) IsNot Nothing AndAlso Not TypeOf Json(Name) Is JObject AndAlso Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：无法完整读取 " & Name & " 声明。")
                 Next
                 Dim Item = NewMod(Json("id"), Json("name"), Json("version"), RootPath, NestedPath & Metadata.FullName, "Fabric", Enabled, Nested)
-                Item.Side = ReadSide(Json("environment"))
+                Item.Side = ReadSide(Json(If(Schema = "0", "side", "environment")))
+                If Schema = "0" AndAlso Item.Side = "universal" Then Item.Side = "*"
                 Item.IconPath = ReadIconPath(Json("icon"))
-                For Each AliasId In ArrayValues(Json("provides"))
+                For Each AliasId In If(Schema = "1", ArrayValues(Json("provides")), Enumerable.Empty(Of JToken)())
                     If AliasId.Type = JTokenType.String Then Item.Provides(Text(AliasId)) = Item.Version
                 Next
-                ReadFabricDependencies(Item, Json)
+                If Supported Then ReadFabricDependencies(Item, Json, Schema = "0")
                 Items.Add(Item)
-                For Each Jar In ArrayValues(Json("jars"))
+                For Each Jar In If(Schema = "1", ArrayValues(Json("jars")), Enumerable.Empty(Of JToken)())
                     Dim EntryName = If(Jar.Type = JTokenType.Object, Text(Jar("file")), "")
                     If EntryName <> "" Then NestedJars.Add(EntryName)
                 Next
@@ -483,7 +589,15 @@ Friend NotInheritable Class ModDependencyInspector
                     If Jar.Type = JTokenType.String Then NestedJars.Add(Text(Jar))
                 Next
             Case "META-INF/mods.toml", "META-INF/neoforge.mods.toml"
-                Dim IsNeo = Metadata.FullName.Contains("neoforge") OrElse Loaders.ContainsKey("neoforge")
+                'NeoForge 1.20.4 also uses mods.toml; distinguish it using actual platform dependencies.
+                Dim Platforms = ReadToml(Content).Where(Function(Section) Section.Name.StartsWith("dependencies.", StringComparison.Ordinal) AndAlso
+                    Scalar(Section, "mandatory") <> "false" AndAlso {"", "required"}.Contains(Scalar(Section, "type"))).Select(Function(Section) Scalar(Section, "modId")).ToList()
+                If Metadata.FullName.Contains("neoforge") OrElse Platforms.Contains("neoforge") Then
+                    DeclaredPlatform = "neoforge"
+                ElseIf Platforms.Contains("forge") Then
+                    DeclaredPlatform = "forge"
+                End If
+                Dim IsNeo = DeclaredPlatform = "neoforge" OrElse (DeclaredPlatform = "" AndAlso Loaders.ContainsKey("neoforge"))
                 ReadForge(Content, Archive, RootPath, NestedPath & Metadata.FullName, Enabled, Nested, IsNeo, Items, Report)
                 Dim JarJar = Archive.GetEntry("META-INF/jarjar/metadata.json")
                 If JarJar IsNot Nothing Then
@@ -493,7 +607,12 @@ Friend NotInheritable Class ModDependencyInspector
                     Next
                 End If
             Case "mcmod.info"
-                ReadLegacy(JToken.Parse(Content), RootPath, NestedPath & Metadata.FullName, Enabled, Nested, Items, Report)
+                Dim Before = Report.Mods.Count
+                ReadLegacyArchive(Archive, RootPath, NestedPath, Enabled, Nested, Depth, Report, Budget, Token)
+                For Each Item In Report.Mods.Skip(Before)
+                    Item.IncompatibleLoader = Not LoaderAccepts("legacy", Report.Context)
+                Next
+                Return
             Case "litemod.json"
                 Dim Json = JObject.Parse(Content)
                 Dim Item = NewMod(Json("name"), Json("displayName"), Json("version"), RootPath, NestedPath & Metadata.FullName, "LiteLoader", Enabled, Nested)
@@ -502,7 +621,20 @@ Friend NotInheritable Class ModDependencyInspector
                 If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：LiteLoader 依赖可能在运行时代码中声明。")
         End Select
         If Items.Count = 0 Then Throw New FormatException("声明中未找到模组 ID")
+        For Each Item In Items
+            Item.IncompatibleLoader = Not LoaderAccepts(Metadata.FullName, Report.Context, DeclaredPlatform)
+            Dim NeoGeneration = NeoModernMetadata(Report.Context)
+            If Item.IncompatibleLoader AndAlso Loaders.ContainsKey("neoforge") AndAlso NeoGeneration.HasValue AndAlso
+                {"META-INF/mods.toml", "META-INF/neoforge.mods.toml"}.Contains(Metadata.FullName) Then
+                Item.LoaderMismatchDetail = "此 NeoForge 版本读取 " & If(NeoGeneration.Value, "META-INF/neoforge.mods.toml", "META-INF/mods.toml") & "，当前文件的声明格式不适用。"
+            End If
+        Next
         Report.Mods.AddRange(Items)
+        ReadNestedArchives(Archive, NestedJars, RootPath, NestedPath, Enabled, Depth, Report, Budget, Token)
+    End Sub
+
+    Private Shared Sub ReadNestedArchives(Archive As ZipArchive, NestedJars As IEnumerable(Of String), RootPath As String, NestedPath As String,
+                                          Enabled As Boolean, Depth As Integer, Report As InspectionReport, Budget As ReadBudget, Token As CancellationToken)
         For Each EntryName In NestedJars.Distinct(StringComparer.Ordinal)
             Token.ThrowIfCancellationRequested()
             Dim Parts = EntryName.Replace("\"c, "/"c).Split("/"c)
@@ -584,9 +716,11 @@ Friend NotInheritable Class ModDependencyInspector
     Private Shared Function SideApplies(Side As String, Context As InspectionContext) As Boolean
         Return Side = "*" OrElse Side = "" OrElse Side = "both" OrElse Side.Split(","c).Contains(If(Context.Side, "client").ToLowerInvariant())
     End Function
-    Private Shared Sub ReadFabricDependencies(Item As ModInfo, Json As JObject)
-        Dim Kinds = New Dictionary(Of String, DependencyKind) From {{"depends", DependencyKind.Required}, {"recommends", DependencyKind.Recommended},
-            {"suggests", DependencyKind.Suggested}, {"breaks", DependencyKind.Incompatible}, {"conflicts", DependencyKind.Conflict}}
+    Private Shared Sub ReadFabricDependencies(Item As ModInfo, Json As JObject, Optional LegacySchema As Boolean = False)
+        Dim Kinds = If(LegacySchema,
+            New Dictionary(Of String, DependencyKind) From {{"requires", DependencyKind.Required}, {"recommends", DependencyKind.Suggested}, {"conflicts", DependencyKind.Incompatible}},
+            New Dictionary(Of String, DependencyKind) From {{"depends", DependencyKind.Required}, {"recommends", DependencyKind.Recommended},
+                {"suggests", DependencyKind.Suggested}, {"breaks", DependencyKind.Incompatible}, {"conflicts", DependencyKind.Conflict}})
         For Each Pair In Kinds
             Dim Values = TryCast(Json(Pair.Key), JObject)
             If Values Is Nothing Then Continue For
@@ -712,7 +846,7 @@ Friend NotInheritable Class ModDependencyInspector
     End Function
     Private Shared Sub ReadForge(Content As String, Archive As ZipArchive, RootPath As String, MetadataPath As String, Enabled As Boolean,
                                  Nested As Boolean, Neo As Boolean, Items As List(Of ModInfo), Report As InspectionReport)
-        Dim Sections = ReadToml(Content), GlobalSection = Sections(0)
+        Dim Sections = ReadToml(Content), GlobalSection = Sections(0), FileProperties = Sections.FirstOrDefault(Function(Entry) Entry.Name = "properties")
         If Enabled AndAlso Sections.Any(Function(Section) Section.Name = "?") Then Incomplete(Report, Path.GetFileName(RootPath) & "：存在未识别的 TOML 表名，部分声明未解析。")
         Dim ManifestVersion As String = ""
         Dim Manifest = Archive.GetEntry("META-INF/MANIFEST.MF")
@@ -722,8 +856,10 @@ Friend NotInheritable Class ModDependencyInspector
             If Match.Success Then ManifestVersion = Match.Groups(1).Value.Trim()
         End If
         For Each Section In Sections.Where(Function(Entry) Entry.Name = "mods")
-            Dim Version = Scalar(Section, "version")
-            If Version = "$" & "{file.jarVersion}" Then Version = ManifestVersion
+            Dim Version = Regex.Replace(Scalar(Section, "version"), "\$\{file\.([A-Za-z0-9_.-]+)\}", Function(Match)
+                Dim Value = If(Match.Groups(1).Value = "jarVersion", ManifestVersion, If(FileProperties Is Nothing, "", Scalar(FileProperties, Match.Groups(1).Value)))
+                Return If(Value = "", Match.Value, Value)
+            End Function)
             Dim Item = NewMod(New JValue(Scalar(Section, "modId")), New JValue(Scalar(Section, "displayName")), New JValue(Version), RootPath, MetadataPath, If(Neo, "NeoForge", "Forge"), Enabled, Nested)
             Item.IconPath = ReadIconPath(New JValue(Scalar(Section, "logoFile", Scalar(GlobalSection, "logoFile"))))
             If Scalar(GlobalSection, "clientSideOnly") = "true" Then Item.Side = "client"
@@ -764,28 +900,466 @@ Friend NotInheritable Class ModDependencyInspector
                 Item.Dependencies.Add(New Dependency With {.Id = "java", .Versions = New JValue(Scalar(Features, "java_version")), .Syntax = "maven", .Kind = DependencyKind.Required})
             End If
             'Forge FML uses the Forge major version; NeoForge's language loader version is a separate numbering scheme.
-            Dim Language = Scalar(GlobalSection, "modLoader"), Range = Scalar(GlobalSection, "loaderVersion")
-            If Not Neo AndAlso {"javafml", "lowcodefml"}.Contains(Language) AndAlso Range <> "" Then
+            Dim Language = Scalar(GlobalSection, "modLoader", If(Neo, "javafml", "")), Range = Scalar(GlobalSection, "loaderVersion")
+            If {"javafml", "lowcodefml"}.Contains(Language) AndAlso Range <> "" Then
                 Item.Dependencies.Add(New Dependency With {.Id = Language, .Versions = New JValue(Range), .Syntax = "maven", .Kind = DependencyKind.Required, .Reason = "FML 语言加载器版本"})
             End If
         Next
     End Sub
-    Private Shared Sub ReadLegacy(Json As JToken, RootPath As String, MetadataPath As String, Enabled As Boolean, Nested As Boolean,
-                                  Items As List(Of ModInfo), Report As InspectionReport)
-        Dim Values = If(TypeOf Json Is JArray, Json, Json("modList"))
-        For Each Value As JObject In ArrayValues(Values).OfType(Of JObject)()
-            Dim Item = NewMod(Value("modid"), Value("name"), Value("version"), RootPath, MetadataPath, "Forge (旧版)", Enabled, Nested)
-            Item.IconPath = ReadIconPath(Value("logoFile"))
-            For Each Required In ArrayValues(Value("requiredMods"))
-                Dim Raw = Text(Required), At = Raw.IndexOf("@"c)
-                Item.Dependencies.Add(New Dependency With {.Id = If(At < 0, Raw, Raw.Substring(0, At)), .Versions = New JValue(If(At < 0, "*", Raw.Substring(At + 1))),
-                    .Kind = DependencyKind.Required, .Syntax = "maven"})
+    Friend Shared Function IsLegacyForge(Context As InspectionContext) As Boolean
+        If Context Is Nothing OrElse Not Context.LoaderVersions.ContainsKey("forge") Then Return False
+        Return Regex.IsMatch(If(Context.MinecraftVersion, ""), "^1\.(?:[0-9]|1[0-2])(?:\.|$)") OrElse
+            Regex.IsMatch(If(Context.LoaderVersions("forge"), ""), "^(?:[1-9]|1[0-4])\.")
+    End Function
+
+    Private Shared Function NeoModernMetadata(Context As InspectionContext) As Boolean?
+        Dim Version As System.Version = Nothing
+        If Not Context.LoaderVersions.ContainsKey("neoforge") OrElse Not System.Version.TryParse(Context.MinecraftVersion, Version) Then Return Nothing
+        Return Version >= New System.Version(1, 20, 5)
+    End Function
+    Private Shared Function LoaderAccepts(Metadata As String, Context As InspectionContext, Optional DeclaredPlatform As String = "") As Boolean
+        If Not Context.LoaderKnown OrElse Context.LoaderVersions.Count = 0 Then Return True
+        Dim Loaders = Context.LoaderVersions
+        Select Case Metadata
+            Case "fabric.mod.json" : Return Loaders.ContainsKey("fabricloader") OrElse Loaders.ContainsKey("quilt_loader")
+            Case "quilt.mod.json" : Return Loaders.ContainsKey("quilt_loader")
+            Case "META-INF/neoforge.mods.toml" : Return Loaders.ContainsKey("neoforge") AndAlso NeoModernMetadata(Context).GetValueOrDefault(True)
+            Case "META-INF/mods.toml"
+                If DeclaredPlatform = "neoforge" Then Return Loaders.ContainsKey("neoforge") AndAlso Not NeoModernMetadata(Context).GetValueOrDefault(False)
+                If DeclaredPlatform = "forge" Then Return (Loaders.ContainsKey("forge") AndAlso Not IsLegacyForge(Context)) OrElse
+                    (Loaders.ContainsKey("neoforge") AndAlso Context.MinecraftVersion = "1.20.1")
+                Return (Loaders.ContainsKey("forge") AndAlso Not IsLegacyForge(Context)) OrElse (Loaders.ContainsKey("neoforge") AndAlso Not NeoModernMetadata(Context).GetValueOrDefault(False))
+            Case "legacy" : Return IsLegacyForge(Context)
+            Case "litemod.json" : Return Loaders.ContainsKey("liteloader")
+            Case Else : Return True
+        End Select
+    End Function
+
+    Private Shared Function LoaderDisplay(Context As InspectionContext) As String
+        If Context.LoaderVersions.ContainsKey("quilt_loader") Then Return "Quilt"
+        If Context.LoaderVersions.ContainsKey("fabricloader") Then Return "Fabric"
+        If Context.LoaderVersions.ContainsKey("neoforge") Then Return "NeoForge"
+        If Context.LoaderVersions.ContainsKey("forge") Then Return If(IsLegacyForge(Context), "Forge（旧版）", "Forge")
+        If Context.LoaderVersions.ContainsKey("liteloader") Then Return "LiteLoader"
+        Return "当前加载器"
+    End Function
+    Friend Shared Function RuntimeOwnerId(Id As String, Context As InspectionContext) As String
+        Select Case If(Id, "")
+            Case "javafml", "lowcodefml", "fml", "FML"
+                Return If(Context.LoaderVersions.ContainsKey("neoforge"), "neoforge", "forge")
+            Case "forge", "neoforge", "fabricloader", "quilt_loader", "liteloader", "minecraft", "java" : Return Id
+            Case Else : Return ""
+        End Select
+    End Function
+    Friend Shared Function IsInternalLoaderId(Id As String) As Boolean
+        Return {"javafml", "lowcodefml", "fml", "FML"}.Contains(If(Id, ""))
+    End Function
+    Friend Shared Function RuntimeDisplayName(Id As String) As String
+        Select Case Id
+            Case "forge" : Return "Forge"
+            Case "neoforge" : Return "NeoForge"
+            Case "fabricloader" : Return "Fabric Loader"
+            Case "quilt_loader" : Return "Quilt Loader"
+            Case "liteloader" : Return "LiteLoader"
+            Case "minecraft" : Return "Minecraft"
+            Case "java" : Return "Java"
+            Case Else : Return Id
+        End Select
+    End Function
+    Friend Shared Function RequirementDisplay(Requirement As Dependency, Context As InspectionContext) As String
+        If Requirement.Children.Count > 0 Then Return "(" & String.Join(If(Requirement.Join = "all", " 且 ", " 或 "), Requirement.Children.Select(Function(Child) RequirementDisplay(Child, Context))) & ")"
+        Dim Owner = RuntimeOwnerId(Requirement.Id, Context)
+        If Owner = "" Then Return Requirement.Display
+        If IsInternalLoaderId(Requirement.Id) Then Return RuntimeDisplayName(Owner) & " 内置支持"
+        Return RuntimeDisplayName(Owner) & Requirement.Display.Substring(If(Requirement.Id, "").Length)
+    End Function
+
+    Private Class LegacyCacheEntry
+        Public Mods As List(Of ModInfo)
+        Public Notices As List(Of String)
+    End Class
+    Private Shared ReadOnly LegacyCache As New System.Collections.Concurrent.ConcurrentDictionary(Of String, LegacyCacheEntry)(StringComparer.OrdinalIgnoreCase)
+
+    Private Shared Sub ReadLegacyArchive(Archive As ZipArchive, RootPath As String, NestedPath As String, Enabled As Boolean,
+                                         Nested As Boolean, Depth As Integer, Report As InspectionReport, Budget As ReadBudget, Token As CancellationToken)
+        'Forge 1.12 discovers class-level @Mod annotations, not modern TOML or every mcmod.info entry.
+        'Rules: https://github.com/MinecraftForge/MinecraftForge/blob/1.12.x/src/main/java/net/minecraftforge/fml/common/FMLModContainer.java
+        'Embedded dependencies: https://docs.minecraftforge.net/en/1.12.x/gettingstarted/dependencymanagement/
+        Dim CacheKey As String = Nothing, BeforeMods = Report.Mods.Count, BeforeNotices = Report.Notices.Count
+        If Not Nested Then
+            Dim SourceInfo = New FileInfo(RootPath)
+            CacheKey = FilePathKey(RootPath) & "|" & SourceInfo.Length & "|" & SourceInfo.LastWriteTimeUtc.Ticks & "|" & SourceInfo.CreationTimeUtc.Ticks & "|" & Enabled & "|" & Report.Context.MinecraftVersion & "|" &
+                String.Join(";", Report.Context.LoaderVersions.OrderBy(Function(Pair) Pair.Key).Select(Function(Pair) Pair.Key & "=" & Pair.Value))
+            Dim Saved As LegacyCacheEntry = Nothing
+            If Not Budget.ForceFresh AndAlso LegacyCache.TryGetValue(CacheKey, Saved) Then
+                Report.Mods.AddRange(Saved.Mods.Select(Function(Item) Item.CopyWithEnabled(Enabled)))
+                For Each Notice In Saved.Notices
+                    Incomplete(Report, Notice)
+                Next
+                Return
+            End If
+        End If
+        Dim Descriptions As New List(Of JObject), Info = Archive.GetEntry("mcmod.info")
+        If Info IsNot Nothing Then
+            Try
+                Dim Json = JToken.Parse(ReadText(Info))
+                Descriptions.AddRange(ArrayValues(If(TypeOf Json Is JArray, Json, Json("modList"))).OfType(Of JObject)())
+            Catch ex As Exception When TypeOf ex Is JsonException OrElse TypeOf ex Is InvalidDataException
+                If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：无法完整读取 mcmod.info，继续检查 @Mod 声明。")
+            End Try
+        End If
+        Dim Items As New List(Of ModInfo), Total As Long, Count As Integer
+        Dim Manifest = Archive.GetEntry("META-INF/MANIFEST.MF"), Headers As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        If Manifest IsNot Nothing Then
+            For Each Line In Regex.Replace(ReadText(Manifest), "\r*\n ", "").Split(ChrW(10))
+                If String.IsNullOrWhiteSpace(Line) Then Exit For
+                Dim Colon = Line.IndexOf(":"c)
+                If Colon > 0 Then Headers(Line.Substring(0, Colon)) = Line.Substring(Colon + 1).Trim()
             Next
-            Items.Add(Item)
+        End If
+        Dim PluginName As String = Nothing
+        If Headers.TryGetValue("FMLCorePlugin", PluginName) Then
+            Try
+                Dim Plugin = Archive.GetEntry(PluginName.Replace("."c, "/"c) & ".class"), Core As JObject = Nothing
+                If Plugin IsNot Nothing AndAlso Plugin.Length <= MaxMetadataBytes Then
+                    Using Stream = Plugin.Open(), ClassReader As New LegacyClassReader(Stream, Plugin.Length)
+                        Core = ClassReader.ReadMod(1)
+                    End Using
+                End If
+                Dim PluginCore = Core, ContainerName = Text(Core?("container"))
+                If ContainerName <> "" Then
+                    Dim Container = Archive.GetEntry(ContainerName.Replace("."c, "/"c) & ".class")
+                    If Container IsNot Nothing AndAlso Container.Length <= MaxMetadataBytes Then
+                        Using Stream = Container.Open(), ClassReader As New LegacyClassReader(Stream, Container.Length)
+                            Core = ClassReader.ReadMod(2)
+                        End Using
+                        If Text(Core?("modId")) <> "" Then
+                            Dim Item = NewMod(Core("modId"), Core("name"), Core("version"), RootPath, NestedPath & Container.FullName, "Forge (旧版核心插件)", Enabled, Nested)
+                            Item.IsRuntimeCandidate = Text(PluginCore?("uncertain")) = "True"
+                            Items.Add(Item)
+                            If Item.IsRuntimeCandidate AndAlso Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：核心插件按运行环境决定是否注册 " & Item.Id & "，未将其作为可自动安装的缺失依赖。")
+                        End If
+                    End If
+                End If
+            Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is FormatException
+                If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：核心插件的运行时模组信息无法静态确认。")
+            End Try
+        End If
+        'Exact Forge ITypeDiscoverer.classFile rule: do not discover Scala Foo$.class, whitespace copies or __MACOSX files.
+        For Each Entry In Archive.Entries.Where(Function(Value) Not Value.FullName.StartsWith("__MACOSX", StringComparison.Ordinal) AndAlso
+            Regex.IsMatch(Value.FullName, "\A[^\s\$]+(\$[^\s]+)?\.class\z"))
+            Token.ThrowIfCancellationRequested()
+            Count += 1
+            If Count > 50000 OrElse Entry.Length > 4L * 1024 * 1024 OrElse Entry.Length > 128L * 1024 * 1024 - Total Then
+                If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：旧版类声明扫描达到读取上限。")
+                Exit For
+            End If
+            Total += Entry.Length
+            Try
+                Dim Annotation As JObject
+                Using Stream = Entry.Open(), ClassReader As New LegacyClassReader(Stream, Entry.Length)
+                    Annotation = ClassReader.ReadMod()
+                End Using
+                If Annotation Is Nothing Then Continue For
+                Dim Id = Text(Annotation("modid"))
+                Dim Description = Descriptions.FirstOrDefault(Function(Value) Text(Value("modid")) = Id)
+                Dim MetadataOverrides = Annotation("useMetadata") Is Nothing OrElse Text(Annotation("useMetadata")).Equals("true", StringComparison.OrdinalIgnoreCase)
+                Dim Name = Text(Annotation("name")), Version = Text(Annotation("version"))
+                If Description IsNot Nothing AndAlso (MetadataOverrides OrElse Name = "") Then Name = Text(Description("name"))
+                If Version = "" Then
+                    Dim Properties = Archive.GetEntry("version.properties")
+                    If Properties IsNot Nothing Then
+                        Dim Match = Regex.Match(ReadText(Properties), "(?m)^\s*" & Regex.Escape(Id) & "\.version\s*[=:]\s*([^\r\n\\]+)\s*$")
+                        If Match.Success Then Version = Match.Groups(1).Value.Trim()
+                    End If
+                    If Version = "" AndAlso Description IsNot Nothing Then Version = Text(Description("version"))
+                End If
+                If Version.Contains("${") Then Version = ""
+                Dim Item = NewMod(New JValue(Id), New JValue(Name), New JValue(Version), RootPath, NestedPath & Entry.FullName, "Forge (旧版)", Enabled, Nested)
+                If Description IsNot Nothing Then Item.IconPath = ReadIconPath(Description("logoFile"))
+                If Text(Annotation("clientSideOnly")).Equals("true", StringComparison.OrdinalIgnoreCase) Then Item.Side = "client"
+                If Text(Annotation("serverSideOnly")).Equals("true", StringComparison.OrdinalIgnoreCase) Then Item.Side = "server"
+                If Description IsNot Nothing AndAlso MetadataOverrides AndAlso Text(Description("useDependencyInformation")).Equals("true", StringComparison.OrdinalIgnoreCase) Then
+                    For Each Required In ArrayValues(Description("requiredMods"))
+                        AddLegacyDependency(Item, Text(Required), DependencyKind.Required)
+                    Next
+                    For Each OptionalValue In ArrayValues(Description("dependencies")).Concat(ArrayValues(Description("dependants")))
+                        AddLegacyDependency(Item, Text(OptionalValue), DependencyKind.Optional)
+                    Next
+                Else
+                    For Each Raw In Text(Annotation("dependencies")).Split(";"c).Where(Function(Value) Not String.IsNullOrWhiteSpace(Value))
+                        Dim Parts = Raw.Split(":"c), Instructions = Parts(0).Trim().Split("-"c)
+                        If Parts.Length <> 2 OrElse Instructions.Any(Function(Value) Not {"required", "before", "after", "client", "server"}.Contains(Value)) Then
+                            If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：无法完整解析旧版依赖声明。")
+                            Continue For
+                        End If
+                        Dim Side = If(Instructions.Contains("client"), "client", If(Instructions.Contains("server"), "server", "*"))
+                        AddLegacyDependency(Item, Parts(1), If(Instructions.Contains("required"), DependencyKind.Required, DependencyKind.Optional), Side)
+                    Next
+                End If
+                Dim MinecraftRange = Text(Annotation("acceptedMinecraftVersions"))
+                If {"[1.12]", "[1.12.1]", "[1.12,1.12.1]"}.Contains(MinecraftRange) Then MinecraftRange = "[1.12,1.12.2]"
+                If MinecraftRange <> "" Then AddLegacyDependency(Item, "minecraft@" & MinecraftRange, DependencyKind.Required)
+                Items.Add(Item)
+            Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is FormatException
+                If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：部分旧版类声明无法读取。")
+            End Try
         Next
-        'Old Forge may add/override dependencies through @Mod, which mcmod.info cannot prove.
-        If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：旧版 Forge 还可能通过 @Mod 注解声明依赖。")
+        If Items.Count = 0 Then
+            'Core plugins may construct containers at runtime. Keep descriptions for detail UI only, never as duplicate IDs.
+            For Each Description In Descriptions
+                Try
+                    Dim Item = NewMod(Description("modid"), Description("name"), Description("version"), RootPath, NestedPath & "mcmod.info", "Forge (旧版)", Enabled, Nested)
+                    Item.IsMetadataOnly = True : Item.IconPath = ReadIconPath(Description("logoFile")) : Items.Add(Item)
+                Catch ex As FormatException
+                    'Unexpanded templates do not establish a loader ID.
+                End Try
+            Next
+            If Enabled Then Incomplete(Report, Path.GetFileName(RootPath) & "：未找到静态 @Mod 声明，可能通过核心插件在运行时注册。")
+        End If
+        Report.Mods.AddRange(Items)
+        Dim Contained As String = Nothing
+        If Headers.TryGetValue("ContainedDeps", Contained) Then
+            Dim Paths = Contained.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).Select(Function(Name)
+                Return If(Archive.GetEntry("META-INF/libraries/" & Name) IsNot Nothing, "META-INF/libraries/" & Name, Name)
+            End Function)
+            ReadNestedArchives(Archive, Paths, RootPath, NestedPath, Enabled, Depth, Report, Budget, Token)
+        End If
+        If CacheKey IsNot Nothing Then
+            If LegacyCache.Count >= 1024 Then LegacyCache.Clear()
+            LegacyCache(CacheKey) = New LegacyCacheEntry With {.Mods = Report.Mods.Skip(BeforeMods).Select(Function(Item) Item.CopyWithEnabled(Enabled)).ToList(),
+                .Notices = Report.Notices.Skip(BeforeNotices).ToList()}
+        End If
     End Sub
+
+    Private Shared Sub AddLegacyDependency(Item As ModInfo, Raw As String, Kind As DependencyKind, Optional Side As String = "*")
+        Raw = Raw.Trim()
+        Dim At = Raw.IndexOf("@"c), Id = If(At < 0, Raw, Raw.Substring(0, At)).Trim()
+        If Id = "*" Then Return 'A load-order rule, not a dependency on a mod called *.
+        Item.Dependencies.Add(New Dependency With {.Id = Id, .Versions = New JValue(If(At < 0, "*", Raw.Substring(At + 1).Trim())),
+            .Kind = Kind, .Syntax = "maven", .Side = Side, .EnforceWhenPresent = Kind = DependencyKind.Optional,
+            .IsUnknown = Not Regex.IsMatch(Id, "^[A-Za-z0-9_.-]+$")})
+    End Sub
+
+    'Reads only class metadata; never loads, invokes or rewrites mod code. Limits also apply to malformed class attributes.
+    Private NotInheritable Class LegacyClassReader
+        Implements IDisposable
+        Private ReadOnly Reader As BinaryReader
+        Private Remaining As Long
+        Private Pool As Object()
+        Private Shared ReadOnly StrictUtf8 As New UTF8Encoding(False, True)
+        Private Class PoolReference
+            Public Kind As Integer, First As Integer, Second As Integer
+            Public Sub New(Kind As Integer, First As Integer, Optional Second As Integer = 0)
+                Me.Kind = Kind : Me.First = First : Me.Second = Second
+            End Sub
+        End Class
+        Public Sub New(Stream As Stream, Length As Long)
+            Reader = New BinaryReader(New BufferedStream(Stream, 8192), Encoding.UTF8, False) : Remaining = Length
+        End Sub
+        Public Sub Dispose() Implements IDisposable.Dispose
+            Reader.Dispose()
+        End Sub
+        Private Function Bytes(Count As Integer) As Byte()
+            If Count < 0 OrElse Count > Remaining Then Throw New InvalidDataException("无效的类声明长度")
+            Dim Value = Reader.ReadBytes(Count)
+            If Value.Length <> Count Then Throw New EndOfStreamException()
+            Remaining -= Count : Return Value
+        End Function
+        Private Function U1() As Integer
+            If Remaining < 1 Then Throw New EndOfStreamException()
+            Remaining -= 1 : Return Reader.ReadByte()
+        End Function
+        Private Function U2() As Integer
+            Return U1() * 256 + U1()
+        End Function
+        Private Function U4() As Long
+            Return CLng(U2()) * 65536 + U2()
+        End Function
+        Private Sub Skip(Count As Long)
+            If Count < 0 OrElse Count > Remaining Then Throw New InvalidDataException("无效的类声明长度")
+            While Count > 0
+                Dim Part = CInt(Math.Min(8192, Count)) : Bytes(Part) : Count -= Part
+            End While
+        End Sub
+        Private Function Constant(Index As Integer) As Object
+            If Index <= 0 OrElse Index >= Pool.Length Then Throw New InvalidDataException("无效的常量索引")
+            Return Pool(Index)
+        End Function
+        Private Function Utf(Index As Integer) As String
+            Dim Value = TryCast(Constant(Index), String)
+            If Value Is Nothing Then Throw New InvalidDataException("无效的文本常量")
+            Return Value
+        End Function
+        Private Shared Function ModifiedUtf8(Value As Byte()) As String
+            Try
+                Return StrictUtf8.GetString(Value)
+            Catch ex As DecoderFallbackException
+                'Java encodes NUL and UTF-16 surrogates differently from standard UTF-8.
+            End Try
+            Dim Result As New StringBuilder(), Index As Integer
+            While Index < Value.Length
+                Dim First = CInt(Value(Index)), Code As Integer, Count As Integer
+                If First < 128 Then
+                    Code = First : Count = 1
+                ElseIf (First And &HE0) = &HC0 Then
+                    Code = First And &H1F : Count = 2
+                ElseIf (First And &HF0) = &HE0 Then
+                    Code = First And &HF : Count = 3
+                Else
+                    Throw New InvalidDataException("无效的 Java UTF-8 常量")
+                End If
+                If Index + Count > Value.Length Then Throw New InvalidDataException("截断的 Java UTF-8 常量")
+                For Offset = 1 To Count - 1
+                    Dim NextByte = Value(Index + Offset)
+                    If (NextByte And &HC0) <> &H80 Then Throw New InvalidDataException("无效的 Java UTF-8 常量")
+                    Code = Code * 64 + (NextByte And &H3F)
+                Next
+                Result.Append(ChrW(Code)) : Index += Count
+            End While
+            Return Result.ToString()
+        End Function
+        Private Function ReferencedName(Index As Integer) As String
+            Dim Value = TryCast(Constant(Index), PoolReference)
+            If Value Is Nothing OrElse Value.Kind <> 7 Then Return ""
+            Return Utf(Value.First)
+        End Function
+        Public Function ReadMod(Optional CoreMode As Integer = 0) As JObject
+            If U4() <> &HCAFEBABEL Then Throw New InvalidDataException("无效的 Java 类文件")
+            Skip(4) : ReDim Pool(U2() - 1)
+            Dim Index = 1
+            While Index < Pool.Length
+                Dim Kind = U1()
+                Select Case Kind
+                    Case 1 : Pool(Index) = ModifiedUtf8(Bytes(U2()))
+                    Case 3 : Pool(Index) = U4()
+                    Case 4 : Skip(4)
+                    Case 5, 6 : Skip(8) : Index += 1
+                    Case 7, 8, 16, 19, 20 : Pool(Index) = New PoolReference(Kind, U2())
+                    Case 9, 10, 11, 12, 17, 18 : Pool(Index) = New PoolReference(Kind, U2(), U2())
+                    Case 15 : Skip(3)
+                    Case Else : Throw New InvalidDataException("未知的 Java 常量类型")
+                End Select
+                Index += 1
+            End While
+            If CoreMode = 0 AndAlso Not Pool.Any(Function(Value) Equals(Value, "Lnet/minecraftforge/fml/common/Mod;") OrElse Equals(Value, "Lcpw/mods/fml/common/Mod;")) Then Return Nothing
+            Skip(4)
+            Dim Superclass = ReferencedName(U2()), Core As New JObject()
+            If CoreMode = 2 AndAlso Not {"net/minecraftforge/fml/common/DummyModContainer", "cpw/mods/fml/common/DummyModContainer"}.Contains(Superclass) Then Return Nothing
+            Skip(CLng(U2()) * 2)
+            For MemberKind = 1 To 2
+                Dim Members = U2()
+                For Member = 1 To Members
+                    Skip(2)
+                    Dim MemberName = Utf(U2()), Descriptor = Utf(U2())
+                    Dim Attributes = U2()
+                    For Attribute = 1 To Attributes
+                        Dim Name = Utf(U2()), Length = U4(), Before = Remaining
+                        If MemberKind = 2 AndAlso Name = "Code" AndAlso ((CoreMode = 1 AndAlso MemberName = "getModContainerClass" AndAlso Descriptor = "()Ljava/lang/String;") OrElse
+                            (CoreMode = 2 AndAlso MemberName = "<init>" AndAlso Descriptor = "()V")) Then
+                            Skip(4)
+                            Dim CodeLength = U4()
+                            If CodeLength > 65535 Then Throw New InvalidDataException("类方法超过读取上限")
+                            Core = ReadCoreCode(Bytes(CInt(CodeLength)), CoreMode)
+                        End If
+                        Skip(Length - (Before - Remaining))
+                    Next
+                Next
+            Next
+            If CoreMode <> 0 Then Return Core
+            Dim ClassAttributes = U2(), Result As JObject = Nothing
+            For Attribute = 1 To ClassAttributes
+                Dim Name = Utf(U2()), Length = U4(), Before = Remaining
+                If Name = "RuntimeVisibleAnnotations" Then
+                    Dim Count = U2()
+                    For Annotation = 1 To Count
+                        Dim Kind As String = Nothing, Value = ReadAnnotation(0, Kind)
+                        If Kind = "Lnet/minecraftforge/fml/common/Mod;" OrElse Kind = "Lcpw/mods/fml/common/Mod;" Then Result = Value
+                    Next
+                End If
+                Skip(Length - (Before - Remaining))
+            Next
+            Return Result
+        End Function
+        Private Function ReadCoreCode(Code As Byte(), Mode As Integer) As JObject
+            Dim Result As New JObject(), Index As Integer, PreviousString As String = Nothing, PreviousClass As String = Nothing, Conditional = False
+            While Index < Code.Length
+                Dim Op = CInt(Code(Index)), Operands As Integer
+                Select Case Op
+                    Case 0 To 15, 26 To 53, 59 To 131, 133 To 152, 172 To 177, 190, 191, 194, 195 : Operands = 0
+                    Case 16, 18, 21 To 25, 54 To 58, 188 : Operands = 1
+                    Case 17, 19, 20, 132, 178 To 184, 187, 189, 192, 193 : Operands = 2
+                    Case 185, 186 : Operands = 4
+                    Case 197 : Operands = 3
+                    Case 153 To 168, 198, 199
+                        If Mode <> 1 Then Return New JObject()
+                        Conditional = True : Operands = 2
+                    Case 200, 201
+                        If Mode <> 1 Then Return New JObject()
+                        Conditional = True : Operands = 4
+                    Case Else : Return New JObject() 'Branches, switches and dynamic/wide code are deliberately not inferred.
+                End Select
+                If Index + Operands >= Code.Length Then Throw New InvalidDataException("截断的类方法")
+                Dim Argument = If(Operands = 0, 0, If(Operands = 1, CInt(Code(Index + 1)), CInt(Code(Index + 1)) * 256 + Code(Index + 2)))
+                Dim Literal As String = Nothing, ClassLiteral As String = Nothing
+                If Op = 18 OrElse Op = 19 Then
+                    Dim Reference = TryCast(Constant(Argument), PoolReference)
+                    If Reference IsNot Nothing AndAlso Reference.Kind = 8 Then Literal = Utf(Reference.First)
+                    If Reference IsNot Nothing AndAlso Reference.Kind = 7 Then ClassLiteral = Utf(Reference.First).Replace("/"c, "."c)
+                End If
+                If Mode = 1 AndAlso Op = 182 AndAlso PreviousClass IsNot Nothing Then
+                    Dim Method = TryCast(Constant(Argument), PoolReference)
+                    If Method IsNot Nothing AndAlso Method.Kind = 10 AndAlso ReferencedName(Method.First) = "java/lang/Class" Then
+                        Dim NameType = TryCast(Constant(Method.Second), PoolReference)
+                        If NameType IsNot Nothing AndAlso NameType.Kind = 12 AndAlso Utf(NameType.First) = "getName" AndAlso Utf(NameType.Second) = "()Ljava/lang/String;" Then Literal = PreviousClass
+                    End If
+                End If
+                If Mode = 1 AndAlso Op = 176 AndAlso PreviousString IsNot Nothing Then
+                    Result("container") = PreviousString : Result("uncertain") = Conditional : Return Result
+                End If
+                If Mode = 2 AndAlso Op = 181 Then
+                    Dim Field = TryCast(Constant(Argument), PoolReference)
+                    If Field IsNot Nothing AndAlso Field.Kind = 9 AndAlso {"net/minecraftforge/fml/common/ModMetadata", "cpw/mods/fml/common/ModMetadata"}.Contains(ReferencedName(Field.First)) Then
+                        Dim NameType = TryCast(Constant(Field.Second), PoolReference)
+                        If NameType IsNot Nothing AndAlso NameType.Kind = 12 AndAlso Utf(NameType.Second) = "Ljava/lang/String;" Then
+                            Dim Name = Utf(NameType.First)
+                            If {"modId", "name", "version"}.Contains(Name) Then Result(Name) = If(PreviousString Is Nothing, JValue.CreateNull(), New JValue(PreviousString))
+                        End If
+                    End If
+                End If
+                PreviousString = Literal : PreviousClass = ClassLiteral : Index += 1 + Operands
+            End While
+            Return If(Mode = 2, Result, New JObject())
+        End Function
+        Private Function ReadAnnotation(Depth As Integer, ByRef Kind As String) As JObject
+            If Depth > 16 Then Throw New InvalidDataException("Java 注解嵌套过深")
+            Kind = Utf(U2())
+            Dim Result As New JObject(), Count = U2()
+            For Pair = 1 To Count
+                Dim Name = Utf(U2()) : Result(Name) = ReadElement(Depth + 1)
+            Next
+            Return Result
+        End Function
+        Private Function ReadElement(Depth As Integer) As JToken
+            If Depth > 16 Then Throw New InvalidDataException("Java 注解嵌套过深")
+            Select Case ChrW(U1())
+                Case "s"c : Return New JValue(Utf(U2()))
+                Case "Z"c : Return New JValue(Convert.ToInt64(Constant(U2()), CultureInfo.InvariantCulture) <> 0)
+                Case "B"c, "C"c, "D"c, "F"c, "I"c, "J"c, "S"c : Skip(2) : Return JValue.CreateNull()
+                Case "e"c : Skip(4) : Return JValue.CreateNull()
+                Case "c"c : Skip(2) : Return JValue.CreateNull()
+                Case "@"c
+                    Dim Kind As String = Nothing : Return ReadAnnotation(Depth, Kind)
+                Case "["c
+                    Dim Result As New JArray(), Count = U2()
+                    For Index = 1 To Count
+                        Result.Add(ReadElement(Depth + 1))
+                    Next
+                    Return Result
+                Case Else : Throw New InvalidDataException("未知的 Java 注解值")
+            End Select
+        End Function
+    End Class
 
     Private Shared Function CanonicalId(Id As String) As String
         'Mod IDs are exact identifiers. In particular, "fabric" is the old Fabric API ID, not Fabric Loader.
@@ -820,6 +1394,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Values("lowcodefml") = Forge.Split("."c)(0)
             End If
         End If
+        If IsLegacyForge(Context) Then Values("FML") = Nothing
         For Each Pair In Context.AdditionalBuiltins
             Values(CanonicalId(Pair.Key)) = Pair.Value
         Next
@@ -833,12 +1408,13 @@ Friend NotInheritable Class ModDependencyInspector
     End Function
     Friend Shared Function Identities(Item As ModInfo) As Dictionary(Of String, String)
         Dim Result As New Dictionary(Of String, String)(Item.Provides, StringComparer.Ordinal)
+        If Item.IsMetadataOnly OrElse Item.IncompatibleLoader Then Return Result
         Result(Item.Id) = Item.Version
         If Not String.IsNullOrEmpty(Item.Group) Then Result(Item.Group & ":" & Item.Id) = Item.Version
         Return Result
     End Function
     Private Shared Function ActiveMods(Report As InspectionReport) As List(Of ModInfo)
-        Return Report.Mods.Where(Function(Item) Item.Enabled AndAlso SideApplies(Item.Side, Report.Context)).ToList()
+        Return Report.Mods.Where(Function(Item) Item.Enabled AndAlso Not Item.IsMetadataOnly AndAlso Not Item.IncompatibleLoader AndAlso SideApplies(Item.Side, Report.Context)).ToList()
     End Function
     Friend Shared Function FileSatisfiesDependency(Report As InspectionReport, FullPath As String, Requirement As Dependency) As Boolean
         Dim Modules = Report.Mods.Where(Function(Item) SameFilePath(Item.RootPath, FullPath) AndAlso SideApplies(Item.Side, Report.Context))
@@ -908,7 +1484,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Result.Missing = True
             Else
                 Result.Providers = Candidates.ToList()
-                Result.State = Combine(Candidates.Select(Function(Item) MatchVersions(Identities(Item)(Requirement.Id), Requirement.Versions, Requirement.Syntax)), False)
+                Result.State = Combine(Candidates.Select(Function(Item) If(Item.IsRuntimeCandidate, MatchState.Unknown, MatchVersions(Identities(Item)(Requirement.Id), Requirement.Versions, Requirement.Syntax))), False)
             End If
         End If
         If Requirement.Unless IsNot Nothing Then
@@ -936,12 +1512,22 @@ Friend NotInheritable Class ModDependencyInspector
         Return If(Values.Contains(MatchState.Unknown), MatchState.Unknown, MatchState.Unsatisfied)
     End Function
     Friend Shared Sub BuildReport(Report As InspectionReport, Token As CancellationToken)
+        For Each Group In Report.Mods.Where(Function(Item) Item.Enabled AndAlso Not Item.IsNested AndAlso Not Item.IsMetadataOnly AndAlso Item.IncompatibleLoader).
+            GroupBy(Function(Item) FilePathKey(Item.RootPath), StringComparer.OrdinalIgnoreCase)
+            Token.ThrowIfCancellationRequested()
+            Dim Item = Group.First(), Expected = LoaderDisplay(Report.Context)
+            Report.Issues.Add(New InspectionIssue With {.Kind = IssueKind.LoaderMismatch, .Owner = Item, .RelatedMods = Group.ToList(), .IsError = True,
+                .Message = "文件：" & Path.GetFileName(Item.RootPath) & vbCrLf & "适用：" & Item.Format & "；当前：" & Expected & vbCrLf &
+                If(String.IsNullOrEmpty(Item.LoaderMismatchDetail), "", Item.LoaderMismatchDetail & vbCrLf) &
+                "处理：在 Mod 管理中禁用或移出此文件，换用支持 Minecraft " & Report.Context.MinecraftVersion & " 与 " & Expected &
+                " 的版本；若要使用此模组，请另选匹配加载器的游戏实例。"})
+        Next
         Dim Active = ActiveMods(Report), Map = ProviderMap(Active.Concat(Report.Builtins))
-        For Each Group In Active.Where(Function(Item) Not Item.IsNested).GroupBy(Function(Item) Item.Id, StringComparer.Ordinal).Where(Function(Items) Items.Count() > 1)
+        For Each Group In Active.Where(Function(Item) Not Item.IsNested AndAlso Not Item.IsRuntimeCandidate).GroupBy(Function(Item) Item.Id, StringComparer.Ordinal).Where(Function(Items) Items.Count() > 1)
             Report.Issues.Add(New InspectionIssue With {.Kind = IssueKind.DuplicateId, .Owner = Group.First(), .RelatedMods = Group.ToList(), .IsError = True,
                 .Message = "重复模组 ID " & Group.Key & "：" & String.Join("、", Group.Select(Function(Item) Path.GetFileName(Item.RootPath)))})
         Next
-        Dim RequiredKeys As New HashSet(Of String)(Active.Where(Function(Item) Not Item.IsNested).Select(Function(Item) Item.Key), StringComparer.Ordinal)
+        Dim RequiredKeys As New HashSet(Of String)(Active.Where(Function(Item) Not Item.IsNested AndAlso Not Item.IsRuntimeCandidate).Select(Function(Item) Item.Key), StringComparer.Ordinal)
         'An embedded candidate is checked as required only when a required chain uniquely selects it.
         Dim Changed = True
         While Changed
@@ -956,7 +1542,7 @@ Friend NotInheritable Class ModDependencyInspector
             Next
         End While
         For Each Item In Active
-            Item.IsCandidate = Item.IsNested AndAlso Not RequiredKeys.Contains(Item.Key)
+            Item.IsCandidate = Item.IsRuntimeCandidate OrElse (Item.IsNested AndAlso Not RequiredKeys.Contains(Item.Key))
         Next
         For Each Item In Active
             Token.ThrowIfCancellationRequested()
@@ -973,7 +1559,7 @@ Friend NotInheritable Class ModDependencyInspector
                 If Edge.Evaluated Then AddIssue(Report, Edge, Value)
             Next
         Next
-        If Active.Any(Function(Item) Item.IsCandidate) Then Report.Notices.Add("内嵌模组的候选版本由加载器选择；未把未选中的候选自身依赖判为启动错误。")
+        If Active.Any(Function(Item) Item.IsCandidate AndAlso Item.IsNested) Then Report.Notices.Add("内嵌模组的候选版本由加载器选择；未把未选中的候选自身依赖判为启动错误。")
     End Sub
     Private Shared Sub AddIssue(Report As InspectionReport, Edge As DependencyEdge, Value As Resolution)
         Dim Requirement = Edge.Requirement, Kind As IssueKind, IsError = False, Detail As String = Nothing
@@ -983,7 +1569,7 @@ Friend NotInheritable Class ModDependencyInspector
                 If Requirement.Kind = DependencyKind.Optional AndAlso Not Requirement.EnforceWhenPresent Then Return
                 Kind = If(Value.Missing, IssueKind.MissingRequired, IssueKind.VersionMismatch)
                 IsError = Not Report.MetadataIncomplete OrElse (Not Value.Missing AndAlso Value.Providers.All(Function(Item) Not Item.IsNested))
-                Detail = If(Value.Missing, "缺少必需依赖：", "版本不匹配：") & Edge.Owner.Display & " 需要 " & Requirement.Display
+                Detail = If(Value.Missing, "缺少必需依赖：", "版本不匹配：") & Edge.Owner.Display & " 需要 " & RequirementDisplay(Requirement, Report.Context)
             Case DependencyKind.Incompatible, DependencyKind.Conflict
                 If Value.State <> MatchState.Satisfied OrElse Value.Missing OrElse Not SideApplies(Requirement.Side, Report.Context) Then Return
                 Kind = IssueKind.Incompatible
@@ -996,7 +1582,7 @@ Friend NotInheritable Class ModDependencyInspector
             Case Else
                 Return
         End Select
-        If Value.Providers.Count > 0 Then Detail &= "；本地：" & String.Join("、", Value.Providers.Select(Function(Item) Item.Display & " " & If(String.IsNullOrEmpty(Item.Version), "未知版本", Item.Version)))
+        If Value.Providers.Count > 0 AndAlso Not IsInternalLoaderId(Requirement.Id) Then Detail &= "；本地：" & String.Join("、", Value.Providers.Select(Function(Item) Item.Display & " " & If(String.IsNullOrEmpty(Item.Version), "未知版本", Item.Version)))
         Dim Disabled = Report.Mods.Where(Function(Item) Not Item.Enabled AndAlso DependencyMentions(Requirement, Identities(Item).Keys)).ToList()
         If Value.Missing AndAlso Disabled.Count > 0 Then Detail &= "；已禁用：" & String.Join("、", Disabled.Select(Function(Item) Path.GetFileName(Item.RootPath)).Distinct())
         If Not String.IsNullOrEmpty(Requirement.Reason) Then Detail &= "（" & Requirement.Reason & "）"
@@ -1073,7 +1659,7 @@ Friend NotInheritable Class ModDependencyInspector
                 Dim KindText = New Dictionary(Of DependencyKind, String) From {{DependencyKind.Required, "必需"}, {DependencyKind.Optional, "可选"}, {DependencyKind.Recommended, "建议"},
                     {DependencyKind.Suggested, "可选提示"}, {DependencyKind.Incompatible, "不兼容"}, {DependencyKind.Conflict, "冲突提示"}}
                 If Requirement.Kind = DependencyKind.Incompatible OrElse Requirement.Kind = DependencyKind.Conflict Then State = If(Edge IsNot Nothing AndAlso Edge.State = MatchState.Satisfied, "检测到匹配项", "未检测到确定匹配项")
-                Lines.Add("  • [" & KindText(Requirement.Kind) & "] " & Requirement.Display & "（" & State & If(Requirement.Side = "*", "", "；" & Requirement.Side) & "）")
+                Lines.Add("  • [" & KindText(Requirement.Kind) & "] " & RequirementDisplay(Requirement, Report.Context) & "（" & State & If(Requirement.Side = "*", "", "；" & Requirement.Side) & "）")
             Next
             Dim Referrers As List(Of DependencyEdge) = Nothing
             Report.ReverseDependencies.TryGetValue(Item.Key, Referrers)
@@ -1114,7 +1700,7 @@ Friend NotInheritable Class ModDependencyInspector
         Range = Regex.Replace(Range, "([><=~^]+)\s+", "$1")
         Dim Tokens = Regex.Split(Range, "\s+").Where(Function(Value) Value <> "").ToArray()
         If Tokens.Any(Function(Value) Not Regex.IsMatch(Value, "^(?:>=|<=|>|<|=|~|\^)?(?:[A-Za-z0-9][A-Za-z0-9._:+*-]*|\*)$")) Then Return MatchState.Unknown
-        Return Combine(Tokens.Select(Function(Value) MatchPredicate(Actual, Value)), True)
+        Return Combine(Tokens.Select(Function(Value) MatchPredicate(Actual, Value, Syntax)), True)
     End Function
     Private Class NumericVersion
         Public Parts As Long()
@@ -1157,7 +1743,7 @@ Friend NotInheritable Class ModDependencyInspector
         Next
         Return LeftParts.Length.CompareTo(RightParts.Length)
     End Function
-    Private Shared Function MatchPredicate(Actual As String, Predicate As String) As MatchState
+    Private Shared Function MatchPredicate(Actual As String, Predicate As String, Syntax As String) As MatchState
         If Predicate = "*" OrElse Predicate = "x" OrElse Predicate = "X" Then Return MatchState.Satisfied
         Dim Match = Regex.Match(Predicate, "^(>=|<=|>|<|=|~|\^)?(.+)$")
         If Not Match.Success Then Return MatchState.Unknown
@@ -1188,6 +1774,13 @@ Friend NotInheritable Class ModDependencyInspector
             Case "<" : Return If(Comparison < 0, MatchState.Satisfied, MatchState.Unsatisfied)
             Case "<=" : Return If(Comparison <= 0, MatchState.Satisfied, MatchState.Unsatisfied)
             Case "~", "^"
+                If Syntax = "fabric" Then
+                    'Fabric compares equal major (~ also minor), including major zero and omitted minor components.
+                    For Index = 0 To If(OperatorText = "~", 1, 0)
+                        If If(Index < Current.Parts.Length, Current.Parts(Index), 0L) <> If(Index < Target.Parts.Length, Target.Parts(Index), 0L) Then Return MatchState.Unsatisfied
+                    Next
+                    Return If(Comparison >= 0, MatchState.Satisfied, MatchState.Unsatisfied)
+                End If
                 Dim Upper = CType(Target.Parts.Clone(), Long()), Bump As Integer
                 If OperatorText = "~" Then
                     Bump = If(Upper.Length > 1, 1, 0)

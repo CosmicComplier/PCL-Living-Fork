@@ -6,6 +6,9 @@ Imports Inspector = PCL.ModDependencyInspector
 
 '只处理精确匹配的已安装文件所声明的必需项目；下载后仍用加载器元数据复核，不把平台项目 ID 当成 Mod ID。
 Friend NotInheritable Class ModDependencyAutoFill
+    Friend Shared Sub ResetIndexLookups()
+        Cached.Clear()
+    End Sub
     Friend Class Item
         Public Platform As String
         Public ProjectId As String
@@ -118,6 +121,26 @@ Friend NotInheritable Class ModDependencyAutoFill
         Optional Options As ModDependencyOnline.LookupOptions = Nothing) As Plan
         Dim Result = ModDependencyActivation.Prepare(Root, Report, Token)
         If Not Report.Mods.Any(Function(Value) Value.Enabled) Then Return Result
+        If Report.Issues.Any(Function(Value) Value.Kind = Inspector.IssueKind.LoaderMismatch) Then
+            Result.Items.Clear() : Result.Enables.Clear()
+            Result.Notes.Add("请先在 Mod 管理中处理加载器不匹配的文件，再检查和补全依赖。")
+            Return Result
+        End If
+        If Report.Issues.Any(Function(Value) Value.Requirement IsNot Nothing AndAlso
+            (Value.Kind = Inspector.IssueKind.MissingRequired OrElse Value.Kind = Inspector.IssueKind.VersionMismatch) AndAlso
+            Inspector.RuntimeOwnerId(Value.Requirement.Id, Report.Context) <> "") Then
+            Result.Items.Clear() : Result.Enables.Clear()
+            Result.Notes.Add("请先调整游戏、Java 或加载器版本；加载器的内置支持随加载器一起提供，不会作为独立 Mod 下载。")
+            Return Result
+        End If
+        'Legacy platform records often describe newer/different builds or replaced core plugins.
+        'Only a missing dependency from the actual loader declarations justifies automatic repair.
+        Dim Legacy = Inspector.IsLegacyForge(Report.Context)
+        If Legacy AndAlso Not Report.Issues.Any(Function(Value) Value.Kind = Inspector.IssueKind.MissingRequired AndAlso Value.IsError AndAlso
+            Value.Requirement IsNot Nothing AndAlso Not Value.Requirement.IsUnknown) Then
+            If Report.Issues.Any(Function(Value) Value.Kind = Inspector.IssueKind.MissingRequired) Then Result.Notes.Add("旧版核心插件的运行时声明尚未确认，未自动选择可能重复的前置文件。")
+            Return Result
+        End If
         If Loader(Report.Context) = ModLoaders.None OrElse String.IsNullOrEmpty(Report.Context.MinecraftVersion) Then
             Result.Notes.Add("尚未确认当前 Minecraft 版本或加载器，未选择自动补全文件。") : Return Result
         End If
@@ -138,6 +161,7 @@ Friend NotInheritable Class ModDependencyAutoFill
                 If Matches.Count = 0 Then Continue For
                 Dim Match = Matches(0)
                 Dim Missing = Report.Issues.Where(Function(Issue) Issue.Kind = Inspector.IssueKind.MissingRequired AndAlso Inspector.SameFilePath(Issue.Owner.RootPath, File.FullPath)).ToList()
+                If Legacy AndAlso Not Missing.Any(Function(Value) Value.IsError) Then Continue For
                 Dim LocalRanges = Missing.Count > 0 AndAlso Missing.All(Function(Issue) Issue.Requirement IsNot Nothing AndAlso Not Issue.Requirement.IsUnknown AndAlso Issue.Requirement.Children.Count = 0 AndAlso IsRange(Issue.Requirement.Versions))
                 For Each Dependency In Match.Dependencies.Where(Function(Value) Value.Kind = "required")
                     Pending.Enqueue(New Requirement With {.Platform = Dependency.Platform, .Project = Dependency.ProjectId, .Version = Dependency.VersionId, .Owner = Match.ProjectName})
@@ -319,7 +343,7 @@ Friend NotInheritable Class ModDependencyAutoFill
                 Dim Entry = Plan.Items(Index), FullPath = StagedFile(Plan, Stage, Index)
                 If Not File.Exists(FullPath) OrElse New FileInfo(FullPath).Length <> Entry.Version.Size OrElse InstanceResourceUpdates.FileHash(FullPath, Entry.Version.Hash.Length = 32) <> Entry.Version.Hash Then Throw New IOException("下载的前置文件校验失败，未加入模组目录。")
             Next
-            Dim Added = Inspector.Inspect(Stage, Before.Context, Token)
+            Dim Added = Inspector.ScanRaw(Stage, Before.Context, Token, True)
             If Added.MetadataIncomplete Then Throw New IOException("前置文件的元数据未能完整识别，未自动安装。")
             Dim Ready = Inspector.WithEnabledFiles(Before, Plan.Enables.Select(Function(Item) Item.Source), Token)
             Dim ExistingIds As New HashSet(Of String)(Ready.Mods.Where(Function(Value) Value.Enabled AndAlso Not Value.IsNested).Select(Function(Value) Value.Id), StringComparer.Ordinal)

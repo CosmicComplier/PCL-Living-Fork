@@ -12,6 +12,7 @@
         AniControlEnabled += 1
         SelectedMods.Clear()
         ReloadModList()
+        ApplyLoaderWarnings()
         ChangeAllSelected(False)
         AniControlEnabled -= 1
 
@@ -35,6 +36,44 @@
         Filter = FilterType.All
         PanBack.ScrollToHome()
         SearchBox.Text = ""
+    End Sub
+    Private Sub RebuildDependencyIndex() Handles BtnManageIndex.Click
+        Dim Target = PageInstanceLeft.Instance
+        If Target Is Nothing Then Return
+        If Interlocked.CompareExchange(DependencyChecking, 1, 0) <> 0 Then
+            Hint("正在检查模组依赖，请稍候。") : Return
+        End If
+        BtnManageIndex.IsEnabled = False : BtnManageIndex.Text = "正在更新索引"
+        Hint("正在更新依赖索引并获取模组依赖声明……")
+        RunInNewThread(Sub()
+            Try
+                ModDependencyAutoFill.ResetIndexLookups()
+                Dim Options As New ModDependencyOnline.LookupOptions With {.Progress = Sub(Done, Total)
+                    If Done Mod 10 <> 0 AndAlso Done <> Total Then Return
+                    RunInUi(Sub() BtnManageIndex.Text = If(Done = Total, "正在获取声明", "读取声明 " & Done & "/" & Total))
+                End Sub}
+                Dim Report = ModDependencyOnline.RebuildWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target), Options:=Options)
+                RunInUi(Sub()
+                    If PageInstanceLeft.Instance Is Target Then ApplyLoaderWarnings()
+                    If Report.IndexReadFailed Then
+                        Hint("部分模组暂时无法读取，请解除文件占用后重新更新索引。", HintType.Red)
+                    ElseIf Not Report.IndexPersisted Then
+                        Hint("依赖索引已更新，但未能保存到磁盘。", HintType.Red)
+                    ElseIf Report.OnlineIncomplete Then
+                        Hint("依赖索引已更新，部分平台声明未能获取；已保留本地声明。")
+                    Else
+                        Hint("模组依赖索引与声明已更新。", HintType.Green)
+                    End If
+                End Sub)
+            Catch ex As Exception
+                Logger.Error(ex, "更新模组依赖树索引失败", LogBehavior.Toast)
+            Finally
+                RunInUi(Sub()
+                    Interlocked.Exchange(DependencyChecking, 0)
+                    BtnManageIndex.IsEnabled = True : BtnManageIndex.Text = "更新依赖索引"
+                End Sub)
+            End Try
+        End Sub, "Rebuild Mod Dependency Index", ThreadPriority.BelowNormal)
     End Sub
     '强制刷新
     Private Sub RefreshSelf() Implements IRefreshable.Refresh
@@ -105,9 +144,19 @@
         Dim NewItem As New MyLocalModItem With {.SnapsToDevicePixels = True, .Entry = Entry,
             .ButtonHandler = AddressOf McModContent, .Checked = SelectedMods.Contains(Entry.EnabledName)}
         AddHandler Entry.OnUpdate, Sub() RunInUi(AddressOf NewItem.Refresh)
+        Dim Target = PageInstanceLeft.Instance
+        If Target IsNot Nothing Then NewItem.RefreshLoaderWarning(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target))
         AniControlEnabled -= 1
         Return NewItem
     End Function
+    Friend Sub ApplyLoaderWarnings()
+        Dim Target = PageInstanceLeft.Instance
+        If Target Is Nothing Then Return
+        Dim Folder = IO.Path.Combine(Target.PathIndie, "mods"), Context = ModDependencyInspector.ContextForInstance(Target)
+        For Each Item In ModItems.Values
+            Item.RefreshLoaderWarning(Folder, Context)
+        Next
+    End Sub
     Private Shared Function DependencyStamp(Instance As McInstance) As String
         Dim Folder = IO.Path.Combine(Instance.PathIndie, "mods")
         If Not IO.Directory.Exists(Folder) Then Return ""
@@ -144,6 +193,7 @@
                                                Return
                                            End If
                                            If PageInstanceLeft.Instance IsNot Target OrElse McInstanceLock.IsLocked(Target) Then Return
+                                           ApplyLoaderWarnings()
                                            If Not String.IsNullOrEmpty(Caption) AndAlso MyMsgBoxConfirmContent(Caption, "模组依赖影响", "继续" & ActionName,
                                                Function() New ModDependencyImpactView(ImpactItems, ActionName)) <> 1 Then Return
                                            If DependencyStamp(Target) <> Stamp Then
@@ -160,13 +210,15 @@
     Private Sub ShowDependencyDetails(Entry As LocalResourceFile)
         Dim Target = PageInstanceLeft.Instance
         If Target Is Nothing OrElse Entry Is Nothing Then Return
-        Hint("正在获取模组依赖声明……")
+        Hint("正在读取模组依赖关系……")
         RunInNewThread(Sub()
                            Try
                                Dim Report = ModDependencyOnline.InspectWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target),
                                    Options:=New ModDependencyOnline.LookupOptions With {.TargetFile = Entry.File.FullName, .ComparePlatformDependencies = True, .MaxSearchFiles = 0})
                                Dim Caption = Report.DescribeFile(Entry.File.FullName)
                                RunInUi(Sub()
+                                           If PageInstanceLeft.Instance IsNot Target Then Return
+                                           ApplyLoaderWarnings()
                                            If Report.Mods.Any(Function(Item) ModDependencyInspector.SameFilePath(Item.RootPath, Entry.File.FullName)) Then
                                                MyMsgBoxContent(Caption, "模组依赖关系", Function() New ModDependencyGraphView(Report, Entry.File.FullName))
                                            Else

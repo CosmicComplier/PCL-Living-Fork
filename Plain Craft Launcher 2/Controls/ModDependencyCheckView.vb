@@ -17,7 +17,13 @@ Friend NotInheritable Class ModDependencyCheckView
         Dim Actions As New List(Of String)
         If Plan.Enables.Count > 0 Then Actions.Add(Plan.Enables.Count & " 个前置已安装但禁用")
         If Plan.Items.Count > 0 Then Actions.Add(Plan.Items.Count & " 个必需前置待补全")
-        If Actions.Count = 0 Then Actions.Add(Report.Issues.Where(Function(Item) Item.IsError).Count() & " 项需要处理")
+        If Actions.Count = 0 Then
+            Dim EnvironmentCount = Report.Issues.Where(Function(Item) Item.IsError AndAlso Item.Requirement IsNot Nothing).
+                Select(Function(Item) Inspector.RuntimeOwnerId(Item.Requirement.Id, Report.Context)).Where(Function(Id) Id <> "").Distinct().Count()
+            Dim ModCount = Report.Issues.Where(Function(Item) Item.IsError AndAlso (Item.Requirement Is Nothing OrElse Inspector.RuntimeOwnerId(Item.Requirement.Id, Report.Context) = "")).Count()
+            If EnvironmentCount > 0 Then Actions.Add(EnvironmentCount & " 项运行环境要求未满足")
+            If ModCount > 0 OrElse EnvironmentCount = 0 Then Actions.Add(ModCount & " 项模组问题需要处理")
+        End If
         Dim Summary As New TextBlock With {.Text = "已检查 " & Files & " 个启用文件 · " & String.Join(" · ", Actions),
             .Margin = New Thickness(3, 0, 3, 12), .TextWrapping = TextWrapping.Wrap, .FontSize = 13}
         Summary.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1") : Children.Add(Summary)
@@ -37,10 +43,26 @@ Friend NotInheritable Class ModDependencyCheckView
                 If(Item.Alternatives.Count > 0, vbCrLf & "将校验实际兼容性，必要时尝试较早版本", ""), DirectCast(Nothing, Inspector.ModInfo))).ToList()
             AddGroup("可补全的必需前置（" & Entries.Count & "）", Entries, False)
         End If
-        For Each Kind In {Inspector.IssueKind.MissingRequired, Inspector.IssueKind.VersionMismatch, Inspector.IssueKind.DuplicateId, Inspector.IssueKind.Incompatible}
-            Dim Issues = Report.Issues.Where(Function(Item) Item.Kind = Kind AndAlso Not Covered.Contains(ModDependencyActivation.IssueKey(Item))).ToList()
+        Dim RuntimeIssues = Report.Issues.Where(Function(Item) Item.Requirement IsNot Nothing AndAlso
+            (Item.Kind = Inspector.IssueKind.MissingRequired OrElse Item.Kind = Inspector.IssueKind.VersionMismatch) AndAlso
+            Inspector.RuntimeOwnerId(Item.Requirement.Id, Report.Context) <> "").ToList()
+        If RuntimeIssues.Count > 0 Then
+            Dim Entries = RuntimeIssues.GroupBy(Function(Item) Inspector.RuntimeOwnerId(Item.Requirement.Id, Report.Context)).Select(Function(Group)
+                Dim Name = Inspector.RuntimeDisplayName(Group.Key)
+                Dim Text = "相关模组：" & String.Join("、", Group.Select(Function(Item) Item.Owner.Name).Distinct())
+                If Group.Any(Function(Item) Inspector.IsInternalLoaderId(Item.Requirement.Id)) Then Text &= vbCrLf & Name & " 内置支持不满足这些模组的要求。"
+                Dim Direct = Group.Where(Function(Item) Not Inspector.IsInternalLoaderId(Item.Requirement.Id)).Select(Function(Item) Inspector.RequirementDisplay(Item.Requirement, Report.Context)).Distinct()
+                If Direct.Any() Then Text &= vbCrLf & "需要：" & String.Join("；", Direct)
+                Text &= vbCrLf & If(Group.Key = "java", "处理：在版本设置中选择符合要求的 Java。", If(Group.Key = "minecraft", "处理：选择匹配的 Minecraft 版本，或更换适用的模组。",
+                    "处理：在版本设置中更新或重装 " & Name & "，或更换适用的模组。"))
+                Return Tuple.Create(Name, Text, DirectCast(Nothing, Inspector.ModInfo))
+            End Function).ToList()
+            AddGroup("运行环境要求不满足（" & Entries.Count & "）", Entries, True, True)
+        End If
+        For Each Kind In {Inspector.IssueKind.LoaderMismatch, Inspector.IssueKind.MissingRequired, Inspector.IssueKind.VersionMismatch, Inspector.IssueKind.DuplicateId, Inspector.IssueKind.Incompatible}
+            Dim Issues = Report.Issues.Where(Function(Item) Item.Kind = Kind AndAlso Not RuntimeIssues.Contains(Item) AndAlso Not Covered.Contains(ModDependencyActivation.IssueKey(Item))).ToList()
             If Issues.Count = 0 Then Continue For
-            Dim Title = If(Kind = Inspector.IssueKind.MissingRequired, "缺少依赖", If(Kind = Inspector.IssueKind.VersionMismatch, "版本不匹配", If(Kind = Inspector.IssueKind.DuplicateId, "重复模组", "模组冲突")))
+            Dim Title = If(Kind = Inspector.IssueKind.LoaderMismatch, "加载器不匹配", If(Kind = Inspector.IssueKind.MissingRequired, "缺少依赖", If(Kind = Inspector.IssueKind.VersionMismatch, "版本不匹配", If(Kind = Inspector.IssueKind.DuplicateId, "重复模组", "模组冲突"))))
             Dim Entries = Issues.GroupBy(Function(Item) If(Item.Owner?.RootPath, "") & "|" & If(Item.Owner?.Id, "")).Select(Function(Group)
                 Dim Owner = Group.First().Owner
                 Return Tuple.Create(If(Owner?.Name, If(Owner?.Id, "模组问题")), String.Join(vbCrLf, Group.Select(Function(Item) Describe(Item))), Owner)
@@ -80,10 +102,10 @@ Friend NotInheritable Class ModDependencyCheckView
             If(DisabledAt < 0, "", vbCrLf & Issue.Message.Substring(DisabledAt))
     End Function
 
-    Private Sub AddGroup(Title As String, Entries As List(Of Tuple(Of String, String, Inspector.ModInfo)), Warning As Boolean)
+    Private Sub AddGroup(Title As String, Entries As List(Of Tuple(Of String, String, Inspector.ModInfo)), Warning As Boolean, Optional Wide As Boolean = False)
         Dim Card As New MyCard With {.Title = Title, .Margin = New Thickness(3, 3, 7, 10)}
-        Dim Rows As New Primitives.UniformGrid With {.Columns = 2, .Margin = New Thickness(9, 38, 9, 10)}
-        AddHandler Rows.SizeChanged, Sub() Rows.Columns = If(Rows.ActualWidth < 510, 1, 2)
+        Dim Rows As New Primitives.UniformGrid With {.Columns = If(Wide, 1, 2), .Margin = New Thickness(9, 38, 9, 10)}
+        AddHandler Rows.SizeChanged, Sub() Rows.Columns = If(Wide OrElse Rows.ActualWidth < 510, 1, 2)
         For Each Entry In Entries
             Dim Content As New Grid
             Content.ColumnDefinitions.Add(New ColumnDefinition With {.Width = New GridLength(28)})

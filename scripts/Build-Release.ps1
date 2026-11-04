@@ -27,7 +27,7 @@ try {
     $projectFolder=Join-Path $projectRoot 'Plain Craft Launcher 2'
     $outputFolder=if($OutputPath){if([IO.Path]::IsPathRooted($OutputPath)){[IO.Path]::GetFullPath($OutputPath)}else{[IO.Path]::GetFullPath((Join-Path $projectFolder $OutputPath))}}else{Join-Path $projectFolder 'bin'}
     $productVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $outputFolder 'LivingPCL.exe')).ProductVersion
-    if($productVersion -notmatch '\A\d+\.\d+\.\d+(?:\.\d+)?\z'){throw 'The built executable has an invalid product version'}
+    if($productVersion -notmatch '\A\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\z'){throw 'The built executable has an invalid product version'}
     $executableName='PCL-Living-Fork-'+$productVersion+'.exe'
     foreach($suffix in @('', '.config')){
         $compiled=Join-Path $outputFolder ('LivingPCL.exe'+$suffix)
