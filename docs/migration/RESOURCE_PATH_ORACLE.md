@@ -106,3 +106,13 @@ primitive 使用 Invariant Int64 文本传输，只有当前 format-size case �
 同提交 [Windows Build 41747606964](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41747606964)：Release job `126304429811`、Debug job `126304430181` 各41步success，实际原size/current-culture／Long反射入口和完整原资源／事务／旧桥消费者通过。C007d1a 完成；JSON描述、全部文化／自定义格式与未来现代WPF未据此闭项。
 
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。
+
+## C007d1b 的原资源包 JSON 片段待验证
+
+v5 保留原 190 例／56 比较，新增 90 个 `pack-metadata` 请求，总 280／56：32 个结构／初值／长度、8 个换行、42 个数值（26 标量、8 可见嵌套容器、8 纯忽略字段）及 8 个日期样本。原始 metadata 是 JSON 字符串载荷，不在现代准备阶段解析或重写数值。
+
+旧驱动从固定 f4 的 `ReadPackInfo` 唯一提取完整 Metadata IF 块，逐字注入薄 ByRef 包装，实际引用固定 Shared 换行扩展和 LF 自带 Newtonsoft DLL；原磁盘／图片处理与外层 catch 明确不在片段内。脚本记录片段 SHA256 与范围，旧 config、manifest、DLL 校验和清理规则保留。现代端调用真实 `InstanceResourceDetailsRules.ApplyPackMetadata`，显式静态绑定实际 `StringExtensions.ReplaceLineEndings`，避免 .NET 10 同名实例方法遮蔽；VT 仍按原 Shared 保留。
+
+成功和异常均记录 `detailAfter` 的 UTF16 数组或 null，并严格比较顶层异常类型及后状态，180 单元截断的孤立高代理项不经 UTF8 替换。当前文化只在本请求 try／finally 中设置及恢复。数值包含高精度、负零、下溢、极大有限、正负溢出、显式 NaN／Infinity、Int64／BigInteger；分别检验可见标量、容器和忽略字段。日期含 ISO 自动解析及 ar-SA 的晚期格式失败，不能将 ref 描述先赋值改成原子返回。观察型旧合同只允许列出的成功或异常类型，之后仍严格比较真实 Framework 与现代结果，不减弱旧 190 例或将差异忽略。
+
+当前本地 358／358 生产测试通过（新增 13 组），PCLCS net48／迁移测试／现代 oracle 零警告编译，以及注入原片段的 net48 VB 驱动预编译通过。独立源码自审通过；尚无本批 Windows 实跑或实际 CLR4 数值／日期等价结果，不预设 G15、禁止所有非有限数等修复策略。C007d1b 与母项保持进行中。

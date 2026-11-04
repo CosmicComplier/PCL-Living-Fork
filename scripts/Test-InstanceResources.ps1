@@ -35,6 +35,11 @@ function Assert-StoreException([string]$name,[object[]]$values,[type]$expected,[
  if($null -eq $observed -or $observed.GetType() -ne $expected){$actual=if($null -eq $observed){'no exception'}else{$observed.GetType().FullName};throw ('Unexpected resource mapping exception for '+$name+'; expected '+$expected.FullName+'; observed '+$actual)}
  if(-not [string]::IsNullOrEmpty($expectedMessage) -and $observed.Message -cne $expectedMessage){throw ('Resource validation message changed for '+$name)}
 }
+function Read-PackDetail($entry,$detail){
+ [object[]]$values=@($entry,$detail)
+ $store.GetMethod('ReadPackInfo',$flags).Invoke($null,$values)|Out-Null
+ return ,$values[1]
+}
 function New-Zip([string]$path,[hashtable]$items){
  $archive=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
  try{foreach($name in $items.Keys){$writer=[IO.StreamWriter]::new($archive.CreateEntry($name).Open());try{$writer.Write($items[$name])}finally{$writer.Dispose()}}}finally{$archive.Dispose()}
@@ -162,6 +167,25 @@ try{
  if(@([IO.Directory]::GetDirectories($saves,'.pcl-import-*')).Count){throw 'Canceled import left staging directories'}
  $packs=Invoke-Store 'Root' @($mc,$packKind);[IO.Directory]::CreateDirectory($packs)|Out-Null
  $pack=Join-Path $fixture 'Native Pack.zip';New-Zip $pack @{'pack.mcmeta'='{"pack":{"pack_format":46,"description":"Synthetic native pack"}}'}
+ $metadataFolder=Join-Path $fixture 'metadata-detail'
+ $metadataFile=Join-Path $metadataFolder 'pack.mcmeta'
+ $metadataEntry=[Activator]::CreateInstance($resourceType,$true)
+ $metadataEntry.FullPath=$metadataFolder;$metadataEntry.IsDirectory=$true
+ foreach($sample in @(
+  @{Json='{"pack":{"description":"first\r\nsecond\u2028third","pack_format":46}}';Text='first second third · 资源格式 46'},
+  @{Json='{"pack":{"description":{"text":"\nX\u0085Y"},"pack_format":null}}';Text=' X Y · 资源格式 '},
+  @{Json='{"pack":{"description":{"text":1234}}}';Text='1234'},
+  @{Json='{}';Text='seed'},@{Json='{"pack":[]}';Text='seed'},
+  @{Json='{"pack":{"description":[]}}';Text='seed'},@{Json='not JSON';Text='seed'}
+ )){
+  Put $metadataFile $sample.Json
+  if(-not [string]::Equals((Read-PackDetail $metadataEntry 'seed'),$sample.Text,[StringComparison]::Ordinal)){throw 'Resource pack detail parsing, newline or swallowed-error behavior changed'}
+ }
+ $longDescription=('a'*179)+$supplementary
+ Put $metadataFile ('{"pack":{"description":"'+$longDescription+'"}}')
+ $actualDetail=Read-PackDetail $metadataEntry 'seed'
+ if(-not [string]::Equals($actualDetail,$longDescription.Substring(0,180),[StringComparison]::Ordinal) -or -not [char]::IsHighSurrogate($actualDetail[179])){throw 'Resource pack detail did not retain the original 180 UTF16-unit boundary'}
+ foreach($json in @('{"pack":null}','{"pack":{"description":null}}')){Put $metadataFile $json;Assert-StoreException 'ReadPackInfo' @($metadataEntry,'seed') ([InvalidOperationException])}
  $missingPackMessage='资源包缺少 pack.mcmeta，未替换原文件。'
  $missingShaderMessage='光影包缺少 shaders 目录，未替换原文件。'
  $unknownKind=[Enum]::ToObject($kindType,5)
@@ -312,7 +336,7 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message, size/current-culture, extension-filter/null/device and package/lazy-directory/handle contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message, size/current-culture, pack-description/ref/UTF16/error, extension-filter/null/device and package/lazy-directory/handle contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

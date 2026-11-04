@@ -14,7 +14,7 @@ using PCLCS;
 // Prefix implementation: real MeloongCore c774ae4c85fd94e0eaa171db21e78a65870df19b.
 // Original path/size methods are compiled from git, not reimplemented in this driver.
 internal static class Program {
-    internal const string Protocol = "pcllf-resource-paths-v4";
+    internal const string Protocol = "pcllf-resource-paths-v5";
     private const string Lf = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983";
     private const string Shared = "c774ae4c85fd94e0eaa171db21e78a65870df19b";
     private const string Outside = "资源路径超出了当前目录。";
@@ -302,6 +302,89 @@ internal static class Program {
             }
         }
 
+        // These are the original ReadPackInfo JSON block only. The post-state
+        // is numeric UTF16, so a truncated high surrogate cannot be replaced by
+        // JSON/UTF8 serialization. The old host's IO/image work and catch stay out.
+        string Quote(string value) => new JValue(value).ToString(Newtonsoft.Json.Formatting.None);
+        string Description(string value) => "{\"pack\":{\"description\":" + Quote(value) + "}}";
+        JObject MetadataOk(string? detail) { JObject result = Ok(); result["detailAfter"] = DetailUtf16(detail); return result; }
+        JObject MetadataError(string type, string? detail) { JObject result = Error(type); result["detailAfter"] = DetailUtf16(detail); return result; }
+        void Metadata(string id, string? value, JObject expected, string? initial = "before", string? culture = null) {
+            Add("pack-metadata." + id, "pack-metadata", value, expected);
+            JObject request = (JObject)cases[cases.Count - 1]!;
+            request["initialDetail"] = initial;
+            if (culture is not null) request["culture"] = culture;
+        }
+        Metadata("null", null, MetadataOk("before"));
+        Metadata("null-initial-null", null, MetadataOk(null), initial: null);
+        Metadata("null-initial-empty", null, MetadataOk(""), initial: "");
+        Metadata("empty", "", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("whitespace", "  ", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("malformed", "{", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("root-array", "[]", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("root-null", "null", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("missing-pack", "{}", MetadataOk("before"));
+        Metadata("pack-null", "{\"pack\":null}", MetadataError("System.InvalidOperationException", "before"));
+        Metadata("pack-scalar", "{\"pack\":7}", MetadataError("System.InvalidOperationException", "before"));
+        Metadata("pack-array", "{\"pack\":[]}", MetadataError("System.ArgumentException", "before"));
+        Metadata("missing-description", "{\"pack\":{}}", MetadataOk("before"));
+        Metadata("description-null", "{\"pack\":{\"description\":null}}", MetadataError("System.InvalidOperationException", "before"));
+        Metadata("description-number", "{\"pack\":{\"description\":7}}", MetadataError("System.InvalidOperationException", "before"));
+        Metadata("description-array", "{\"pack\":{\"description\":[]}}", MetadataError("System.ArgumentException", "before"));
+        Metadata("description-no-text", "{\"pack\":{\"description\":{}}}", MetadataOk("before"));
+        Metadata("description-text-null", "{\"pack\":{\"description\":{\"text\":null}}}", MetadataOk("before"));
+        Metadata("description-string", Description("label"), MetadataOk("label"));
+        Metadata("description-empty", Description(""), MetadataOk("before"));
+        Metadata("description-text-bool", "{\"pack\":{\"description\":{\"text\":true}}}", MetadataOk("True"));
+        Metadata("description-text-array", "{\"pack\":{\"description\":{\"text\":[1,2]}}}", SystemOutcome("ok"));
+        Metadata("description-text-object", "{\"pack\":{\"description\":{\"text\":{\"a\":1}}}}", SystemOutcome("ok"));
+        Metadata("format-null", "{\"pack\":{\"pack_format\":null}}", MetadataOk("before · 资源格式 "));
+        Metadata("format-object", "{\"pack\":{\"description\":\"updated\",\"pack_format\":{\"x\":1}}}", SystemOutcome("ok"));
+        Metadata("format-array", "{\"pack\":{\"description\":\"updated\",\"pack_format\":[1,2]}}", SystemOutcome("ok"));
+        Metadata("format-initial-null", "{\"pack\":{\"pack_format\":47}}", MetadataOk(" · 资源格式 47"), initial: null);
+        Metadata("blank-description-format", "{\"pack\":{\"description\":\" \\t\",\"pack_format\":47}}", MetadataOk("before · 资源格式 47"));
+        foreach (int count in new[] { 179, 180, 181 })
+            Metadata("length-" + count, Description(new string('a', count)), MetadataOk(new string('a', Math.Min(count, 180))));
+        string pairBoundary = new string('a', 179) + "\U0001f642";
+        Metadata("length-half-surrogate", Description(pairBoundary), MetadataOk(new string('a', 179) + '\ud83d'));
+        foreach ((string id, string ending) in new[] {
+            ("crlf", "\r\n"), ("lf", "\n"), ("cr", "\r"), ("ff", "\f"),
+            ("nel", "\u0085"), ("ls", "\u2028"), ("ps", "\u2029"), ("vt", "\v") })
+            Metadata("line-" + id, Description("left" + ending + "right"), MetadataOk(id == "vt" ? "left\vright" : "left right"));
+
+        // Raw numeric tokens must never be parsed/re-emitted by modern preparation.
+        // Scalar text/format output uses CurrentCulture; container rendering has
+        // its own JSON rules, and ignored fields still pass through JObject.Parse.
+        (string Id, string Token)[] numericTokens = {
+            ("precision", "1.2345678901234567"), ("negative-zero", "-0.0"), ("negative-underflow", "-1e-999"),
+            ("large", "1e308"), ("overflow", "1e400"), ("negative-overflow", "-1e400"),
+            ("nan", "NaN"), ("infinity", "Infinity"), ("negative-infinity", "-Infinity"),
+            ("int64-max", "9223372036854775807"), ("int64-min", "-9223372036854775808"),
+            ("big-integer", "9223372036854775808"), ("negative-big-integer", "-9223372036854775809")
+        };
+        foreach (string culture in new[] { "en-US", "fr-FR" }) {
+            foreach ((string id, string token) in numericTokens) {
+                string metadata = "{\"pack\":{\"description\":{\"text\":" + token + "},\"pack_format\":" + token + "},\"ignored\":{\"nested\":" + token + "}}";
+                Metadata("numeric-" + culture + "." + id, metadata, SystemOutcome("ok", "Newtonsoft.Json.JsonReaderException"), culture: culture);
+            }
+            foreach ((string id, string token) in new[] {
+                ("precision", "1.2345678901234567"), ("negative-zero", "-0.0"), ("overflow", "1e400"), ("big-integer", "9223372036854775808") }) {
+                string metadata = "{\"pack\":{\"description\":{\"text\":{\"outer\":[{\"n\":" + token + "}]}},\"pack_format\":[{\"n\":" + token + "}]},\"ignored\":" + token + "}";
+                Metadata("container-" + culture + "." + id, metadata, SystemOutcome("ok", "Newtonsoft.Json.JsonReaderException"), culture: culture);
+            }
+            foreach ((string id, string token) in new[] {
+                ("overflow", "1e400"), ("negative-overflow", "-1e400"), ("negative-underflow", "-1e-999"), ("nan", "NaN") }) {
+                string metadata = "{\"pack\":{\"description\":\"stable\"},\"ignored\":{\"nested\":" + token + "}}";
+                Metadata("ignored-" + culture + "." + id, metadata, SystemOutcome("ok", "Newtonsoft.Json.JsonReaderException"), culture: culture);
+            }
+            Metadata("date-text-" + culture, "{\"pack\":{\"description\":{\"text\":\"2024-01-02T03:04:05Z\"}}}", SystemOutcome("ok"), culture: culture);
+            Metadata("date-format-" + culture, "{\"pack\":{\"description\":\"updated\",\"pack_format\":\"2024-01-02T03:04:05Z\"}}", SystemOutcome("ok"), culture: culture);
+        }
+        Metadata("date-ar-text", "{\"pack\":{\"description\":{\"text\":\"1700-01-01T00:00:00Z\"}}}", SystemOutcome("ok", "System.ArgumentOutOfRangeException"), culture: "ar-SA");
+        Metadata("date-ar-partial-format", "{\"pack\":{\"description\":\"updated\",\"pack_format\":\"1700-01-01T00:00:00Z\"}}", SystemOutcome("ok", "System.ArgumentOutOfRangeException"), culture: "ar-SA");
+        Metadata("date-ar-container", "{\"pack\":{\"description\":\"updated\",\"pack_format\":{\"date\":\"1700-01-01T00:00:00Z\"}}}", SystemOutcome("ok"), culture: "ar-SA");
+        Metadata("date-ignored", "{\"pack\":{\"description\":\"stable\"},\"ignored\":\"1700-01-01T00:00:00Z\"}", MetadataOk("stable"), culture: "en-US");
+
         Save(Path.Combine(fixture, "cases.json"), new JObject(new JProperty("protocol", Protocol), new JProperty("fixture", fixture),
             new JProperty("cwd", cwd), new JProperty("profile", "LF-default"), new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("cases", cases)));
         Console.WriteLine($"Prepared {cases.Count} path cases and {links.Count} real owned symbolic links.");
@@ -317,6 +400,7 @@ internal static class Program {
                 case "ensure": InstanceResourcePaths.EnsureWithin(Text(item["root"])!, value!, (bool)item["allowRoot"]!, PathUtils.RemoveExtendedPrefix); result = Ok(); break;
                 case "get-directory-name": result = Ok(InstanceResourcePathCompatibility.GetDirectoryName(value)); break;
                 case "format-size": result = Ok(FormatSize(item)); break;
+                case "pack-metadata": result = ApplyPackMetadata(item); break;
                 case "zip-open-read":
                     using (ZipArchive archive = InstanceResourcePackageRules.OpenRead(value!)) result = Ok(ZipSnapshot(archive));
                     break;
@@ -353,6 +437,25 @@ internal static class Program {
             return InstanceResourceDetailsRules.FormatSize(size);
         } finally { CultureInfo.CurrentCulture = previous; }
     }
+
+    private static JObject ApplyPackMetadata(JObject item) {
+        string detail = Text(item["initialDetail"])!;
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        JObject result;
+        try {
+            string? culture = Text(item["culture"]);
+            if (culture is not null) CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            InstanceResourceDetailsRules.ApplyPackMetadata(Text(item["value"]), ref detail,
+                value => MeloongCore.Extensions.StringExtensions.ReplaceLineEndings(value, " "));
+            result = Ok();
+        } catch (Exception error) {
+            result = Error(error.GetType().FullName!, error.Message);
+        } finally { CultureInfo.CurrentCulture = previous; }
+        result["detailAfter"] = DetailUtf16(detail);
+        return result;
+    }
+
+    private static JToken DetailUtf16(string? value) => value is null ? JValue.CreateNull() : new JArray(value.Select(unit => (int)unit));
 
     private static void ClearFixtureEfs(string source, string destination) {
         // This is a bounded edit of our one-entry, uncommented fixture. The stored
@@ -434,12 +537,21 @@ internal static class Program {
             JObject old = oldResults[index] as JObject ?? throw new InvalidDataException("Invalid result object.");
             string id = (string?)item["id"] ?? throw new InvalidDataException("Missing case id.");
             if (!ids.Add(id) || (string?)old["id"] != id) throw new InvalidDataException("Duplicate or reordered oracle case id.");
-            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read" or "format-size") || item["allowRoot"]?.Type != JTokenType.Boolean)
+            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read" or "format-size" or "pack-metadata") || item["allowRoot"]?.Type != JTokenType.Boolean)
                 throw new InvalidDataException("Unknown operation or malformed request.");
             if ((string?)item["operation"] == "format-size") {
                 if (item["value"]?.Type != JTokenType.String || !long.TryParse(Text(item["value"]), NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ||
                     item["culture"] is JToken culture && culture.Type is not (JTokenType.String or JTokenType.Null))
                     throw new InvalidDataException("Malformed invariant Int64 or culture in size request.");
+                string? cultureName = Text(item["culture"]);
+                if (cultureName is not null) CultureInfo.GetCultureInfo(cultureName);
+            }
+            bool metadataOperation = (string?)item["operation"] == "pack-metadata";
+            if (metadataOperation) {
+                if (item["value"]?.Type is not (JTokenType.String or JTokenType.Null) ||
+                    item["initialDetail"]?.Type is not (JTokenType.String or JTokenType.Null) ||
+                    item["culture"] is JToken culture && culture.Type is not (JTokenType.String or JTokenType.Null))
+                    throw new InvalidDataException("Malformed metadata, initial detail or culture request.");
                 string? cultureName = Text(item["culture"]);
                 if (cultureName is not null) CultureInfo.GetCultureInfo(cultureName);
             }
@@ -471,11 +583,11 @@ internal static class Program {
                 if (allowed.Count == 0 || allowed.Any(value => value.Type != JTokenType.String)) throw new InvalidDataException("Malformed observation contract.");
                 string outcome = (string?)old["status"] == "ok" ? "ok" : (string?)old["type"] ?? "invalid";
                 contract = allowed.Any(value => (string?)value == outcome);
-            } else contract = SameOutcome(expected, old);
+            } else contract = SameOutcome(expected, old, metadataOperation);
             if (!contract) failures.Add(new JObject(new JProperty("id", id), new JProperty("expected", expected.DeepClone()), new JProperty("actual", old.DeepClone())));
             JObject current = Execute(item);
             modern.Add(current);
-            if (!SameOutcome(old, current)) {
+            if (!SameOutcome(old, current, metadataOperation)) {
                 JObject difference = new(new JProperty("id", id), new JProperty("baseline", old.DeepClone()), new JProperty("modern", current.DeepClone()));
                 ((bool?)item["informational"] == true ? informational : differences).Add(difference);
             }
@@ -487,6 +599,9 @@ internal static class Program {
             new JProperty("zipApiProbeScope", "Original CLR4 ZipFile.OpenRead plus entry snapshot; modern production InstanceResourcePackageRules.OpenRead plus entry snapshot. This is not the old ValidatePackage business function."),
             new JProperty("sizeFormattingProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "format-size")),
             new JProperty("sizeFormattingProbeScope", "Original fixed LF FormatSize method, injected verbatim into CLR4; modern production InstanceResourceDetailsRules.FormatSize. CurrentCulture is scoped and restored per request."),
+            new JProperty("packMetadataProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "pack-metadata")),
+            new JProperty("packMetadataProbeScope", "Only the original fixed LF ReadPackInfo JSON block, injected verbatim. The old filesystem/image work and outer catch are excluded; actual top-level exception and partial detail state are compared."),
+            new JProperty("packMetadataLineEndingsHelper", "MeloongCore.Extensions.StringExtensions.ReplaceLineEndings(string,string,bool=false), real pinned Shared; explicit static binding in modern host."),
             new JProperty("requests", cases.DeepClone()),
             new JProperty("baseline", baseline), new JProperty("modern", new JObject(new JProperty("context", Context()), new JProperty("results", modern))),
             new JProperty("contractFailures", failures), new JProperty("nativeCandidateFailures", nativeFailures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
@@ -500,10 +615,15 @@ internal static class Program {
     }
 
     private static void ValidateOutcome(JObject result, string operation) {
+        if (operation == "pack-metadata") {
+            JToken detail = result["detailAfter"] ?? throw new InvalidDataException("Missing metadata post-state.");
+            if (detail.Type != JTokenType.Null && (detail is not JArray units || units.Any(unit => unit.Type != JTokenType.Integer || (long)unit < 0 || (long)unit > char.MaxValue)))
+                throw new InvalidDataException("Malformed raw UTF16 metadata post-state.");
+        }
         if ((string?)result["status"] == "ok") {
             if (result.Property("value") is null || result.Property("type") is not null) throw new InvalidDataException("Malformed successful baseline result.");
             JTokenType valueType = result["value"]!.Type;
-            if (operation == "ensure" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation == "zip-open-read" ? valueType != JTokenType.Object : operation == "format-size" ? valueType != JTokenType.String : valueType is not (JTokenType.String or JTokenType.Null))
+            if (operation is "ensure" or "pack-metadata" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation == "zip-open-read" ? valueType != JTokenType.Object : operation == "format-size" ? valueType != JTokenType.String : valueType is not (JTokenType.String or JTokenType.Null))
                 throw new InvalidDataException("Baseline returned a value incompatible with the requested operation.");
             if (operation == "zip-open-read") {
                 JArray entries = result["value"]?["entries"] as JArray ?? throw new InvalidDataException("Missing structured ZIP baseline entries.");
@@ -521,7 +641,8 @@ internal static class Program {
         } else throw new InvalidDataException("Unknown baseline status.");
     }
 
-    private static bool SameOutcome(JObject expected, JObject actual) {
+    private static bool SameOutcome(JObject expected, JObject actual, bool compareDetail = false) {
+        if (compareDetail && (expected.Property("detailAfter") is null || actual.Property("detailAfter") is null || !JToken.DeepEquals(expected["detailAfter"], actual["detailAfter"]))) return false;
         if ((string?)expected["status"] != (string?)actual["status"]) return false;
         if ((string?)expected["status"] == "ok") {
             if (!JToken.DeepEquals(expected["value"], actual["value"])) return false;

@@ -12,6 +12,7 @@ Imports System.Runtime.InteropServices
 Imports System.Runtime.Versioning
 Imports System.Text
 Imports MeloongCore
+Imports MeloongCore.Extensions
 Imports Newtonsoft.Json.Linq
 
 <Assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName:=".NET Framework 4.8")>
@@ -26,6 +27,12 @@ __LF_METHODS__
     Friend Shared Function InvokeFormatSize(Value As Long) As String
         Return FormatSize(Value)
     End Function
+
+    ' Only the fixed JSON block below is injected. The original ReadPackInfo
+    ' filesystem/image handling and outer exception filter are not in this wrapper.
+    Friend Shared Sub ApplyPackMetadataSnippet(Metadata As String, ByRef Detail As String)
+__LF_PACK_METADATA__
+    End Sub
 End Class
 
 Friend NotInheritable Class NativeOrdinalProbe
@@ -48,7 +55,7 @@ Friend NotInheritable Class NativeOrdinalProbe
 End Class
 
 Friend Module OracleProgram
-    Private Const Protocol As String = "pcllf-resource-paths-v4"
+    Private Const Protocol As String = "pcllf-resource-paths-v5"
     Private Const Lf As String = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983"
     Private Const SharedRevision As String = "c774ae4c85fd94e0eaa171db21e78a65870df19b"
     Private ReadOnly Utf8 As New UTF8Encoding(False, True)
@@ -132,6 +139,8 @@ Friend Module OracleProgram
                     Finally
                         CultureInfo.CurrentCulture = PreviousCulture
                     End Try
+                Case "pack-metadata"
+                    Result = ApplyPackMetadata(Item)
                 Case "zip-open-read"
                     ' Real Framework API, not a translated/copied ValidatePackage business method.
                     Using Archive = ZipFile.OpenRead(Value)
@@ -159,6 +168,35 @@ Friend Module OracleProgram
             Entries.Add(New JObject(New JProperty("fullNameUtf16", Units), New JProperty("shaderPrefix", Entry.FullName.StartsWith("shaders/", StringComparison.OrdinalIgnoreCase))))
         Next
         Return New JObject(New JProperty("entries", Entries))
+    End Function
+
+    Private Function ApplyPackMetadata(Item As JObject) As JObject
+        Dim Detail = Text(Item("initialDetail"))
+        Dim PreviousCulture = CultureInfo.CurrentCulture
+        Dim Result As JObject
+        Try
+            Dim RequestedCulture = Text(Item("culture"))
+            If RequestedCulture IsNot Nothing Then CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(RequestedCulture)
+            LegacyResourcePaths.ApplyPackMetadataSnippet(Text(Item("value")), Detail)
+            Result = Ok()
+        Catch ErrorValue As Exception
+            ' Record the actual top-level exception and partial ByRef state; this
+            ' does not reproduce the old host's outer catch or peel inner exceptions.
+            Result = New JObject(New JProperty("status", "exception"), New JProperty("type", ErrorValue.GetType().FullName), New JProperty("message", ErrorValue.Message))
+        Finally
+            CultureInfo.CurrentCulture = PreviousCulture
+        End Try
+        Result("detailAfter") = DetailUtf16(Detail)
+        Return Result
+    End Function
+
+    Private Function DetailUtf16(Value As String) As JToken
+        If Value Is Nothing Then Return JValue.CreateNull()
+        Dim Units As New JArray()
+        For Each Unit As Char In Value
+            Units.Add(Convert.ToInt32(Unit))
+        Next
+        Return Units
     End Function
 
     Private Function OrdinalText(Item As JObject, Name As String) As String

@@ -126,13 +126,7 @@ Friend NotInheritable Class InstanceResourceStore
                     End If
                 End Using
             End If
-            If Metadata IsNot Nothing Then
-                Dim Pack = JObject.Parse(Metadata)("pack")
-                Dim Description = Pack?("description")
-                Dim Text = If(Description?.Type = JTokenType.String, Description?.ToString(), Description?("text")?.ToString())
-                If Not String.IsNullOrWhiteSpace(Text) Then Detail = Text.ReplaceLineEndings(" ").Substring(0, Math.Min(180, Text.ReplaceLineEndings(" ").Length))
-                If Pack?("pack_format") IsNot Nothing Then Detail &= " · 资源格式 " & Pack("pack_format").ToString()
-            End If
+            PCLCS.InstanceResourceDetailsRules.ApplyPackMetadata(Metadata, Detail, Function(Value) MeloongCore.Extensions.StringExtensions.ReplaceLineEndings(Value, " "))
         Catch ex As Exception When TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse TypeOf ex Is Newtonsoft.Json.JsonException OrElse TypeOf ex Is NotSupportedException OrElse TypeOf ex Is ArgumentException
             '损坏的资源包仍在列表中供用户管理。
         End Try

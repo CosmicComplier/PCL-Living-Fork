@@ -90,11 +90,18 @@ try {
     $ensure = [regex]::Matches($sourceText, '(?ms)^    Friend Shared Sub EnsureWithin\(Root As String, FileName As String, Optional AllowRoot As Boolean = False\)\r?\n.*?^    End Sub\r?$')
     $formatSize = [regex]::Matches($sourceText, '(?ms)^    Private Shared Function FormatSize\(Size As Long\) As String\r?\n.*?^    End Function\r?$')
     if ($normalize.Count -ne 1 -or $ensure.Count -ne 1 -or $formatSize.Count -ne 1) { throw 'Fixed LF method extraction did not match exactly one Normalize, EnsureWithin and FormatSize.' }
+    $packMetadata = [regex]::Matches($sourceText, '(?ms)^            If Metadata IsNot Nothing Then\r?\n.*?^            End If\r?$')
+    if ($packMetadata.Count -ne 1) { throw 'Fixed LF source did not contain exactly one pack metadata JSON block.' }
     $driverTemplate = [IO.File]::ReadAllText((Join-Path $repo 'tests/PCLLF.PathOracle/LegacyDriver.vb'), $utf8)
     $methodMarker = '__LF_METHODS__'
     # The explanatory comment also names the marker; replace only its entire line.
     if ([regex]::Matches($driverTemplate, '(?m)^' + $methodMarker + '\r?$').Count -ne 1) { throw 'Baseline driver method marker is missing or repeated.' }
     $driver = [regex]::Replace($driverTemplate, '(?m)^' + $methodMarker + '\r?$', [Text.RegularExpressions.MatchEvaluator]{param($match) $normalize[0].Value + [Environment]::NewLine + $ensure[0].Value + [Environment]::NewLine + $formatSize[0].Value})
+    $metadataMarker = '__LF_PACK_METADATA__'
+    if ([regex]::Matches($driver, '(?m)^' + $metadataMarker + '\r?$').Count -ne 1) { throw 'Baseline metadata snippet marker is missing or repeated.' }
+    $driver = [regex]::Replace($driver, '(?m)^' + $metadataMarker + '\r?$', [Text.RegularExpressions.MatchEvaluator]{param($match) $packMetadata[0].Value})
+    $snippetHasher = [Security.Cryptography.SHA256]::Create()
+    try { $snippetHash = [BitConverter]::ToString($snippetHasher.ComputeHash($utf8.GetBytes($packMetadata[0].Value))).Replace('-', '') } finally { $snippetHasher.Dispose() }
     $driverPath = Join-Path $baselineDirectory 'LegacyDriver.vb'
     [IO.File]::WriteAllText($driverPath, $driver, $utf8)
     foreach ($dependency in (Get-ChildItem -LiteralPath $sharedOutput -Filter '*.dll' -File)) {
@@ -120,6 +127,9 @@ try {
         lf = $lfRevision; shared = $sharedRevision; platform = 'anycpu'; prefer32Bit = $false
         originalSourceSha256 = (Get-FileHash -LiteralPath $oldSource -Algorithm SHA256).Hash
         extractedDriverSha256 = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
+        originalPackMetadataSnippetSha256 = $snippetHash
+        packMetadataSnippetScope = 'Only the fixed ReadPackInfo JSON block; filesystem/image work and outer catch remain outside the wrapper.'
+        packMetadataLineEndingsHelper = 'MeloongCore.Extensions.StringExtensions.ReplaceLineEndings(text, newValue, mergeMultiple=false), Shared c774ae4c85fd94e0eaa171db21e78a65870df19b'
         appConfigSha256 = (Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash
         applicationManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash
         sharedAssemblySha256 = (Get-FileHash -LiteralPath $sharedAssembly -Algorithm SHA256).Hash
