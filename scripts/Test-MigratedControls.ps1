@@ -68,6 +68,23 @@ public static class PclMigratedControlChecks {
         timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
         Require(ready(), "The offscreen native controls did not load in their real WPF presentation source.");
     }
+    private static void InlineForwarding(System.Windows.Documents.InlineCollection forwarded, TextBlock visual, string label) {
+        // TextBlock.Inlines creates collection wrappers. Verify their shared visual content,
+        // as the original LF getter returns LabText.Inlines without caching its wrapper.
+        int originalCount = visual.Inlines.Count;
+        System.Windows.Documents.Run throughControl = new System.Windows.Documents.Run(label + " control");
+        System.Windows.Documents.Run throughVisual = new System.Windows.Documents.Run(label + " visual");
+        try {
+            forwarded.Add(throughControl);
+            Require(visual.Inlines.Count == originalCount + 1 && visual.Inlines.Contains(throughControl), label + " inline mutation did not reach the original visual.");
+            visual.Inlines.Add(throughVisual);
+            Require(forwarded.Count == originalCount + 2 && forwarded.Contains(throughVisual), label + " original visual mutation did not reach the forwarded collection.");
+        } finally {
+            forwarded.Remove(throughControl);
+            visual.Inlines.Remove(throughVisual);
+        }
+        Require(visual.Inlines.Count == originalCount && forwarded.Count == originalCount, label + " inline cleanup changed original text content.");
+    }
     private static MouseButtonEventArgs RaiseMouse(UIElement control, RoutedEvent routedEvent) {
         Require(PresentationSource.FromVisual(control) != null, "Synthetic mouse input requires the live offscreen presentation source.");
         MouseButtonEventArgs args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left);
@@ -110,8 +127,9 @@ public static class PclMigratedControlChecks {
         Require(button.LabText.Text == "XAML button" && button.PanFore.Padding == new Thickness(3, 5, 7, 9) && radio.LabText.Text == "XAML radio" &&
             check.LabText.Text == "XAML checkbox" && check.Checked && ((ScaleTransform)check.ShapeCheck.RenderTransform).ScaleX == 1,
             "Inherited XAML property callbacks did not update their original visual parts.");
-        Require(object.ReferenceEquals(button.Inlines, button.LabText.Inlines) && object.ReferenceEquals(radio.Inlines, radio.LabText.Inlines) &&
-            object.ReferenceEquals(check.Inlines, check.LabText.Inlines), "Original InlineCollection forwarding changed.");
+        InlineForwarding(button.Inlines, button.LabText, "button");
+        InlineForwarding(radio.Inlines, radio.LabText, "radio");
+        InlineForwarding(check.Inlines, check.LabText, "checkbox");
         button.TextPadding = new Thickness(2); button.Padding = new Thickness(4); ScaleTransform transform = new ScaleTransform(.9, .9); button.RealRenderTransform = transform;
         radio.LogoScale = .8; button.ColorType = PCL.MyButton.ColorState.Red; radio.ColorType = PCL.MyRadioButton.ColorState.Highlight;
         Require(button.LabText.Padding == new Thickness(2) && button.PanFore.Padding == new Thickness(4) && object.ReferenceEquals(button.PanFore.RenderTransform, transform) &&

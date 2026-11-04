@@ -69,6 +69,9 @@ aa72efd实际诊断（Build41813603772 Debug126518768470／Release126518767208�
 
 C012a后端成组迁移：原InstanceCloner／InstanceCloneGroups／ExportedVersionIsolation的实际业务移入六份C#引擎／Workflow／契约，三原VB只保真实类型与LF事务／INI／缓存／Worker／锁的typed平台接线。来源为LF f4…且分别核对8d61586e4627102ac2e360ccc7d4e092d8797e2f／202aa3b4e7703b61865c875c9e6d98d993e7f18c／f1b16ce83b7e272a6d34220566e43d89a67afd09；固定CE稳定参考没有这一LF专属等价链，未复制CE实现。新增六组真实生产测试，不模拟原事务回滚算法；实际Release -warnaserror 0警告／0错误，--group instance-clone --group environment-history定向11／11，四种无效CLI选择均exit2且无PASS。根测试显式排除Shared传递JSON资产并保留原LF HintPath，实测ReferencePath／CopyLocal皆唯一LF DLL、逐字节SHA E1E27AF7B07EEEDF5CE71A9255F0422816A6FC5849A483C6714E1B472044FA9D；Shared固定提交与自身包构建不变。9精确生产路径选择第12组与7真实克隆／隔离／历史下游消费者，原43脚本与资源4组不变；路由自身／公共项目仍full。实际net48 Core Rebuild首次CS8620（Tuple.Create可空泛型推断）已以显式三泛型参数修复，随后Core与纯测试Release -warnaserror均0警告／0错误，改后克隆6／6重新通过；不改元组值或事务顺序。两页面由C012b继续，Windows真实迁回、回滚、锁与设置缓存待CI。
 
+
+98f81fe实际[Build41816180616](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41816180616) Debug126527445833／Release126527445668：产品编译、原资源页／备份／历史／克隆／账号相关旧消费者及旧桥均成功，仅末端新增控件族StaticApi断言失败“Original InlineCollection forwarding changed”。这次已实际通过compiled BAML构造、原XAML属性、所有原页面消费者；冷EXE仍通过嵌入identity／MVID／SHA且无sidecar。原LF Inlines getter就是每次返回LabText.Inlines，WPF返回包装集合，ReferenceEquals包装器不是原行为契约；新断言改为三个真实控件各自双向Add／Contains／Count＋清理恢复，验证同一视觉内容而不缓存包装器改产品。其余六组断言保留，未到达的事件／逐帧组仍待验。Modern41816180601 Debug126527386734／Release126527388787成功（C026尚未在该树），Migration41816180595双平台成功。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -207,9 +210,9 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C008 | done | C007d2、C007e、C007u2 | `271d058` ResourceRecycleFiles／MapDownloadFiles接原入口，保PathUtils.IsSame、记录／链接／全预检／取消／同名／双暂存清理；425组含六新增Windows真实文件链，`0df889a`两配置原地图回收与整页消费者通过 |
 | C009 | done | C007 | `2304fc5`完整OnlineFiles／Info／typed Host接原四入口，原平台模型与注入保持；`8c706ee` Windows各41步含真实LF ResourceVersion／NetFile消费者通过，439组含8新样本，批次独立终审通过；无live HTTP／游戏，最终VB适配移除归R001 |
 | C010 | done | C002、C003、C007 | `8c706ee`完整备份／校验／保留／会话／恢复事务与UI命令接原入口，同一Gate／Busy／TestRoot／Changed；Windows各41步含原完整产品和EngineOnly真实门面／全部故障样本通过，388／439含5跨平台＋1Windows锁新增组；最终原控件／VB宿主移除与真实游戏仍归后续 |
-| C011 | in_progress | C003、C007、C010 | a完整历史／分析／Workflow后端已C#实现、原真实事务保LF Host，5／5真实记录／保留／守卫／分析测试、net48及现代编译通过；Windows旧恢复／回滚待验，b可视页面尚未迁，不关闭母项 |
-| C011a | in_progress | C003、C007、C010 | 五C#＋两typed VB接原Gate／Mutex／Store／coverage／Capture／Retain／Restore／Recent差异与UI命令；测试保真实提交前边界、不自造VB事务，独立审通过、5／5及两目标0警告错误；原Windows消费者待CI |
-| C011b | in_progress | C011a、C029a | 完整RestorePoints页面与共享row仅RestorePoint显示业务已迁typed C# controller／presenter，原XAML与非还原点row区段不变；net48／现代Core编译、独立源审通过，原BackupRetention仅三state写入支持同名property，Windows原页面／恢复链待验 |
+| C011 | done | C003、C007、C010 | a完整历史／分析／Workflow及b还原点整页／row已C#接通，98f81fe Build41816180616两配置所有原历史／保留／覆盖／克隆／更新消费者及旧桥成功；末端新增控件静态误判不涉及本链。原真实事务／平台typed壳最终清理由C020／C025／C031／R001验，非全产品现代化完成 |
+| C011a | done | C003、C007、C010 | 五C#＋两typed VB接原Gate／Mutex／Store／coverage／Capture／Retain／Restore／Recent差异与UI命令；测试保真实提交前边界、不自造VB事务，独立审通过、5／5及两目标0警告错误；原Windows消费者已在98f81fe Build41816180616两配置成功，真实事务／回滚／保留及旧桥通过 |
+| C011b | done | C011a、C029a | 完整RestorePoints页面与共享row仅RestorePoint显示业务已迁typed C# controller／presenter，原XAML与非还原点row区段不变；net48／现代Core编译、独立源审通过，原BackupRetention仅三state写入支持同名property，Windows原页面／恢复链与保留检查已在98f81fe两配置通过 |
 | C012 | in_progress | C003、C007 | a完整克隆／迁回／分组／导出隔离引擎及真实事务typed适配已迁，b两页面及选择器来源分组呈现正在迁；Windows原链未通过前不关闭母项 |
 | C012a | in_progress | C003、C007、C011a | 六C#生产源＋三VB typed壳，保原Gate／128KiB复制／Flush(true)／stale双快照／MC变化备份／Capture／原ApplyTransaction及双版本锁；独立源码审无回归。Release纯测试0警告错误，克隆6＋历史5定向11／11；真实McVersion／McComponents／ModLoaders与固定Shared接线，JSON引用／CopyLocal／字节保持LF DLL（SHA E1E27AF7…44FA9D），未以替身模型过关。第12组instance-clone与9精确生产路径／7原Windows消费者路由，resources仍固定4组。Windows事务／回滚／UI仍待验 |
 | C012b | in_progress | C012a、C029a | 完整克隆页面与版本选择来源分组呈现成组迁移，保原XAML／MyCard懒构建／事件／展开折叠与其它选择器区段；当前作者scratch整稿，尚未进入产品树，不记实现或验收完成 |
