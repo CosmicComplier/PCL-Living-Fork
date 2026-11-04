@@ -143,6 +143,10 @@ jobs:
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-LauncherActivation')
       run: powershell -NoProfile -STA -File scripts/Test-LauncherActivation.ps1 -ExecutablePath "$env:PCL_EXE"
 
+    - name: Verify migrated controls and isolated release resources
+      if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-MigratedControls')
+      run: powershell -NoProfile -STA -File scripts/Test-MigratedControls.ps1 -ExecutablePath "$env:PCL_EXE"
+
     - name: Verify toolbox operations
       if: contains(fromJSON(needs.select.outputs.windows_scripts), 'Test-Toolbox')
       run: powershell -NoProfile -File scripts/Test-Toolbox.ps1 -ExecutablePath "$env:PCL_EXE"

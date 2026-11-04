@@ -209,6 +209,7 @@
     </Compile>
     <Compile Include="Controls\MyImage.vb" />
     <Compile Include="Controls\LocalResourceUi.vb" />
+    <Compile Include="Controls\PresentationRuntime.vb" />
     <Compile Include="Controls\ModDependencyGraphView.vb" />
     <Compile Include="Controls\ModDependencyIcon.vb" />
     <Compile Include="Controls\ModDependencyImpactView.vb" />
@@ -489,14 +490,6 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\MyButton.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Controls\MyCheckBox.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
     <Page Include="Controls\MyIconButton.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -530,10 +523,6 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Controls\MySlider.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Controls\MyRadioButton.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -1043,11 +1032,19 @@
       <Name>PCLCS</Name>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="..\presentation\PCLLF.Presentation.csproj">
+      <Name>PCLLF.Presentation</Name>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PCLCS\bin\PCLCS.dll">
       <LogicalName>PCLCS.dll</LogicalName>
       <Link>Resources\PCLCS.dll</Link>
+    </None>
+    <None Include="..\presentation\bin\PCLLF.Presentation.dll">
+      <LogicalName>PCLLF.Presentation.dll</LogicalName>
+      <Link>Resources\PCLLF.Presentation.dll</Link>
     </None>
     <None Include="..\PCLCS\bin\MeloongCore.dll">
       <LogicalName>MeloongCore.dll</LogicalName>

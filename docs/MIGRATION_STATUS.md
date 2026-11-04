@@ -168,7 +168,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C027合同／三C#view／三LF视觉XAML／两项目 | 呈现团队冻结；两真实WPF项目编译0警告错误，含XAML；bool／状态／预览／动画全分支C#，不引CE新三态／主题／模糊行为 |
 | C027三VB壳／PresentationRuntime／主项目 | 适配代理冻结；保原名／事件／设置接口与真实AniData，主项目仅三Page移除／runtime／ProjectRef与资源输入；未运行完整VB产品 |
 | 新DLL嵌入／Resources／App resolver | 呈现代理补齐，fixed legacy bin／resx bytes／早期精确白名单；不以sidecar构建成功替代单exe发布，真实冷加载待Windows |
-| Test-MigratedControls.ps1／CI路由 | 新6组独立EXE child＋原AniTimer／事件／DP／设置验证已冻结，未编译／Windows执行；selector第11组与43原消费者、旧workflow加一控件步、modern涵盖presentation源，静态检查通过 |
+| Test-MigratedControls.ps1／CI路由 | 新6组独立EXE child＋原AniTimer／事件／DP／设置验证已冻结，源自审修正先Initialize再卸Startup／清Uri、任何pump前禁真实启动；未编译该C#5 helper／Windows执行；selector第11组与43原消费者、旧workflow加一控件步、modern涵盖presentation源，静态检查通过 |
 | docs／集成／实际Windows结果 | 主执行者；C011母项及C027母项未关闭，现代原生动画仍C026／N003，不以编译或空host冒充运行 |
 
 ## 任务依赖与验收
@@ -212,7 +212,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C025 | todo | C024 | 迁移 Loader 与文件操作生命周期；等待实际任务结束、取消、回滚、恢复和版本占用的故障场景回归 |
 | C026 | todo | C025 | 迁移基础动画、位图与 WPF 适配；覆盖线程、资源、动画打断和叠加，实际交互对照 |
 | C027 | in_progress | C029a | a先迁3常用控件完整视图／业务与原typed动画Host，原名壳保现XAML接线；其余控件成族推进。现代实际动画引擎仍依赖C026，最终薄壳／事件类型清理由C031／R001验，不用空host关闭母项 |
-| C027a | in_progress | B001、C029a | MyButton／Radio／CheckBox3LF XAML＋完整C#view、Services／typed AniData帧、net48及现代呈现项目、原VB薄壳／runtime／项目接线在互斥范围实现，bool二态／预览取消／设置／精确动画参数保留；独立族Windows脚本准备中，未编译／验收 |
+| C027a | in_progress | B001、C029a | 三完整C#view／原LF视觉XAML／Services与真实AniData Host／两WPF项目／原名VB壳／设置事件／单exe嵌入接线完成；net48与NET10实际XAML编译0警告错误，独立终审通过；新6族断言与无sidecar冷进程待Windows，现代实际动画宿主仍C026／N003 |
 | C028 | todo | C018、C019、C027 | 完成下载页面的 C# 后台与 XAML 调用，确认没有残留 VB 功能实现和重复入口 |
 | C029a | done | C005b、C007u2 | 资源与按键整页已实证LF C# WPF标准视图／惰性typed Host单向边界，无main反引；3f在Frame实际native壳及NET10同源live控制器双配置通过，足以解除独立页面人工阻塞。完整原生控件／主C#工程与最终VB清理仍归C027／N003／R001 |
 | C029 | todo | C005c2、C008、C010、C011、C012、C016、C020、C027 | 完成实例页面和资源页面 C# 后台／XAML 的最终汇总，已有先行页面只验收集成，不与 C029a 宿主前置相互等待 |

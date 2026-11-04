@@ -16,12 +16,12 @@ import sys
 
 BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Exact existing scripts; workflows keep their original static invocations/options.
 SCRIPTS = (
-    "Test-Release", "Test-VersionListCancellation", "Test-AuditFixes", "Test-LauncherActivation",
+    "Test-Release", "Test-VersionListCancellation", "Test-AuditFixes", "Test-LauncherActivation", "Test-MigratedControls",
     "Test-Toolbox", "Test-ToolboxMemory", "Test-InstanceResources", "Test-MapInstallAndRecycle",
     "Test-BackgroundModes", "Test-ResourceUpdates", "Test-LocalGameFeatures", "Test-GameFeatureRegressions",
     "Test-ModpackUpdate", "Test-ModpackUpdateUx", "Test-ReviewFixes", "Test-EnvironmentHistory",
@@ -78,6 +78,22 @@ WORLD_BACKUP_CHECKS = {
     "Test-InstanceResources", "Test-MapInstallAndRecycle", "Test-InstanceClone", "Test-InstanceCloneGroups",
     "Test-ModpackUpdate", "Test-ModpackUpdateUx",
 }
+# History owns these exact sources; future shared contracts still fail closed.
+# Its callers include modpack updates, clone migration and launch preparation;
+# the retained VB transaction and real instance adapters run in Windows checks.
+ENVIRONMENT_HISTORY_PATHS = {
+    "PCLCS/Minecraft/EnvironmentHistoryContracts.cs",
+    "PCLCS/Minecraft/EnvironmentHistoryEngine.cs",
+    "PCLCS/Minecraft/EnvironmentHistoryEngine.Restore.cs",
+    "PCLCS/Minecraft/EnvironmentHistoryWorkflow.cs",
+    "PCLCS/Minecraft/RecentEnvironmentChanges.cs",
+    "Plain Craft Launcher 2/Modules/Minecraft/EnvironmentHistory.vb",
+    "Plain Craft Launcher 2/Modules/Minecraft/RecentEnvironmentChanges.vb",
+}
+ENVIRONMENT_HISTORY_CHECKS = {
+    "Test-EnvironmentHistory", "Test-RecentEnvironmentChanges", "Test-EnvironmentCoverage", "Test-BackupRetention",
+    "Test-ModpackUpdate", "Test-ModpackUpdateUx", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-LaunchDependencies",
+}
 # Store is the shared path/transaction facade consumed by these existing chains.
 STORE_CHECKS = RESOURCE_CHECKS | WORLD_CHECKS | LOCAL_CHECKS | {
     "Test-ReviewFixes", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-RecentEnvironmentChanges",
@@ -132,6 +148,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("local-data",), (), build=False)
             elif stem == "WorldBackupPipeline":
                 include(("world-backups",), (), build=False)
+            elif stem == "EnvironmentHistoryPipeline":
+                include(("environment-history",), (), build=False)
             elif stem.startswith("PersonalOptions"):
                 include(("personal-options",), (), build=False)
             elif stem.startswith("InstanceKeybinding"):
@@ -154,6 +172,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include((), (leaf.removesuffix(".ps1"),))
         elif name in WORLD_BACKUP_PATHS:
             include(("world-backups",), WORLD_BACKUP_CHECKS)
+        elif name in ENVIRONMENT_HISTORY_PATHS:
+            include(("environment-history",), ENVIRONMENT_HISTORY_CHECKS)
         elif name == "PCLCS/Platform/Windows/KeybindingPageController.cs":
             include(("keybindings",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-KeybindingGroups"})
         elif name in {"PCLCS/Platform/Windows/RecentWorldPageController.cs", "PCLCS/Platform/Windows/RecentWorldQuickPlay.cs"}:
@@ -173,7 +193,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             elif leaf.startswith("WorldMetadata"):
                 include(("world-metadata", "quick-play", "resource-entry", "resource-files"), WORLD_CHECKS)
             elif leaf == "LocalGameDataStore.cs":
-                include(("local-data", "personal-options", "keybindings", "quick-play", "world-backups"), LOCAL_CHECKS)
+                include(("local-data", "personal-options", "keybindings", "quick-play", "world-backups", "environment-history"), LOCAL_CHECKS)
             elif leaf.startswith("PersonalOptions"):
                 include(("personal-options", "keybindings"), LOCAL_CHECKS)
             elif leaf.startswith("InstanceKeybinding"):
@@ -197,7 +217,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         elif name == "Plain Craft Launcher 2/Modules/Minecraft/WorldMetadata.vb":
             include(("world-metadata", "quick-play", "resource-entry", "resource-files"), WORLD_CHECKS)
         elif name == "Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb":
-            include(("local-data", "personal-options", "keybindings", "quick-play", "world-backups"), LOCAL_CHECKS)
+            include(("local-data", "personal-options", "keybindings", "quick-play", "world-backups", "environment-history"), LOCAL_CHECKS)
         elif name == "Plain Craft Launcher 2/Modules/Minecraft/PersonalGameSettings.vb":
             include(("personal-options", "keybindings"), LOCAL_CHECKS)
         elif name in {"Plain Craft Launcher 2/Modules/Minecraft/InstanceKeybindings.vb",
