@@ -75,6 +75,8 @@ internal static class CommonControlsAcceptance {
         try { prior = ControlServices.Current; } catch (InvalidOperationException) { }
         Window priorMain = app.MainWindow, window = null; ShutdownMode priorShutdown = app.ShutdownMode;
         Dictionary<string, object> palette = new() {
+            ["ColorBrushHalfWhite"] = new SolidColorBrush(Color.FromArgb(0x55, 255, 255, 255)),
+            ["ColorBrushBg0"] = new SolidColorBrush(Color.FromRgb(0x96, 0xc0, 0xf9)),
             ["ColorBrushSemiTransparent"] = new SolidColorBrush(Color.FromArgb(1, 255, 255, 255)),
             ["ColorBrush1"] = new SolidColorBrush(Color.FromRgb(52, 61, 74)), ["ColorBrush2"] = new SolidColorBrush(Color.FromRgb(60, 110, 180)),
             ["ColorBrush3"] = new SolidColorBrush(Color.FromRgb(80, 130, 190)), ["ColorBrush4"] = new SolidColorBrush(Color.FromRgb(100, 145, 200)),
