@@ -466,6 +466,7 @@
     <Compile Include="Pages\PageSetup\PageSetupLink.xaml.vb" Condition="'$(EnableLegacyLink)' == 'true'">
       <DependentUpon>PageSetupLink.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageSetup\SetupPageRuntime.vb" />
     <Compile Include="Pages\PageSetup\PageSetupUI.xaml.vb">
       <DependentUpon>PageSetupUI.xaml</DependentUpon>
     </Compile>

@@ -28,6 +28,7 @@
       Exclude="../../presentation/**/bin/**;../../presentation/**/obj/**"
       Link="Animation/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Launch/**/*.cs" Link="Launch/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Pages/**/*.cs" Link="Pages/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Accounts/**/*.cs" Link="Accounts/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Foundation/**/*.cs" Link="Foundation/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Foundation/LegacyPackMetadataNumberFormatting.cs" />

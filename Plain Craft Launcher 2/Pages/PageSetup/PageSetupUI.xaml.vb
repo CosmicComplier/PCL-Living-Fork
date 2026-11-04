@@ -1,497 +1,221 @@
+Imports PCLCS
+
+' Original LF XAML fields/Handles and public entry points remain typed; business lives in C#.
 Public Class PageSetupUI
-
-    Private Sub PageSetupUI_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
-        '重复加载部分
-        PanBack.ScrollToHome()
-        AniControlEnabled += 1
-        Refresh() '#4826
-        AniControlEnabled -= 1
-
-        '非重复加载部分
-        Static Reloaded As Boolean = False
-        If Reloaded Then Return
-        Reloaded = True
-
-        SliderLoad()
-
-    End Sub
-    Public Sub Refresh()
-        Try
-            SettingService.RefreshSettings(Me)
-            BackgroundRefresh(False, False)
-
-            '标题栏
-            CheckLogoLeft.Visibility = If(RadioLogoType0.Checked, Visibility.Visible, Visibility.Collapsed)
-            PanLogoText.Visibility = If(RadioLogoType2.Checked, Visibility.Visible, Visibility.Collapsed)
-            PanLogoChange.Visibility = If(RadioLogoType3.Checked, Visibility.Visible, Visibility.Collapsed)
-
-            '背景音乐
-            MusicRefreshUI()
-
-            '主页
-            OnMainPageTypeChanged()
-        Catch ex As NullReferenceException
-            Logger.Error(ex, "个性化设置项存在异常，已被自动重置", LogBehavior.Alert)
-            Reset()
-        Catch ex As Exception
-            Logger.Error(ex, "重载个性化设置时出错")
-        End Try
-    End Sub
-    Public Sub Reset()
-        Try
-            SettingService.ResetSettings(Me)
-            Settings.Reset("UiLauncherTheme")
-            Logger.Info("已初始化个性化设置！")
-            Hint("已初始化个性化设置", HintType.Green, False)
-        Catch ex As Exception
-            Logger.Error(ex, "初始化个性化设置失败", LogBehavior.Alert)
-        End Try
-        Refresh()
-    End Sub
-
-    '背景图片
-    Private Sub BtnUIBgOpen_Click(sender As Object, e As EventArgs) Handles BtnBackgroundOpen.Click
-        OpenExplorer(Paths.Base & "PCL\Pictures\")
-    End Sub
-    Private Sub BtnBackgroundRefresh_Click(sender As Object, e As EventArgs) Handles BtnBackgroundRefresh.Click
-        BackgroundRefresh(True, True)
-    End Sub
-    Public Sub BackgroundRefreshUI(Show As Boolean, Count As Integer)
-        If IsNothing(PanBackgroundOpacity) Then Return
-        CheckBackgroundColorful.Visibility = If(Show, Visibility.Visible, Visibility.Collapsed)
-        If Show Then
-            PanBackgroundOpacity.Visibility = Visibility.Visible
-            PanBackgroundBlur.Visibility = Visibility.Visible
-            PanBackgroundSuit.Visibility = Visibility.Visible
-            BtnBackgroundClear.Visibility = If(Count > 0, Visibility.Visible, Visibility.Collapsed)
-            CardBackground.Title = If(Count > 0, "背景图片（" & Count & " 张）", "背景图片（默认角色背景）")
-        Else
-            PanBackgroundOpacity.Visibility = Visibility.Collapsed
-            PanBackgroundBlur.Visibility = Visibility.Collapsed
-            PanBackgroundSuit.Visibility = Visibility.Collapsed
-            BtnBackgroundClear.Visibility = Visibility.Collapsed
-            CardBackground.Title = "背景图片（原生白底）"
-        End If
-        CardBackground.TriggerForceResize()
-    End Sub
-    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
-        If MyMsgBox("即将删除背景图片文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
-            DirectoryUtils.Delete(Paths.Base & "PCL\Pictures")
-            BackgroundRefresh(False, True)
-            Hint(If(Settings.Get(Of Integer)("UiBackgroundMode") = 1, "自定义背景已清空！", "自定义背景已清空，已恢复默认角色背景！"), HintType.Green)
-        End If
-    End Sub
-    ''' <summary>
-    ''' 刷新背景图片及设置页 UI。
-    ''' </summary>
-    ''' <param name="IsHint">是否显示刷新提示。</param>
-    ''' <param name="Refresh">是否刷新图片显示。</param>
-    Public Shared Sub BackgroundRefresh(IsHint As Boolean, Refresh As Boolean)
-        Try
-            If Settings.Get(Of Integer)("UiBackgroundMode") = 1 Then
-                If FrmMain IsNot Nothing Then ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
-                If FrmSetupUI IsNot Nothing Then FrmSetupUI.BackgroundRefreshUI(False, 0)
-                Return
-            End If
-            '获取可用的图片文件
-            DirectoryUtils.Create(Paths.Base & "PCL\Pictures\")
-            Dim Pic As New List(Of String)
-            For Each File In DirectoryUtils.EnumerateFiles(Paths.Base & "PCL\Pictures\", True)
-                Dim Extension As String = PathUtils.GetExtension(File)
-                If Extension <> "ini" AndAlso Extension <> "db" Then Pic.Add(File) '文件夹可能会被加入 .ini 和 thumbs.db
-            Next
-            '加载
-            If Not Pic.Any() Then
-                If Refresh Then
-                    FrmMain.ImgBack.Background = New MyBitmap(PathImage & "Branding/DefaultBackground.png")
-                    ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
-                    FrmMain.UpdateBackgroundAndTitleBar()
-                    If IsHint Then Hint("已恢复默认角色背景！", HintType.Green)
-                End If
-                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(True, 0)
-            Else
-                If Refresh Then
-                    Dim Address As String = RandomOne(Pic)
-                    Try
-                        Logger.Info($"加载背景图片：{Address}")
-                        FrmMain.ImgBack.Background = New MyBitmap(Address)
-                        ApplyMainBackground(FrmMain.PanForm, FrmMain.ImgBack)
-                        FrmMain.UpdateBackgroundAndTitleBar()
-                        If IsHint Then Hint("背景图片已刷新：" & PathUtils.GetLastPart(Address), HintType.Green, False)
-                    Catch ex As Exception
-                        If ex.Message.Contains("参数无效") Then
-                            Logger.Error($"刷新背景图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{Address}", LogBehavior.Alert)
-                        Else
-                            Logger.Error(ex, $"刷新背景图片失败（{Address}）", LogBehavior.Alert)
-                        End If
-                    End Try
-                End If
-                If Not IsNothing(FrmSetupUI) Then FrmSetupUI.BackgroundRefreshUI(True, Pic.Count)
-            End If
-
-        Catch ex As Exception
-            Logger.Error(ex, "刷新背景图片时出现未知错误")
-        End Try
-    End Sub
-
-    '顶部栏
-    Private Sub BtnLogoChange_Click(sender As Object, e As EventArgs) Handles BtnLogoChange.Click
-        Dim FileName As String = Dialogs.SelectFile("选择图片", False, filter:={({"png", "jpg", "jpeg", "gif", "webp"}, "常用图片文件")}).FirstOrDefault()
-        If String.IsNullOrEmpty(FileName) Then Return
-        Dim TargetPath As String = Paths.Base & "PCL\Logo.png"
-        Try
-            '复制文件
-            FileUtils.Copy(FileName, TargetPath)
-            '设置当前显示
-            FrmMain.ImageTitleLogo.Source = Nothing '防止因为 Source 属性前后的值相同而不更新 (#5628)
-            FrmMain.ImageTitleLogo.Source = TargetPath
-        Catch ex As Exception
-            If ex.Message.Contains("参数无效") Then
-                Logger.Error($"改变标题栏图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{TargetPath}", LogBehavior.Alert)
-            Else
-                Logger.Error(ex, "设置标题栏图片失败", LogBehavior.Alert)
-            End If
-            FrmMain.ImageTitleLogo.Source = Nothing
-        End Try
-    End Sub
-    Private Sub RadioLogoType3_Check(sender As Object, e As RouteEventArgs) Handles RadioLogoType3.PreviewCheck
-        If Not (AniControlEnabled = 0 AndAlso e.RaiseByMouse) Then Return
-Refresh:
-        '已有图片则不再选择
-        Dim TargetPath As String = Paths.Base & "PCL\Logo.png"
-        If FileUtils.Exists(TargetPath) Then
-            Try
-                FrmMain.ImageTitleLogo.Source = Nothing '防止因为 Source 属性前后的值相同而不更新 (#5628)
-                FrmMain.ImageTitleLogo.Source = TargetPath
-            Catch ex As Exception
-                If ex.Message.Contains("参数无效") Then
-                    Logger.Error($"改变标题栏图片失败，该图片文件可能并非标准格式。{vbCrLf}你可以尝试使用画图打开该文件并重新保存，这会让图片变为标准格式。{vbCrLf}文件：{TargetPath}", LogBehavior.Alert)
-                Else
-                    Logger.Error(ex, "调整标题栏图片失败", LogBehavior.Alert)
-                End If
-                FrmMain.ImageTitleLogo.Source = Nothing
-                e.Handled = True
-                Try
-                    FileUtils.Delete(TargetPath)
-                Catch exx As Exception
-                    Logger.Error(exx, "清理错误的标题栏图片失败", LogBehavior.Alert)
-                End Try
-            End Try
-            Return
-        End If
-        '没有图片则要求选择
-        Dim FileName As String = Dialogs.SelectFile("选择图片", False, filter:={({"png", "jpeg", "jpg", "gif", "webp"}, "常用图片文件")}).FirstOrDefault()
-        If String.IsNullOrEmpty(FileName) Then
-            FrmMain.ImageTitleLogo.Source = Nothing
-            e.Handled = True
-        Else
-            Try
-                FileUtils.Copy(FileName, TargetPath)
-                GoTo Refresh
-            Catch ex As Exception
-                Logger.Error(ex, "复制标题栏图片失败", LogBehavior.Alert)
-            End Try
-        End If
-    End Sub
-    Private Sub BtnLogoDelete_Click(sender As Object, e As EventArgs) Handles BtnLogoDelete.Click
-        Try
-            FileUtils.Delete(Paths.Base & "PCL\Logo.png")
-            RadioLogoType1.SetChecked(True, True)
-            Hint("标题栏图片已清空！", HintType.Green)
-        Catch ex As Exception
-            Logger.Error(ex, "清空标题栏图片失败", LogBehavior.Alert)
-        End Try
-    End Sub
-
-    '背景音乐
-    Private Sub BtnMusicOpen_Click(sender As Object, e As EventArgs) Handles BtnMusicOpen.Click
-        OpenExplorer(Paths.Base & "PCL\Musics\")
-    End Sub
-    Private Sub BtnMusicRefresh_Click(sender As Object, e As EventArgs) Handles BtnMusicRefresh.Click
-        MusicRefreshPlay(True)
-    End Sub
-    Public Sub MusicRefreshUI()
-        If PanBackgroundOpacity Is Nothing Then Return
-        If MusicAllList.Any Then
-            PanMusicVolume.Visibility = Visibility.Visible
-            PanMusicDetail.Visibility = Visibility.Visible
-            BtnMusicClear.Visibility = Visibility.Visible
-            CardMusic.Title = "背景音乐（" &
-                DirectoryUtils.EnumerateFiles(Paths.Base & "PCL\Musics\", True).Count(Function(f) Not {"ini", "jpg", "txt", "cfg", "lrc", "db", "png"}.Contains(PathUtils.GetExtension(f))) &
-                " 首）"
-        Else
-            PanMusicVolume.Visibility = Visibility.Collapsed
-            PanMusicDetail.Visibility = Visibility.Collapsed
-            BtnMusicClear.Visibility = Visibility.Collapsed
-            CardMusic.Title = "背景音乐"
-        End If
-        CardMusic.TriggerForceResize()
-    End Sub
-    Private Sub BtnMusicClear_Click(sender As Object, e As EventArgs) Handles BtnMusicClear.Click
-        If MyMsgBox("即将删除背景音乐文件夹中的所有文件。" & vbCrLf & "此操作不可撤销，是否确定？", "警告",, "取消", IsWarn:=True) = 1 Then
-            RunInThread(
-            Sub()
-                Hint("正在删除背景音乐……")
-                '停止播放音乐
-                MusicNAudio = Nothing
-                MusicWaitingList = New List(Of String)
-                MusicAllList = New List(Of String)
-                Thread.Sleep(200)
-                '删除文件
-                Try
-                    DirectoryUtils.Delete(Paths.Base & "PCL\Musics")
-                    Hint("背景音乐已删除！", HintType.Green)
-                Catch ex As Exception
-                    Logger.Error(ex, "删除背景音乐失败", LogBehavior.Alert)
-                End Try
-                Try
-                    DirectoryUtils.Create(Paths.Base & "PCL\Musics\")
-                    RunInUi(Sub() MusicRefreshPlay(False))
-                Catch ex As Exception
-                    Logger.Error(ex, "重建背景音乐文件夹失败", LogBehavior.Alert)
-                End Try
-            End Sub)
-        End If
-    End Sub
-    Private Sub CheckMusicStart_Change() Handles CheckMusicStart.Change
-        If AniControlEnabled <> 0 Then Return
-        If CheckMusicStart.Checked Then CheckMusicStop.Checked = False
-    End Sub
-    Private Sub CheckMusicStop_Change() Handles CheckMusicStop.Change
-        If AniControlEnabled <> 0 Then Return
-        If CheckMusicStop.Checked Then CheckMusicStart.Checked = False
-    End Sub
-
-    '主页
-    Private Sub BtnCustomFile_Click(sender As Object, e As EventArgs) Handles BtnCustomFile.Click
-        Try
-            If FileUtils.Exists(Paths.Base & "PCL\Custom.xaml") Then
-                If MyMsgBox("当前已存在布局文件，继续生成教学文件将会覆盖现有布局文件！", "覆盖确认", "继续", "取消", IsWarn:=True) = 2 Then Return
-            End If
-            ExtractResources(Paths.Base & "PCL\Custom.xaml", "Custom")
-            Hint("教学文件已生成！", HintType.Green)
-            OpenExplorer(Paths.Base & "PCL\Custom.xaml")
-        Catch ex As Exception
-            Logger.Error(ex, "生成教学文件失败")
-        End Try
-    End Sub
-    Private Sub BtnCustomRefresh_Click() Handles BtnCustomRefresh.Click
-        FrmLaunchRight.ForceRefresh()
-        Hint("已刷新主页！", HintType.Green)
-    End Sub
-    Private Sub BtnCustomTutorial_Click(sender As Object, e As EventArgs) Handles BtnCustomTutorial.Click
-        MyMsgBox("1. 点击 生成教学文件 按钮，这会在 PCL 文件夹下生成 Custom.xaml 布局文件。" & vbCrLf &
-                 "2. 使用记事本等工具打开这个文件并进行修改，修改完记得保存。" & vbCrLf &
-                 "3. 点击 刷新主页 按钮，查看主页现在长啥样了。" & vbCrLf &
-                 vbCrLf &
-                 "你可以在生成教学文件后直接刷新主页，对照着进行修改，更有助于理解。" & vbCrLf &
-                 "直接将主页文件拖进 PCL 窗口也可以快捷加载。", "主页自定义教程")
-    End Sub
-    Public Shared Sub OnMainPageTypeChanged()
-        If FrmSetupUI Is Nothing Then Return
-        Select Case CInt(Settings.Get(Of Integer)("UiCustomType"))
-            Case 0 '无
-                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Collapsed
-                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Collapsed
-                FrmSetupUI.PanCustomNet.Visibility = Visibility.Collapsed
-                FrmSetupUI.HintCustom.Visibility = Visibility.Collapsed
-                FrmSetupUI.HintCustomWarn.Visibility = Visibility.Collapsed
-            Case 1 '本地
-                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Collapsed
-                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Visible
-                FrmSetupUI.PanCustomNet.Visibility = Visibility.Collapsed
-                FrmSetupUI.HintCustom.Visibility = Visibility.Visible
-                FrmSetupUI.HintCustomWarn.Visibility = If(Settings.Get(Of Boolean)("HintCustomWarn"), Visibility.Collapsed, Visibility.Visible)
-                FrmSetupUI.HintCustom.Text = $"从 PCL 文件夹下的 Custom.xaml 读取主页内容。{vbCrLf}你可以手动编辑该文件，向主页添加文本、图片、常用网站、快捷启动等功能。"
-                CustomEventService.SetEventType(FrmSetupUI.HintCustom, CustomEvent.EventType.None)
-            Case 2 '联网
-                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Collapsed
-                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Collapsed
-                FrmSetupUI.PanCustomNet.Visibility = Visibility.Visible
-                FrmSetupUI.HintCustom.Visibility = Visibility.Visible
-                FrmSetupUI.HintCustomWarn.Visibility = If(Settings.Get(Of Boolean)("HintCustomWarn"), Visibility.Collapsed, Visibility.Visible)
-                FrmSetupUI.HintCustom.Text = $"从指定网址联网获取主页内容。服主也可以用于动态更新服务器公告。{vbCrLf}如果你制作了稳定运行的联网主页，可以点击这条提示投稿，若合格即可加入预设！"
-                CustomEventService.SetEventType(FrmSetupUI.HintCustom, CustomEvent.EventType.打开网页)
-                CustomEventService.SetEventData(FrmSetupUI.HintCustom, "https://github.com/Meloong-Git/PCL/discussions/2528")
-            Case 3 '预设
-                FrmSetupUI.PanCustomPreset.Visibility = Visibility.Visible
-                FrmSetupUI.PanCustomLocal.Visibility = Visibility.Collapsed
-                FrmSetupUI.PanCustomNet.Visibility = Visibility.Collapsed
-                FrmSetupUI.HintCustom.Visibility = Visibility.Collapsed
-                FrmSetupUI.HintCustomWarn.Visibility = Visibility.Collapsed
-        End Select
-        FrmSetupUI.CardCustom.TriggerForceResize()
-    End Sub
-    Private Sub BtnCustomFolder_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnCustomFolder.Click
-        Dim CustomPath As String = Paths.Base & "PCL\Custom.xaml"
-        If FileUtils.Exists(CustomPath) Then
-            OpenExplorer(CustomPath)
-        Else
-            OpenExplorer(Paths.Base & "PCL\")
-        End If
-    End Sub
-
-#Region "功能隐藏"
-
     Private Shared _HiddenForceShow As Boolean = False
-    ''' <summary>
-    ''' 是否强制显示被禁用的功能。
-    ''' </summary>
-    Public Shared Property HiddenForceShow As Boolean
+    Friend Shared Function ReadHiddenForceShow() As Boolean
+        Return _HiddenForceShow
+    End Function
+    Friend Shared Sub WriteHiddenForceShow(Value As Boolean)
+        _HiddenForceShow = Value
+    End Sub
+    Private _controller As LegacyPageSetupUIController
+    Friend ReadOnly Property Controller As LegacyPageSetupUIController
         Get
-            Return _HiddenForceShow
+            If _controller Is Nothing Then
+                _controller = New LegacyPageSetupUIController(SetupPageRuntime.UI, New LegacyPageSetupUIView With {
+                    .Page = Function() Me,
+                    .PanBack = Function() PanBack,
+                    .PanMain = Function() PanMain,
+                    .CardLauncher = Function() CardLauncher,
+                    .SliderLauncherTransparent = Function() SliderLauncherTransparent,
+                    .PanOfficialTheme = Function() PanOfficialTheme,
+                    .BtnOfficialTheme = Function() BtnOfficialTheme,
+                    .CardBackground = Function() CardBackground,
+                    .ComboBackgroundMode = Function() ComboBackgroundMode,
+                    .PanBackgroundSuit = Function() PanBackgroundSuit,
+                    .PanBackgroundOpacity = Function() PanBackgroundOpacity,
+                    .SliderBackgroundOpacity = Function() SliderBackgroundOpacity,
+                    .PanBackgroundBlur = Function() PanBackgroundBlur,
+                    .SliderBackgroundBlur = Function() SliderBackgroundBlur,
+                    .CheckBackgroundColorful = Function() CheckBackgroundColorful,
+                    .BtnBackgroundOpen = Function() BtnBackgroundOpen,
+                    .BtnBackgroundRefresh = Function() BtnBackgroundRefresh,
+                    .BtnBackgroundClear = Function() BtnBackgroundClear,
+                    .CardMusic = Function() CardMusic,
+                    .PanMusicVolume = Function() PanMusicVolume,
+                    .SliderMusicVolume = Function() SliderMusicVolume,
+                    .PanMusicDetail = Function() PanMusicDetail,
+                    .CheckMusicRandom = Function() CheckMusicRandom,
+                    .CheckMusicAuto = Function() CheckMusicAuto,
+                    .CheckMusicStart = Function() CheckMusicStart,
+                    .CheckMusicStop = Function() CheckMusicStop,
+                    .BtnMusicOpen = Function() BtnMusicOpen,
+                    .BtnMusicRefresh = Function() BtnMusicRefresh,
+                    .BtnMusicClear = Function() BtnMusicClear,
+                    .CardLogo = Function() CardLogo,
+                    .RadioLogoType0 = Function() RadioLogoType0,
+                    .RadioLogoType1 = Function() RadioLogoType1,
+                    .RadioLogoType2 = Function() RadioLogoType2,
+                    .RadioLogoType3 = Function() RadioLogoType3,
+                    .CheckLogoLeft = Function() CheckLogoLeft,
+                    .PanLogoText = Function() PanLogoText,
+                    .TextLogoText = Function() TextLogoText,
+                    .PanLogoChange = Function() PanLogoChange,
+                    .BtnLogoChange = Function() BtnLogoChange,
+                    .BtnLogoDelete = Function() BtnLogoDelete,
+                    .CardCustom = Function() CardCustom,
+                    .RadioCustomType0 = Function() RadioCustomType0,
+                    .RadioCustomType3 = Function() RadioCustomType3,
+                    .RadioCustomType1 = Function() RadioCustomType1,
+                    .RadioCustomType2 = Function() RadioCustomType2,
+                    .HintCustom = Function() HintCustom,
+                    .HintCustomWarn = Function() HintCustomWarn,
+                    .PanCustomLocal = Function() PanCustomLocal,
+                    .BtnCustomRefresh = Function() BtnCustomRefresh,
+                    .BtnCustomFile = Function() BtnCustomFile,
+                    .BtnCustomTutorial = Function() BtnCustomTutorial,
+                    .BtnCustomFolder = Function() BtnCustomFolder,
+                    .PanCustomNet = Function() PanCustomNet,
+                    .TextCustomNet = Function() TextCustomNet,
+                    .PanCustomPreset = Function() PanCustomPreset,
+                    .CheckRecentWorlds = Function() CheckRecentWorlds,
+                    .CardSwitch = Function() CardSwitch,
+                    .CheckHiddenPageDownload = Function() CheckHiddenPageDownload,
+                    .CheckHiddenPageLink = Function() CheckHiddenPageLink,
+                    .CheckHiddenPageSetup = Function() CheckHiddenPageSetup,
+                    .CheckHiddenPageOther = Function() CheckHiddenPageOther,
+                    .CheckHiddenSetupLaunch = Function() CheckHiddenSetupLaunch,
+                    .CheckHiddenSetupLink = Function() CheckHiddenSetupLink,
+                    .CheckHiddenSetupUI = Function() CheckHiddenSetupUI,
+                    .CheckHiddenSetupSystem = Function() CheckHiddenSetupSystem,
+                    .CheckHiddenOtherHelp = Function() CheckHiddenOtherHelp,
+                    .CheckHiddenOtherAbout = Function() CheckHiddenOtherAbout,
+                    .CheckHiddenOtherTest = Function() CheckHiddenOtherTest,
+                    .CheckLauncherEmail = Function() CheckLauncherEmail,
+                    .CheckHiddenFunctionSelect = Function() CheckHiddenFunctionSelect,
+                    .CheckHiddenFunctionModUpdate = Function() CheckHiddenFunctionModUpdate,
+                    .CheckHiddenFunctionHidden = Function() CheckHiddenFunctionHidden,
+                    .CheckHiddenFunctionModify = Function() CheckHiddenFunctionModify
+                })
+            End If
+            Return _controller
         End Get
-        Set(value As Boolean)
-            _HiddenForceShow = value
-            HiddenRefresh()
-        End Set
     End Property
 
-    ''' <summary>
-    ''' 更新功能隐藏带来的显示变化。
-    ''' </summary>
+    Private Sub PageSetupUI_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
+        Controller.Loaded()
+    End Sub
+
+    Public Sub Refresh()
+        Controller.Refresh()
+    End Sub
+
+    Public Sub Reset()
+        Controller.Reset()
+    End Sub
+
+    Private Sub BtnUIBgOpen_Click(sender As Object, e As EventArgs) Handles BtnBackgroundOpen.Click
+        Controller.OpenBackground()
+    End Sub
+
+    Private Sub BtnBackgroundRefresh_Click(sender As Object, e As EventArgs) Handles BtnBackgroundRefresh.Click
+        Controller.RefreshBackground()
+    End Sub
+
+    Public Sub BackgroundRefreshUI(Show As Boolean, Count As Integer)
+        Controller.BackgroundRefreshUI(Show, Count)
+    End Sub
+
+    Private Sub BtnBackgroundClear_Click(sender As Object, e As EventArgs) Handles BtnBackgroundClear.Click
+        Controller.ClearBackground()
+    End Sub
+
+    Public Shared Sub BackgroundRefresh(IsHint As Boolean, Refresh As Boolean)
+        SetupPageRuntime.UI.BackgroundRefresh(IsHint, Refresh)
+    End Sub
+
+    Private Sub BtnLogoChange_Click(sender As Object, e As EventArgs) Handles BtnLogoChange.Click
+        Controller.ChangeLogo()
+    End Sub
+
+    Private Sub RadioLogoType3_Check(sender As Object, e As RouteEventArgs) Handles RadioLogoType3.PreviewCheck
+        Controller.PreviewCustomLogo(e.RaiseByMouse, e.Handled)
+    End Sub
+
+    Private Sub BtnLogoDelete_Click(sender As Object, e As EventArgs) Handles BtnLogoDelete.Click
+        Controller.DeleteLogo()
+    End Sub
+
+    Private Sub BtnMusicOpen_Click(sender As Object, e As EventArgs) Handles BtnMusicOpen.Click
+        Controller.OpenMusic()
+    End Sub
+
+    Private Sub BtnMusicRefresh_Click(sender As Object, e As EventArgs) Handles BtnMusicRefresh.Click
+        Controller.RefreshMusic()
+    End Sub
+
+    Public Sub MusicRefreshUI()
+        Controller.MusicRefreshUI()
+    End Sub
+
+    Private Sub BtnMusicClear_Click(sender As Object, e As EventArgs) Handles BtnMusicClear.Click
+        Controller.ClearMusic()
+    End Sub
+
+    Private Sub CheckMusicStart_Change() Handles CheckMusicStart.Change
+        Controller.MusicStartChanged()
+    End Sub
+
+    Private Sub CheckMusicStop_Change() Handles CheckMusicStop.Change
+        Controller.MusicStopChanged()
+    End Sub
+
+    Private Sub BtnCustomFile_Click(sender As Object, e As EventArgs) Handles BtnCustomFile.Click
+        Controller.CreateCustomFile()
+    End Sub
+
+    Private Sub BtnCustomRefresh_Click() Handles BtnCustomRefresh.Click
+        Controller.RefreshCustom()
+    End Sub
+
+    Private Sub BtnCustomTutorial_Click(sender As Object, e As EventArgs) Handles BtnCustomTutorial.Click
+        Controller.CustomTutorial()
+    End Sub
+
+    Public Shared Sub OnMainPageTypeChanged()
+        SetupPageRuntime.UI.OnMainPageTypeChanged()
+    End Sub
+
+    Private Sub BtnCustomFolder_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnCustomFolder.Click
+        Controller.OpenCustomFolder()
+    End Sub
+
     Public Shared Sub HiddenRefresh() Handles Me.Loaded
-        If FrmMain.PanTitleSelect Is Nothing OrElse Not FrmMain.PanTitleSelect.IsLoaded Then Return
-        Try
-            '顶部栏
-            If Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageDownload") AndAlso Settings.Get(Of Boolean)("UiHiddenPageLink") AndAlso Settings.Get(Of Boolean)("UiHiddenPageSetup") AndAlso Settings.Get(Of Boolean)("UiHiddenPageOther") Then
-                '顶部栏已被全部隐藏
-                FrmMain.PanTitleSelect.Visibility = Visibility.Collapsed
-            Else
-                '顶部栏未被全部隐藏
-                FrmMain.PanTitleSelect.Visibility = Visibility.Visible
-                FrmMain.BtnTitleSelect1.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageDownload"), Visibility.Collapsed, Visibility.Visible)
-                FrmMain.BtnTitleSelect2.Visibility = Visibility.Collapsed 'If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageLink"), Visibility.Collapsed, Visibility.Visible)
-                FrmMain.BtnTitleSelect3.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageSetup"), Visibility.Collapsed, Visibility.Visible)
-                FrmMain.BtnTitleSelect4.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenPageOther"), Visibility.Collapsed, Visibility.Visible)
-            End If
-            '功能
-            FrmLaunchLeft.RefreshButtonsUI()
-            If FrmSetupUI IsNot Nothing Then
-                FrmSetupUI.CardSwitch.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenFunctionHidden"), Visibility.Collapsed, Visibility.Visible)
-            End If
-            '版本设置子页面
-            If FrmInstanceLeft IsNot Nothing Then
-                FrmInstanceLeft.ItemModify.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenFunctionInstanceModify"), Visibility.Collapsed, Visibility.Visible)
-            End If
-            '设置子页面
-            If FrmSetupLeft IsNot Nothing Then
-                FrmSetupLeft.ItemLaunch.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenSetupLaunch"), Visibility.Collapsed, Visibility.Visible)
-                FrmSetupLeft.ItemUI.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenSetupUi"), Visibility.Collapsed, Visibility.Visible)
-                FrmSetupLeft.ItemLink.Visibility = Visibility.Collapsed 'If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenSetupLink"), Visibility.Collapsed, Visibility.Visible)
-                FrmSetupLeft.ItemSystem.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenSetupSystem"), Visibility.Collapsed, Visibility.Visible)
-                '隐藏左边选择卡
-                Dim AvaliableCount As Integer = 0
-                If Not Settings.Get(Of Boolean)("UiHiddenSetupLaunch") Then AvaliableCount += 1
-                If Not Settings.Get(Of Boolean)("UiHiddenSetupUi") Then AvaliableCount += 1
-                'If Not Settings.Get(Of Boolean)("UiHiddenSetupLink") Then AvaliableCount += 1
-                If Not Settings.Get(Of Boolean)("UiHiddenSetupSystem") Then AvaliableCount += 1
-                FrmSetupLeft.PanItem.Visibility = If(AvaliableCount < 2 AndAlso Not HiddenForceShow, Visibility.Collapsed, Visibility.Visible)
-            End If
-            '更多子页面
-            Dim OtherAvaliableCount As Integer = 0
-            If Not Settings.Get(Of Boolean)("UiHiddenOtherHelp") Then OtherAvaliableCount += 1
-            If Not Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then OtherAvaliableCount += 1
-            If Not Settings.Get(Of Boolean)("UiHiddenOtherTest") Then OtherAvaliableCount += 1
-            If FrmOtherLeft IsNot Nothing Then
-                FrmOtherLeft.ItemHelp.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherHelp"), Visibility.Collapsed, Visibility.Visible)
-                FrmOtherLeft.ItemAbout.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout"), Visibility.Collapsed, Visibility.Visible)
-                FrmOtherLeft.ItemTest.Visibility = If(Not HiddenForceShow AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest"), Visibility.Collapsed, Visibility.Visible)
-                '隐藏左边选择卡
-                FrmOtherLeft.PanItem.Visibility = If(OtherAvaliableCount < 2 AndAlso Not HiddenForceShow, Visibility.Collapsed, Visibility.Visible)
-            End If
-            If OtherAvaliableCount = 1 AndAlso Not HiddenForceShow Then
-                If Not Settings.Get(Of Boolean)("UiHiddenOtherHelp") Then
-                    FrmMain.BtnTitleSelect4.Text = "帮助"
-                ElseIf Not Settings.Get(Of Boolean)("UiHiddenOtherAbout") Then
-                    FrmMain.BtnTitleSelect4.Text = "关于"
-                Else
-                    FrmMain.BtnTitleSelect4.Text = "原版百宝箱"
-                End If
-            Else
-                FrmMain.BtnTitleSelect4.Text = "更多"
-            End If
-            '各个页面的入口
-            If FrmMain.PageCurrent = FormMain.PageType.InstanceSelect Then FrmSelectRight.BtnEmptyDownload_Loaded()
-            If FrmMain.PageCurrent = FormMain.PageType.Launch Then FrmLaunchLeft.RefreshButtonsUI()
-            If FrmMain.PageCurrent = FormMain.PageType.InstanceSetup AndAlso FrmInstanceModDisabled IsNot Nothing Then FrmInstanceModDisabled.BtnDownload_Loaded()
-            '备注
-            If FrmSetupUI IsNot Nothing Then FrmSetupUI.CardSwitch.Title = If(HiddenForceShow, "功能隐藏（已暂时关闭，按 F12 以重新启用）", "功能隐藏")
-            ModModpackMode.ApplyVisibility()
-        Catch ex As Exception
-            Logger.Error(ex, "刷新功能隐藏项目失败")
-        End Try
+        SetupPageRuntime.UI.HiddenRefresh()
     End Sub
 
-    'UI 协同改变
     Private Sub HiddenSetupMain() Handles CheckHiddenPageSetup.Change
-        '设置主页面
-        If CheckHiddenPageSetup.Checked Then
-            '开启
-            CheckHiddenSetupLaunch.Checked = True
-            CheckHiddenSetupSystem.Checked = True
-            CheckHiddenSetupLink.Checked = True
-            CheckHiddenSetupUI.Checked = True
-        Else
-            '关闭
-            If Settings.Get(Of Boolean)("UiHiddenSetupLaunch") AndAlso Settings.Get(Of Boolean)("UiHiddenSetupUi") AndAlso Settings.Get(Of Boolean)("UiHiddenSetupSystem") AndAlso Settings.Get(Of Boolean)("UiHiddenSetupLink") Then
-                CheckHiddenSetupLaunch.Checked = False
-                CheckHiddenSetupSystem.Checked = False
-                CheckHiddenSetupLink.Checked = False
-                CheckHiddenSetupUI.Checked = False
-            End If
-        End If
+        Controller.HiddenSetupMain()
     End Sub
+
     Private Sub HiddenSetupSub() Handles CheckHiddenSetupLaunch.Change, CheckHiddenSetupSystem.Change, CheckHiddenSetupLink.Change, CheckHiddenSetupUI.Change
-        '设置子页面
-        If Settings.Get(Of Boolean)("UiHiddenSetupLaunch") AndAlso Settings.Get(Of Boolean)("UiHiddenSetupUi") AndAlso Settings.Get(Of Boolean)("UiHiddenSetupSystem") AndAlso Settings.Get(Of Boolean)("UiHiddenSetupLink") Then
-            '已被全部隐藏
-            CheckHiddenPageSetup.Checked = True
-        Else
-            '未被全部隐藏
-            CheckHiddenPageSetup.Checked = False
-        End If
+        Controller.HiddenSetupSub()
     End Sub
+
     Private Sub HiddenOtherMain() Handles CheckHiddenPageOther.Change
-        '更多主页面
-        If CheckHiddenPageOther.Checked Then
-            '开启
-            CheckHiddenOtherAbout.Checked = True
-            CheckHiddenOtherHelp.Checked = True
-            CheckHiddenOtherTest.Checked = True
-        Else
-            '关闭
-            If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") Then
-                CheckHiddenOtherAbout.Checked = False
-                CheckHiddenOtherHelp.Checked = False
-                CheckHiddenOtherTest.Checked = False
-            End If
-        End If
+        Controller.HiddenOtherMain()
     End Sub
+
     Private Sub HiddenOtherSub(sender As Object, user As Boolean) Handles CheckHiddenOtherHelp.Change, CheckHiddenOtherAbout.Change, CheckHiddenOtherTest.Change
-        '更多子页面（有具体内容的）
-        If Settings.Get(Of Boolean)("UiHiddenOtherHelp") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherAbout") AndAlso Settings.Get(Of Boolean)("UiHiddenOtherTest") Then
-            '已被全部隐藏
-            CheckHiddenPageOther.Checked = True
-        Else
-            '未被全部隐藏
-            CheckHiddenPageOther.Checked = False
-        End If
+        Controller.HiddenOtherSub(sender, user)
     End Sub
 
-    '警告提示
     Private Sub HiddenHint(sender As Object, user As Boolean) Handles CheckHiddenFunctionHidden.Change, CheckHiddenPageSetup.Change, CheckHiddenSetupUI.Change
-        If AniControlEnabled = 0 AndAlso sender.Checked Then Hint("按 F12 即可暂时关闭功能隐藏设置。千万别忘了，要不然设置就改不回来了……")
+        Controller.HiddenHint(sender, user)
     End Sub
 
-#End Region
-
-    '滑动条
     Private Sub SliderLoad()
-        SliderMusicVolume.GetHintText = Function(v) Math.Ceiling(v * 0.1) & "%"
-        SliderLauncherTransparent.GetHintText = Function(v) Math.Round(40 + v * 0.1) & "%"
-        SliderBackgroundOpacity.GetHintText = Function(v) Math.Round(v * 0.1) & "%"
-        SliderBackgroundBlur.GetHintText = Function(v) v & " 像素"
+        Controller.SliderLoad()
     End Sub
+
+    Public Shared Property HiddenForceShow As Boolean
+        Get
+            Return SetupPageRuntime.UI.HiddenForceShow
+        End Get
+        Set(value As Boolean)
+            SetupPageRuntime.UI.HiddenForceShow = value
+        End Set
+    End Property
 
 End Class
