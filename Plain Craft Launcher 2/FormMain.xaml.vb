@@ -1111,11 +1111,6 @@ Public Class FormMain
             PageChangeActual(Stack, SubType)
         Else
             '切换到次页面
-            Select Case Stack.Page
-                Case PageType.InstanceSetup
-                    If FrmInstanceLeft Is Nothing Then FrmInstanceLeft = New PageInstanceLeft
-                    FrmInstanceLeft.NavigationItem(SubType).SetChecked(True, True, Stack = PageCurrent)
-            End Select
             PageChangeActual(Stack, SubType)
         End If
     End Sub
@@ -1144,14 +1139,20 @@ Public Class FormMain
     Private Sub PageChangeActual(Stack As PageStackData, Optional SubType As PageSubType = -1)
         If ModModpackMode.BlocksPage(Stack.Page) Then Return
         If Stack.Page = PageType.Setup AndAlso SubType >= 0 Then SubType = ModModpackMode.NormalizeSetupPage(SubType)
-        If Stack.Page = PageType.InstanceSetup AndAlso SubType >= 0 Then SubType = ModModpackMode.NormalizeInstancePage(SubType)
-        If PageCurrent = Stack AndAlso (PageCurrentSub = SubType OrElse SubType = -1) Then Return
-        If Stack.Page = PageType.InstanceSetup AndAlso PageInstanceLeft.Instance IsNot Nothing AndAlso McInstanceLock.BlocksNavigation(PageInstanceLeft.Instance) Then
-            Hint("该版本正在被修改，暂时无法进入版本设置！", HintType.Red)
-            Return
+        If Stack.Page = PageType.InstanceSetup Then
+            If McInstanceLock.BlocksNavigation(PageInstanceLeft.Instance) Then
+                Hint("该版本正在被修改，暂时无法进入版本设置！", HintType.Red)
+                Return
+            End If
+            If FrmInstanceLeft Is Nothing Then FrmInstanceLeft = New PageInstanceLeft
+            '返回按钮不传子页时，恢复进入任务界面前的子页。
+            If SubType < 0 Then SubType = FrmInstanceLeft.PageID
+            SubType = ModModpackMode.NormalizeInstancePage(SubType)
+            If McInstanceLock.IsLocked(PageInstanceLeft.Instance) AndAlso PageInstanceLeft.IsEditingPage(SubType) Then SubType = PageSubType.InstanceOverall
         End If
-        If Stack.Page = PageType.InstanceSetup AndAlso McInstanceLock.IsLocked(PageInstanceLeft.Instance) Then
-            If SubType < 0 OrElse PageInstanceLeft.IsEditingPage(SubType) Then SubType = PageSubType.InstanceOverall
+        If PageCurrent = Stack AndAlso (PageCurrentSub = SubType OrElse SubType = -1) Then
+            If Stack.Page = PageType.InstanceSetup Then FrmInstanceLeft.SyncSelection(SubType)
+            Return
         End If
         AniControlEnabled += 1
         Try
@@ -1230,7 +1231,9 @@ Public Class FormMain
                     PageChangeAnim(FrmSpeedLeft, FrmSpeedRight)
                 Case PageType.InstanceSetup '版本设置
                     If FrmInstanceLeft Is Nothing Then FrmInstanceLeft = New PageInstanceLeft
-                    PageChangeAnim(FrmInstanceLeft, FrmInstanceLeft.PageGet(SubType))
+                    Dim TargetPage = FrmInstanceLeft.PageGet(SubType)
+                    FrmInstanceLeft.SyncSelection(SubType)
+                    PageChangeAnim(FrmInstanceLeft, TargetPage)
                 Case PageType.ResourceDetail '社区资源详情
                     If FrmDownloadResourceDetail Is Nothing Then FrmDownloadResourceDetail = New PageDownloadResourceDetail
                     PageChangeAnim(New MyPageLeft, FrmDownloadResourceDetail)

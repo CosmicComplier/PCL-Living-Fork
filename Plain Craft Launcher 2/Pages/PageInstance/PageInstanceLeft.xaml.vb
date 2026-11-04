@@ -40,6 +40,7 @@
     ''' 当前页面的编号。从 0 开始计算。
     ''' </summary>
     Public PageID As FormMain.PageSubType = FormMain.PageSubType.Default
+    Private IsSyncingSelection As Boolean
 
     ''' <summary>
     ''' 勾选事件改变页面。
@@ -47,13 +48,26 @@
     Private Sub PageCheck(sender As FrameworkElement, e As RouteEventArgs) Handles ItemOverall.Check, ItemMod.Check, ItemModDisabled.Check, ItemSetup.Check, ItemModify.Check, ItemExport.Check, ItemSaves.Check, ItemScreenshots.Check, ItemResourcePacks.Check, ItemShaderPacks.Check, ItemSchematics.Check, ItemKeybindings.Check, ItemRestorePoints.Check, ItemClone.Check
         '尚未初始化控件属性时，sender.Tag 为 Nothing，会导致切换到页面 0
         '若使用 IsLoaded，则会导致模拟点击不被执行（模拟点击切换页面时，控件的 IsLoaded 为 False）
-        If sender.Tag IsNot Nothing Then PageChange(Val(sender.Tag))
+        If Not IsSyncingSelection AndAlso sender.Tag IsNot Nothing Then PageChange(Val(sender.Tag))
     End Sub
 
     Friend Function NavigationItem(ID As FormMain.PageSubType) As MyListItem
         ID = ModModpackMode.NormalizeInstancePage(ID)
         Return PanItem.Children.OfType(Of MyListItem)().First(Function(Item) CInt(Item.Tag) = CInt(ID))
     End Function
+
+    '主窗口返回与侧栏点击共用同一份页面状态；同步单选项时不再次切换页面。
+    Friend Sub SyncSelection(ID As FormMain.PageSubType)
+        ID = ModModpackMode.NormalizeInstancePage(ID)
+        Dim Item = NavigationItem(ID)
+        IsSyncingSelection = True
+        Try
+            PageID = ID
+            Item.SetChecked(True, False, False)
+        Finally
+            IsSyncingSelection = False
+        End Try
+    End Sub
 
     Private ReadOnly ResourcePages As New Dictionary(Of FormMain.PageSubType, PageInstanceResources)
     Private KeybindingsPage As PageInstanceKeybindings
@@ -106,17 +120,19 @@
         ID = ModModpackMode.NormalizeInstancePage(ID)
         If PageID = ID Then Return
         If Instance IsNot Nothing AndAlso McInstanceLock.BlocksNavigation(Instance) Then
+            SyncSelection(PageID)
             Hint("该版本正在被修改，请稍后再切换页面！", HintType.Red)
             Return
         End If
         If McInstanceLock.IsLocked(Instance) AndAlso IsEditingPage(ID) Then
+            SyncSelection(PageID)
             Hint("文件任务进行中，可浏览版本内容，请稍后再修改版本设置。", HintType.Red)
             Return
         End If
         AniControlEnabled += 1
         Try
             PageChangeRun(PageGet(ID))
-            PageID = ID
+            SyncSelection(ID)
         Catch ex As Exception
             Logger.Error(ex, $"切换分页面失败（ID {ID}）")
         Finally

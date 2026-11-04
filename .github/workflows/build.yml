@@ -174,7 +174,7 @@ jobs:
         $checks = @(
           'Test-WorldBackups', 'Test-WorldBackupGroups', 'Test-SaveBackupIntegration',
           'Test-ModDependencies', 'Test-ModDependencyOnline', 'Test-ModDependencyGraph',
-          'Test-InstanceClone', 'Test-InstanceCloneGroups', 'Test-RecentEnvironmentChanges',
+          'Test-InstanceClone', 'Test-InstanceCloneGroups', 'Test-CloneTaskProgress', 'Test-FileTaskNavigation', 'Test-RecentEnvironmentChanges',
           'Test-EnvironmentCoverage', 'Test-KeybindingGroups',
           'Test-MapDetails', 'Test-ResourceEntryPoints', 'Test-WorldDetails', 'Test-ScreenshotGallery'
         )

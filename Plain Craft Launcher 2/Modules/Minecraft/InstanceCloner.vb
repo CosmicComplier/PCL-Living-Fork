@@ -177,47 +177,68 @@ Friend NotInheritable Class InstanceCloner
         Return Result
     End Function
     Friend Shared Function Digest(Address As String, Token As CancellationToken) As String
+        Return DigestWithProgress(Address, Token, Nothing)
+    End Function
+    Private Shared Function DigestWithProgress(Address As String, Token As CancellationToken, Progress As Action(Of Double)) As String
         EnsureNoLinks(Address)
         Using Input As New FileStream(Address, FileMode.Open, FileAccess.Read, FileShare.Read), Hash = SHA1.Create()
-            Dim Buffer(128 * 1024 - 1) As Byte
+            Dim Buffer(128 * 1024 - 1) As Byte, ReadBytes = FileTaskProgress.Bytes(Input.Length, Progress)
             Do
                 Token.ThrowIfCancellationRequested()
                 Dim Count = Input.Read(Buffer, 0, Buffer.Length)
                 If Count = 0 Then Exit Do
                 Hash.TransformBlock(Buffer, 0, Count, Nothing, 0)
+                ReadBytes?.Invoke(Count)
             Loop
             Hash.TransformFinalBlock(New Byte() {}, 0, 0)
+            Progress?.Invoke(1)
             Return "sha1:" & BitConverter.ToString(Hash.Hash).Replace("-", "").ToLowerInvariant()
         End Using
     End Function
-    Private Shared Function Fingerprints(Entries As Dictionary(Of String, String), Token As CancellationToken) As Dictionary(Of String, String)
+    Private Shared Function Fingerprints(Entries As Dictionary(Of String, String), Token As CancellationToken, Optional Progress As Action(Of Double) = Nothing) As Dictionary(Of String, String)
         Dim Result As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase), Bytes As Long
+        Dim Total = ProgressWeight(Entries, Token), Completed As Long = 0
         For Each Pair In Entries
             Token.ThrowIfCancellationRequested()
             Bytes += New FileInfo(Pair.Value).Length
             If Bytes > MaxBytes Then Throw New IOException("复制范围超过 512 GiB，请先缩小复制范围。")
-            Result.Add(Pair.Key, Digest(Pair.Value, Token))
+            Dim Weight = Math.Max(1L, New FileInfo(Pair.Value).Length)
+            Result.Add(Pair.Key, DigestWithProgress(Pair.Value, Token, FileTaskProgress.Slice(Progress, Completed / Total, (Completed + Weight) / Total)))
+            Completed += Weight
         Next
+        Progress?.Invoke(1)
         Return Result
+    End Function
+    Private Shared Function ProgressWeight(Entries As Dictionary(Of String, String), Token As CancellationToken) As Long
+        Dim Bytes As Long = 0, Weight As Long = 0
+        For Each Address In Entries.Values
+            Token.ThrowIfCancellationRequested()
+            Dim Length = New FileInfo(Address).Length
+            Bytes += Length
+            If Bytes > MaxBytes Then Throw New IOException("复制范围超过 512 GiB，请先缩小复制范围。")
+            Weight += Math.Max(1L, Length)
+        Next
+        Return Math.Max(1L, Weight)
     End Function
     Private Shared Sub Verify(Expected As Dictionary(Of String, String), Actual As Dictionary(Of String, String))
         If Expected.Count <> Actual.Count OrElse Expected.Any(Function(Pair) Not Actual.ContainsKey(Pair.Key) OrElse Actual(Pair.Key) <> Pair.Value) Then Throw New IOException("操作期间环境目录发生变化，请等待修改完成后重试。")
     End Sub
-    Private Shared Sub CopyFile(Source As String, Destination As String, ExpectedHash As String, Token As CancellationToken)
+    Private Shared Sub CopyFile(Source As String, Destination As String, ExpectedHash As String, Token As CancellationToken, Optional Progress As Action(Of Double) = Nothing)
         EnsureNoLinks(Source)
         EnsureNoLinks(Destination)
         Directory.CreateDirectory(Path.GetDirectoryName(Destination))
         Using Input As New FileStream(Source, FileMode.Open, FileAccess.Read, FileShare.Read), Output As New FileStream(Destination, FileMode.CreateNew, FileAccess.Write, FileShare.None)
-            Dim Buffer(128 * 1024 - 1) As Byte
+            Dim Buffer(128 * 1024 - 1) As Byte, CopiedBytes = FileTaskProgress.Bytes(Input.Length, FileTaskProgress.Slice(Progress, 0, 0.75))
             Do
                 Token.ThrowIfCancellationRequested()
                 Dim Count = Input.Read(Buffer, 0, Buffer.Length)
                 If Count = 0 Then Exit Do
                 Output.Write(Buffer, 0, Count)
+                CopiedBytes?.Invoke(Count)
             Loop
             Output.Flush(True)
         End Using
-        If Digest(Destination, Token) <> ExpectedHash Then Throw New IOException("复制期间来源文件发生变化，未生成测试副本。")
+        If DigestWithProgress(Destination, Token, FileTaskProgress.Slice(Progress, 0.75, 1)) <> ExpectedHash Then Throw New IOException("复制期间来源文件发生变化，未生成测试副本。")
         File.SetLastWriteTimeUtc(Destination, File.GetLastWriteTimeUtc(Source))
     End Sub
     Private Shared Sub DeleteStage(Parent As String, Stage As String)
@@ -289,7 +310,14 @@ Friend NotInheritable Class InstanceCloner
     Friend Shared Function CloneInstance(Instance As McInstance, NewName As String, Options As InstanceCloneOptions, Token As CancellationToken) As InstanceCloneResult
         Return Clone(Instance.PathVersion, GameRootForInstance(Instance), NewName, Options, Token)
     End Function
+    Friend Shared Function CloneInstanceWithProgress(Instance As McInstance, NewName As String, Options As InstanceCloneOptions, Token As CancellationToken, Progress As Action(Of Double)) As InstanceCloneResult
+        Return CloneWithProgress(Instance.PathVersion, GameRootForInstance(Instance), NewName, Options, Token, Progress)
+    End Function
     Friend Shared Function Clone(VersionFolder As String, GameRoot As String, NewName As String, Options As InstanceCloneOptions, Token As CancellationToken,
+        Optional AfterFileCopied As Action(Of Integer) = Nothing) As InstanceCloneResult
+        Return CloneWithProgress(VersionFolder, GameRoot, NewName, Options, Token, Nothing, AfterFileCopied)
+    End Function
+    Friend Shared Function CloneWithProgress(VersionFolder As String, GameRoot As String, NewName As String, Options As InstanceCloneOptions, Token As CancellationToken, Progress As Action(Of Double),
         Optional AfterFileCopied As Action(Of Integer) = Nothing) As InstanceCloneResult
         SyncLock Gate
             AssertStopped(GameRoot)
@@ -303,13 +331,18 @@ Friend NotInheritable Class InstanceCloner
             EnsureNoLinks(Destination)
             If File.Exists(Destination) OrElse Directory.Exists(Destination) OrElse PathUtils.IsSame(VersionFolder, Destination) Then Throw New IOException("同名版本已存在，请使用新的测试版本名称。")
             If ModpackUpdate.Pending(VersionFolder).Any() Then Throw New IOException("原版本有未完成的环境修改，请先完成恢复后再克隆。")
-            Dim Entries = Inventory(VersionFolder, GameRoot, Options, Token), Before = Fingerprints(Entries, Token), Count As Integer, Bytes As Long
+            Dim Entries = Inventory(VersionFolder, GameRoot, Options, Token)
+            Progress?.Invoke(0.02)
+            Dim Before = Fingerprints(Entries, Token, FileTaskProgress.Slice(Progress, 0.02, 0.22)), Count As Integer, Bytes As Long, Completed As Long = 0
+            Dim Total = ProgressWeight(Entries, Token)
             Directory.CreateDirectory(Stage)
             Try
                 For Each Pair In Entries
                     Token.ThrowIfCancellationRequested()
                     Dim Relative = Pair.Key.Substring(2), TargetFile = Target(Stage, Relative)
-                    CopyFile(Pair.Value, TargetFile, Before(Pair.Key), Token)
+                    Dim Weight = Math.Max(1L, New FileInfo(Pair.Value).Length)
+                    CopyFile(Pair.Value, TargetFile, Before(Pair.Key), Token, FileTaskProgress.Slice(Progress, 0.22 + 0.6 * Completed / Total, 0.22 + 0.6 * (Completed + Weight) / Total))
+                    Completed += Weight
                     Count += 1 : Bytes += New FileInfo(TargetFile).Length
                     AfterFileCopied?.Invoke(Count)
                 Next
@@ -318,11 +351,12 @@ Friend NotInheritable Class InstanceCloner
                 Dim Origin As New JObject(New JProperty("schema", 1), New JProperty("sourceVersionFolder", VersionFolder), New JProperty("sourceGameRoot", GameRoot), New JProperty("sourceName", Path.GetFileName(VersionFolder)), New JProperty("cloneName", NewName), New JProperty("created", Date.UtcNow))
                 File.WriteAllText(Target(Stage, OriginName), Origin.ToString(), New UTF8Encoding(False))
                 AssertStopped(GameRoot)
-                Verify(Before, Fingerprints(Inventory(VersionFolder, GameRoot, Options, Token), Token))
+                Verify(Before, Fingerprints(Inventory(VersionFolder, GameRoot, Options, Token), Token, FileTaskProgress.Slice(Progress, 0.85, 0.99)))
                 Token.ThrowIfCancellationRequested()
                 EnsureNoLinks(Parent) : EnsureNoLinks(Stage) : EnsureNoLinks(Destination)
                 If File.Exists(Destination) OrElse Directory.Exists(Destination) Then Throw New IOException("目标名称已被其他操作占用。")
                 Directory.Move(Stage, Destination)
+                Progress?.Invoke(1)
                 Return New InstanceCloneResult With {.Name = NewName, .VersionFolder = PathUtils.AddSlashSuffix(Destination), .FileCount = Count, .Bytes = Bytes}
             Finally
                 DeleteStage(Parent, Stage)
@@ -515,7 +549,8 @@ Friend NotInheritable Class InstanceClonerUi
     Friend Shared Sub Start(Instance As McInstance, NewName As String, Options As InstanceCloneOptions)
         If Not CanStart(Instance) Then Return
         Dim StepLoader As New LoaderTask(Of String, String)("复制为独立测试版本", Sub(Task)
-                                                                                       Dim Result = InstanceCloner.CloneInstance(Instance, NewName, Options, Task.CreateCancellationToken())
+                                                                                       Dim Progress As Action(Of Double) = Sub(Value) Task.Progress = Math.Max(Task.Progress, Math.Min(0.99, Value))
+                                                                                       Dim Result = InstanceCloner.CloneInstanceWithProgress(Instance, NewName, Options, Task.CreateCancellationToken(), Progress)
                                                                                        Task.Output = Result.VersionFolder
                                                                                        RunInUi(Sub() Hint("已创建测试副本：" & Result.Name, HintType.Green))
                                                                                    End Sub)
@@ -547,7 +582,7 @@ Friend NotInheritable Class InstanceClonerUi
         Dim Worker As New RedoableWorker(Sub()
                                             If Not Abandoned Then Workload()
                                         End Sub)
-        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then
+        If Not If(LockSource, McInstanceLock.TryAcquire(Worker, Instance.PathVersion), McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion)) Then
             Interlocked.Exchange(Busy, 0)
             Return
         End If
