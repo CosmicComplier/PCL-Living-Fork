@@ -101,6 +101,8 @@ v4 保留原 150／56／12 ZIP 请求，追加 20 个 Int64 值×`en-US`／`fr-F
 
 primitive 使用 Invariant Int64 文本传输，只有当前 format-size case 在 try／finally 内临时改变 CurrentCulture；UICulture、DefaultThreadCulture 与其他路径／ZIP case 不改。简单 B／1 KB／1.5 单位有独立字面合同，其余边界／极端只要求旧进程成功，但 **之后仍逐字符串严格比较实际 Frame 与现代结果**，不使用现代结果生成旧 gold，未标为忽略差异。
 
-当前本地 345／345、三个工程零警告编译及 v4 旧驱动预编译通过；独立 Core／桥／PS 审查通过。190／56 与 Windows 377 单元／原消费者尚待执行，不以此前 150／56 证据替代。
+`745f0b845139bad953a03eed70288506c5bcc1c3` 的 [Migration validation 41747607034](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41747607034)：Ubuntu job `126304430224` 345／345、Windows job `126304430601` 377／377，均success；**190例／56比较／40大小探针在RequireEquivalent下全无差异**，四失败数组全空、equivalent=true。[完整artifact 13284023876](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41747607034/artifacts/13284023876) 已下载校验，ZIP SHA256 `dd36a4d1cbb431aa2be4c514cf8fb771438116d546ed60d3944dca880ef93798`。实际Frame输出1280＝1.3 KB／fr-FR＝1,3 KB、long.Max＝8589934592 GB，现代严格相同。
+
+同提交 [Windows Build 41747606964](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41747606964)：Release job `126304429811`、Debug job `126304430181` 各41步success，实际原size/current-culture／Long反射入口和完整原资源／事务／旧桥消费者通过。C007d1a 完成；JSON描述、全部文化／自定义格式与未来现代WPF未据此闭项。
 
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。
