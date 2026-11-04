@@ -201,6 +201,17 @@ End Module
  $watcherModule=$asm.GetType('PCL.ModWatcher',$true);$watcherType=$asm.GetType('PCL.ModWatcher+Watcher',$true)
  $watchers=$watcherModule.GetField('McWatcherList',$flags).GetValue($null)
  $watcher=[Runtime.Serialization.FormatterServices]::GetUninitializedObject($watcherType)
+ if(-not $EngineOnly){
+  # Do not run the game-monitoring constructor. Attach the actual C# engine using
+  # the actual production Host/Group, so original default Loading state is valid.
+  # FormatterServices bypasses the new readonly engine initialization as well.
+  $nativeField=$watcherType.GetField('Native',$flags)
+  if($null -eq $nativeField){throw 'Actual Watcher engine bridge was not found'}
+  $watcherHost=$watcherModule.GetField('Host',$flags).GetValue($null)
+  $watcherGroup=$watcherModule.GetField('Group',$flags).GetValue($null)
+  $nativeWatcher=$nativeField.FieldType.GetConstructors()[0].Invoke(@($watcher,$watcherHost,$watcherGroup))
+  $nativeField.SetValue($watcher,$nativeWatcher)
+ }
  $watcherType.GetField('GameProcess',$flags).SetValue($watcher,$self)
  $watcherType.GetField('Instance',$flags).SetValue($watcher,$instance)
  $watchers.Add($watcher)
