@@ -1,21 +1,22 @@
+Imports PCLCS
+Imports PCLLF.Presentation.Controls
+
+' Only LF original XAML/type/Handles/model identity adapters; all workflows are C#.
 Public Class PageOtherAbout
+    Private _controller As LegacyAuxiliaryBasicController
+    Friend ReadOnly Property Controller As LegacyAuxiliaryBasicController
+        Get
+            If _controller Is Nothing Then _controller=New LegacyAuxiliaryBasicController(AuxiliaryPageRuntime.Basic,New LegacyAuxiliaryBasicView With {.Page=Function() Me,.Scroll=Function() PanBack,.About=Function() ItemAboutPcl})
+            Return _controller
+        End Get
+    End Property
 
-    Private Shadows IsLoaded As Boolean = False
     Private Sub PageOtherAbout_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
-
-        '重复加载部分
-        PanBack.ScrollToHome()
-
-        '非重复加载部分
-        If IsLoaded Then Return
-        IsLoaded = True
-
-        ItemAboutPcl.Info = ItemAboutPcl.Info.Replace("%VERSION%", VersionBaseName)
-
+        Controller.AboutLoaded()
     End Sub
 
     Private Sub BtnAboutUpdate_Click(sender As Object, e As MouseButtonEventArgs) Handles BtnAboutUpdate.Click
-        UpdateCheckByButton()
+        Controller.CheckUpdate()
     End Sub
 
 End Class

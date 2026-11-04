@@ -448,6 +448,7 @@
     <Compile Include="Pages\PageDownload\PageDownloadLeft.xaml.vb">
       <DependentUpon>PageDownloadLeft.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Pages\PageOther\AuxiliaryPageRuntime.vb" />
     <Compile Include="Pages\PageOther\PageOtherLeft.xaml.vb">
       <DependentUpon>PageOtherLeft.xaml</DependentUpon>
     </Compile>

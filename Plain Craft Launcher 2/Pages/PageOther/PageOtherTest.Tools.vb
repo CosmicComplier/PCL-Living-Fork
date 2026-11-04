@@ -1,236 +1,111 @@
+Imports PCLCS
+Imports PCLLF.Presentation.Controls
+
+' Only LF original XAML/type/Handles/model identity adapters; all workflows are C#.
 Partial Public Class PageOtherTest
     Private PageLoaded As Boolean
     Private Shared MemoryRunning As Integer
     Private Shared CleanupRunning As Integer
-
-    Public Sub New()
-        InitializeComponent()
-        TextDownloadUrl.ValidateRules.Add(New ValidateFunc(
-            Function(Value)
-                Try
-                    ToolboxDownloadSession.ParseUrl(Value)
-                    Return ""
-                Catch ex As ArgumentException
-                    Return ex.Message
-                End Try
-            End Function))
-        TextDownloadFolder.ValidateRules.Add(New ValidateFolderPath(False))
-        TextDownloadName.ValidateRules.Add(New ValidateFunc(AddressOf ToolboxDownloadSession.ValidateName))
-    End Sub
-
-    Private Sub MeLoaded() Handles Me.Loaded
-        If PageLoaded Then Return
-        Dim Folder = Settings.Get(Of String)("CacheDownloadFolder")
-        If String.IsNullOrWhiteSpace(Folder) OrElse New ValidateFolderPath(False).Validate(Folder) <> "" Then Folder = Paths.Base & "PCL\MyDownload\"
-        TextDownloadFolder.Text = Folder
-        TextDownloadFolder.Validate()
-        TextDownloadUrl.Validate()
-        TextDownloadName.Validate()
-        PageLoaded = True
-        StartButtonRefresh()
-    End Sub
-
-    Private Sub StartButtonRefresh() Handles TextDownloadUrl.TextChanged, TextDownloadFolder.TextChanged, TextDownloadName.TextChanged
-        If BtnDownloadStart Is Nothing Then Return
-        BtnDownloadStart.IsEnabled = PageLoaded AndAlso TextDownloadUrl.IsValidated AndAlso TextDownloadFolder.IsValidated AndAlso TextDownloadName.IsValidated
-        BtnDownloadOpen.IsEnabled = PageLoaded AndAlso TextDownloadFolder.IsValidated
-    End Sub
-
-    Private Sub TextDownloadUrl_TextChanged() Handles TextDownloadUrl.TextChanged
-        If Not PageLoaded OrElse Not String.IsNullOrEmpty(TextDownloadName.Text) Then Return
-        TextDownloadName.Text = ToolboxDownloadSession.SuggestName(TextDownloadUrl.Text)
-    End Sub
-
-    Private Sub SaveCacheDownloadFolder() Handles TextDownloadFolder.ValidatedTextChanged
-        If PageLoaded AndAlso TextDownloadFolder.IsValidated Then Settings.Set("CacheDownloadFolder", TextDownloadFolder.Text)
-    End Sub
-
-    Private Sub TextDownloadUrl_KeyDown(sender As Object, e As KeyEventArgs) Handles TextDownloadUrl.KeyDown, TextDownloadName.KeyDown
-        If e.Key = Key.Return AndAlso BtnDownloadStart.IsEnabled Then BtnDownloadStart_Click()
-    End Sub
-
-    Private Sub BtnDownloadStart_Click() Handles BtnDownloadStart.Click
-        If Not TryStartCustomDownload(TextDownloadUrl.Text, TextDownloadName.Text, TextDownloadFolder.Text) Then Return
-        TextDownloadUrl.Text = ""
-        TextDownloadName.Text = ""
-        TextDownloadUrl.Validate()
-        TextDownloadName.Validate()
-        TextDownloadUrl.ForceShowAsSuccess()
-        TextDownloadName.ForceShowAsSuccess()
-        StartButtonRefresh()
-    End Sub
-
-    Public Shared Sub StartCustomDownload(Url As String, FileName As String, Optional Folder As String = Nothing)
-        TryStartCustomDownload(Url, FileName, Folder)
-    End Sub
-
-    Private Shared Function TryStartCustomDownload(Url As String, FileName As String, Folder As String) As Boolean
-        Dim Session As ToolboxDownloadSession = Nothing
-        Try
-            If IsCleaningGameFiles Then Throw New InvalidOperationException("正在清理游戏文件，请稍后再下载。")
-            Dim Address = ToolboxDownloadSession.ParseUrl(Url)
-            If String.IsNullOrWhiteSpace(Folder) Then
-                Dim Chosen = RunInUiWait(Function() Dialogs.SaveFile("选择文件保存位置", FileName))
-                If Chosen Is Nothing Then Return False
-                FileName = IO.Path.GetFileName(Chosen)
-                Folder = IO.Path.GetDirectoryName(Chosen)
-            End If
-            Session = ToolboxDownloadSession.Create(Folder, FileName)
-            Dim AllowOverwrite = IO.File.Exists(Session.TargetPath)
-            If AllowOverwrite AndAlso MyMsgBox("目标文件已存在，下载成功后是否替换？" & vbCrLf & vbCrLf & Session.TargetPath, "覆盖确认", "替换", "取消", IsWarn:=True) <> 1 Then
-                Session.Complete(False)
-                Return False
-            End If
-            Dim ActiveSession = Session
-            Dim File = New NetFile({Address.AbsoluteUri}, Session.StagePath, New FileChecker With {.MinSize = 0}, SimulateBrowserHeaders:=True)
-            File.AllowCredentialHeaders = False
-            File.CanceledMergeFinished = AddressOf ActiveSession.OnCanceledMergeFinished
-            Dim Download As New LoaderDownload("下载文件：" & FileName, New List(Of NetFile) From {File})
-            Dim Combo As LoaderCombo(Of Integer) = Nothing
-            Dim Save As New LoaderTask(Of Integer, Integer)("保存下载文件",
-                Sub(Task)
-                    ActiveSession.Commit(AllowOverwrite, Function() Task.IsCanceled OrElse Combo.State = LoadState.Canceled)
-                End Sub) With {.ProgressWeight = 0.1}
-            Combo = New LoaderCombo(Of Integer)("自定义下载：" & FileName & " (" & GetUuid() & ")", New LoaderBase() {Download, Save})
-            Combo.OnStateChanged = Sub(Loader) DownloadState(CType(Loader, LoaderCombo(Of Integer)), ActiveSession)
-            Combo.Start()
-            LoaderTaskbarAdd(Combo)
-            RunInUi(Sub()
-                        FrmMain?.BtnExtraDownload.ShowRefresh()
-                        FrmMain?.BtnExtraDownload.Ribble()
-                    End Sub)
-            Return True
-        Catch ex As Exception
-            Session?.Complete(False)
-            Logger.Error(ex, "开始自定义下载失败", LogBehavior.Toast)
-            Return False
-        End Try
+    Private _controller As LegacyToolboxPageController(Of NetFile,LoaderDownload,LoaderTask(Of Integer,Integer),LoaderCombo(Of Integer))
+    Friend ReadOnly Property Controller As LegacyToolboxPageController(Of NetFile,LoaderDownload,LoaderTask(Of Integer,Integer),LoaderCombo(Of Integer))
+        Get
+            If _controller Is Nothing Then _controller=New LegacyToolboxPageController(Of NetFile,LoaderDownload,LoaderTask(Of Integer,Integer),LoaderCombo(Of Integer))(AuxiliaryPageRuntime.Tools,New LegacyToolboxPageView With {
+.Url=Function() TextDownloadUrl,.Folder=Function() TextDownloadFolder,.Name=Function() TextDownloadName,.Start=Function() BtnDownloadStart,.Open=Function() BtnDownloadOpen,.Clear=Function() BtnClear,.Loaded=Function() PageLoaded,.SetLoaded=Sub(Value) PageLoaded=Value})
+            Return _controller
+        End Get
+    End Property
+    Friend Shared Function AcquireCleanup() As Integer
+        Return Threading.Interlocked.CompareExchange(CleanupRunning,1,0)
     End Function
-
-    Private Shared Sub DownloadState(Loader As LoaderCombo(Of Integer), Session As ToolboxDownloadSession)
-        Select Case Loader.State
-            Case LoadState.Finished
-                Session.Complete(True)
-                Hint(Loader.Name & "完成！", HintType.Green)
-            Case LoadState.Canceled
-                Session.Complete(False)
-                If Session.RecoveryPath IsNot Nothing Then
-                    Hint("下载已取消，原文件备份保留在：" & Session.RecoveryPath, HintType.Red)
-                ElseIf Session.UnrevertedPath IsNot Nothing Then
-                    Hint("下载已取消，但保存的文件因占用或权限问题未能撤回：" & Session.UnrevertedPath, HintType.Red)
-                Else
-                    Hint("自定义下载已取消。")
-                End If
-            Case LoadState.Failed
-                Session.Complete(False)
-                Logger.Error(Loader.Error, If(Session.RecoveryPath IsNot Nothing,
-                    "自定义下载失败，原文件备份保留在：" & Session.RecoveryPath,
-                    If(Session.UnrevertedPath IsNot Nothing,
-                        "自定义下载失败，保存的文件未能撤回：" & Session.UnrevertedPath,
-                        "自定义下载失败，原文件已保留。")), LogBehavior.Toast)
-        End Select
+    Friend Shared Function AcquireMemory() As Integer
+        Return Threading.Interlocked.CompareExchange(MemoryRunning,1,0)
+    End Function
+    Friend Shared Sub ReleaseCleanup()
+        Threading.Interlocked.Exchange(CleanupRunning,0)
     End Sub
-
-    Private Sub BtnDownloadSelect_Click() Handles BtnDownloadSelect.Click
-        Dim Folder = Dialogs.SelectFolder("选择目标文件夹", False).FirstOrDefault()
-        If Folder IsNot Nothing Then TextDownloadFolder.Text = Folder
+    Friend Shared Sub ReleaseMemory()
+        Threading.Interlocked.Exchange(MemoryRunning,0)
     End Sub
-
-    Private Sub BtnDownloadOpen_Click() Handles BtnDownloadOpen.Click
-        Try
-            Dim Folder = TextDownloadFolder.Text
-            If New ValidateFolderPath(False).Validate(Folder) <> "" Then Return
-            IO.Directory.CreateDirectory(Folder)
-            StartProcess(Folder)
-        Catch ex As Exception
-            Logger.Error(ex, "打开下载文件夹失败", LogBehavior.Toast)
-        End Try
-    End Sub
-
+    Friend Shared Function ReadCleanup() As Integer
+        Return Threading.Volatile.Read(CleanupRunning)
+    End Function
     Friend Shared ReadOnly Property IsCleaningGameFiles As Boolean
         Get
-            Return Threading.Volatile.Read(CleanupRunning) <> 0
+            Return AuxiliaryPageRuntime.Tools.IsCleaningGameFiles
         End Get
     End Property
 
+    Public Sub New()
+        InitializeComponent()
+        Controller.InitializeValidation()
+    End Sub
+
+    Private Sub MeLoaded() Handles Me.Loaded
+        Controller.Loaded()
+    End Sub
+
+    Private Sub StartButtonRefresh() Handles TextDownloadUrl.TextChanged, TextDownloadFolder.TextChanged, TextDownloadName.TextChanged
+        Controller.StartButtonRefresh()
+    End Sub
+
+    Private Sub TextDownloadUrl_TextChanged() Handles TextDownloadUrl.TextChanged
+        Controller.UrlChanged()
+    End Sub
+
+    Private Sub SaveCacheDownloadFolder() Handles TextDownloadFolder.ValidatedTextChanged
+        Controller.SaveFolder()
+    End Sub
+
+    Private Sub TextDownloadUrl_KeyDown(sender As Object, e As KeyEventArgs) Handles TextDownloadUrl.KeyDown, TextDownloadName.KeyDown
+        Controller.UrlKeyDown(e)
+    End Sub
+
+    Private Sub BtnDownloadStart_Click() Handles BtnDownloadStart.Click
+        Controller.StartDownload()
+    End Sub
+
+    Public Shared Sub StartCustomDownload(Url As String, FileName As String, Optional Folder As String = Nothing)
+        AuxiliaryPageRuntime.Tools.StartCustomDownload(Url, FileName, Folder)
+    End Sub
+
+    Private Shared Function TryStartCustomDownload(Url As String, FileName As String, Folder As String) As Boolean
+        Return AuxiliaryPageRuntime.Tools.TryStartCustomDownload(Url, FileName, Folder)
+    End Function
+
+    Private Shared Sub DownloadState(Loader As LoaderCombo(Of Integer), Session As ToolboxDownloadSession)
+        AuxiliaryPageRuntime.Tools.DownloadState(Loader, Session)
+    End Sub
+
+    Private Sub BtnDownloadSelect_Click() Handles BtnDownloadSelect.Click
+        Controller.SelectFolder()
+    End Sub
+
+    Private Sub BtnDownloadOpen_Click() Handles BtnDownloadOpen.Click
+        Controller.OpenFolder()
+    End Sub
+
     Private Sub BtnClear_Click() Handles BtnClear.Click
-        RubbishClear()
+        Controller.Clear()
     End Sub
 
     Public Shared Sub RubbishClear()
-        If Threading.Interlocked.CompareExchange(CleanupRunning, 1, 0) <> 0 Then Return
-        RunInNewThread(
-            Sub()
-                RunInUi(Sub()
-                            If FrmOtherTest IsNot Nothing Then FrmOtherTest.BtnClear.IsEnabled = False
-                        End Sub)
-                Try
-                    If GameFilesBusy() Then
-                        Hint("请先关闭游戏，并等待启动和下载任务结束。")
-                        Return
-                    End If
-                    If Not McFolderList.Any() Then McFolderListLoader.Start()
-                    McFolderListLoader.WaitForExit()
-                    Dim Folders = McFolderList.Select(Function(Item) Item.Location).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
-                    If MyMsgBox("清理已添加游戏目录中的日志、崩溃报告和可重建临时文件。" & vbCrLf & "存档、模组、配置、截图及自定义缓存目录将保留。", "清理游戏垃圾", "清理", "取消", IsWarn:=True) <> 1 Then Return
-                    If GameFilesBusy() Then
-                        Hint("游戏或下载状态已改变，本次清理已停止。")
-                        Return
-                    End If
-                    Dim Result = GameGarbageCleaner.Clean(Folders, AddressOf GameFilesBusy)
-                    Dim Message = $"已清理 {Result.DeletedFiles} 个文件，释放 {StringUtils.FormatByteSize(Result.DeletedBytes)}。"
-                    If Result.SkippedItems > 0 Then
-                        Hint(Message & $"{Result.SkippedItems} 项因链接、占用或权限问题未清理。")
-                    Else
-                        Hint(Message, HintType.Green)
-                    End If
-                Catch ex As OperationCanceledException
-                    Hint("检测到游戏或下载任务，已停止继续清理。")
-                Catch ex As Exception
-                    Logger.Error(ex, "清理游戏垃圾失败", LogBehavior.Toast)
-                Finally
-                    Threading.Interlocked.Exchange(CleanupRunning, 0)
-                    RunInUi(Sub()
-                                If FrmOtherTest IsNot Nothing Then FrmOtherTest.BtnClear.IsEnabled = True
-                            End Sub)
-                End Try
-            End Sub, "Game Rubbish Clear")
+        AuxiliaryPageRuntime.Tools.RubbishClear()
     End Sub
 
     Private Shared Function GameFilesBusy() As Boolean
-        Return HasRunningMinecraft OrElse McLaunchLoader.State = LoadState.Loading OrElse HasDownloadingTask()
+        Return AuxiliaryPageRuntime.Tools.GameFilesBusy()
     End Function
 
     Private Sub BtnMemory_Click() Handles BtnMemory.Click
-        RunInThread(Sub() MemoryOptimize(True))
+        Controller.Memory()
     End Sub
 
     Public Shared Sub MemoryOptimize(ShowHint As Boolean)
-        If Threading.Interlocked.CompareExchange(MemoryRunning, 1, 0) <> 0 Then
-            If ShowHint Then Hint("内存优化尚未结束，请稍等！")
-            Return
-        End If
-        Try
-            If ShowHint Then Hint("正在进行内存优化……")
-            Dim Released As Long = MemoryOptimizationOperation.Execute(WindowsUtils.HasAdminRole(),
-                Function() CLng(My.Computer.Info.AvailablePhysicalMemory),
-                Sub() MemoryOptimizeInternal(ShowHint), Function() RunAsAdmin("--memory"))
-            If ShowHint Then Hint($"内存优化完成，目前可用 {StringUtils.FormatByteSize(CLng(My.Computer.Info.AvailablePhysicalMemory))}，增加约 {StringUtils.FormatByteSize(Released)}。", HintType.Green)
-        Catch ex As OperationCanceledException
-            If ShowHint Then Hint("已取消内存优化。")
-            Logger.Info("用户取消了内存优化的管理员授权。")
-        Catch ex As Exception
-            If ShowHint Then
-                Logger.Warn(ex, "内存优化未完成", LogBehavior.Toast)
-            Else
-                Logger.Warn(ex, "内存优化未完成")
-            End If
-        Finally
-            Threading.Interlocked.Exchange(MemoryRunning, 0)
-        End Try
+        AuxiliaryPageRuntime.Tools.MemoryOptimize(ShowHint)
     End Sub
 
     Public Shared Sub MemoryOptimizeInternal(ShowHint As Boolean)
-        NativeMemoryOptimizer.Run()
+        AuxiliaryPageRuntime.Tools.MemoryOptimizeInternal(ShowHint)
     End Sub
+
 End Class

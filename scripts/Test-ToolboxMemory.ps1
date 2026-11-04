@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Run with powershell -NoProfile (.NET Framework), not pwsh.' }
 $fixture = $null
+$backendResolver = $null
 try {
     if ($ExecutablePath) {
         $assembly = [Reflection.Assembly]::LoadFrom([IO.Path]::GetFullPath($ExecutablePath))
@@ -21,8 +22,27 @@ try {
             $CompilerPath = Join-Path (Join-Path $Matches[2] $Matches[1]) 'Roslyn/bincore/vbc.dll'
         }
         $framework = [Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
-        & dotnet $CompilerPath /nologo /target:library /rootnamespace:PCL /optioninfer+ /optionstrict+ /optionexplicit+ "/sdkpath:$framework" "/out:$output" $source
+        # Compile the real C# memory backend as an isolated library before the
+        # old-name ABI adapter; no launcher build, settings or privileged action.
+        $repoRoot = Split-Path $PSScriptRoot -Parent
+        $backend = Join-Path $fixture 'MemoryBackend.dll'
+        $csharpCompiler = Join-Path (Split-Path $CompilerPath -Parent) 'csc.dll'
+        $csharpSources = @(
+            (Join-Path $repoRoot 'PCLCS/Toolbox/LegacyMemoryOptimizationOperation.cs'),
+            (Join-Path $repoRoot 'PCLCS/Platform/Windows/LegacyNativeMemoryOptimizer.cs')
+        )
+        $references = @('mscorlib.dll','System.dll','System.Core.dll') | ForEach-Object { '/reference:' + (Join-Path $framework $_) }
+        & dotnet $csharpCompiler /nologo /target:library /langversion:13.0 /nullable:enable "/out:$backend" @references @csharpSources
+        if ($LASTEXITCODE -ne 0) { throw "Standalone C# memory backend compile failed: $LASTEXITCODE" }
+        & dotnet $CompilerPath /nologo /target:library /rootnamespace:PCL /optioninfer+ /optionstrict+ /optionexplicit+ "/sdkpath:$framework" "/reference:$backend" "/out:$output" $source
         if ($LASTEXITCODE -ne 0) { throw "Standalone memory helper compile failed: $LASTEXITCODE" }
+        $backendAssembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($backend))
+        $backendResolver = [ResolveEventHandler]({
+            param($sender, $request)
+            if (($request.Name -split ',')[0] -eq 'MemoryBackend') { return $backendAssembly }
+            return $null
+        }.GetNewClosure())
+        [AppDomain]::CurrentDomain.add_AssemblyResolve($backendResolver)
         $assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($output))
     }
     Add-Type -ReferencedAssemblies System.Core -TypeDefinition @'
@@ -129,6 +149,7 @@ public static class LivingPclMemoryChecks {
     Write-Error $_ -ErrorAction Continue
     exit 1
 } finally {
+    if ($backendResolver) { [AppDomain]::CurrentDomain.remove_AssemblyResolve($backendResolver) }
     if ($fixture -and [IO.Directory]::Exists($fixture)) {
         $resolved = [IO.Path]::GetFullPath($fixture)
         $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')

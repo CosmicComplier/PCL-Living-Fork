@@ -1,34 +1,26 @@
+Imports PCLCS
+Imports PCLLF.Presentation.Controls
+
+' Only LF original XAML/type/Handles/model identity adapters; all workflows are C#.
 Public Class PageSetupLink
+    Private _controller As LegacyAuxiliaryBasicController
+    Friend ReadOnly Property Controller As LegacyAuxiliaryBasicController
+        Get
+            If _controller Is Nothing Then _controller=New LegacyAuxiliaryBasicController(AuxiliaryPageRuntime.Basic,New LegacyAuxiliaryBasicView With {.Page=Function() Me,.Scroll=Function() PanBack})
+            Return _controller
+        End Get
+    End Property
 
     Private Sub PageSetupLink_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
-
-        '重复加载部分
-        PanBack.ScrollToHome()
-
-        '非重复加载部分
-        Static IsLoaded As Boolean = False
-        If IsLoaded Then Return
-        IsLoaded = True
-
-        AniControlEnabled += 1
-        Reload()
-        AniControlEnabled -= 1
-
+        Controller.LinkLoaded()
     End Sub
+
     Public Sub Reload()
-        SettingService.RefreshSettings(Me)
+        Controller.LinkReload()
     End Sub
 
-    '初始化
     Public Sub Reset()
-        Try
-            SettingService.ResetSettings(Me)
-            Logger.Info("已初始化联机页设置")
-            Hint("已初始化联机页设置！", HintType.Green, False)
-        Catch ex As Exception
-            Logger.Error(ex, "初始化联机页设置失败", LogBehavior.Alert)
-        End Try
-        Reload()
+        Controller.LinkReset()
     End Sub
 
 End Class
