@@ -189,7 +189,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C026八C#动画源／原VB API壳／两视图项目 | 作者冻结、独立终审无回归；legacy和modern呈现库及modern test完整图Release -warnaserror 0警告错误，原字典／字段／帧／clock真实单份，无noop |
 | C026测试 | 两旧脚本仅私有状态hook改原公开property；现代五组真实NativeHost／Runtime／WPF控件中帧终态／取消／故障／颜色／资源／After冻结，Windows待验 |
 | C012a六C#＋三VB／测试与路由 | 4f12693本地提交；net48与纯测试编译通过，克隆6＋历史5定向11／11、JSON真实LF字节核对通过；Windows原事务／锁／回滚待验 |
-| C012b页面与来源分组 | 页面代理整稿集成；原XAML与选择器非来源分组区段保留，最终编译／Windows在本批集成后记录 |
+| C012b页面与来源分组 | 四源冻结，原XAML与选择器非来源分组区段逐字保留；net48 Core／现代test完整图Release 0警告错误、独立终审通过；真实页面与列表Windows样本待CI |
 | docs／集成／实际Windows结果 | 主执行者统一提交推送；C026／C027／C012母项未关闭，主C#工程／账号／游戏／发布最终验收未完成 |
 
 ## 任务依赖与验收
@@ -219,7 +219,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C011b | done | C011a、C029a | 完整RestorePoints页面与共享row仅RestorePoint显示业务已迁typed C# controller／presenter，原XAML与非还原点row区段不变；net48／现代Core编译、独立源审通过，原BackupRetention仅三state写入支持同名property，Windows原页面／恢复链与保留检查已在98f81fe两配置通过 |
 | C012 | in_progress | C003、C007 | a完整克隆／迁回／分组／导出隔离引擎及真实事务typed适配已迁，b两页面及选择器来源分组呈现正在迁；Windows原链未通过前不关闭母项 |
 | C012a | in_progress | C003、C007、C011a | 六C#生产源＋三VB typed壳，保原Gate／128KiB复制／Flush(true)／stale双快照／MC变化备份／Capture／原ApplyTransaction及双版本锁；独立源码审无回归。Release纯测试0警告错误，克隆6＋历史5定向11／11；真实McVersion／McComponents／ModLoaders与固定Shared接线，JSON引用／CopyLocal／字节保持LF DLL（SHA E1E27AF7…44FA9D），未以替身模型过关。第12组instance-clone与9精确生产路径／7原Windows消费者路由，resources仍固定4组。Windows事务／回滚／UI仍待验 |
-| C012b | in_progress | C012a、C029a | 完整克隆页面与版本选择来源分组呈现成组迁移，保原XAML／MyCard懒构建／事件／展开折叠与其它选择器区段；当前作者scratch整稿，尚未进入产品树，不记实现或验收完成 |
+| C012b | in_progress | C012a、C029a | 完整克隆页面与版本选择来源分组呈现成组迁移，保原XAML／MyCard懒构建／事件／展开折叠与其它选择器区段；两C# controller／presenter与两typed VB页面已接通，原分类／空页／行点击及删除区段逐字保留，独立终审无行为差异；net48 Core与完整现代test图Release -warnaserror均0警告／0错误。原Groups脚本保全部断言并新增真实PageInstanceClone构造／validator／原生选项／来源卡片／同owner和换owner命名／invalid与stale guard／Changed attach-detach样本，StartupUri清除且owner finally恢复，无成功克隆／迁回命令或游戏启动。原真实MyCard／lazy行／选择器及新页Windows样本待同批CI |
 | C013 | todo | B001 | 迁移本地模组声明解析与 `ModDependencyInspector`；可靠声明、内嵌 JAR、依赖和冲突样本回归 |
 | C014 | todo | C013 | 迁移在线依赖匹配与 `ModDependencyOnline`；精确平台匹配、超时、本地降级与缓存语义回归 |
 | C015 | todo | C013、C014 | 迁移 `LaunchDependencyCheck`／`ModDependencyAutoFill` 与开关入口；启用禁用文件、确认、补全、复查和本次会话去重回归 |

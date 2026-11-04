@@ -105,9 +105,12 @@ INSTANCE_CLONE_PATHS = {
     "PCLCS/Minecraft/InstanceCloneGroupsEngine.cs",
     "PCLCS/Minecraft/InstanceCloneExportIsolation.cs",
     "PCLCS/Minecraft/InstanceCloneWorkflow.cs",
+    "PCLCS/Platform/Windows/InstanceClonePageController.cs",
+    "PCLCS/Platform/Windows/InstanceCloneSelectionPresenter.cs",
     "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloner.vb",
     "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloneGroups.vb",
     "Plain Craft Launcher 2/Modules/Minecraft/ExportedVersionIsolation.vb",
+    "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceClone.xaml.vb",
 }
 INSTANCE_CLONE_CHECKS = {
     "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-ExportVersionIsolation",

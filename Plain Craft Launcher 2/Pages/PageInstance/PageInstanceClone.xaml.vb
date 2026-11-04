@@ -1,75 +1,68 @@
+Imports ClonePageController = PCLCS.InstanceClonePageController(Of PCL.ModMinecraft.McInstance, PCL.InstanceCloneOptions)
+Imports ClonePageHost = PCLCS.InstanceClonePageHost(Of PCL.ModMinecraft.McInstance, PCL.InstanceCloneOptions)
+
 Public Class PageInstanceClone
     Implements IRefreshable
-    Private Owner As McInstance
+    Private ReadOnly Controller As ClonePageController
+    Private ReadOnly ChangedHandler As InstanceClonerUi.ChangedEventHandler = AddressOf Refresh
 
+    Public Sub New()
+        InitializeComponent()
+        Dim View As New PCLCS.InstanceClonePageView With {
+            .NameControl = TextName, .CloneButton = BtnClone, .MigrateButton = BtnMigrate, .OriginCard = CardOrigin,
+            .Source = LabSource, .Origin = LabOrigin, .Validation = LabValidation,
+            .NameText = Function() TextName.Text, .SetNameText = Sub(Value) TextName.Text = Value,
+            .ClearValidationRules = Sub() TextName.ValidateRules.Clear(),
+            .AddFolderRule = Sub(Folder) TextName.ValidateRules.Add(New ValidateFolderName(Folder)),
+            .ValidateNativeName = Function(Value) ModValidate.Validate(Value, TextName.ValidateRules),
+            .CopySaves = Function() CheckSaves.Checked, .CopyScreenshots = Function() CheckScreenshots.Checked,
+            .CopyServers = Function() CheckServers.Checked, .ScrollHome = Sub() PanBack.ScrollToHome()}
+        Dim Host As New ClonePageHost With {
+            .CurrentInstance = Function() PageInstanceLeft.Instance,
+            .Name = Function(Instance) Instance.Name, .VersionPath = Function(Instance) Instance.PathVersion,
+            .SourceVersionFolder = AddressOf InstanceCloner.SourceVersionFolder, .SafeName = AddressOf InstanceResourceStore.SafeName,
+            .IsBusy = Function() InstanceClonerUi.IsBusy, .BindChanged = AddressOf BindChanged,
+            .CreateOptions = Function() New InstanceCloneOptions,
+            .Start = AddressOf InstanceClonerUi.Start, .Migrate = AddressOf InstanceClonerUi.Migrate}
+        Controller = New ClonePageController(View, Host)
+    End Sub
+    Private Sub BindChanged(Attach As Boolean)
+        If Attach Then
+            AddHandler InstanceClonerUi.Changed, ChangedHandler
+        Else
+            RemoveHandler InstanceClonerUi.Changed, ChangedHandler
+        End If
+    End Sub
+    Private Property Owner As McInstance
+        Get
+            Return Controller.Owner
+        End Get
+        Set(Value As McInstance)
+            Controller.Owner = Value
+        End Set
+    End Property
     Private Sub PageLoaded() Handles Me.Loaded
-        PanBack.ScrollToHome()
-        AddHandler InstanceClonerUi.Changed, AddressOf Refresh
-        Refresh()
+        Controller.PageLoaded()
     End Sub
     Private Sub PageUnloaded() Handles Me.Unloaded
-        RemoveHandler InstanceClonerUi.Changed, AddressOf Refresh
+        Controller.PageUnloaded()
     End Sub
     Public Sub Refresh() Implements IRefreshable.Refresh
-        Dim Previous = Owner
-        Owner = PageInstanceLeft.Instance
-        If Owner Is Nothing Then Return
-        LabSource.Text = "当前版本：" & Owner.Name
-        TextName.ValidateRules.Clear()
-        TextName.ValidateRules.Add(New ValidateFolderName(Path.GetDirectoryName(Owner.PathVersion.TrimEnd("\"c))))
-        If Previous IsNot Owner OrElse String.IsNullOrWhiteSpace(TextName.Text) Then
-            TextName.Text = Owner.Name.Substring(0, Math.Min(Owner.Name.Length, 85)) & " - 测试"
-        End If
-        CardOrigin.Visibility = Visibility.Collapsed
-        Try
-            Dim Source = InstanceCloner.SourceVersionFolder(Owner.PathVersion)
-            LabOrigin.Text = "来源版本：" & Path.GetFileName(Source) & vbCrLf & "迁移会先展示模组、配置和游戏组件的变化，并保存原环境还原点。原存档、截图和服务器列表保持当前内容。"
-            CardOrigin.Visibility = Visibility.Visible
-        Catch ex As IO.FileNotFoundException
-        Catch ex As IO.DirectoryNotFoundException
-        Catch ex As Exception
-            LabOrigin.Text = "副本来源记录不可用，无法自动迁移。请在资源管理器中检查版本目录。"
-            CardOrigin.Visibility = Visibility.Visible
-        End Try
-        BtnMigrate.IsEnabled = Not InstanceClonerUi.IsBusy AndAlso LabOrigin.Text.StartsWith("来源版本：", StringComparison.Ordinal)
-        ValidateName()
+        Controller.Refresh()
     End Sub
     Private Sub NameChanged() Handles TextName.TextChanged
-        ValidateName()
+        Controller?.ValidateName()
     End Sub
     Private Sub ValidateName()
-        If TextName Is Nothing OrElse BtnClone Is Nothing OrElse Owner Is Nothing Then Return
-        Dim ErrorText As String = Nothing
-        Try
-            InstanceResourceStore.SafeName(TextName.Text)
-            Dim NativeError = ModValidate.Validate(TextName.Text, TextName.ValidateRules)
-            If NativeError <> "" Then ErrorText = NativeError
-            Dim Address = Path.Combine(Path.GetDirectoryName(Owner.PathVersion.TrimEnd("\"c)), TextName.Text)
-            If IO.Directory.Exists(Address) OrElse IO.File.Exists(Address) Then ErrorText = "同名版本已存在，请使用新的测试版本名称。"
-        Catch ex As IO.IOException
-            ErrorText = ex.Message
-        End Try
-        LabValidation.Text = If(ErrorText, "")
-        LabValidation.Visibility = If(ErrorText Is Nothing, Visibility.Collapsed, Visibility.Visible)
-        BtnClone.IsEnabled = ErrorText Is Nothing AndAlso Not InstanceClonerUi.IsBusy
+        Controller.ValidateName()
     End Sub
     Private Sub CloneVersion() Handles BtnClone.Click
-        ValidateName()
-        If Not BtnClone.IsEnabled OrElse Owner IsNot PageInstanceLeft.Instance Then Return
-        InstanceClonerUi.Start(Owner, TextName.Text, New InstanceCloneOptions With {.CopySaves = CheckSaves.Checked, .CopyScreenshots = CheckScreenshots.Checked, .CopyServers = CheckServers.Checked})
-        UpdateTaskState()
+        Controller.CloneVersion()
     End Sub
     Private Sub MigrateVersion() Handles BtnMigrate.Click
-        If Owner Is Nothing OrElse Owner IsNot PageInstanceLeft.Instance Then Return
-        InstanceClonerUi.Migrate(Owner)
-        UpdateTaskState()
+        Controller.MigrateVersion()
     End Sub
     Private Sub UpdateTaskState()
-        If InstanceClonerUi.IsBusy Then
-            BtnClone.IsEnabled = False
-            BtnMigrate.IsEnabled = False
-        Else
-            Refresh()
-        End If
+        Controller.UpdateTaskState()
     End Sub
 End Class

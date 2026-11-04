@@ -1,4 +1,8 @@
+Imports CloneSelection = PCLCS.InstanceCloneSelectionPresenter(Of PCL.ModMinecraft.McInstance, PCL.ModMinecraft.McInstanceCardType, PCL.InstanceCloneGroupNode, PCL.InstanceCloneGroupSet)
+Imports CloneSelectionHost = PCLCS.InstanceCloneSelectionHost(Of PCL.ModMinecraft.McInstance, PCL.ModMinecraft.McInstanceCardType, PCL.InstanceCloneGroupNode)
+
 Public Class PageSelectRight
+    Private Shared ReadOnly ClonePresenter As New CloneSelection(InstanceCloneGroups.Service, CreateCloneHost())
 
     '窗口基础
     Private Sub PageSelectRight_Loaded(sender As Object, e As RoutedEventArgs) Handles Me.Loaded
@@ -22,28 +26,60 @@ Public Class PageSelectRight
 
 #Region "结果 UI 化"
 
+    Private Shared Function CreateCloneHost() As CloneSelectionHost
+        Return New CloneSelectionHost With {
+            .HiddenCategory = McInstanceCardType.Hidden, .StarCategory = McInstanceCardType.Star,
+            .IsCollapsedCategory = Function(Kind) Kind = McInstanceCardType.Rubbish OrElse Kind = McInstanceCardType.Error OrElse Kind = McInstanceCardType.Fool,
+            .IsLocked = Function(Instance) McInstanceLock.IsLocked(Instance),
+            .AllowsInstance = Function(Instance) ModModpackMode.AllowsInstance(Instance.PathVersion),
+            .VersionPath = Function(Instance) Instance.PathVersion, .Name = Function(Instance) Instance.Name,
+            .Info = Function(Instance) Instance.Info, .SelectedPath = Function() McInstanceSelected?.PathVersion,
+            .CreateRow = Function(Instance, Initialized) Instance.ToListItem(Sub(Item, Args) Initialized(Item, Args)),
+            .InitializeRow = Sub(Item, Args) McInstanceListContent(DirectCast(Item, MyListItem), Args),
+            .SetRowInfo = Sub(Item, Info) DirectCast(Item, MyListItem).Info = Info,
+            .CreateCard = Function(Title, Margin) New CloneCard(New MyCard With {.Title = Title, .Margin = Margin}),
+            .AdaptCard = Function(Element) New CloneCard(DirectCast(Element, MyCard)), .SwappedHeight = MyCard.SwapedHeight}
+    End Function
+    Private NotInheritable Class CloneCard
+        Implements PCLCS.IInstanceCloneSelectionCard(Of InstanceCloneGroupNode)
+        Private ReadOnly Card As MyCard
+        Public Sub New(Card As MyCard)
+            Me.Card = Card
+        End Sub
+        Public ReadOnly Property Element As FrameworkElement Implements PCLCS.IInstanceCloneSelectionCard(Of InstanceCloneGroupNode).Element
+            Get
+                Return Card
+            End Get
+        End Property
+        Public Property IsSwapped As Boolean Implements PCLCS.IInstanceCloneSelectionCard(Of InstanceCloneGroupNode).IsSwapped
+            Get
+                Return Card.IsSwapped
+            End Get
+            Set(Value As Boolean)
+                Card.IsSwapped = Value
+            End Set
+        End Property
+        Public Sub SetContent(Content As Panel) Implements PCLCS.IInstanceCloneSelectionCard(Of InstanceCloneGroupNode).SetContent
+            Card.Children.Add(Content)
+            Card.SwapControl = Content
+        End Sub
+        Public Sub SetContentBuilder(Items As IEnumerable(Of InstanceCloneGroupNode), Builder As Func(Of InstanceCloneGroupNode, FrameworkElement)) Implements PCLCS.IInstanceCloneSelectionCard(Of InstanceCloneGroupNode).SetContentBuilder
+            Card.SetContentBuilder(Items, Function(Node) DirectCast(Builder(Node), UIElement))
+        End Sub
+        Public Sub BuildContent() Implements PCLCS.IInstanceCloneSelectionCard(Of InstanceCloneGroupNode).BuildContent
+            Card.BuildContent()
+        End Sub
+    End Class
+
     Private Sub McInstanceListUI(Loader As LoaderTask(Of String, Integer))
         Try
             '加载 UI
             PanMain.Children.Clear()
-            Dim VisibleCards As New Dictionary(Of McInstanceCardType, List(Of McInstance))
-            For Each Card In McInstanceList.ToArray()
-                If Card.Key = McInstanceCardType.Hidden Xor ShowHidden Then Continue For
-                VisibleCards.Add(Card.Key, Card.Value.Where(Function(Instance) Not McInstanceLock.IsLocked(Instance) AndAlso ModModpackMode.AllowsInstance(Instance.PathVersion)).ToList())
-            Next
-            Dim InstancesByPath As New Dictionary(Of String, McInstance)(StringComparer.OrdinalIgnoreCase)
-            For Each Instance In VisibleCards.Values.SelectMany(Function(Items) Items)
-                InstancesByPath(InstanceCloneGroups.Key(Instance.PathVersion)) = Instance
-            Next
-            '先跨普通分类解析关系；收藏夹按自己的可见集合分组，保留收藏入口。
-            Dim MainGroups = InstanceCloneGroups.Build(VisibleCards.Where(Function(Card) Card.Key <> McInstanceCardType.Star).SelectMany(Function(Card) Card.Value).Select(Function(Instance) Instance.PathVersion), CancellationToken.None)
-            Dim StarGroups = InstanceCloneGroups.Build(If(VisibleCards.ContainsKey(McInstanceCardType.Star), VisibleCards(McInstanceCardType.Star).Select(Function(Instance) Instance.PathVersion), Enumerable.Empty(Of String)()), CancellationToken.None)
-            Dim SelectedPath = McInstanceSelected?.PathVersion
-            For Each Card In VisibleCards
-                Dim Groups = If(Card.Key = McInstanceCardType.Star, StarGroups, MainGroups)
-                Dim Roots = Card.Value.Select(Function(Instance) Groups.Find(Instance.PathVersion)).Where(Function(Node) Node IsNot Nothing AndAlso Node.ParentFolder Is Nothing).ToList()
+            Dim Grouping = ClonePresenter.Prepare(McInstanceList, Function() ShowHidden)
+            For Each Card In Grouping.VisibleCards
+                Dim Roots = Grouping.Roots(Card.Key, Card.Value)
                 If Roots.Count = 0 Then Continue For
-                Dim Instances = Roots.SelectMany(Function(Node) InstanceCloneGroups.Flatten(Node)).Select(Function(Node) InstancesByPath(Node.VersionFolder)).ToList()
+                Dim Instances = Grouping.Instances(Roots)
 #Region "确认卡片名称"
                 Dim CardName As String = ""
                 Select Case Card.Key
@@ -86,25 +122,11 @@ Public Class PageSelectRight
                 End Select
 #End Region
                 '建立控件
-                Dim CardTitle As String = CardName & If(CardName = "收藏夹", "", " (" & Instances.Count & ")")
-                Dim NewCard As New MyCard With {.Title = CardTitle, .Margin = New Thickness(0, 0, 0, 15)}
-                Dim NewStack As New StackPanel With {.Margin = New Thickness(20, MyCard.SwapedHeight, 18, 0), .VerticalAlignment = VerticalAlignment.Top, .RenderTransform = New TranslateTransform(0, 0)}
-                NewCard.Children.Add(NewStack)
-                NewCard.SwapControl = NewStack
-                NewCard.SetContentBuilder(Roots, Function(Node) BuildCloneChoice(Node, InstancesByPath, SelectedPath))
-                PanMain.Children.Add(NewCard)
-                '确定卡片是否展开
-                If (Card.Key = McInstanceCardType.Rubbish OrElse Card.Key = McInstanceCardType.Error OrElse Card.Key = McInstanceCardType.Fool) AndAlso Not Roots.Any(Function(Node) InstanceCloneGroups.Contains(Node, SelectedPath)) Then
-                    NewCard.IsSwapped = True
-                Else
-                    NewCard.BuildContent()
-                End If
+                ClonePresenter.RenderCategory(PanMain, Card.Key, CardName, Roots, Instances.Count, Grouping)
             Next
 
             '若只有一个卡片，则强制展开
-            If PanMain.Children.Count = 1 AndAlso CType(PanMain.Children(0), MyCard).IsSwapped Then
-                CType(PanMain.Children(0), MyCard).IsSwapped = False
-            End If
+            ClonePresenter.ExpandSingle(PanMain)
 
             '判断应该显示哪一个页面
             If PanMain.Children.Count = 0 Then
@@ -131,22 +153,7 @@ Public Class PageSelectRight
     End Sub
     '来源行始终可选；只有下方测试副本使用原生折叠卡片和惰性列表项。
     Friend Shared Function BuildCloneChoice(Node As InstanceCloneGroupNode, InstancesByPath As Dictionary(Of String, McInstance), SelectedPath As String) As FrameworkElement
-        Dim Instance = InstancesByPath(Node.VersionFolder)
-        Dim Row = Instance.ToListItem(Sub(Item, Args)
-                                          McInstanceListContent(Item, Args)
-                                          If Node.DeclaredSourceFolder IsNot Nothing Then Item.Info = Instance.Info & " · 来源：" & Path.GetFileName(Node.DeclaredSourceFolder)
-                                      End Sub)
-        If Node.Children.Count = 0 Then Return Row
-        Dim Container As New StackPanel With {.Tag = Node.VersionFolder}
-        Container.Children.Add(Row)
-        Dim Card As New MyCard With {.Title = $"测试副本 ({InstanceCloneGroups.Flatten(Node).Count - 1}) · 来源：{Instance.Name}", .Margin = New Thickness(14, 3, 0, 9), .Tag = Node.VersionFolder}
-        Dim Stack As New StackPanel With {.Margin = New Thickness(12, MyCard.SwapedHeight, 12, 0), .VerticalAlignment = VerticalAlignment.Top, .RenderTransform = New TranslateTransform(0, 0)}
-        Card.Children.Add(Stack)
-        Card.SwapControl = Stack
-        Card.SetContentBuilder(Node.Children, Function(Child) BuildCloneChoice(Child, InstancesByPath, SelectedPath))
-        If Node.Children.Any(Function(Child) InstanceCloneGroups.Contains(Child, SelectedPath)) Then Card.BuildContent() Else Card.IsSwapped = True
-        Container.Children.Add(Card)
-        Return Container
+        Return ClonePresenter.BuildCloneChoice(Node, InstancesByPath, SelectedPath)
     End Function
     Public Shared Sub McInstanceListContent(sender As MyListItem, e As EventArgs)
         Dim Instance As McInstance = sender.Tag
