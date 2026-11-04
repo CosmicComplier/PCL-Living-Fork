@@ -139,6 +139,7 @@ try {
         modernPathCompatibilitySourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePathCompatibility.cs') -Algorithm SHA256).Hash
         modernPackageRulesSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePackageRules.cs') -Algorithm SHA256).Hash
         modernDetailsRulesSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourceDetailsRules.cs') -Algorithm SHA256).Hash
+        modernPackMetadataCompatibilitySourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs') -Algorithm SHA256).Hash
         modernLegacyPathCharactersSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'PCLCS/Minecraft/LegacyPathCharacters.cs') -Algorithm SHA256).Hash
     }
     [IO.File]::WriteAllText((Join-Path $baselineDirectory 'provenance.json'), ($provenance | ConvertTo-Json -Depth 5), $utf8)

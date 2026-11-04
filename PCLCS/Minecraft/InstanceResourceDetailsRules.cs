@@ -18,12 +18,12 @@ public static class InstanceResourceDetailsRules {
     // adapter supplies the actual pinned Shared normalization implementation.
     public static void ApplyPackMetadata(string? metadata, ref string detail, Func<string, string> normalize) {
         if (metadata is null) return;
-        JToken? pack = JObject.Parse(metadata)["pack"];
+        JToken? pack = InstanceResourcePackMetadataCompatibility.ReadObject(metadata)["pack"];
         JToken? description = pack?["description"];
-        string? text = description?.Type == JTokenType.String ? description?.ToString() : description?["text"]?.ToString();
+        string? text = description?.Type == JTokenType.String ? description?.ToString() : InstanceResourcePackMetadataCompatibility.TokenText(description?["text"]);
         if (!string.IsNullOrWhiteSpace(text))
             detail = normalize(text!).Substring(0, Math.Min(180, normalize(text!).Length));
         if (pack?["pack_format"] is not null)
-            detail += " · 资源格式 " + pack["pack_format"]!.ToString();
+            detail += " · 资源格式 " + InstanceResourcePackMetadataCompatibility.TokenText(pack["pack_format"]);
     }
 }

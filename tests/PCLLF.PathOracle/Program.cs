@@ -385,6 +385,22 @@ internal static class Program {
         Metadata("date-ar-container", "{\"pack\":{\"description\":\"updated\",\"pack_format\":{\"date\":\"1700-01-01T00:00:00Z\"}}}", SystemOutcome("ok"), culture: "ar-SA");
         Metadata("date-ignored", "{\"pack\":{\"description\":\"stable\"},\"ignored\":\"1700-01-01T00:00:00Z\"}", MetadataOk("stable"), culture: "en-US");
 
+        // Reader compatibility must survive line/buffer boundaries and reject
+        // overflow even when a later property overwrites it. Probe finite/parser
+        // and container round-trip edges separately; do not force container G15.
+        Metadata("reader-crlf-overflow", "{\r\n/* Infinity is a comment */\r\n\"pack\":{\"description\":\"updated\"},\r\n\"ignored\":1e400\r\n}", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("reader-crlf-explicit-infinity", "{\r\n/* 1e400 is a comment */\r\n\"pack\":{\"description\":\"updated\",\"pack_format\":Infinity},\r\n\"ignored\":[-Infinity,NaN]\r\n}", SystemOutcome("ok"));
+        Metadata("reader-buffer-overflow", "{\"padding\":\"" + new string('p', 5000) + "\",\"pack\":{\"description\":\"updated\"},\"ignored\":1e400}", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        Metadata("reader-overwritten-overflow", "{\"pack\":{\"description\":\"updated\"},\"ignored\":1e400,\"ignored\":0}", MetadataError("Newtonsoft.Json.JsonReaderException", "before"));
+        foreach ((string id, string token) in new[] {
+            ("max-finite", "1.7976931348623157e308"), ("max-rounding", "1.7976931348623158e308"),
+            ("max-overflow", "1.7976931348623159e308"), ("epsilon", "4.9406564584124654e-324"),
+            ("normal-boundary", "2.2250738585072012e-308"), ("round-trip", "0.84551240822557006"),
+            ("g15-midpoint", "282589933980712.5") }) {
+            string metadata = "{\"pack\":{\"description\":{\"text\":" + token + "},\"pack_format\":{\"n\":" + token + "}}}";
+            Metadata("reader-" + id, metadata, SystemOutcome("ok", "Newtonsoft.Json.JsonReaderException"), culture: "en-US");
+        }
+
         Save(Path.Combine(fixture, "cases.json"), new JObject(new JProperty("protocol", Protocol), new JProperty("fixture", fixture),
             new JProperty("cwd", cwd), new JProperty("profile", "LF-default"), new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("cases", cases)));
         Console.WriteLine($"Prepared {cases.Count} path cases and {links.Count} real owned symbolic links.");

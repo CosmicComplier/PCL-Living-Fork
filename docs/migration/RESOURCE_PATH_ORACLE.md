@@ -116,3 +116,15 @@ v5 保留原 190 例／56 比较，新增 90 个 `pack-metadata` 请求，总 28
 成功和异常均记录 `detailAfter` 的 UTF16 数组或 null，并严格比较顶层异常类型及后状态，180 单元截断的孤立高代理项不经 UTF8 替换。当前文化只在本请求 try／finally 中设置及恢复。数值包含高精度、负零、下溢、极大有限、正负溢出、显式 NaN／Infinity、Int64／BigInteger；分别检验可见标量、容器和忽略字段。日期含 ISO 自动解析及 ar-SA 的晚期格式失败，不能将 ref 描述先赋值改成原子返回。观察型旧合同只允许列出的成功或异常类型，之后仍严格比较真实 Framework 与现代结果，不减弱旧 190 例或将差异忽略。
 
 当前本地 358／358 生产测试通过（新增 13 组），PCLCS net48／迁移测试／现代 oracle 零警告编译，以及注入原片段的 net48 VB 驱动预编译通过。独立源码自审通过；尚无本批 Windows 实跑或实际 CLR4 数值／日期等价结果，不预设 G15、禁止所有非有限数等修复策略。C007d1b 与母项保持进行中。
+
+首次 `4eb50fbbc884fb284aac7377a897aaef4176f8d2` 的 [Migration validation 41750296482](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41750296482)：Ubuntu job `126313430696` 358／358 success，Windows job `126313431272` 390／390单元通过；真实280／56的contract／native／text失败均0，但 **18个metadata差异使严格门禁退出2**。原190例仍全等价；日期／显式非有限样本未产生差异。
+
+- en-US／fr-FR的高精度标量：Framework为 `1.23456789012346`／`1,23456789012346`，现代为17位短往返；每文化1例。容器的相同17位数在两端一致，不能套用标量G15格式。
+- 两文化的 `-0.0`／`-1e-999` 标量，及容器 `-0.0`：旧显示正0或JSON的0.0，现代保负号；每文化3例。
+- 两文化的正负 `1e400` 可见标量、容器正溢出、忽略字段正负溢出：旧在完整解析阶段抛JsonReaderException且detail仍before，现代允许Infinity甚至输出stable；每文化5例。显式NaN／Infinity／-Infinity在两端成功，不能一概拒绝非有限值。
+
+[完整首轮artifact 13285062521](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41750296482/artifacts/13285062521) 已下载校验，ZIP SHA256 `347ec6f0351850429fc10d3a6b0f1eaabad55a012c3c7dfe787d7f746f8f9bbd`。同提交 [Windows Build 41750296507](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41750296507)：Release job `126313431139`、Debug job `126313431176`各41步success，实际pack-description／ref／UTF16／error与既有资源／事务／旧桥消费者通过；这些是原net48消费链，不能替代现代等价门禁。
+
+后继适配仅作用于本metadata：net48保JObject.Parse；现代使用固定JsonTextReader派生类，按原JObject.Parse的Load＋完整尾读顺序处理，在每个Float token处还原零号，并根据固定reader的LineNumber／LinePosition定位已验证token末位，保显式Infinity、拒数值溢出。负零重置使用SetToken第三参数false，避免数组下标二次递增；忽略／被后续覆盖的字段也先经过解析。标量有限double暂按实测G15显示，容器继续原Newtonsoft writer。新增8组实际生产回归，用4eb50fb真实旧版Core源码红测为2通过／6失败。
+
+为验证新适配自身边界，再追加11个原片段探针（保原280不改）：CRLF／comments下显式Infinity与overflow、长缓冲区overflow、后续重复覆盖overflow、DoubleMax的3157／3158／3159、epsilon、normal边界、R风险0.84551240822557006、G15中点282589933980712.5；新总291／56（metadata101）。这些新有限值的Frame解析／舍入／容器R结果尚待真实报告，不能把格式名G15或IsInfinity检查外推为所有double已等价。
