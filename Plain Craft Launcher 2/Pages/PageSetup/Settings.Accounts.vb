@@ -38,7 +38,7 @@
             Using Store = Microsoft.Win32.Registry.CurrentUser.CreateSubKey("Software\PCL")
                 Dim Raw As New Dictionary(Of String, String)(StringComparer.Ordinal)
                 For Each Key In Entries.Keys.Where(Function(Name) Name.StartsWith("CacheMs", StringComparison.Ordinal))
-                    Dim Value = Store.GetValue(Key, Nothing)
+                    Dim Value = Store.GetValue(RegistryValueName(Entries(Key)), Nothing)
                     If Value IsNot Nothing Then Raw(Key) = Convert.ToString(Value, Globalization.CultureInfo.InvariantCulture)
                 Next
                 Dim Plan As New PclAccountMigrationPlan With {.CurrentIdentify = Identify, .Values = PlanLegacyMicrosoftUpgrade(Raw, Identify)}

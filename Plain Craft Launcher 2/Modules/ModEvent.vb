@@ -283,7 +283,7 @@ Public Class CustomEvent
                                 Hint("请先选择一个 Minecraft 版本！", HintType.Red)
                                 Return
                             End If
-                            If McInstanceLock.IsLocked(McInstanceSelected) Then
+                            If McInstanceLock.BlocksNavigation(McInstanceSelected) Then
                                 Hint("该版本正在被修改，暂时无法进入版本设置！", HintType.Red)
                                 Return
                             End If

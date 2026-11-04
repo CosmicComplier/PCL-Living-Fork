@@ -164,6 +164,7 @@
             Select(Function(Item) Item.Name & ":" & Item.Length & ":" & Item.LastWriteTimeUtc.Ticks))
     End Function
     Private Sub BeginDependencyMutation(Paths As IEnumerable(Of String), ActionName As String, ContinueAction As Action)
+        If Not AllowModWrite() Then Return
         Dim Target = PageInstanceLeft.Instance, Candidates = Paths.ToArray()
         If Target Is Nothing OrElse Candidates.Length = 0 Then
             ContinueAction()
@@ -378,6 +379,7 @@
         Dim Extension As String = PathUtils.GetExtension(FilePathList.First)
         '检查文件扩展名
         If Not {"jar", "litemod", "disabled", "old"}.Any(Function(t) t = Extension) Then Return False
+        If Not AllowModWrite() Then Return True
         If Not ModeConfirmed AndAlso Not ModModpackMode.ConfirmModAction("安装 Mod") Then Return True
         Logger.Info("文件为 jar/litemod 格式，尝试作为 Mod 安装")
         '检查回收站：回收站中的文件有错误的文件名
@@ -557,6 +559,7 @@ Install:
         End If
     End Sub
     Private Sub ApplyModState(ModList As IEnumerable(Of LocalResourceFile), IsEnable As Boolean)
+        If Not AllowModWrite() Then Return
         Dim IsSuccessful As Boolean = True
         For Each ModE In ModList.ToList
             Dim ModEntity = ModE '仅用于去除迭代变量无法修改的限制
@@ -641,6 +644,7 @@ Install:
         UpdateModsCore(ModList, False)
     End Sub
     Private Sub UpdateModsCore(ModList As IEnumerable(Of LocalResourceFile), ModeConfirmed As Boolean)
+        If Not AllowModWrite() Then Return
         If EnvironmentHistoryUi.IsBusy Then
             Hint("请等待环境还原操作完成。")
             Return
@@ -783,6 +787,7 @@ Install:
         BeginDependencyMutation(Frozen.SelectMany(Function(Item) {Item.File.FullName, Item.EnabledFullName}), "删除", Sub() DeleteModsCore(Frozen, IsPermanent))
     End Sub
     Private Sub DeleteModsCore(ModsToDelete As IEnumerable(Of LocalResourceFile), IsPermanent As Boolean)
+        If Not AllowModWrite() Then Return
         Try
             Dim IsSuccessful As Boolean = True
             '确认需要删除的文件
@@ -841,6 +846,11 @@ Install:
         End Try
         LoaderRun(LoaderFolderRunType.UpdateOnly)
     End Sub
+    Private Shared Function AllowModWrite() As Boolean
+        If Not McInstanceLock.IsAnyLocked Then Return True
+        Hint("文件任务进行中，请稍后再修改 Mod。", HintType.Red)
+        Return False
+    End Function
 
     '取消选择
     Private Sub BtnSelectCancel_Click() Handles BtnSelectCancel.Click

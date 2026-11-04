@@ -109,6 +109,11 @@ Friend NotInheritable Class EnvironmentHistory
     End Function
     Friend Shared Function Capture(VersionFolder As String, GameRoot As String, Label As String, Token As CancellationToken,
         Optional Dependencies As Dictionary(Of String, String) = Nothing, Optional Description As String = "") As String
+        Return CaptureWithProgress(VersionFolder, GameRoot, Label, Token, Nothing, Dependencies, Description)
+    End Function
+    Friend Shared Function CaptureWithProgress(VersionFolder As String, GameRoot As String, Label As String, Token As CancellationToken, Progress As Action(Of Double),
+        Optional Dependencies As Dictionary(Of String, String) = Nothing, Optional Description As String = "") As String
+        Token.ThrowIfCancellationRequested()
         SyncLock Gate
             Using Lease As New StoreLease(VersionFolder)
                 Dim StoreRoot = Store(VersionFolder), Id = Guid.NewGuid().ToString("N"), Entries = Files(VersionFolder, GameRoot), Content As New JObject
@@ -117,40 +122,53 @@ Friend NotInheritable Class EnvironmentHistory
                         Entries.Add("m/" & ModpackUpdate.RelativePath(Pair.Key), Pair.Value)
                     Next
                 End If
+                Dim Total = Math.Max(1L, FileTaskProgress.Size(Entries.Values)), Completed As Long = 0
+                Progress?.Invoke(0.02)
                 For Each Pair In Entries
                     Token.ThrowIfCancellationRequested()
-                    Dim Hash = ModpackUpdate.Digest(Pair.Value)
+                    Dim Weight = If(File.Exists(Pair.Value), Math.Max(1L, New FileInfo(Pair.Value).Length), 1L)
+                    Dim FileProgress = FileTaskProgress.Slice(Progress, 0.02 + 0.8 * Completed / Total, 0.02 + 0.8 * (Completed + Weight) / Total)
+                    Dim Hash = FileTaskProgress.Digest(Pair.Value, Token, FileTaskProgress.Slice(FileProgress, 0, 0.25))
                     If Hash Is Nothing Then Throw New IOException("创建还原点期间文件被移走：" & Pair.Key)
                     Dim Blob = ObjectPath(StoreRoot, Hash)
                     If Not File.Exists(Blob) Then
                         Directory.CreateDirectory(Path.GetDirectoryName(Blob))
                         Dim Temporary = Blob & ".tmp-" & Guid.NewGuid().ToString("N")
                         Try
-                            File.Copy(Pair.Value, Temporary, False)
-                            If ModpackUpdate.Digest(Temporary) <> Hash Then Throw New IOException("创建还原点期间文件发生变化。")
+                            FileTaskProgress.Copy(Pair.Value, Temporary, Token, FileTaskProgress.Slice(FileProgress, 0.25, 0.5))
+                            If FileTaskProgress.Digest(Temporary, Token, FileTaskProgress.Slice(FileProgress, 0.5, 0.75)) <> Hash Then Throw New IOException("创建还原点期间文件发生变化。")
                             File.Move(Temporary, Blob)
                         Finally
                             If File.Exists(Temporary) Then File.Delete(Temporary)
                         End Try
-                    ElseIf ModpackUpdate.Digest(Blob) <> Hash Then
+                    ElseIf FileTaskProgress.Digest(Blob, Token, FileTaskProgress.Slice(FileProgress, 0.25, 0.75)) <> Hash Then
                         Throw New IOException("已有还原点内容校验失败，请保留备份并检查磁盘。")
                     End If
-                    If ModpackUpdate.Digest(Pair.Value) <> Hash Then Throw New IOException("创建还原点期间文件发生变化。")
+                    If FileTaskProgress.Digest(Pair.Value, Token, FileTaskProgress.Slice(FileProgress, 0.75, 1)) <> Hash Then Throw New IOException("创建还原点期间文件发生变化。")
                     Content(Pair.Key) = Hash
+                    Completed += Weight
                 Next
                 Dim Latest = Files(VersionFolder, GameRoot)
                 If Not New HashSet(Of String)(Entries.Keys.Where(Function(Key) Not Key.StartsWith("m/")), StringComparer.OrdinalIgnoreCase).SetEquals(Latest.Keys) Then Throw New IOException("创建还原点期间目录内容发生变化。")
+                Total = Math.Max(1L, FileTaskProgress.Size(Latest.Values)) : Completed = 0
                 For Each Pair In Latest
-                    If ModpackUpdate.Digest(Pair.Value) <> Content(Pair.Key).ToString() Then Throw New IOException("创建还原点期间配置发生变化。")
+                    Dim Weight = Math.Max(1L, New FileInfo(Pair.Value).Length)
+                    If FileTaskProgress.Digest(Pair.Value, Token, FileTaskProgress.Slice(Progress, 0.82 + 0.16 * Completed / Total, 0.82 + 0.16 * (Completed + Weight) / Total)) <> Content(Pair.Key).ToString() Then Throw New IOException("创建还原点期间配置发生变化。")
+                    Completed += Weight
                 Next
                 Dim Data As New JObject(New JProperty("schema", 1), New JProperty("coverageVersion", CurrentCoverageVersion), New JProperty("id", Id), New JProperty("created", Date.UtcNow), New JProperty("label", Label),
                     New JProperty("description", Description), New JProperty("gameRoot", Path.GetFullPath(GameRoot)), New JProperty("healthy", False), New JProperty("manual", Not AutomaticLabels.Contains(Label)), New JProperty("files", Content))
+                Token.ThrowIfCancellationRequested()
                 LocalGameData.AtomicWrite(Safe(StoreRoot, "points/" & Id & ".json"), System.Text.Encoding.UTF8.GetBytes(Data.ToString()), Nothing, False)
+                Progress?.Invoke(1)
                 Return Id
             End Using
         End SyncLock
     End Function
     Friend Shared Function CaptureInstance(Instance As McInstance, Label As String, Token As CancellationToken) As String
+        Return CaptureInstanceWithProgress(Instance, Label, Token, Nothing)
+    End Function
+    Friend Shared Function CaptureInstanceWithProgress(Instance As McInstance, Label As String, Token As CancellationToken, Progress As Action(Of Double)) As String
         Dim McRoot = Path.GetDirectoryName(Path.GetDirectoryName(Instance.PathVersion.TrimEnd("\"c))) & "\"
         Dim Dependencies As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
         For Each Library In McLibListGet(Instance, True)
@@ -169,26 +187,31 @@ Friend NotInheritable Class EnvironmentHistory
             Dependencies(Relative) = Address
             Json = JObject.Parse(File.ReadAllText(Address))
         End While
-        Dim Id = Capture(Instance.PathVersion, Instance.PathIndie, Label, Token, Dependencies, Instance.Version.VanillaName & " · " & String.Join("、", Instance.Version.ModLoaderVersions.Select(Function(Pair) Pair.Key.ToString() & " " & Pair.Value)))
+        Dim Id = CaptureWithProgress(Instance.PathVersion, Instance.PathIndie, Label, Token, FileTaskProgress.Slice(Progress, 0, 0.98), Dependencies, Instance.Version.VanillaName & " · " & String.Join("、", Instance.Version.ModLoaderVersions.Select(Function(Pair) Pair.Key.ToString() & " " & Pair.Value)))
         ApplyRetention(Instance, Id, Token)
+        Progress?.Invoke(1)
         Return Id
     End Function
     Friend Shared Function Points(VersionFolder As String) As List(Of JObject)
-        SyncLock Gate
-            Using Lease As New StoreLease(VersionFolder)
-                Dim StoreRoot = Store(VersionFolder), Folder = Path.Combine(StoreRoot, "points"), Result As New List(Of JObject)
-                InstanceResourceStore.EnsureWithin(StoreRoot, Folder)
-                If Not Directory.Exists(Folder) Then Return Result
-                For Each FileName In Directory.GetFiles(Folder, "*.json")
-                    InstanceResourceStore.EnsureWithin(StoreRoot, FileName)
-                    If New FileInfo(FileName).Length > 32 * 1024 * 1024 Then Throw New IOException("还原点清单过大。")
-                    Dim Value = JObject.Parse(File.ReadAllText(FileName))
-                    If CInt(Value("schema")) <> 1 Then Throw New IOException("不支持此版本的环境还原点。")
-                    Result.Add(Value)
-                Next
-                Return Result.OrderByDescending(Function(Item) CDate(Item("created"))).ToList()
-            End Using
-        End SyncLock
+        '还原点清单通过 AtomicWrite 发布，列表读取无需占用文件任务的跨进程锁。
+        Dim StoreRoot = Store(VersionFolder), Folder = Path.Combine(StoreRoot, "points"), Result As New List(Of JObject)
+        InstanceResourceStore.EnsureWithin(StoreRoot, Folder)
+        If Not Directory.Exists(Folder) Then Return Result
+        For Each FileName In Directory.GetFiles(Folder, "*.json")
+            Try
+                InstanceResourceStore.EnsureWithin(StoreRoot, FileName)
+                If New FileInfo(FileName).Length > 32 * 1024 * 1024 Then Throw New IOException("还原点清单过大。")
+                Dim Value As JObject
+                Using Input As New FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete), Reader As New StreamReader(Input)
+                    Value = JObject.Parse(Reader.ReadToEnd())
+                End Using
+                If CInt(Value("schema")) <> 1 Then Throw New IOException("不支持此版本的环境还原点。")
+                Result.Add(Value)
+            Catch ex As FileNotFoundException
+                '列表枚举后被另一个原子清理移走，下次刷新可见最新列表。
+            End Try
+        Next
+        Return Result.OrderByDescending(Function(Item) CDate(Item("created"))).ToList()
     End Function
 
     Friend Shared Function IsManualPoint(Point As JObject) As Boolean
@@ -296,6 +319,10 @@ Friend NotInheritable Class EnvironmentHistory
     End Sub
     Friend Shared Function Restore(VersionFolder As String, GameRoot As String, McRoot As String, Id As String, Token As CancellationToken,
         Optional BeforeApply As Action(Of Integer) = Nothing, Optional CaptureBefore As Func(Of String) = Nothing) As String
+        Return RestoreWithProgress(VersionFolder, GameRoot, McRoot, Id, Token, Nothing, BeforeApply, CaptureBefore)
+    End Function
+    Friend Shared Function RestoreWithProgress(VersionFolder As String, GameRoot As String, McRoot As String, Id As String, Token As CancellationToken, Progress As Action(Of Double),
+        Optional BeforeApply As Action(Of Integer) = Nothing, Optional CaptureBefore As Func(Of String) = Nothing) As String
         SyncLock Gate
             Using Lease As New StoreLease(VersionFolder)
                 Restoring += 1
@@ -305,10 +332,11 @@ Friend NotInheritable Class EnvironmentHistory
                     If Not PathUtils.IsSame(Point("gameRoot").ToString(), GameRoot) Then Throw New IOException("此还原点的游戏目录与当前版本隔离设置不同，请先恢复原隔离设置。")
                     Dim Coverage = CoverageVersion(Point)
                     Dim StoreRoot = Store(VersionFolder), Current = FilesWithCoverage(VersionFolder, GameRoot, Coverage), Sources As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
-                    For Each Entry As JProperty In CType(Point("files"), JObject).Properties()
+                    Dim Entries = CType(Point("files"), JObject).Properties().ToList(), Checked = 0
+                    For Each Entry As JProperty In Entries
                         Token.ThrowIfCancellationRequested()
                         Dim Key = Entry.Name, Hash = Entry.Value.ToString(), Blob = ObjectPath(StoreRoot, Hash)
-                        If ModpackUpdate.Digest(Blob) <> Hash Then Throw New IOException("还原点文件缺失或损坏，当前环境未修改。")
+                        If FileTaskProgress.Digest(Blob, Token, FileTaskProgress.Slice(Progress, 0.02 + 0.16 * Checked / Math.Max(1, Entries.Count), 0.02 + 0.16 * (Checked + 1) / Math.Max(1, Entries.Count))) <> Hash Then Throw New IOException("还原点文件缺失或损坏，当前环境未修改。")
                         If Key.StartsWith("m/") Then
                             Dim Relative = ModpackUpdate.RelativePath(Key.Substring(2))
                             If Not Relative.StartsWith("libraries/", StringComparison.OrdinalIgnoreCase) AndAlso Not Relative.StartsWith("versions/", StringComparison.OrdinalIgnoreCase) Then Throw New IOException("无效的依赖文件路径。")
@@ -324,25 +352,43 @@ Friend NotInheritable Class EnvironmentHistory
                         Else
                             Throw New IOException("还原点包含不支持的文件范围。")
                         End If
+                        Checked += 1
                     Next
                     Dim Operations As New List(Of Tuple(Of String, String, String))
-                    For Each Key In Current.Keys.Union(Sources.Keys.Where(Function(Value) Not Value.StartsWith("m/")), StringComparer.OrdinalIgnoreCase)
+                    Dim Keys = Current.Keys.Union(Sources.Keys.Where(Function(Value) Not Value.StartsWith("m/")), StringComparer.OrdinalIgnoreCase).ToList()
+                    Checked = 0
+                    For Each Key In Keys
                         Dim Destination = ModpackUpdate.Target(If(Key.StartsWith("v/"), VersionFolder, GameRoot), Key.Substring(2)), Payload As String = Nothing
                         Sources.TryGetValue(Key, Payload)
-                        Dim Before = ModpackUpdate.Digest(Destination)
+                        Dim Before = FileTaskProgress.Digest(Destination, Token, FileTaskProgress.Slice(Progress, 0.18 + 0.14 * Checked / Math.Max(1, Keys.Count), 0.18 + 0.14 * (Checked + 1) / Math.Max(1, Keys.Count)))
+                        Checked += 1
                         If Payload IsNot Nothing AndAlso Before = ModpackUpdate.Digest(Payload) Then Continue For
                         Operations.Add(Tuple.Create(Destination, Payload, Before))
                     Next
                     '恢复前再留一份完整环境，反向恢复不依赖单文件备份。
-                    Dim UndoId = If(CaptureBefore Is Nothing, Capture(VersionFolder, GameRoot, "恢复前自动保存", Token), CaptureBefore())
-                    For Each Pair In Sources.Where(Function(Item) Item.Key.StartsWith("m/"))
+                    Dim UndoId = If(CaptureBefore Is Nothing, CaptureWithProgress(VersionFolder, GameRoot, "恢复前自动保存", Token, FileTaskProgress.Slice(Progress, 0.32, 0.62)), CaptureBefore())
+                    Progress?.Invoke(0.62)
+                    Dim Libraries = Sources.Where(Function(Item) Item.Key.StartsWith("m/")).ToList()
+                    For Index = 0 To Libraries.Count - 1
+                        Token.ThrowIfCancellationRequested()
+                        Dim Pair = Libraries(Index), LibraryProgress = FileTaskProgress.Slice(Progress, 0.62 + 0.03 * Index / Math.Max(1, Libraries.Count), 0.62 + 0.03 * (Index + 1) / Math.Max(1, Libraries.Count))
                         Dim Destination = ModpackUpdate.Target(McRoot, Pair.Key.Substring(2))
                         If Not File.Exists(Destination) Then
                             Directory.CreateDirectory(Path.GetDirectoryName(Destination))
-                            File.Copy(Pair.Value, Destination, False)
+                            Dim Temporary = Destination & ".pcl-restore-" & Guid.NewGuid().ToString("N")
+                            Try
+                                FileTaskProgress.Copy(Pair.Value, Temporary, Token, FileTaskProgress.Slice(LibraryProgress, 0, 0.8))
+                                If FileTaskProgress.Digest(Temporary, Token, FileTaskProgress.Slice(LibraryProgress, 0.8, 1)) <> Point("files")(Pair.Key).ToString() Then Throw New IOException("共享支持库复制校验失败，当前版本未修改。")
+                                Token.ThrowIfCancellationRequested()
+                                File.Move(Temporary, Destination)
+                            Finally
+                                If File.Exists(Temporary) Then File.Delete(Temporary)
+                            End Try
                         End If
+                        LibraryProgress?.Invoke(1)
                     Next
-                    ModpackUpdate.ApplyTransaction(GameRoot, VersionFolder, Operations, Token, BeforeApply)
+                    ModpackUpdate.ApplyTransactionWithProgress(GameRoot, VersionFolder, Operations, Token, FileTaskProgress.Slice(Progress, 0.65, 0.99), BeforeApply)
+                    Progress?.Invoke(1)
                     Return UndoId
                 Finally
                     Restoring -= 1
@@ -405,6 +451,7 @@ Friend NotInheritable Class EnvironmentHistoryUi
         Dim StepLoader As New LoaderTask(Of String, String)(If(Removing, "删除还原点", If(Restore, "恢复游戏环境", "创建环境还原点")),
             Sub(Task)
                 Dim Token = Task.CreateCancellationToken()
+                Dim Progress As Action(Of Double) = Sub(Value) Task.Progress = Math.Max(Task.Progress, Math.Min(0.99, Value))
                 If Removing Then
                     If MyMsgBox($"删除选中的 {Ids.Count} 个还原点？{vbCrLf}不会删除游戏文件或其他还原点。删除记录将保留在还原点文件夹的 deleted 目录中。", "删除还原点", "删除", "取消", IsWarn:=True) <> 1 Then Throw New OperationCanceledException()
                     Token.ThrowIfCancellationRequested()
@@ -416,7 +463,7 @@ Friend NotInheritable Class EnvironmentHistoryUi
                     Instance = ModpackUpdateFlow.RecoverInstance(Instance)
                 End If
                 If Not Restore Then
-                    Task.Output = EnvironmentHistory.CaptureInstance(Instance, "手动还原点", Token)
+                    Task.Output = EnvironmentHistory.CaptureInstanceWithProgress(Instance, "手动还原点", Token, Progress)
                     Return
                 End If
                 Dim Points = EnvironmentHistory.Points(Instance.PathVersion).OrderByDescending(Function(Item) CBool(Item("healthy"))).ThenByDescending(Function(Item) CDate(Item("created"))).ToList()
@@ -438,8 +485,8 @@ Friend NotInheritable Class EnvironmentHistoryUi
                     If(PathUtils.IsSame(Instance.PathVersion, Instance.PathIndie), "", "此版本未使用独立目录，恢复模组和配置也会影响共用目录的其他版本。" & vbCrLf & vbCrLf) &
                     "恢复前会自动保存当前环境。" & vbCrLf & Point("description")?.ToString(), "恢复游戏环境", "恢复", "取消", IsWarn:=True) <> 1 Then Throw New OperationCanceledException()
                 Dim McRoot = Path.GetDirectoryName(Path.GetDirectoryName(Instance.PathVersion.TrimEnd("\"c))) & "\"
-                Task.Output = EnvironmentHistory.Restore(Instance.PathVersion, Instance.PathIndie, McRoot, Point("id").ToString(), Token,
-                    CaptureBefore:=Function() EnvironmentHistory.CaptureInstance(Instance, "恢复前自动保存", Token))
+                Task.Output = EnvironmentHistory.RestoreWithProgress(Instance.PathVersion, Instance.PathIndie, McRoot, Point("id").ToString(), Token, Progress,
+                    CaptureBefore:=Function() EnvironmentHistory.CaptureInstanceWithProgress(Instance, "恢复前自动保存", Token, FileTaskProgress.Slice(Progress, 0.32, 0.62)))
                 EnvironmentHistory.ApplyRetention(Instance, Task.Output, Token)
                 RunInUiWait(Sub()
                                 Instance.ResetSettingsCache()
@@ -452,7 +499,8 @@ Friend NotInheritable Class EnvironmentHistoryUi
             End Sub)
         Dim Loader As New LoaderCombo(Of String)(If(Removing, "删除还原点：", If(Restore, "环境恢复：", "保存环境：")) & Instance.Name, {StepLoader}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
         Dim Worker As New RedoableWorker(LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion))
-        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then
+        Dim BrowseOnly = Not Restore AndAlso (Removing OrElse Not ModpackUpdate.Pending(Instance.PathVersion).Any())
+        If Not If(BrowseOnly, McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion), McInstanceLock.TryAcquire(Worker, Instance.PathVersion)) Then
             Interlocked.Exchange(Busy, 0)
             Return
         End If

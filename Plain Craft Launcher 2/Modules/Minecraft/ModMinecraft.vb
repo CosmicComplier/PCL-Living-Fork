@@ -908,7 +908,11 @@ ExitDataLoad:
     ''' MC 版本独占锁。
     ''' </summary>
     Public NotInheritable Class McInstanceLock
-        Private Shared ReadOnly LockedPaths As New ConcurrentDictionary(Of String, IWorker)(StringComparer.OrdinalIgnoreCase)
+        Private NotInheritable Class Lease
+            Friend Worker As IWorker
+            Friend BlocksNavigation As Boolean
+        End Class
+        Private Shared ReadOnly LockedPaths As New ConcurrentDictionary(Of String, Lease)(StringComparer.OrdinalIgnoreCase)
         Friend Shared ReadOnly Property IsAnyLocked As Boolean
             Get
                 Return Not LockedPaths.IsEmpty
@@ -919,9 +923,17 @@ ExitDataLoad:
         ''' <para/> 仅在该版本已被锁定时返回 false，此时不会改变锁定状态。
         ''' </summary>
         Public Shared Function TryAcquire(Worker As IWorker, InstancePath As String) As Boolean
+            Return Acquire(Worker, InstancePath, True)
+        End Function
+        '快照仍排斥启动和写入，但不把只读浏览当作版本修改。
+        Friend Shared Function TryAcquireSnapshot(Worker As IWorker, InstancePath As String) As Boolean
+            Return Acquire(Worker, InstancePath, False)
+        End Function
+        Private Shared Function Acquire(Worker As IWorker, InstancePath As String, BlocksNavigation As Boolean) As Boolean
             InstancePath = PathUtils.ForCompare(InstancePath)
-            If Not LockedPaths.TryAdd(InstancePath, Worker) Then Return False
-            AddHandler Worker.Stopped, Sub() LockedPaths.TryRemove(InstancePath, Nothing)
+            Dim Held As New Lease With {.Worker = Worker, .BlocksNavigation = BlocksNavigation}
+            If Not LockedPaths.TryAdd(InstancePath, Held) Then Return False
+            AddHandler Worker.Stopped, Sub() DirectCast(LockedPaths, ICollection(Of KeyValuePair(Of String, Lease))).Remove(New KeyValuePair(Of String, Lease)(InstancePath, Held))
             Return True
         End Function
         ''' <summary>
@@ -930,6 +942,11 @@ ExitDataLoad:
         Public Shared Function IsLocked(Instance As McInstance) As Boolean
             If Instance Is Nothing Then Return False
             Return LockedPaths.ContainsKey(PathUtils.ForCompare(Instance.PathVersion))
+        End Function
+        Friend Shared Function BlocksNavigation(Instance As McInstance) As Boolean
+            If Instance Is Nothing Then Return False
+            Dim Held As Lease = Nothing
+            Return LockedPaths.TryGetValue(PathUtils.ForCompare(Instance.PathVersion), Held) AndAlso Held.BlocksNavigation
         End Function
     End Class
 

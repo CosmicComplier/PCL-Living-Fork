@@ -112,7 +112,7 @@ Partial Public Class Settings
 
     Friend Shared Sub ResetRegistryPreference(Store As Microsoft.Win32.RegistryKey, Entry As Setting)
         If Not IsCompatiblePclSetting(Entry) Then
-            Store.DeleteValue(Entry.Key, False)
+            Store.DeleteValue(RegistryValueName(Entry), False)
             Return
         End If
         Dim Value = Convert.ToString(Entry.DefaultValue, Globalization.CultureInfo.InvariantCulture)

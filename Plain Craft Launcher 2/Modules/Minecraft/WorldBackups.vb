@@ -104,7 +104,7 @@ Friend NotInheritable Class WorldBackups
     Private Shared Function ReadJson(FileName As String) As JObject
         NoLinks(FileName)
         If Not File.Exists(FileName) OrElse New FileInfo(FileName).Length > MaxManifest Then Throw New IOException("备份记录已丢失或过大。")
-        Using Input As New StreamReader(FileName, New UTF8Encoding(False, True))
+        Using Stream As New FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite Or FileShare.Delete), Input As New StreamReader(Stream, New UTF8Encoding(False, True))
             Return JObject.Parse(Input.ReadToEnd())
         End Using
     End Function
@@ -186,7 +186,7 @@ Friend NotInheritable Class WorldBackups
         Loop
         Return Result
     End Function
-    Private Shared Function CopyHash(Input As Stream, Output As Stream, Token As CancellationToken, Optional ExpectedLength As Long = -1) As Tuple(Of Long, String)
+    Private Shared Function CopyHash(Input As Stream, Output As Stream, Token As CancellationToken, Optional ExpectedLength As Long = -1, Optional BytesCopied As Action(Of Long) = Nothing) As Tuple(Of Long, String)
         Dim Buffer(131071) As Byte, Total As Long = 0
         Using Algorithm = SHA256.Create()
             Do
@@ -197,6 +197,7 @@ Friend NotInheritable Class WorldBackups
                 If ExpectedLength >= 0 AndAlso Total > ExpectedLength Then Throw New IOException("备份文件长度与记录不一致。")
                 Algorithm.TransformBlock(Buffer, 0, Count, Buffer, 0)
                 If Output IsNot Nothing Then Output.Write(Buffer, 0, Count)
+                BytesCopied?.Invoke(Count)
             Loop
             Algorithm.TransformFinalBlock(New Byte() {}, 0, 0)
             If ExpectedLength >= 0 AndAlso Total <> ExpectedLength Then Throw New IOException("备份文件长度与记录不一致。")
@@ -233,23 +234,23 @@ Friend NotInheritable Class WorldBackups
         Return Point
     End Function
     Friend Shared Function Points(GameFolder As String) As List(Of JObject)
-        SyncLock Gate
-            Dim Folder = Safe(Store(GameFolder), "points"), Result As New List(Of JObject)
-            If Not Directory.Exists(Folder) Then Return Result
-            For Each Child In Directory.EnumerateDirectories(Folder)
-                Dim Id = Path.GetFileName(Child)
-                If Not Regex.IsMatch(Id, "\A[a-f0-9]{32}\z") Then Continue For
-                Try
-                    Result.Add(Metadata(GameFolder, Id))
-                Catch ex As Exception
-                    Logger.Warn(ex, "忽略不可读取的存档备份记录：" & Id)
-                End Try
-            Next
-            Return Result.OrderByDescending(Function(Item) Item("created").ToObject(Of Date)()).ToList()
-        End SyncLock
+        '只读取已原子发布的目录；浏览列表不等待压缩、校验或恢复事务结束。
+        Dim Folder = Safe(Store(GameFolder), "points"), Result As New List(Of JObject)
+        If Not Directory.Exists(Folder) Then Return Result
+        For Each Child In Directory.EnumerateDirectories(Folder)
+            Dim Id = Path.GetFileName(Child)
+            If Not Regex.IsMatch(Id, "\A[a-f0-9]{32}\z") Then Continue For
+            Try
+                Result.Add(Metadata(GameFolder, Id))
+            Catch ex As Exception
+                Logger.Warn(ex, "忽略不可读取的存档备份记录：" & Id)
+            End Try
+        Next
+        Return Result.OrderByDescending(Function(Item) Item("created").ToObject(Of Date)()).ToList()
     End Function
-    Private Shared Sub ReadArchive(Folder As String, Point As JObject, Token As CancellationToken, Optional Destination As String = Nothing)
+    Private Shared Sub ReadArchive(Folder As String, Point As JObject, Token As CancellationToken, Optional Destination As String = Nothing, Optional Progress As Action(Of Double) = Nothing)
         Dim Files = DirectCast(Point("files"), JObject), Seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim BytesCopied = FileTaskProgress.Bytes(Point("bytes").ToObject(Of Long)(), Progress)
         If Destination IsNot Nothing Then
             For Each Child In DirectCast(Point("directories"), JArray)
                 Token.ThrowIfCancellationRequested()
@@ -268,12 +269,12 @@ Friend NotInheritable Class WorldBackups
                 Using Input = Entry.Open()
                     Dim Actual As Tuple(Of Long, String)
                     If Destination Is Nothing Then
-                        Actual = CopyHash(Input, Nothing, Token, Entry.Length)
+                        Actual = CopyHash(Input, Nothing, Token, Entry.Length, BytesCopied)
                     Else
                         Dim FileName = Safe(Destination, Entry.FullName)
                         Directory.CreateDirectory(Path.GetDirectoryName(FileName))
                         Using Output As New FileStream(FileName, FileMode.CreateNew, FileAccess.Write, FileShare.None)
-                            Actual = CopyHash(Input, Output, Token, Entry.Length)
+                            Actual = CopyHash(Input, Output, Token, Entry.Length, BytesCopied)
                             Output.Flush(True)
                         End Using
                         File.SetLastWriteTimeUtc(FileName, Expected("writeUtc").ToObject(Of Date)().ToUniversalTime())
@@ -282,8 +283,9 @@ Friend NotInheritable Class WorldBackups
                 End Using
             Next
         End Using
+        Progress?.Invoke(1)
     End Sub
-    Private Shared Function CaptureCore(GameFolder As String, Identifier As String, Reason As String, Token As CancellationToken) As String
+    Private Shared Function CaptureCore(GameFolder As String, Identifier As String, Reason As String, Token As CancellationToken, Optional Progress As Action(Of Double) = Nothing) As String
         Dim World = WorldFolder(GameFolder, Identifier)
         If Not Directory.Exists(World) Then Throw New IOException("该存档已移动或删除，请刷新列表。")
         Dim Root = Store(GameFolder), Id = Guid.NewGuid().ToString("N")
@@ -294,6 +296,8 @@ Friend NotInheritable Class WorldBackups
             Dim Files As New JObject, Total As Long = 0, Directories As New List(Of String)
             Using Held = SessionLock(World)
                 Dim Before = ScanTree(World, Token, Directories)
+                Progress?.Invoke(0.03)
+                Dim BytesCopied = FileTaskProgress.Bytes(Before.Values.Sum(Function(Item) Item.Length), FileTaskProgress.Slice(Progress, 0.03, 0.7))
                 Using Stream As New FileStream(Safe(Stage, "world.zip"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None)
                     Using Archive As New ZipArchive(Stream, ZipArchiveMode.Create, True)
                         For Each Pair In Before.OrderBy(Function(Item) Item.Key, StringComparer.OrdinalIgnoreCase)
@@ -301,7 +305,7 @@ Friend NotInheritable Class WorldBackups
                             Dim FileName = Safe(World, Pair.Key), Stamp = Pair.Value.LastWriteTimeUtc, Length = Pair.Value.Length
                             Dim Entry = Archive.CreateEntry(Pair.Key, CompressionLevel.Optimal)
                             Using Input As New FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.Read), Output = Entry.Open()
-                                Dim Actual = CopyHash(Input, Output, Token, Length)
+                                Dim Actual = CopyHash(Input, Output, Token, Length, BytesCopied)
                                 Files.Add(Pair.Key, New JObject(New JProperty("length", Actual.Item1), New JProperty("sha256", Actual.Item2), New JProperty("writeUtc", Stamp)))
                                 Total += Actual.Item1
                             End Using
@@ -324,12 +328,13 @@ Friend NotInheritable Class WorldBackups
             Dim Point As New JObject(New JProperty("schema", 1), New JProperty("id", Id), New JProperty("gameFolder", Full(GameFolder)), New JProperty("world", Identifier),
                 New JProperty("label", Label), New JProperty("created", Date.UtcNow), New JProperty("reason", Reason), New JProperty("manual", ManualReason(Reason)), New JProperty("bytes", Total), New JProperty("archiveBytes", New FileInfo(Safe(Stage, "world.zip")).Length), New JProperty("files", Files), New JProperty("directories", New JArray(Directories)))
             WriteJson(Safe(Stage, "manifest.json"), Point)
-            ReadArchive(Stage, Point, Token)
+            ReadArchive(Stage, Point, Token, Progress:=FileTaskProgress.Slice(Progress, 0.72, 0.97))
             Token.ThrowIfCancellationRequested()
             RequireStopped(GameFolder)
             Directory.CreateDirectory(Path.GetDirectoryName(Destination))
             NoLinks(Destination)
             Directory.Move(Stage, Destination)
+            Progress?.Invoke(1)
             Return Id
         Finally
             If Directory.Exists(Stage) Then DeleteTree(Root, Stage)
@@ -367,14 +372,18 @@ Friend NotInheritable Class WorldBackups
         Next
     End Sub
     Friend Shared Function CaptureWorld(GameFolder As String, Identifier As String, Reason As String, Retention As Integer, Token As CancellationToken, Optional ExitedProcess As Process = Nothing) As String
+        Return CaptureWorldWithProgress(GameFolder, Identifier, Reason, Retention, Token, Nothing, ExitedProcess)
+    End Function
+    Friend Shared Function CaptureWorldWithProgress(GameFolder As String, Identifier As String, Reason As String, Retention As Integer, Token As CancellationToken, Progress As Action(Of Double), Optional ExitedProcess As Process = Nothing) As String
         SyncLock Gate
             Using Scope As New BusyScope
                 Retain(Retention)
                 RequireStopped(GameFolder, ExitedProcess)
                 RecoverCore(GameFolder, Token)
-                Dim Id = CaptureCore(GameFolder, Identifier, Reason, Token)
+                Dim Id = CaptureCore(GameFolder, Identifier, Reason, Token, FileTaskProgress.Slice(Progress, 0, 0.98))
                 Prune(GameFolder, Identifier, Retention)
                 NotifyChanged()
+                Progress?.Invoke(1)
                 Return Id
             End Using
         End SyncLock
@@ -383,7 +392,14 @@ Friend NotInheritable Class WorldBackups
         If Instance Is Nothing Then Throw New IOException("请先选择游戏版本。")
         Return CaptureFolder(Instance.PathIndie, Reason, Settings.Get(Of Integer)("VersionWorldBackupRetention", Instance:=Instance), Token, ExitedProcess)
     End Function
+    Friend Shared Function CaptureAllWithProgress(Instance As McInstance, Reason As String, Token As CancellationToken, Progress As Action(Of Double)) As List(Of String)
+        If Instance Is Nothing Then Throw New IOException("请先选择游戏版本。")
+        Return CaptureFolderWithProgress(Instance.PathIndie, Reason, Settings.Get(Of Integer)("VersionWorldBackupRetention", Instance:=Instance), Token, Progress)
+    End Function
     Friend Shared Function CaptureFolder(GameFolder As String, Reason As String, Retention As Integer, Token As CancellationToken, Optional ExitedProcess As Process = Nothing) As List(Of String)
+        Return CaptureFolderWithProgress(GameFolder, Reason, Retention, Token, Nothing, ExitedProcess)
+    End Function
+    Friend Shared Function CaptureFolderWithProgress(GameFolder As String, Reason As String, Retention As Integer, Token As CancellationToken, Progress As Action(Of Double), Optional ExitedProcess As Process = Nothing) As List(Of String)
         SyncLock Gate
             Using Scope As New BusyScope
                 Retain(Retention)
@@ -391,31 +407,40 @@ Friend NotInheritable Class WorldBackups
                 RecoverCore(GameFolder, Token)
                 Dim Root = Safe(GameFolder, "saves"), Result As New List(Of String)
                 If Not Directory.Exists(Root) Then Return Result
+                Dim Folders As New List(Of String)
                 For Each Folder In Directory.EnumerateDirectories(Root).OrderBy(Function(Value) Value, StringComparer.OrdinalIgnoreCase)
                     Token.ThrowIfCancellationRequested()
                     Dim Identifier = Path.GetFileName(Folder)
                     If Identifier.StartsWith(".pcl-", StringComparison.OrdinalIgnoreCase) Then Continue For
                     NoLinks(Folder)
                     If Not File.Exists(Safe(Folder, "level.dat")) Then Continue For
+                    Folders.Add(Folder)
+                Next
+                For Index = 0 To Folders.Count - 1
+                    Token.ThrowIfCancellationRequested()
+                    Dim Folder = Folders(Index), Identifier = Path.GetFileName(Folder), Count = Math.Max(1, Folders.Count)
                     RequireStopped(GameFolder, ExitedProcess)
-                    Result.Add(CaptureCore(GameFolder, Identifier, Reason, Token))
+                    Result.Add(CaptureCore(GameFolder, Identifier, Reason, Token, FileTaskProgress.Slice(Progress, Index / Count, (Index + 0.98) / Count)))
                     Prune(GameFolder, Identifier, Retention)
                 Next
                 NotifyChanged()
+                Progress?.Invoke(1)
                 Return Result
             End Using
         End SyncLock
     End Function
-    Private Shared Sub MatchTree(World As String, Point As JObject, Token As CancellationToken)
+    Private Shared Sub MatchTree(World As String, Point As JObject, Token As CancellationToken, Optional Progress As Action(Of Double) = Nothing)
         Dim Files = DirectCast(Point("files"), JObject), Directories As New List(Of String), Tree = ScanTree(World, Token, Directories)
+        Dim BytesRead = FileTaskProgress.Bytes(Point("bytes").ToObject(Of Long)(), Progress)
         If Tree.Count <> Files.Count OrElse Not New HashSet(Of String)(Directories, StringComparer.OrdinalIgnoreCase).SetEquals(DirectCast(Point("directories"), JArray).Select(Function(Item) Item.ToString())) Then Throw New IOException("当前世界已被其他程序修改，停止恢复以保留当前进度。")
         For Each Pair In Tree
             Dim Expected = Files(Pair.Key)
             If Expected Is Nothing Then Throw New IOException("当前世界已变化，停止恢复。")
             Using Input As New FileStream(Safe(World, Pair.Key), FileMode.Open, FileAccess.Read, FileShare.Read)
-                If CopyHash(Input, Nothing, Token, Expected("length").ToObject(Of Long)()).Item2 <> Expected("sha256").ToString() Then Throw New IOException("当前世界已被其他程序修改，停止恢复以保留当前进度。")
+                If CopyHash(Input, Nothing, Token, Expected("length").ToObject(Of Long)(), BytesRead).Item2 <> Expected("sha256").ToString() Then Throw New IOException("当前世界已被其他程序修改，停止恢复以保留当前进度。")
             End Using
         Next
+        Progress?.Invoke(1)
     End Sub
     Private Shared Function RestorePath(GameFolder As String, Transaction As String, Suffix As String) As String
         PointId(Transaction)
@@ -483,7 +508,14 @@ Friend NotInheritable Class WorldBackups
             RecoverPending(GameFolder, Token)
         End SyncLock
     End Sub
+    Friend Shared Function HasPendingRecovery(GameFolder As String) As Boolean
+        Dim Folder = Safe(Store(GameFolder), "transactions")
+        Return Directory.Exists(Folder) AndAlso Directory.EnumerateFiles(Folder, "*.json").Any()
+    End Function
     Friend Shared Function Restore(GameFolder As String, Id As String, Retention As Integer, Token As CancellationToken, Optional BeforeCommit As Action(Of Integer) = Nothing) As String
+        Return RestoreWithProgress(GameFolder, Id, Retention, Token, Nothing, BeforeCommit)
+    End Function
+    Friend Shared Function RestoreWithProgress(GameFolder As String, Id As String, Retention As Integer, Token As CancellationToken, Progress As Action(Of Double), Optional BeforeCommit As Action(Of Integer) = Nothing) As String
         SyncLock Gate
             Using Scope As New BusyScope
                 Retain(Retention)
@@ -497,9 +529,9 @@ Friend NotInheritable Class WorldBackups
                 Try
                     Token.ThrowIfCancellationRequested()
                     Directory.CreateDirectory(Stage)
-                    ReadArchive(PointFolder(GameFolder, Id), Point, Token, Stage)
+                    ReadArchive(PointFolder(GameFolder, Id), Point, Token, Stage, FileTaskProgress.Slice(Progress, 0.02, 0.4))
                     Dim Existed = Directory.Exists(World)
-                    If Existed Then Undo = CaptureCore(GameFolder, Identifier, "恢复前自动保存", Token)
+                    If Existed Then Undo = CaptureCore(GameFolder, Identifier, "恢复前自动保存", Token, FileTaskProgress.Slice(Progress, 0.4, 0.8))
                     Dim Journal As New JObject(New JProperty("gameFolder", Full(GameFolder)), New JProperty("world", Identifier), New JProperty("point", Id), New JProperty("undo", Undo), New JProperty("existed", Existed), New JProperty("complete", False))
                     Using Owner = Process.GetCurrentProcess()
                         Journal("ownerPid") = Owner.Id
@@ -510,7 +542,7 @@ Friend NotInheritable Class WorldBackups
                     BeforeCommit?.Invoke(0)
                     Using Held = If(Existed, SessionLock(World), Nothing)
                         RequireStopped(GameFolder)
-                        If Existed Then MatchTree(World, Metadata(GameFolder, Undo), Token)
+                        If Existed Then MatchTree(World, Metadata(GameFolder, Undo), Token, FileTaskProgress.Slice(Progress, 0.8, 0.95))
                     End Using
                     'Windows 不允许移动包含本进程打开的文件句柄的目录。
                     '校验锁释放后立即提交；IsBusy 与实例锁阻止启动器在事务中启动游戏。
@@ -526,6 +558,7 @@ Friend NotInheritable Class WorldBackups
                     Journal("complete") = True
                     WriteJson(JournalFile, Journal)
                     Completed = True
+                    Progress?.Invoke(0.98)
                 Catch ex As Exception
                     Try
                         If Installed Then
@@ -555,6 +588,7 @@ Friend NotInheritable Class WorldBackups
                     If Undo IsNot Nothing Then Prune(GameFolder, Identifier, Retention)
                     NotifyChanged()
                 End If
+                Progress?.Invoke(1)
                 Return Undo
             End Using
         End SyncLock
@@ -655,6 +689,7 @@ Friend NotInheritable Class WorldBackupsUi
         Dim StepLoader As New LoaderTask(Of String, String)(If(Removing, "移除存档备份", If(Restoring, "恢复世界", "备份世界")),
             Sub(Task)
                 Dim Token = Task.CreateCancellationToken()
+                Dim Progress As Action(Of Double) = Sub(Value) Task.Progress = Math.Max(Task.Progress, Math.Min(0.99, Value))
                 If Removing Then
                     If MyMsgBox($"移除选中的 {Ids.Length} 份存档备份？{vbCrLf}备份将移动到本机备份目录的 deleted 文件夹。", "移除存档备份", "移除", "取消", IsWarn:=True) <> 1 Then Throw New OperationCanceledException()
                     Token.ThrowIfCancellationRequested()
@@ -665,13 +700,13 @@ Friend NotInheritable Class WorldBackupsUi
                     Dim Text = $"将 {Point("label")} 恢复到 {Point("created").ToObject(Of Date)().ToLocalTime():yyyy-MM-dd HH:mm:ss}。{vbCrLf}{Point("description")}{vbCrLf}{vbCrLf}恢复前会自动备份当前世界。"
                     If Not PathUtils.IsSame(Instance.PathVersion, Instance.PathIndie) Then Text &= vbCrLf & "此版本使用共用目录，恢复结果也会影响使用该存档目录的其他版本。"
                     If MyMsgBox(Text, "恢复存档备份", "恢复", "取消", IsWarn:=True) <> 1 Then Throw New OperationCanceledException()
-                    Task.Output = WorldBackups.Restore(Instance.PathIndie, RestoreId, Settings.Get(Of Integer)("VersionWorldBackupRetention", Instance:=Instance), Token)
+                    Task.Output = WorldBackups.RestoreWithProgress(Instance.PathIndie, RestoreId, Settings.Get(Of Integer)("VersionWorldBackupRetention", Instance:=Instance), Token, Progress)
                 Else
                     Dim Saved As List(Of String)
                     If WorldIdentifier Is Nothing Then
-                        Saved = WorldBackups.CaptureAll(Instance, "手动备份", Token)
+                        Saved = WorldBackups.CaptureAllWithProgress(Instance, "手动备份", Token, Progress)
                     Else
-                        Saved = New List(Of String) From {WorldBackups.CaptureWorld(Instance.PathIndie, WorldIdentifier, "手动备份", Settings.Get(Of Integer)("VersionWorldBackupRetention", Instance:=Instance), Token)}
+                        Saved = New List(Of String) From {WorldBackups.CaptureWorldWithProgress(Instance.PathIndie, WorldIdentifier, "手动备份", Settings.Get(Of Integer)("VersionWorldBackupRetention", Instance:=Instance), Token, Progress)}
                     End If
                     Task.Output = Saved.Count.ToString()
                     If Saved.Count = 0 Then RunInUi(Sub() Hint("此游戏目录没有可备份的存档。"))
@@ -679,7 +714,8 @@ Friend NotInheritable Class WorldBackupsUi
             End Sub)
         Dim Loader As New LoaderCombo(Of String)(If(Removing, "移除备份：", If(Restoring, "恢复世界：", "备份世界：")) & Instance.Name, {StepLoader}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
         Dim Worker As New RedoableWorker(LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion))
-        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then
+        Dim BrowseOnly = Not Restoring AndAlso (Removing OrElse Not WorldBackups.HasPendingRecovery(Instance.PathIndie))
+        If Not If(BrowseOnly, McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion), McInstanceLock.TryAcquire(Worker, Instance.PathVersion)) Then
             Interlocked.Exchange(Busy, 0)
             Return
         End If

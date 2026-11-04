@@ -389,23 +389,29 @@ Friend NotInheritable Class ModpackUpdate
     End Function
     Friend Shared Function ApplyTransaction(GameRoot As String, VersionFolder As String, Operations As List(Of Tuple(Of String, String, String)), Token As CancellationToken,
         Optional BeforeApply As Action(Of Integer) = Nothing, Optional Box As String = Nothing) As String
+        Return ApplyTransactionWithProgress(GameRoot, VersionFolder, Operations, Token, Nothing, BeforeApply, Box)
+    End Function
+    Friend Shared Function ApplyTransactionWithProgress(GameRoot As String, VersionFolder As String, Operations As List(Of Tuple(Of String, String, String)), Token As CancellationToken, Progress As Action(Of Double),
+        Optional BeforeApply As Action(Of Integer) = Nothing, Optional Box As String = Nothing) As String
         Token.ThrowIfCancellationRequested()
         If Box Is Nothing Then Box = Target(VersionFolder, "PCL/PackUpdateBackups/" & Guid.NewGuid().ToString("N") & "/transaction.json")
         Directory.CreateDirectory(Path.GetDirectoryName(Box))
+        Dim Checked = 0, Count = Math.Max(1, Operations.Count)
         For Each Op In Operations
             If PathUtils.IsParentOf(VersionFolder, Op.Item1) Then
                 InstanceResourceStore.EnsureWithin(VersionFolder, Op.Item1)
             Else
                 InstanceResourceStore.EnsureWithin(GameRoot, Op.Item1)
             End If
-            If Digest(Op.Item1) <> Op.Item3 Then Throw New IOException("文件已变化，请重新检查环境。")
+            If FileTaskProgress.Digest(Op.Item1, Token, FileTaskProgress.Slice(Progress, 0.15 * Checked / Count, 0.15 * (Checked + 1) / Count)) <> Op.Item3 Then Throw New IOException("文件已变化，请重新检查环境。")
+            Checked += 1
         Next
         Dim Log As New JObject(New JProperty("complete", False), New JProperty("gameRoot", Path.GetFullPath(GameRoot)), New JProperty("files", New JArray))
         Dim LogFiles = CType(Log("files"), JArray)
         For Index = 0 To Operations.Count - 1
             Token.ThrowIfCancellationRequested()
             Dim Op = Operations(Index), Backup = Path.Combine(Path.GetDirectoryName(Box), Index & ".bak")
-            If Op.Item3 IsNot Nothing Then File.Copy(Op.Item1, Backup, False)
+            If Op.Item3 IsNot Nothing Then FileTaskProgress.Copy(Op.Item1, Backup, Token, FileTaskProgress.Slice(Progress, 0.15 + 0.3 * Index / Count, 0.15 + 0.3 * (Index + 1) / Count))
             LogFiles.Add(New JObject(New JProperty("target", Op.Item1), New JProperty("backup", If(Op.Item3 Is Nothing, Nothing, Backup)), New JProperty("before", Op.Item3), New JProperty("after", If(Op.Item2 Is Nothing, Nothing, Digest(Op.Item2)))))
         Next
         Token.ThrowIfCancellationRequested()
@@ -416,17 +422,20 @@ Friend NotInheritable Class ModpackUpdate
                 BeforeApply?.Invoke(Index)
                 Token.ThrowIfCancellationRequested()
                 Dim Op = Operations(Index)
-                If Digest(Op.Item1) <> Op.Item3 Then Throw New IOException("提交期间文件发生变化，已停止更新。")
+                Dim FileProgress = FileTaskProgress.Slice(Progress, 0.45 + 0.54 * Index / Count, 0.45 + 0.54 * (Index + 1) / Count)
+                If FileTaskProgress.Digest(Op.Item1, Token, FileTaskProgress.Slice(FileProgress, 0, 0.5)) <> Op.Item3 Then Throw New IOException("提交期间文件发生变化，已停止更新。")
                 Applied.Add(Index)
                 If Op.Item2 Is Nothing Then
                     File.Delete(Op.Item1)
                 Else
-                    ReplaceFrom(Op.Item2, Op.Item1)
+                    ReplaceFrom(Op.Item2, Op.Item1, Token, FileTaskProgress.Slice(FileProgress, 0.5, 1))
                 End If
+                FileProgress?.Invoke(1)
             Next
             Token.ThrowIfCancellationRequested()
             Log("complete") = True
             LocalGameData.AtomicWrite(Box, System.Text.Encoding.UTF8.GetBytes(Log.ToString()), Nothing, False)
+            Progress?.Invoke(1)
         Catch
             For Each Index In Applied.AsEnumerable().Reverse()
                 Dim Item = LogFiles(Index), Destination = Item("target").ToString()
@@ -443,11 +452,11 @@ Friend NotInheritable Class ModpackUpdate
         End Try
         Return Path.GetDirectoryName(Box)
     End Function
-    Private Shared Sub ReplaceFrom(Source As String, Destination As String)
+    Private Shared Sub ReplaceFrom(Source As String, Destination As String, Optional Token As CancellationToken = Nothing, Optional Progress As Action(Of Double) = Nothing)
         Directory.CreateDirectory(Path.GetDirectoryName(Destination))
         Dim Temporary = Destination & ".pcl-update-" & Guid.NewGuid().ToString("N")
         Try
-            File.Copy(Source, Temporary, False)
+            FileTaskProgress.Copy(Source, Temporary, Token, Progress)
             If File.Exists(Destination) Then File.Replace(Temporary, Destination, Nothing) Else File.Move(Temporary, Destination)
         Finally
             If File.Exists(Temporary) Then File.Delete(Temporary)

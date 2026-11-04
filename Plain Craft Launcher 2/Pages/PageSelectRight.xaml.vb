@@ -29,7 +29,7 @@ Public Class PageSelectRight
             Dim VisibleCards As New Dictionary(Of McInstanceCardType, List(Of McInstance))
             For Each Card In McInstanceList.ToArray()
                 If Card.Key = McInstanceCardType.Hidden Xor ShowHidden Then Continue For
-                VisibleCards.Add(Card.Key, Card.Value.Where(Function(Instance) Not McInstanceLock.IsLocked(Instance) AndAlso ModModpackMode.AllowsInstance(Instance.PathVersion)).ToList())
+                VisibleCards.Add(Card.Key, Card.Value.Where(Function(Instance) Not McInstanceLock.BlocksNavigation(Instance) AndAlso ModModpackMode.AllowsInstance(Instance.PathVersion)).ToList())
             Next
             Dim InstancesByPath As New Dictionary(Of String, McInstance)(StringComparer.OrdinalIgnoreCase)
             For Each Instance In VisibleCards.Values.SelectMany(Function(Items) Items)
@@ -205,7 +205,7 @@ Public Class PageSelectRight
     Public Shared Sub Item_Click(sender As MyListItem, e As EventArgs)
         Dim Instance As McInstance = sender.Tag
         If Not ModModpackMode.AllowsInstance(Instance.PathVersion) Then Return
-        If McInstanceLock.IsLocked(Instance) Then
+        If McInstanceLock.BlocksNavigation(Instance) Then
             Hint("该版本正在被修改，请稍后再选择！", HintType.Red)
             Return
         End If

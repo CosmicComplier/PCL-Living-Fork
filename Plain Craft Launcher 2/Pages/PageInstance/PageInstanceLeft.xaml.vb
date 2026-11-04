@@ -105,8 +105,12 @@
     Public Sub PageChange(ID As FormMain.PageSubType)
         ID = ModModpackMode.NormalizeInstancePage(ID)
         If PageID = ID Then Return
-        If Instance IsNot Nothing AndAlso McInstanceLock.IsLocked(Instance) Then
+        If Instance IsNot Nothing AndAlso McInstanceLock.BlocksNavigation(Instance) Then
             Hint("该版本正在被修改，请稍后再切换页面！", HintType.Red)
+            Return
+        End If
+        If McInstanceLock.IsLocked(Instance) AndAlso IsEditingPage(ID) Then
+            Hint("文件任务进行中，可浏览版本内容，请稍后再修改版本设置。", HintType.Red)
             Return
         End If
         AniControlEnabled += 1
@@ -119,6 +123,9 @@
             AniControlEnabled -= 1
         End Try
     End Sub
+    Friend Shared Function IsEditingPage(ID As FormMain.PageSubType) As Boolean
+        Return {FormMain.PageSubType.InstanceSetup, FormMain.PageSubType.InstanceModify, FormMain.PageSubType.InstanceKeybindings}.Contains(ID)
+    End Function
     Private Shared Sub PageChangeRun(Target As MyPageRight)
         AniStop("FrmMain PageChangeRight") '停止主页面的右页面切换动画，防止它与本动画一起触发多次 PageOnEnter
         If Target.Parent IsNot Nothing Then Target.SetValue(ContentPresenter.ContentProperty, Nothing)
@@ -148,7 +155,7 @@
     End Sub
     Public Sub Refresh(SubType As FormMain.PageSubType)
         If ModModpackMode.Enabled AndAlso SubType = FormMain.PageSubType.InstanceExport Then Return
-        If Instance IsNot Nothing AndAlso McInstanceLock.IsLocked(Instance) Then
+        If Instance IsNot Nothing AndAlso McInstanceLock.BlocksNavigation(Instance) Then
             Hint("该版本正在被修改，请稍后再刷新！", HintType.Red)
             Return
         End If

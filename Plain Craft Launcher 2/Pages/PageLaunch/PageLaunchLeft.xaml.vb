@@ -709,7 +709,7 @@ ExitRefresh:
     '版本设置按钮
     Private Sub BtnMore_Click() Handles BtnMore.Click
         If McLaunchLoader.State = LoadState.Loading Then Return
-        If McInstanceLock.IsLocked(McInstanceSelected) Then
+        If McInstanceLock.BlocksNavigation(McInstanceSelected) Then
             Hint("该版本正在被修改，暂时无法进入版本设置！", HintType.Red)
             Return
         End If

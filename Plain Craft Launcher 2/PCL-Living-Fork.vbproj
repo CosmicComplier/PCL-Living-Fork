@@ -826,6 +826,7 @@
   <ItemGroup>
     <Compile Include="Modules\Base\ModAnimation.vb" />
     <Compile Include="Modules\Base\LoaderFileOperation.vb" />
+    <Compile Include="Modules\Base\FileTaskProgress.vb" />
     <Compile Include="Modules\Base\SafeRedirectHandler.vb" />
     <Compile Include="Modules\Base\MyBitmap.vb" />
     <Compile Include="Modules\ModMain.vb" />

@@ -1146,9 +1146,12 @@ Public Class FormMain
         If Stack.Page = PageType.Setup AndAlso SubType >= 0 Then SubType = ModModpackMode.NormalizeSetupPage(SubType)
         If Stack.Page = PageType.InstanceSetup AndAlso SubType >= 0 Then SubType = ModModpackMode.NormalizeInstancePage(SubType)
         If PageCurrent = Stack AndAlso (PageCurrentSub = SubType OrElse SubType = -1) Then Return
-        If Stack.Page = PageType.InstanceSetup AndAlso PageInstanceLeft.Instance IsNot Nothing AndAlso McInstanceLock.IsLocked(PageInstanceLeft.Instance) Then
+        If Stack.Page = PageType.InstanceSetup AndAlso PageInstanceLeft.Instance IsNot Nothing AndAlso McInstanceLock.BlocksNavigation(PageInstanceLeft.Instance) Then
             Hint("该版本正在被修改，暂时无法进入版本设置！", HintType.Red)
             Return
+        End If
+        If Stack.Page = PageType.InstanceSetup AndAlso McInstanceLock.IsLocked(PageInstanceLeft.Instance) Then
+            If SubType < 0 OrElse PageInstanceLeft.IsEditingPage(SubType) Then SubType = PageSubType.InstanceOverall
         End If
         AniControlEnabled += 1
         Try

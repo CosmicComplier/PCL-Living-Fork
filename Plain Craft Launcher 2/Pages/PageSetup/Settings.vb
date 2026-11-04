@@ -38,7 +38,14 @@ Partial Public Class Settings
         End Try
     End Function
 
-    '兼容的全局偏好与账号直接共用官方注册表；加密/分支专用状态仍隔离。
+    Friend Shared Function IsMicrosoftAccountSetting(Entry As Setting) As Boolean
+        Return Entry.Source = Sources.Registry AndAlso (Entry.Key = "LoginMsJson" OrElse Entry.Key.StartsWith("CacheMs", StringComparison.Ordinal))
+    End Function
+    '内部设置名保持兼容，存储边界统一映射，覆盖读取、登录、刷新、退出与迁移。
+    Friend Shared Function RegistryValueName(Entry As Setting) As String
+        Return Entry.Key & If(IsMicrosoftAccountSetting(Entry), "_LF", "")
+    End Function
+    '微软凭据与其他分支隔离；普通兼容配置继续共用官方注册表。
     Private Shared Function RegistryFolderFor(Entry As Setting) As String
         Return If(IsPclAccountSetting(Entry) OrElse Entry.Key = "Identify" OrElse IsCompatiblePclSetting(Entry), "PCL", RegFolder)
     End Function
@@ -81,19 +88,20 @@ Partial Public Class Settings
     End Class
 
     ''' <summary>
-    ''' 将两边账号统一为官方位置、官方当前设备密钥；旧密钥只用于本次转换。
+    ''' 转换兼容账号；微软凭据仅在本分支命名空间内保留，旧密钥只用于本次转换。
     ''' </summary>
     Friend Shared Function PlanPclAccountMigration(Official As IDictionary(Of String, String), Legacy As IDictionary(Of String, String),
                                                   OfficialKeys As IEnumerable(Of String), LegacyKeys As IEnumerable(Of String), CurrentIdentify As String) As PclAccountMigrationPlan
         Dim Plan As New PclAccountMigrationPlan With {.CurrentIdentify = CurrentIdentify}
         Dim NativePlain As New Dictionary(Of String, String)(StringComparer.Ordinal)
         Dim LegacyPlain As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        Dim HasMicrosoft = Official.Keys.Any(Function(Key) Entries.ContainsKey(Key) AndAlso IsMicrosoftAccountSetting(Entries(Key)))
         For Each Entry In Entries.Values.Where(AddressOf IsPclAccountSetting)
             If Official.ContainsKey(Entry.Key) Then
                 Dim Value = DecodePclAccountWithKeys(Entry, Official(Entry.Key), OfficialKeys)
                 If Value IsNot Nothing Then NativePlain(Entry.Key) = Value
             End If
-            If Legacy.ContainsKey(Entry.Key) Then
+            If Legacy.ContainsKey(Entry.Key) AndAlso Not (HasMicrosoft AndAlso IsMicrosoftAccountSetting(Entry)) Then
                 Dim Value = DecodePclAccountWithKeys(Entry, Legacy(Entry.Key), LegacyKeys)
                 If Value IsNot Nothing Then LegacyPlain(Entry.Key) = Value
             End If
@@ -146,8 +154,9 @@ Partial Public Class Settings
         Dim Old As New Dictionary(Of String, Object)(StringComparer.Ordinal)
         Dim OldKinds As New Dictionary(Of String, Microsoft.Win32.RegistryValueKind)(StringComparer.Ordinal)
         For Each Key In Plan.Values.Keys
-            Original(Key) = Official.GetValue(Key, Nothing)
-            If Original(Key) IsNot Nothing Then OriginalKinds(Key) = Official.GetValueKind(Key)
+            Dim StoredKey = RegistryValueName(Entries(Key))
+            Original(StoredKey) = Official.GetValue(StoredKey, Nothing)
+            If Original(StoredKey) IsNot Nothing Then OriginalKinds(StoredKey) = Official.GetValueKind(StoredKey)
         Next
         For Each Key In Plan.DeleteLegacy
             Old(Key) = Legacy?.GetValue(Key, Nothing)
@@ -155,8 +164,9 @@ Partial Public Class Settings
         Next
         Try
             For Each Item In Plan.Values.OrderBy(Function(Value) If(Value.Key = "CacheMsV2Migrated", 1, 0))
-                Official.SetValue(Item.Key, Item.Value, Microsoft.Win32.RegistryValueKind.String)
-                If Convert.ToString(Official.GetValue(Item.Key), Globalization.CultureInfo.InvariantCulture) <> Item.Value OrElse
+                Dim StoredKey = RegistryValueName(Entries(Item.Key))
+                Official.SetValue(StoredKey, Item.Value, Microsoft.Win32.RegistryValueKind.String)
+                If Convert.ToString(Official.GetValue(StoredKey), Globalization.CultureInfo.InvariantCulture) <> Item.Value OrElse
                     DecodePclAccountValue(Entries(Item.Key), Item.Value, Plan.CurrentIdentify) Is Nothing Then Throw New InvalidOperationException("账号格式转换校验失败")
             Next
             For Each Key In Plan.DeleteLegacy
@@ -190,6 +200,17 @@ Partial Public Class Settings
             ImportCompatiblePclAccountsCore()
         End SyncLock
     End Sub
+    Friend Shared Function ReadPclAccountRegistrySnapshot(Store As Microsoft.Win32.RegistryKey, Optional Legacy As Boolean = False) As Dictionary(Of String, String)
+        Dim Result As New Dictionary(Of String, String)(StringComparer.Ordinal)
+        If Store Is Nothing Then Return Result
+        For Each Entry In Entries.Values.Where(Function(Item) IsPclAccountSetting(Item) OrElse Item.Key = "Identify")
+            '旧私有存储同样没有微软 client_id 来源标记，保留原数据而不猜测导入。
+            If Legacy AndAlso IsMicrosoftAccountSetting(Entry) Then Continue For
+            Dim Value = Store.GetValue(If(Legacy, Entry.Key, RegistryValueName(Entry)), Nothing)
+            If Value IsNot Nothing Then Result(Entry.Key) = Convert.ToString(Value, Globalization.CultureInfo.InvariantCulture)
+        Next
+        Return Result
+    End Function
     Private Shared Sub ImportCompatiblePclAccountsCore()
         If RegFolder = "PCL" Then Return
         Try
@@ -197,12 +218,9 @@ Partial Public Class Settings
             Dim Old As New Dictionary(Of String, String)(StringComparer.Ordinal)
             Using Official = Microsoft.Win32.Registry.CurrentUser.CreateSubKey("Software\PCL"),
                   Legacy = Microsoft.Win32.Registry.CurrentUser.OpenSubKey("Software\" & RegFolder, True)
-                For Each Entry In Entries.Values.Where(Function(Item) IsPclAccountSetting(Item) OrElse Item.Key = "Identify")
-                    Dim Value = Official.GetValue(Entry.Key, Nothing)
-                    If Value IsNot Nothing Then Native(Entry.Key) = Convert.ToString(Value, Globalization.CultureInfo.InvariantCulture)
-                    Value = Legacy?.GetValue(Entry.Key, Nothing)
-                    If Value IsNot Nothing Then Old(Entry.Key) = Convert.ToString(Value, Globalization.CultureInfo.InvariantCulture)
-                Next
+                '无后缀的共享微软令牌没有 client_id 来源信息，不能视为本分支凭据。
+                Native = ReadPclAccountRegistrySnapshot(Official)
+                Old = ReadPclAccountRegistrySnapshot(Legacy, True)
                 If Not Native.ContainsKey("Identify") Then Return
                 Dim OfficialKeys = PclIdentifyCandidates(Native("Identify"))
                 Dim LegacyKeys = If(Old.ContainsKey("Identify"), PclIdentifyCandidates(Old("Identify")), New List(Of String))
@@ -230,7 +248,7 @@ Partial Public Class Settings
 
     '兼容偏好直接读取官方 PCL 注册表，不再使用本地优先/首次导入机制。
     Private Shared Function ReadRegistrySetting(Entry As Setting, DefaultValue As String) As String
-        Return If(RegistryUtils.TryRead($"HKEY_CURRENT_USER\Software\{RegistryFolderFor(Entry)}", Entry.Key, Nothing), DefaultValue)
+        Return If(RegistryUtils.TryRead($"HKEY_CURRENT_USER\Software\{RegistryFolderFor(Entry)}", RegistryValueName(Entry), Nothing), DefaultValue)
     End Function
 
     Public Shared ReadOnly Entries As Dictionary(Of String, Setting) = (New List(Of Setting) From {
@@ -510,7 +528,7 @@ Partial Public Class Settings
                     WriteIni("Setup", Key, Value)
                 Case Sources.Registry
                     Try
-                        RegistryUtils.Write($"HKEY_CURRENT_USER\Software\{RegistryFolderFor(Me)}", Key, Value)
+                        RegistryUtils.Write($"HKEY_CURRENT_USER\Software\{RegistryFolderFor(Me)}", RegistryValueName(Me), Value)
                     Catch ex As Exception
                         Logger.Warn(ex, $"写入注册表失败（{Key} → {Value}）", LogBehavior.Toast)
                     End Try

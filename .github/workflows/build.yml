@@ -152,6 +152,10 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw 'Environment restore checks failed' }
         powershell -NoProfile -STA -File scripts/Test-BackupRetention.ps1 -ExecutablePath "$env:PCL_EXE"
         if ($LASTEXITCODE -ne 0) { throw 'Backup retention and manual protection checks failed' }
+        powershell -NoProfile -STA -File scripts/Test-BackupTaskProgress.ps1 -ExecutablePath "$env:PCL_EXE"
+        if ($LASTEXITCODE -ne 0) { throw 'Backup progress and read-only navigation checks failed' }
+        powershell -NoProfile -STA -File scripts/Test-MicrosoftRegistryIsolation.ps1 -ExecutablePath "$env:PCL_EXE"
+        if ($LASTEXITCODE -ne 0) { throw 'Microsoft registry isolation checks failed' }
 
     - name: Verify recent-world card animation and launch sequencing
       run: powershell -NoProfile -STA -File scripts/Test-RecentWorldCard.ps1 -ExecutablePath "$env:PCL_EXE"

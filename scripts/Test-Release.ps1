@@ -33,8 +33,8 @@ $legacy['LoginLegacyName']=Encode 'PlayerA' $legacyId
 $legacy['UiLauncherThemeHide']=Encode '0|1|2|3|4|7' $legacyId
 $plan=$makePlan.Invoke($null,@($official,$legacy,[string[]]@($currentId,$oldId),[string[]]@($legacyId),$currentId))
 $accounts=Decode $plan.Values['LoginMsJson'] $currentId | ConvertFrom-Json
-if(@($accounts.PSObject.Properties).Count -ne 3 -or $accounts.shared -ne 'new-token' -or $accounts.NativeOnly -ne 'native-token') { throw 'Account list merge failed' }
-if((Decode $plan.Values['CacheMsV2Name'] $currentId) -ne 'NewActive') { throw 'Cache group selection failed' }
+if(@($accounts.PSObject.Properties).Count -ne 2 -or $accounts.Shared -ne 'old-token' -or $accounts.NativeOnly -ne 'native-token') { throw 'Existing LF accounts were overwritten by an old private cache' }
+if((Decode $plan.Values['CacheMsV2Name'] $currentId) -ne 'OldActive') { throw 'Existing LF session was overwritten' }
 if((Decode $plan.Values['CacheAuthPass'] $currentId) -ne 'auth-password') { throw 'Historical auth encryption conversion failed' }
 if($plan.Values.ContainsKey('SystemCount') -or $plan.DeleteLegacy.Contains('UiLauncherThemeHide')) { throw 'Excluded settings were included' }
 $testPath='Software\LivingPCL-CompatibilityTests\'+[Guid]::NewGuid().ToString('N')
@@ -47,7 +47,7 @@ try {
  foreach($name in $plan.DeleteLegacy) { if($null -ne $testLegacy.GetValue($name,$null)) { throw 'Old account storage was retained' } }
  if($null -eq $testLegacy.GetValue('UiLauncherThemeHide',$null)) { throw 'Excluded state removed' }
  $native2=New-Map;$legacy2=New-Map
- foreach($name in $testNative.GetValueNames()) { $native2[$name]=[string]$testNative.GetValue($name) }
+ $native2=$type.GetMethod('ReadPclAccountRegistrySnapshot',$flags).Invoke($null,@($testNative,$false))
  foreach($name in $testLegacy.GetValueNames()) { $legacy2[$name]=[string]$testLegacy.GetValue($name) }
  $again=$makePlan.Invoke($null,@($native2,$legacy2,[string[]]@($currentId,$oldId),[string[]]@($legacyId),$currentId))
  if($again.Values.Count -ne 0 -or $again.DeleteLegacy.Count -ne 0) { throw 'Migration is not idempotent' }
