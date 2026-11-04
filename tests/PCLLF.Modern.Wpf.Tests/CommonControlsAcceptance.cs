@@ -94,7 +94,8 @@ internal static class CommonControlsAcceptance {
             var failures = new List<Exception>();
             (string Name, Action<Window, Session> Run)[] checks = {
                 ("card", Card), ("hint", Hint), ("icon", (host, state) => Icon(host, state, palette)),
-                ("list", ListItems), ("virtualization", Virtualization), ("shadow", Shadow)
+                ("list", ListItems), ("virtualization", Virtualization), ("shadow", Shadow),
+                ("setup-flows", (_, _) => { PclSetupPageControllerChecks.Run(); Console.WriteLine("PASS C030 setup flows: real native controls, user/reentrant/canceled personal import, selected-instance modal identity, hidden state, culture tooltips and RAM labels/geometry/animation plans."); })
             };
             foreach (var check in checks) {
                 session = new Session();
