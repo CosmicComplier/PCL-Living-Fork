@@ -81,6 +81,14 @@ v3 保留上述 137 例／52 比较，追加 12 个实际 ZIP API 请求及 1 �
 
 路径请求包括 owned、pipe／问号段归约、保留 pipe、NBSP／U2000、null／empty、坏 ZIP 和缺失；原管线的严格四类失败判定、固定原源码／config／manifest／Shared／Json 和先 unlink 清理不变。旧驱动引用补 Compression／FileSystem，现代项目链接真实 PackageRules／LegacyPathCharacters，provenance 记录新源哈希。
 
-这些是 **真实 OpenRead API 快照对照**，并非注入旧 ValidatePackage 业务函数；快照有意读取 Entries，不能代替未知 kind 不读中央目录的业务验收，后者由实际生产测试和原 VB 入口另行验证。当前仅本地 339／339、三个工程编译与 v3 旧驱动预编译通过，Windows 150／56 尚待执行；不将此前 137／52 证据外推。
+这些是 **真实 OpenRead API 快照对照**，并非注入旧 ValidatePackage 业务函数；快照有意读取 Entries，不能代替未知 kind 不读中央目录的业务验收，后者由实际生产测试和原 VB 入口另行验证。初次提交前完成本地 339／339、三个工程编译与 v3 旧驱动预编译，随后 Windows 的实际失败与修复见下文；不将此前 137／52 证据外推。
+
+首次 `dfb81b8b7449bc38f27ae4a2512f907557c8edf6` 的 [Migration validation 41743920173](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41743920173)：Ubuntu job `126292044914` 339／339、Windows job `126292045184` 371／371 单元通过；真实 150 例／56 比较中 contract／native／text 全 0，**1 项 ZIP 成员名差异使 RequireEquivalent 退出 2**。
+
+- `zip.utf8-no-efs-long-s`：相同 UTF8 名字 bytes 在 EFS 清零时，Framework 名字码元为 `[197,191,104,97,100,101,114,115,47,101,110,116,114,121]`（Å¿haders/entry）；现代默认为 `[383,104,97,100,101,114,115,47,101,110,116,114,121]`（ſhaders/entry）。两者 shaderPrefix 均 false，差异在完整名字快照，不能隐藏为已等价。
+- EFS 置位的同名 ZIP 在两端均解为 U+017F；Framework `Encoding.Default.CodePage=1252`，现代默认 `65001`。报告记录真实 Compression 汇编版本，未根据注释推定。
+- [完整首次 v3 artifact 13282837230](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41743920173/artifacts/13282837230)，ZIP SHA256 `2e339da51a5b18afc9353b3cb822d332999fbbd31f0f3673575c1069a519ed68`，已下载验证。
+
+后继仅现代 Windows 的 OpenRead 显式传实际 `GetACP` 对应 encoding：直接向 CodePages provider 查询，必要时用内建 encoding，**不全局 Register**；Frame／Unix继续原 API，EFS true 仍由 ZipArchive 选择 UTF8。新 context 记录实际 `zipEntryCodePage`。依据实测及固定 Reference Source `Encoding.CreateDefaultEncoding`／runtime EFS 选择顺序做此局部适配，不改旧快照期望、不增加默认编码全局策略；修复后的 Windows 严格运行仍待执行。
 
 源码审计参考固定 [Framework path.cs](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/path.cs)、[FileIOPermission](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/security/permissions/fileiopermission.cs) 与 [runtime 10.0.0 Path.Windows.cs](https://github.com/dotnet/runtime/blob/60629d14374c56f1cb51819049ad1fa529307f8d/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs)。尚未执行的适配和未覆盖边界仍保持显式待验证；75 个样本不代表所有 BCL 输入或完整现代 WPF 已验收。

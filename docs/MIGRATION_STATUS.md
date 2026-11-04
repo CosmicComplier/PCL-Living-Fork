@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `70f254528e70f4b62aeb4c1514861b20fb458665`：Windows 各 41 步、Ubuntu 327／Windows 356 组与 **RequireEquivalent** 137／52 全通过，原私有 AcceptFile／9 白名单／36 字符／null-device 及 Quick Play 消费者通过，C007c3 完成。此前 c2／c1／b2 已关闭；见 [实际报告摘要](migration/RESOURCE_PATH_ORACLE.md)。主产品仍 net48，非全部 BCL／现代 WPF 验收。
-- 当前 C007c4 原包校验已接 C#／VB 真委托，保 Using／两消息／Shader 旧 Ordinal；中断恢复后补齐真实 ZIP 测试，本地 339／339、三个工程零警告编译与完整独立终审通过，v3 旧 VB 驱动仅完成预编译。150 例／56 比较及 Windows 371 组仍待实跑；C005c2／C006d 的界面母项保持 blocked。
+- 当前 C007c4 `dfb81b8`：339／371 单元通过，真实 150／56 发现 1 项未置 EFS 的 ZIP 解码差异，原消费者还暴露异常解包问题；两处后继修复已落、待 Windows 复验，未把失败写为通过。C005c2／C006d 的界面母项保持 blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -68,6 +68,9 @@
 | `8734df5` | C007c1 两原入口与 C# 映射、三组金值及真实原 enum／Root／精确异常顺序消费者已推送；311／339 单元、严格 137／52 与 Windows 各 41 步全通过，C007c1 完成 |
 | `2d111e1` | C007c2 SafeName 单函数／原门面、8 组平台规则及真实旧入口三文案／41 字符／22 保留名／120 UTF16 验证已推送；319／347 单元、严格 137／52、Windows 各 41 步全通过，C007c2 完成 |
 | `70f2545` | C007c3 原私有筛选／CInt 桥与 9 白名单、原 C6 字符共享、8／9 平台组及真实旧入口样本已推送；327／356、严格 137／52 和 Windows 各 41 步全通过，C007c3 完成 |
+| `dfb81b8` | C007c4 原包校验／Using／两消息、真实 ZIP 测试与 v3 150／56 对照已推送；Linux 339／Windows 371 单元通过，严格对照实测 1 项未置 EFS 解码差异、完整 Build 原消费者失败，c4 不提前关闭 |
+| [C007c4 首次 Migration validation 41743920173](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41743920173) | Ubuntu job `126292044914` success、Windows job `126292045184` failure：339／371 单元均通过，150 例／56 候选实跑，contract／native／text 失败全 0，仅 zip.utf8-no-efs-long-s 一项名字解码不同，严格退出 2；artifact `13282837230` 及哈希见对照记录 |
+| [C007c4 首次 Windows Build 41743920174](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41743920174) | Release job `126292045363` failure，原 PS 资源消费者在期待 InvalidData 时失败；Debug job `126292044964` 因矩阵 fail-fast cancelled，不能写为通过。检查发现测试 helper 递归拆所有 InnerException 会丢失业务异常顶层，后继只拆调用包装器并增加 observed 类型诊断 |
 | [C007b2 首批 Windows Build 41736377697](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377697) | 提交 `8c64fcc`：Debug job `126266518133`、Release job `126266518659` 各 41 步 success；原资源／备份还原／更新／取消恢复、账号合成迁移、旧更新桥及发布产物检查通过，仍是旧 net48 产品，非现代 WPF 运行证据 |
 | [C007b2 首批 Migration validation 41736377415](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41736377415) | Ubuntu job `126266516885` 308／308、Windows job `126266516510` 331／331，均 success；124-case 独立 CLR4／现代对照、52 项候选实跑，基线／候选失败 0、文本差异 0、新路径差异 9。Diagnostic 成功保留残差，不代表 RequireEquivalent，通过报告与 artifact 摘要可续接 |
 | [C007b2 后继 Migration validation 41737707302](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41737707302) | Ubuntu job `126271080274` 308／308、Windows job `126271080675` 336／336，均 success；137-case／52 候选真实实跑，基线／候选／path／text 失败均 0、equivalent=true。新增长度、NT 父 NUL、canonical 根旧 NRE 均由真实 CLR4 证实；artifact `13280505603` 及哈希见摘要 |
@@ -262,7 +265,7 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c1 | `8734df5` 已推送，Ubuntu 311／Windows 339、严格 137／52、Windows 各 41 步及真实 VB enum／入口／Root 原异常顺序全部通过；独立终审／零警告编译通过，脚本 BOM 保留 | 本批完成，不以字符串映射完成关闭整个 Store；Root 仍原 BCL Combine，更多现代 API 边界按实际消费另验 |
 | C007c2 | `2d111e1` 已推送；319／347 单元、严格 137／52、Windows 各 41 步／真实旧入口与原资源回归全通过，独立终审与零警告编译通过 | 本批完成，所有写入事务和原取消仍由既有流程执行；不以单规则关闭 Store |
 | C007c3 | `70f2545` 已推送；327／356、严格 137／52、Windows 各 41 步与原私有桥／null-device／资源和 Quick Play 消费者全通过；独立终审／零警告编译通过 | 本批完成，筛选不做 SafeName／完整路径归约；更多 ZIP 和扫描语义仍属后继 |
-| C007c4 | 原函数／更新消费者接口已接、补 net48 FileSystem 引用；真实 ZIP 测试和 PS 原桥含 exact／prefix／错误／惰性 central／句柄样本。恢复后三个工程零警告编译，本地 339／339、完整独立终审和注入原两方法的 v3 VB 驱动预编译通过 | 待 Windows 371 组／各 41 步及 v3 150／56，测试专用历史 VB 不计产品；EFS 编码只做真实探针，未据文档猜测改 encoding，OpenRead 快照不能代替未知 kind 业务惰性验收 |
+| C007c4 | `dfb81b8` 首次 339／371 单元通过，150／56 测得 1 个未置 EFS 编码差异；后继现代 Win 只为该 API 显式传实际 Windows ACP encoding、不全局 Register，Frame／Unix仍原 API。PS 只拆反射／调用包装器，保顶层 InvalidData 及其 inner IO | 待修复提交的 Windows／完整消费者／严格 150／56；首次 failure／cancelled 已保留，不改变原期望或弱化Strict。OpenRead 快照不能代替未知 kind 业务惰性验收，产品仍 net48 |
 
 下次入口：先收尾 C007c4 终审／提交与 Windows CI，核实 150／56 ZIP／路径报告，若有真实差异按证据适配；c3／c2／c1／b2 已全通过，不重复前批或重建基线。之后再拆扫描等；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
 

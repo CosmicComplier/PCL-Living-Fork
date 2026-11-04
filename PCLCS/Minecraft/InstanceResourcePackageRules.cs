@@ -1,6 +1,10 @@
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
+#if !NETFRAMEWORK
+using System.Runtime.InteropServices;
+#endif
 
 namespace PCLCS;
 
@@ -23,7 +27,31 @@ public static class InstanceResourcePackageRules {
         // 不移除前缀或去除目录尾斜线；null／empty 保留 ZipFile 自身参数异常。
         if (Path.DirectorySeparatorChar == '\\' && !string.IsNullOrEmpty(fileName))
             fileName = InstanceResourcePathCompatibility.GetFullPath(fileName);
+        // The independent CLR4 ZIP report confirms Windows ACP decoding when
+        // EFS is clear. A set EFS flag continues to select UTF8 inside ZipArchive.
+        if (Path.DirectorySeparatorChar == '\\')
+            return ZipFile.Open(fileName, ZipArchiveMode.Read, EntryNameEncoding());
 #endif
         return ZipFile.OpenRead(fileName);
     }
+
+    internal static Encoding EntryNameEncoding() {
+        // Reference Source ec9fa9ae770d522a5b5f0607898044b7478574a3:
+        // Encoding.CreateDefaultEncoding obtains the Windows ACP. The independent
+        // dfb81b8 report observed 1252 for CLR4 and UTF8 for modern defaults.
+#if NETFRAMEWORK
+        return Encoding.Default;
+#else
+        if (Path.DirectorySeparatorChar != '\\') return Encoding.UTF8;
+        int codePage = checked((int)GetACP());
+        // Query the provider directly: registering it globally would change
+        // unrelated encoding lookups elsewhere in the launcher.
+        return CodePagesEncodingProvider.Instance.GetEncoding(codePage) ?? Encoding.GetEncoding(codePage);
+#endif
+    }
+
+#if !NETFRAMEWORK
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    private static extern uint GetACP();
+#endif
 }

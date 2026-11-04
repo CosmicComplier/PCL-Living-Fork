@@ -28,8 +28,11 @@ function Put([string]$path,[string]$text){[IO.Directory]::CreateDirectory([IO.Pa
 function Assert-Rejected([scriptblock]$action,[string]$message){$rejected=$false;try{& $action|Out-Null}catch{$rejected=$true};if(-not $rejected){throw $message}}
 function Assert-StoreException([string]$name,[object[]]$values,[type]$expected,[string]$expectedMessage){
  $observed=$null
- try{Invoke-Store $name $values|Out-Null}catch{$observed=$_.Exception;while($null -ne $observed.InnerException){$observed=$observed.InnerException}}
- if($null -eq $observed -or $observed.GetType() -ne $expected){throw ('Unexpected resource mapping exception for '+$name+'; expected '+$expected.FullName)}
+ try{Invoke-Store $name $values|Out-Null}catch{
+  $observed=$_.Exception
+  while(($observed -is [Reflection.TargetInvocationException] -or $observed -is [Management.Automation.MethodInvocationException]) -and $null -ne $observed.InnerException){$observed=$observed.InnerException}
+ }
+ if($null -eq $observed -or $observed.GetType() -ne $expected){$actual=if($null -eq $observed){'no exception'}else{$observed.GetType().FullName};throw ('Unexpected resource mapping exception for '+$name+'; expected '+$expected.FullName+'; observed '+$actual)}
  if(-not [string]::IsNullOrEmpty($expectedMessage) -and $observed.Message -cne $expectedMessage){throw ('Resource validation message changed for '+$name)}
 }
 function New-Zip([string]$path,[hashtable]$items){
