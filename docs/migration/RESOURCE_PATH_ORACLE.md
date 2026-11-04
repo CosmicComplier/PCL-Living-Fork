@@ -128,3 +128,24 @@ v5 保留原 190 例／56 比较，新增 90 个 `pack-metadata` 请求，总 28
 后继适配仅作用于本metadata：net48保JObject.Parse；现代使用固定JsonTextReader派生类，按原JObject.Parse的Load＋完整尾读顺序处理，在每个Float token处还原零号，并根据固定reader的LineNumber／LinePosition定位已验证token末位，保显式Infinity、拒数值溢出。负零重置使用SetToken第三参数false，避免数组下标二次递增；忽略／被后续覆盖的字段也先经过解析。标量有限double暂按实测G15显示，容器继续原Newtonsoft writer。新增8组实际生产回归，用4eb50fb真实旧版Core源码红测为2通过／6失败。
 
 为验证新适配自身边界，再追加11个原片段探针（保原280不改）：CRLF／comments下显式Infinity与overflow、长缓冲区overflow、后续重复覆盖overflow、DoubleMax的3157／3158／3159、epsilon、normal边界、R风险0.84551240822557006、G15中点282589933980712.5；新总291／56（metadata101）。这些新有限值的Frame解析／舍入／容器R结果尚待真实报告，不能把格式名G15或IsInfinity检查外推为所有double已等价。
+
+第二次 `93c51e2dcfc60caf38327a60a11bacd2bc6c6b31` 的 [Migration validation 41751706901](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706901)：Ubuntu job `126318081169` 366／366 success，Windows job `126318080583` 398／398单元通过；原280请求已全等价，新增11中实际 **4项差异使291／56严格退出2**，contract／native／text失败均0。
+
+| 原片段输入 | 真实Frame输出 | 93c51e2现代输出／影响 |
+| --- | --- | --- |
+| 4.9406564584124654e-324 | 标量4.94065645841247E-324，容器同为4.94065645841247E-324 | 标量一致，容器变5E-324 |
+| 2.2250738585072012e-308 | 标量2.2250738585072E-308，容器2.2250738585072009E-308 | 标量一致，容器2.2250738585072014E-308，暴露旧有限解析位值差异 |
+| 0.84551240822557006 | 标量／容器均0.84551240822557 | 容器0.8455124082255701，旧R选择不能用现代短往返替代 |
+| 282589933980712.5 | 标量282589933980713，容器保282589933980712.5 | 标量282589933980712，显式G15本身不保旧中点舍入 |
+
+[完整第二轮artifact 13286565797](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706901/artifacts/13286565797) 已下载校验，ZIP SHA256 `205d99158a44c148bb37eb29b95d7cd16ed1c73797e5cecf74e21574a7855ffc`。同提交 [Windows Build 41751706759](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706759)：Debug job `126318080530`、Release job `126318080805`各41步success，保持原net48消费链结果。
+
+后继仅metadata的numeric Float原lexeme使用 `LegacyPackMetadataNumberParser`：从固定MIT [CoreCLR number.cpp](https://github.com/dotnet/coreclr/blob/abbb8f685929c7aeaa087dae46fedc1bc2af4b17/src/classlibnative/bcltype/number.cpp) 移植DigitsToInt／Mul64Lossy／四表／NumberToDouble及NumberBufferToDouble规则；同提交 [Number.cs](https://github.com/dotnet/coreclr/blob/abbb8f685929c7aeaa087dae46fedc1bc2af4b17/src/mscorlib/src/System/Number.cs) 提供Float／invariant的50位缓冲、scale／尾零与指数饱和规则。完整MIT声明保留在新文件中；Reference Source仅交叉阅读，没有将许可未核实的代码复制入产品。同源源码是实现依据，不冒称原Frame二进制源码。
+
+`LegacyPackMetadataNumberFormatting` 是独立的IEEE精确分数→15／17位十进制重实现，按实测away中点、旧G指数阈值、文化符号／小数点生成文本，不调用现代double格式或硬编码样本。旧R先试15位、直接旧NumberToDouble回读、必要17位：须保留 `_ecvt(15)` 的15位尾零缓冲，再执行选择。普通TryParse会先去尾零，导致0.84551240822557006错选17位；本地367组曾366通过／1失败，新增专用尾零缓冲入口后367／367通过。容器通过真实JsonTextWriter的double覆写／WriteRawValue维护状态及浮点`.0`，其他token与显式非有限仍走原writer。原CRT `_ecvt` 没有被移植，独立实现对全部位模式的等价性必须继续由真实Frame证明，不能仅据同源引用作保证。
+
+## v6 数字转换隔离探针待验证
+
+v6保原291例／56比较和所有旧gold／严格门禁，再加34个原始JSON十进制lexeme→Double.TryParse成功位／IEEE结果位值，以及36个有限rawbits×en-US／fr-FR的72例默认G／G15／G17／R文本，共 **397／56**（metadata101、parse34、format72）。旧端是原Frame真实API，现代端是上述实际生产parser／formatter／R选择入口；这些API探针不冒称完整ReadPackInfo片段。输入文本和位模式不由新port生成gold，观察型合同后仍逐对象严格比较。
+
+解析覆盖次正规邻界、最大值、正负零／上溢／下溢、49／50／51有效位、长尾零及指数饱和；格式覆盖24个固定边界rawbits和12个固定种子LCG的唯一有限位模式，双文化finally恢复。schema强制bool／16位hex／四字符串，不允许格式结果掩盖解析位值。脚本记录两新生产源哈希，固定原片段、LF配置／manifest／Shared／Json与清理边界继续保持。本地367／367、三工程零警告编译和v6旧VB预编译通过；本批真实397／56及Windows消费者尚待执行，d1b不关闭。

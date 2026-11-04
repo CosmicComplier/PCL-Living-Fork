@@ -191,3 +191,5 @@ CE 稳定参考固定为 [`v2.15.1`／`1a7653127d578efdb2a9388999a3fdc67d9e49d5`
 [supported-os]: https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md
 
 资源包元数据补充（C007d1b）：原式C#提取的真实CLR4 v5首轮对照（`4eb50fb`）发现18个JSON数值差异，完整原net48消费者仍通过。局部现代reader保持固定Newtonsoft完整Parse顺序，区别真实Infinity字面量和数值溢出，逐token还原负零；仅可见标量有限double采用G15，容器继续原writer。出处、实测异常／partial ref及artifact哈希见[对照记录](RESOURCE_PATH_ORACLE.md)。后继291／56包含CRLF／buffer／覆盖字段与DoubleMax／epsilon／R／G15中点探针，尚待真实Frame确认；G15格式名本身不能证明所有旧舍入或有限解析位值等价，不能将本批关闭成整个序列化／N002验收。
+
+C007d1b后继：`93c51e2` 真实291／56虽消除最初18项，但新增4项旧有限解析位值／R／中点差异，促成仅metadata内的MIT旧转换子集、独立15／17文本及保15位尾零的R回读选择。新增v6的397／56用原Frame分别比较解析位值和rawbits格式，等待实际结果。保留原CRT尚未全域证明的限制，不据局部port改全局数字行为，也不将旧NumberToDouble的有意低位损失当成性能问题优化掉。

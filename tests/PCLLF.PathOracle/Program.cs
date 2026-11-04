@@ -14,7 +14,7 @@ using PCLCS;
 // Prefix implementation: real MeloongCore c774ae4c85fd94e0eaa171db21e78a65870df19b.
 // Original path/size methods are compiled from git, not reimplemented in this driver.
 internal static class Program {
-    internal const string Protocol = "pcllf-resource-paths-v5";
+    internal const string Protocol = "pcllf-resource-paths-v6";
     private const string Lf = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983";
     private const string Shared = "c774ae4c85fd94e0eaa171db21e78a65870df19b";
     private const string Outside = "资源路径超出了当前目录。";
@@ -401,6 +401,50 @@ internal static class Program {
             Metadata("reader-" + id, metadata, SystemOutcome("ok", "Newtonsoft.Json.JsonReaderException"), culture: "en-US");
         }
 
+        // Separate primitive API probes expose parser bits and formatter output
+        // independently. The old CLR4 APIs provide the observations; no modern
+        // parser/formatter generates a baseline expectation or reformats input.
+        string[] numberLexemes = {
+            "0.0", "-0.0", "0e0", "-0e0", "1.0", "-1.0", "0.1",
+            "4.9406564584124654e-324", "-4.9406564584124654e-324", "2.4703282292062327e-324",
+            "2.2250738585072009e-308", "2.2250738585072012e-308", "2.2250738585072014e-308",
+            "1.7976931348623157e308", "1.7976931348623158e308", "1.7976931348623159e308", "-1.7976931348623159e308",
+            "1e400", "-1e400", "1e-999", "-1e-999",
+            "0.84551240822557006", "282589933980712.5", "1.2345678901234567", "1e50",
+            "1." + new string('2', 48) + "e50", "1." + new string('2', 49) + "e50", "1." + new string('2', 50) + "e50",
+            "1.23" + new string('0', 60) + "e50", "1e9999", "1e10000", "1e-9999", "1e-10000", "-0.000e10000"
+        };
+        for (int index = 0; index < numberLexemes.Length; index++)
+            Add("number-parse." + index.ToString("D2", CultureInfo.InvariantCulture), "number-parse", numberLexemes[index], SystemOutcome("ok"));
+
+        // IEEE bits are supplied directly, so a parser difference cannot mask a
+        // formatter difference. Cover signed zero, subnormal/normal neighbors,
+        // finite extrema, 1.0 neighbors and decimal/exponent rounding boundaries.
+        List<string> numberBits = new() {
+            "0000000000000000", "8000000000000000", "0000000000000001", "8000000000000001",
+            "0000000000000002", "000FFFFFFFFFFFFF", "0010000000000000", "0010000000000001", "8010000000000000",
+            "7FEFFFFFFFFFFFFF", "7FEFFFFFFFFFFFFE", "FFEFFFFFFFFFFFFF",
+            "3FF0000000000000", "3FEFFFFFFFFFFFFF", "3FF0000000000001", "BFF0000000000000",
+            "3FB999999999999A", "3FEB0E7009B61CE0", "42F010398A1CC288",
+            "3F1A36E2EB1C432D", "3EE4F8B588E368F1", "42D6BCC41E900000", "430C6BF526340000", "4341C37937E08000"
+        };
+        HashSet<string> seenNumberBits = new(numberBits, StringComparer.Ordinal);
+        ulong numberState = 0x4C465F5041434B31UL;
+        for (int added = 0; added < 12;) {
+            numberState = unchecked(numberState * 6364136223846793005UL + 1442695040888963407UL);
+            if ((numberState & 0x7FF0000000000000UL) == 0x7FF0000000000000UL) continue;
+            string bits = numberState.ToString("X16", CultureInfo.InvariantCulture);
+            if (!seenNumberBits.Add(bits)) continue;
+            numberBits.Add(bits);
+            added++;
+        }
+        foreach (string culture in new[] { "en-US", "fr-FR" }) {
+            foreach (string bits in numberBits) {
+                Add("number-format." + culture + "." + bits, "number-format", bits, SystemOutcome("ok"));
+                ((JObject)cases[cases.Count - 1]!)["culture"] = culture;
+            }
+        }
+
         Save(Path.Combine(fixture, "cases.json"), new JObject(new JProperty("protocol", Protocol), new JProperty("fixture", fixture),
             new JProperty("cwd", cwd), new JProperty("profile", "LF-default"), new JProperty("lf", Lf), new JProperty("shared", Shared), new JProperty("cases", cases)));
         Console.WriteLine($"Prepared {cases.Count} path cases and {links.Count} real owned symbolic links.");
@@ -417,6 +461,8 @@ internal static class Program {
                 case "get-directory-name": result = Ok(InstanceResourcePathCompatibility.GetDirectoryName(value)); break;
                 case "format-size": result = Ok(FormatSize(item)); break;
                 case "pack-metadata": result = ApplyPackMetadata(item); break;
+                case "number-parse": result = Ok(ParseNumber(item)); break;
+                case "number-format": result = Ok(FormatNumber(item)); break;
                 case "zip-open-read":
                     using (ZipArchive archive = InstanceResourcePackageRules.OpenRead(value!)) result = Ok(ZipSnapshot(archive));
                     break;
@@ -472,6 +518,35 @@ internal static class Program {
     }
 
     private static JToken DetailUtf16(string? value) => value is null ? JValue.CreateNull() : new JArray(value.Select(unit => (int)unit));
+
+    private static JObject ParseNumber(JObject item) {
+        bool parsed = LegacyPackMetadataNumberParser.TryParseDouble(Text(item["value"]), out double number);
+        return new JObject(new JProperty("parsed", parsed),
+            new JProperty("bits", BitConverter.DoubleToInt64Bits(number).ToString("X16", CultureInfo.InvariantCulture)));
+    }
+
+    private static JObject FormatNumber(JObject item) {
+        if (!TryFiniteNumber(Text(item["value"]), out double number)) throw new InvalidDataException("Malformed finite IEEE number bits.");
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        try {
+            CultureInfo culture = CultureInfo.GetCultureInfo(Text(item["culture"])!);
+            CultureInfo.CurrentCulture = culture;
+            return new JObject(new JProperty("general", LegacyPackMetadataNumberFormatting.Format(number, 15, culture)),
+                new JProperty("g15", LegacyPackMetadataNumberFormatting.Format(number, 15, culture)),
+                new JProperty("g17", LegacyPackMetadataNumberFormatting.Format(number, 17, culture)),
+                new JProperty("roundTrip", InstanceResourcePackMetadataCompatibility.FormatRoundTrip(number, culture)));
+        } finally { CultureInfo.CurrentCulture = previous; }
+    }
+
+    private static bool HexNumberBits(string? value) => value is not null && Regex.IsMatch(value, @"\A[0-9A-F]{16}\z", RegexOptions.CultureInvariant);
+
+    private static bool TryFiniteNumber(string? value, out double number) {
+        number = 0;
+        if (!HexNumberBits(value) || !ulong.TryParse(value, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out ulong bits) ||
+            (bits & 0x7FF0000000000000UL) == 0x7FF0000000000000UL) return false;
+        number = BitConverter.Int64BitsToDouble(unchecked((long)bits));
+        return true;
+    }
 
     private static void ClearFixtureEfs(string source, string destination) {
         // This is a bounded edit of our one-entry, uncommented fixture. The stored
@@ -553,7 +628,7 @@ internal static class Program {
             JObject old = oldResults[index] as JObject ?? throw new InvalidDataException("Invalid result object.");
             string id = (string?)item["id"] ?? throw new InvalidDataException("Missing case id.");
             if (!ids.Add(id) || (string?)old["id"] != id) throw new InvalidDataException("Duplicate or reordered oracle case id.");
-            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read" or "format-size" or "pack-metadata") || item["allowRoot"]?.Type != JTokenType.Boolean)
+            if ((string?)item["operation"] is not ("normalize" or "ensure" or "prefix" or "ordinal" or "get-directory-name" or "zip-open-read" or "format-size" or "pack-metadata" or "number-parse" or "number-format") || item["allowRoot"]?.Type != JTokenType.Boolean)
                 throw new InvalidDataException("Unknown operation or malformed request.");
             if ((string?)item["operation"] == "format-size") {
                 if (item["value"]?.Type != JTokenType.String || !long.TryParse(Text(item["value"]), NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ||
@@ -571,6 +646,13 @@ internal static class Program {
                 string? cultureName = Text(item["culture"]);
                 if (cultureName is not null) CultureInfo.GetCultureInfo(cultureName);
             }
+            if ((string?)item["operation"] == "number-parse" &&
+                (item["value"]?.Type != JTokenType.String || !Regex.IsMatch(Text(item["value"])!, @"\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z", RegexOptions.CultureInvariant)))
+                throw new InvalidDataException("Malformed raw JSON decimal number request.");
+            if ((string?)item["operation"] == "number-format" &&
+                (item["value"]?.Type != JTokenType.String || !TryFiniteNumber(Text(item["value"]), out _) ||
+                    item["culture"]?.Type != JTokenType.String || Text(item["culture"]) is not ("en-US" or "fr-FR")))
+                throw new InvalidDataException("Malformed finite IEEE bits or number-format culture request.");
             ValidateOutcome(old, (string)item["operation"]!);
             if ((string?)item["operation"] == "ordinal") {
                 // Decode before executing either side, so malformed protocol cannot be
@@ -618,6 +700,10 @@ internal static class Program {
             new JProperty("packMetadataProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "pack-metadata")),
             new JProperty("packMetadataProbeScope", "Only the original fixed LF ReadPackInfo JSON block, injected verbatim. The old filesystem/image work and outer catch are excluded; actual top-level exception and partial detail state are compared."),
             new JProperty("packMetadataLineEndingsHelper", "MeloongCore.Extensions.StringExtensions.ReplaceLineEndings(string,string,bool=false), real pinned Shared; explicit static binding in modern host."),
+            new JProperty("numberParseProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "number-parse")),
+            new JProperty("numberParseProbeScope", "Primitive CLR4 Double.TryParse(NumberStyles.Float, InvariantCulture) versus the scoped production parser; raw JSON decimal lexemes and exact IEEE result bits. These are API probes, not the original ReadPackInfo block."),
+            new JProperty("numberFormatProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "number-format")),
+            new JProperty("numberFormatProbeScope", "Primitive CLR4 Double.ToString()/G15/G17/R versus the scoped production formatter and round-trip selector; finite raw IEEE bits under en-US/fr-FR. These are API probes, not the original ReadPackInfo block."),
             new JProperty("requests", cases.DeepClone()),
             new JProperty("baseline", baseline), new JProperty("modern", new JObject(new JProperty("context", Context()), new JProperty("results", modern))),
             new JProperty("contractFailures", failures), new JProperty("nativeCandidateFailures", nativeFailures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
@@ -639,8 +725,18 @@ internal static class Program {
         if ((string?)result["status"] == "ok") {
             if (result.Property("value") is null || result.Property("type") is not null) throw new InvalidDataException("Malformed successful baseline result.");
             JTokenType valueType = result["value"]!.Type;
-            if (operation is "ensure" or "pack-metadata" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation == "zip-open-read" ? valueType != JTokenType.Object : operation == "format-size" ? valueType != JTokenType.String : valueType is not (JTokenType.String or JTokenType.Null))
+            if (operation is "ensure" or "pack-metadata" ? valueType != JTokenType.Null : operation == "ordinal" ? valueType != JTokenType.Boolean : operation is "zip-open-read" or "number-parse" or "number-format" ? valueType != JTokenType.Object : operation == "format-size" ? valueType != JTokenType.String : valueType is not (JTokenType.String or JTokenType.Null))
                 throw new InvalidDataException("Baseline returned a value incompatible with the requested operation.");
+            if (operation == "number-parse") {
+                JObject number = (JObject)result["value"]!;
+                if (number.Properties().Count() != 2 || number["parsed"]?.Type != JTokenType.Boolean || number["bits"]?.Type != JTokenType.String || !HexNumberBits(Text(number["bits"])))
+                    throw new InvalidDataException("Malformed primitive number parse result.");
+            }
+            if (operation == "number-format") {
+                JObject number = (JObject)result["value"]!;
+                if (number.Properties().Count() != 4 || new[] { "general", "g15", "g17", "roundTrip" }.Any(field => number[field]?.Type != JTokenType.String))
+                    throw new InvalidDataException("Malformed primitive number format result.");
+            }
             if (operation == "zip-open-read") {
                 JArray entries = result["value"]?["entries"] as JArray ?? throw new InvalidDataException("Missing structured ZIP baseline entries.");
                 foreach (JToken token in entries) {

@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `745f0b845139bad953a03eed70288506c5bcc1c3`：Windows 各 41 步、Ubuntu 345／Windows 377 组与 **RequireEquivalent** 190／56 全通过，含原 f4 完整 FormatSize 的 40 个文化数值样本，C007d1a 完成；C007c4 首次失败／修复证据保留。主产品仍 net48，非全部 BCL／现代 WPF 验收。
-- 当前 C007d1b 进行中：`4eb50fb` 原规则／ByRef 接线的 358／390 单元与 Windows 各41步通过，但严格280／56实测18个数值差异，未等价；证据已保存。依据报告增加局部现代 JSON 数值适配和8组回归，另补11个reader／极值／中点探针，总291／56，后继Windows待验；IO／Icon与捕获仍原宿主。C005c2／C006d 的界面母项保持 blocked。
+- 当前 C007d1b 进行中：`93c51e2` 的366／398单元及Windows各41步通过，原18个差异消除，但新增极值／舍入探针实际仍4差异；严格291／56未过。已按固定MIT来源移植局部旧数值转换，独立实现15／17位文本并恢复旧R缓冲选择，本地367／367及三工程零警告、VB预编译通过；v6扩至397／56，后继Windows待验。IO／Icon与捕获仍原宿主，界面母项保持blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -75,6 +75,9 @@
 | `a89bc04` | 依据真实 v3 报告恢复现代 Win 未置 EFS 的系统代码页解码，且 PS 只拆调用包装器保留业务异常；后继 339／371、严格 150／56、Windows 各 41 步及原 package／lazy-directory／handle 消费者全通过，C007c4 完成 |
 | `745f0b8` | C007d1a 原大小显示／当前culture／GB上限与原private入口、6组金值和v4三原方法注入已推送；345／377、严格190／56和Windows各41步全通过，d1a完成，JSON规则仍由d1b继续 |
 | `4eb50fb` | C007d1b 原 JSON 末段／ref 桥、13组测试和原片段v5已推送；Ubuntu358／Windows390及Windows各41步全通过，严格280／56实际18个metadata数值差异，母项不关闭；见下列真实失败与artifact证据 |
+| `93c51e2` | 初次数值适配／8组回归／291例已推送；366／398单元、Windows各41步成功，原18个差异归零，但新增epsilon／normal边界／R／G15中点4差异使严格检查继续失败；不隐去首次失败或提前关闭d1b |
+| [C007d1b 第二次 Migration validation 41751706901](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706901) | `93c51e2`：Ubuntu job `126318081169` 366／366 success；Windows job `126318080583` 398／398单元通过，严格291／56仍4差异，contract／native／text失败全0。artifact `13286565797` 已下载校验，ZIP SHA256 `205d99158a44c148bb37eb29b95d7cd16ed1c73797e5cecf74e21574a7855ffc` |
+| [C007d1b 第二次 Windows Build 41751706759](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706759) | `93c51e2`：Debug job `126318080530`、Release job `126318080805`各41步success；原net48消费链继续通过，不抵销现代数值差异 |
 | [C007d1b 首次 Migration validation 41750296482](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41750296482) | `4eb50fb`：Ubuntu job `126313430696` 358／358 success；Windows job `126313431272` 390／390单元通过，但RequireEquivalent的280／56有18个path差异（均pack-metadata），contract／native／text失败均0，严格退出2。artifact `13285062521` 已下载校验，ZIP SHA256 `347ec6f0351850429fc10d3a6b0f1eaabad55a012c3c7dfe787d7f746f8f9bbd` |
 | [C007d1b 首次 Windows Build 41750296507](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41750296507) | `4eb50fb`：Release job `126313431139`、Debug job `126313431176` 各41步success，实际原pack-description／ref／UTF16／error与既有资源／事务／旧桥消费者全通过；仍为net48产品，不抵销现代数值差异 |
 | [C007d1a Migration validation 41747607034](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41747607034) | `745f0b8`：Ubuntu job `126304430224` 345／345、Windows job `126304430601` 377／377，均 success；严格190／56／40大小探针四失败数组全空、equivalent=true。artifact `13284023876` 已下载校验，ZIP SHA256 `dd36a4d1cbb431aa2be4c514cf8fb771438116d546ed60d3944dca880ef93798` |
@@ -253,7 +256,7 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c4 | done | C007c3、C007b2 | `dfb81b8`／`a89bc04`：原包校验／Using／原两文案与 Shader 前缀、真实 ZIP／惰性／句柄／共享只读及原消费者接通；339／371、严格 150／56、Windows 各 41 步全通过；首次编码与测试解包失败保留，不扩大扫描／导入策略 |
 | C007d1 | in_progress | C007c4 | 大小显示与 pack JSON→Detail 拆成独立 a／b；保 CurrentCulture／GB上限／ref Detail部分更新／原Meloong换行两次调用，IO／Icon和精确Catch仍在原VB，不以a完成关闭b |
 | C007d1a | done | C007c4 | `745f0b8`：原 FormatSize／私有桥／6组金值、20 long×两culture的原方法对照；345／377、严格190／56、Windows各41步与原消费者全通过，保CurrentCulture／GB cap／原舍入，不外推d1b |
-| C007d1b | in_progress | C007d1a | `4eb50fb`：358／390单元和Windows各41步通过；严格280／56测出18个精度／负零／溢出差异，局部适配与8组回归已实现，后继291／56待验。保两次Meloong换行、180 UTF16、ref部分更新、原IO／Icon／filter；不以原式提取关闭等价任务 |
+| C007d1b | in_progress | C007d1a | `93c51e2`：366／398单元和Windows各41步通过；原18项已消除，严格291／56新增4项位值／R／中点差异。局部MIT旧转换及独立15／17格式已接线，本地367／367通过，v6真实397／56待验；原IO／Icon／filter／ref顺序保持 |
 
 ## 当前批次与下一步
 
@@ -283,6 +286,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c4 | `dfb81b8`／`a89bc04` 已推送；首次失败及修复记录齐全，339／371、严格 150／56／12 ZIP API、Windows 各 41 步和真实原消费者全通过；独立终审／零警告编译通过，未全局注册编码 | 本批完成，OpenRead 快照与未知 kind 业务惰性分别验收，不外推所有 raw BCL I/O 或现代 WPF；包名/条件/数据/事务范围保留 |
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 
-下次入口：收尾 C007d1b JSON→Detail 的 Windows／真实 Frame 片段对照；初次真实报告已测出18项数值差异，局部适配后须实跑新增11项边界的291／56；G15名义格式与仅拒绝Infinity都不能证明全部旧有限值解析／中点舍入／容器R等价，严格门禁保持。d1a／c4／c3／c2／c1／b2 已全通过，不重复前批或重建基线。保持原 IO／Icon／捕获位置，再按依赖迁扫描；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
+下次入口：收尾 C007d1b JSON→Detail 的 Windows／真实 Frame 片段对照；前两轮真实报告和修复保留，当前367／367已覆盖新4项金值，待实跑v6的397／56（原291＋34解析位值＋72格式API），以原Frame确认旧数字转换／R尾零缓冲／CRT边界；不以同源移植或本地成功替代严格门禁。d1a／c4／c3／c2／c1／b2 已全通过，不重复前批或重建基线。保持原 IO／Icon／捕获位置，再按依赖迁扫描；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

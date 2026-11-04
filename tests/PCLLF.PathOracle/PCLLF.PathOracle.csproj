@@ -18,6 +18,8 @@
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackageRules.cs" Link="Production/InstanceResourcePackageRules.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourceDetailsRules.cs" Link="Production/InstanceResourceDetailsRules.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPathCharacters.cs" Link="Production/LegacyPathCharacters.cs" />
     <Reference Include="MeloongCore"><HintPath>$(PathOracleSharedAssembly)</HintPath></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(PathOracleNewtonsoftAssembly)</HintPath></Reference>

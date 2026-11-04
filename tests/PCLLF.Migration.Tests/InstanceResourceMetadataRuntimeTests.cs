@@ -17,6 +17,7 @@ internal static class InstanceResourceMetadataRuntimeTests {
         yield return ("resource metadata still accepts explicit NaN and infinity tokens", ExplicitNonFinite);
         yield return ("resource metadata preserves strings comments and ordinary duplicate properties", LexicalBoundaries);
         yield return ("resource metadata overflow failures precede shape access and normalization", OverflowPrecedence);
+        yield return ("resource metadata retains measured finite parse rounding and container roundtrip boundaries", FiniteBoundaries);
     }
 
     private static void ScalarPrecision() {
@@ -109,6 +110,25 @@ internal static class InstanceResourceMetadataRuntimeTests {
             // A normalized zero must not increment the array position again.
             RejectOverflow("{\"ignored\":[-0.0,1e400]}", "ignored[1]");
         });
+    }
+
+    private static void FiniteBoundaries() {
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        try {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            // Real original snippet outputs from 93c51e2 artifact 13286565797.
+            // Scalar and container digits are independent Frame observations.
+            foreach ((string literal, string scalar, string json) in new[] {
+                ("4.9406564584124654e-324", "4.94065645841247E-324", "4.94065645841247E-324"),
+                ("2.2250738585072012e-308", "2.2250738585072E-308", "2.2250738585072009E-308"),
+                ("0.84551240822557006", "0.84551240822557", "0.84551240822557"),
+                ("282589933980712.5", "282589933980713", "282589933980712.5"),
+                ("1.7976931348623158e308", "1.79769313486232E+308", "1.7976931348623157E+308") }) {
+                string metadata = "{\"pack\":{\"description\":{\"text\":" + literal + "},\"pack_format\":{\"n\":" + literal + "}}}";
+                Equal(scalar + Format + Lines("{", "  \"n\": " + json, "}"), Apply(metadata));
+            }
+            RejectOverflow("{\"pack\":{\"description\":\"new\",\"pack_format\":1.7976931348623159e308}}");
+        } finally { CultureInfo.CurrentCulture = previous; }
     }
 
     private static string Numeric(string literal) => "{\"pack\":{\"description\":{\"text\":" + literal + "},\"pack_format\":" + literal + "},\"ignored\":{\"nested\":" + literal + "}}";

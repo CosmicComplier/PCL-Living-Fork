@@ -31,6 +31,8 @@
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackageRules.cs" Link="Production/InstanceResourcePackageRules.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourceDetailsRules.cs" Link="Production/InstanceResourceDetailsRules.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
     <Reference Include="Newtonsoft.Json">
       <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
       <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>

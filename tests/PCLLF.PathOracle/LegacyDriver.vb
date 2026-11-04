@@ -55,7 +55,7 @@ Friend NotInheritable Class NativeOrdinalProbe
 End Class
 
 Friend Module OracleProgram
-    Private Const Protocol As String = "pcllf-resource-paths-v5"
+    Private Const Protocol As String = "pcllf-resource-paths-v6"
     Private Const Lf As String = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983"
     Private Const SharedRevision As String = "c774ae4c85fd94e0eaa171db21e78a65870df19b"
     Private ReadOnly Utf8 As New UTF8Encoding(False, True)
@@ -141,6 +141,10 @@ Friend Module OracleProgram
                     End Try
                 Case "pack-metadata"
                     Result = ApplyPackMetadata(Item)
+                Case "number-parse"
+                    Result = Ok(ParseNumber(Item))
+                Case "number-format"
+                    Result = Ok(FormatNumber(Item))
                 Case "zip-open-read"
                     ' Real Framework API, not a translated/copied ValidatePackage business method.
                     Using Archive = ZipFile.OpenRead(Value)
@@ -197,6 +201,29 @@ Friend Module OracleProgram
             Units.Add(Convert.ToInt32(Unit))
         Next
         Return Units
+    End Function
+
+    Private Function ParseNumber(Item As JObject) As JObject
+        Dim Number As Double
+        Dim Parsed = Double.TryParse(Text(Item("value")), NumberStyles.Float, CultureInfo.InvariantCulture, Number)
+        Return New JObject(New JProperty("parsed", Parsed),
+            New JProperty("bits", BitConverter.DoubleToInt64Bits(Number).ToString("X16", CultureInfo.InvariantCulture)))
+    End Function
+
+    Private Function FormatNumber(Item As JObject) As JObject
+        Dim Bits = ULong.Parse(Text(Item("value")), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture)
+        ' Preserve negative/sign bits without a checked ULong-to-Long conversion.
+        Dim Number = BitConverter.ToDouble(BitConverter.GetBytes(Bits), 0)
+        If Double.IsNaN(Number) OrElse Double.IsInfinity(Number) Then Throw New InvalidDataException("Number-format probes require finite IEEE bits.")
+        Dim PreviousCulture = CultureInfo.CurrentCulture
+        Try
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(Text(Item("culture")))
+            Return New JObject(New JProperty("general", Number.ToString()),
+                New JProperty("g15", Number.ToString("G15")), New JProperty("g17", Number.ToString("G17")),
+                New JProperty("roundTrip", Number.ToString("R")))
+        Finally
+            CultureInfo.CurrentCulture = PreviousCulture
+        End Try
     End Function
 
     Private Function OrdinalText(Item As JObject, Name As String) As String
