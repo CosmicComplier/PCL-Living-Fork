@@ -55,7 +55,7 @@ Friend NotInheritable Class NativeOrdinalProbe
 End Class
 
 Friend Module OracleProgram
-    Private Const Protocol As String = "pcllf-resource-paths-v6"
+    Private Const Protocol As String = "pcllf-resource-paths-v7"
     Private Const Lf As String = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983"
     Private Const SharedRevision As String = "c774ae4c85fd94e0eaa171db21e78a65870df19b"
     Private ReadOnly Utf8 As New UTF8Encoding(False, True)
@@ -117,6 +117,8 @@ Friend Module OracleProgram
                     Result("reverseValue") = New JValue(String.Equals(Other, Value, StringComparison.OrdinalIgnoreCase))
                     Result("startsWith") = New JValue(Value.StartsWith(Other, StringComparison.OrdinalIgnoreCase))
                     Result("reverseStartsWith") = New JValue(Other.StartsWith(Value, StringComparison.OrdinalIgnoreCase))
+                    Result("orderSign") = New JValue(Math.Sign(StringComparer.OrdinalIgnoreCase.Compare(Value, Other)))
+                    Result("reverseOrderSign") = New JValue(Math.Sign(StringComparer.OrdinalIgnoreCase.Compare(Other, Value)))
                     ' Keep a candidate failure separate from the real String API results.
                     Try
                         Result("native") = New JObject(New JProperty("value", NativeOrdinalProbe.Same(Value, Other)), New JProperty("reverseValue", NativeOrdinalProbe.Same(Other, Value)),

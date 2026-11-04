@@ -25,6 +25,24 @@ public static class InstanceResourcePathText {
 #endif
     }
 
+    // The resource catalog needs a total order, not just an equality predicate.
+    // Consumers use the comparison sign; Framework does not promise its magnitude.
+    public static int ComparePathText(string? value, string? other) {
+#if NETFRAMEWORK
+        return StringComparer.OrdinalIgnoreCase.Compare(value, other);
+#else
+        if (!OperatingSystem.IsWindows()) return StringComparer.OrdinalIgnoreCase.Compare(value, other);
+        if (value is null) return other is null ? 0 : -1;
+        if (other is null) return 1;
+        if (value.Length == 0) return other.Length == 0 ? 0 : -1;
+        if (other.Length == 0) return 1;
+        int result = CompareStringOrdinal(value, value.Length, other, other.Length, true);
+        if (result == 0)
+            throw new ArgumentException("Windows ordinal comparison failed.", new Win32Exception(Marshal.GetLastWin32Error()));
+        return result - 2;
+#endif
+    }
+
     public static bool StartsWithPathText(string value, string prefix) {
 #if NETFRAMEWORK
         return value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);

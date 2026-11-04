@@ -95,7 +95,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("resource-paths",), (), build=False)
             elif stem.startswith(("InstanceResourceDetails", "InstanceResourcePackMetadata", "InstanceResourceMetadata")):
                 include(("resource-metadata",), (), build=False)
-            elif stem in {"InstanceResourceKindRules", "InstanceResourceNameRules", "InstanceResourceFileRules", "InstanceResourcePackageRules"}:
+            elif stem in {"InstanceResourceKindRules", "InstanceResourceNameRules", "InstanceResourceFileRules", "InstanceResourcePackageRules", "InstanceResourcePipeline"}:
                 include(("resource-files",), (), build=False)
             else:
                 unknown.append(name)

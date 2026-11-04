@@ -7,9 +7,9 @@
 - 目标状态：`in_progress`。2026-11-04用户明确要求继续，已按更新后的整链路线恢复；G005实现及定向检查已完成，实际GitHub执行待本批推送，当前并行集成资源后端与截图交互C#实现。整个迁移目标未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `476eb42bb00e85b7cf8d4f800d1264740b8373c6`：Windows各41步、Ubuntu367／Windows399组及 **RequireEquivalent** 397／56全通过（metadata101／解析位值34／格式72），C007d1b与d1完成；前两轮18／4差异及修复证据保留。主产品仍net48，非全部BCL／CRT／现代WPF验收。
-- 当前恢复前置为G005测试分组／CI路由；随后内部起点C007d2：迁移ReadPackInfo的目录／ZIP I/O与同步Icon派发，保1MiB／4MiB、ZIP Share.ReadWrite|Delete、五类catch、Icon先于JSON/ref更新、原WPF LoadImage／DecodeImage继续宿主；扫描／取消／图片解码另批，不以本项关闭Store。C005c2／C006d界面母项仍blocked。
+- 当前交付批次：C007资源后端与截图交互成组接入C#。Catalog/Transactions/Windows图片decoder及ThumbnailController已实现，原VB业务主体转兼容入口；96／96定向资源组、PCLCS/测试/oracle编译与严格VB桥通过。整页仍未迁，Windows事务／异步WPF与v7排序符号实测待CI；C005c2／C006d界面母项仍blocked。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
-- 用户补充测试要求：按受影响模块／下游／功能链执行相关检查；跨链高影响或范围不明的框架／公共契约改动及发布前才全量回归，纯文档不跑产品测试。现有Main测试入口和CI仍默认全跑，尚未实施解耦，恢复后先完成G005；目标已按用户指令恢复。
+- 用户补充测试要求：按受影响模块／下游／功能链执行相关检查；跨链高影响或范围不明的框架／公共契约改动及发布前才全量回归，纯文档不跑产品测试。G005已实现并真实通过双平台选择执行；首轮产品CI因旧测试写死path字面量失败，已改为真实coverage/路由验证，待下轮Windows确认；目标按用户指令恢复。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
 - 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
 
@@ -155,7 +155,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | InstanceResourceCatalog.cs／Transactions.cs | 两后端代理已冻结，主执行者接原VB入口及真实测试 |
 | ResourceThumbnailController.cs／MyScreenshotItem.xaml.vb | 呈现代理已冻结，原XAML／Entry字段／Sender身份保留，真实WPF验收待运行 |
 | InstanceResourceStore.vb／WPF decoder／项目接线／docs | 主执行者；Store主体已转发C#，不据此关闭整页C007 |
-| InstanceResourcePipelineTests.cs | 测试代理独占写入中，主执行者等待冻结后注册与构建 |
+| InstanceResourcePipelineTests.cs | 测试代理已冻结18组（12跨平台/6Windows），主执行者注册resource-files；96/96资源组、43/43文件组通过 |
 
 ## 任务依赖与验收
 
@@ -167,7 +167,7 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | G002 | done | G001 | LF／PCL／CE 模块映射、生产入口、依赖和逐组迁移边界；核对源清单覆盖，并记录 CE 参考位置及未查证处 |
 | G003 | done | 固定 LF 来源 | 初始 Windows Debug／Release 构建与既有自动化回归；证据为 run `41656492901`，GUI 对照仍归 R003 |
 | G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
-| G005 | in_progress | G004 | runner已支持9组／resources别名／去重／空选失败；选择器按变更与依赖路由两个CI，文档跳过，手动／未知／广影响保全量，保42原Windows脚本。CLI实测metadata28／resources84及坏参数exit2，选择器/YAML静态检查通过，实际GitHub执行待验证；不算主体迁移完成 |
+| G005 | in_progress | G004 | `093ba7d`选择job与Migration41788913406成功，双平台及严格oracle通过；Build41788913416在旧Test-ReviewFixes路径字面断言失败（Release126437519585，Debug126437519590 cancelled）。已保原业务断言修成真实glob覆盖/selector验证，待新Windows实跑；9组定向/42原脚本及完整发布门禁保留 |
 | B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
 | C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
 | C002 | done | B001、C001 | 文件／gzip／详情文案已迁入 C#，原三个消费者经兼容入口接通；42 组双平台样本与 Windows Debug／Release 完整回归通过。最终删除类型映射／路径日志 VB 门面仍由 C006／C010／C029／C031、R001 验收，不声称页面后台已转换 |
@@ -261,7 +261,9 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1 | done | C007c4 | a大小／b JSON纯显示已真实验收：保CurrentCulture／GB上限／ref部分更新／两次Meloong调用，v6严格397／56与Windows原消费者通过；done仅指纯显示，IO／Icon／catch由d2后继，不关闭整个Store |
 | C007d1a | done | C007c4 | `745f0b8`：原 FormatSize／私有桥／6组金值、20 long×两culture的原方法对照；345／377、严格190／56、Windows各41步与原消费者全通过，保CurrentCulture／GB cap／原舍入，不外推d1b |
 | C007d1b | done | C007d1a | `4eb50fb`／`93c51e2`／`476eb42`：两轮差异及修复保留，局部旧数字转换／15／17格式／R尾零与原ref桥完成；367／399、严格397／56和Windows各41步通过，实际源片段与隔离数值API验证，不外推所有CRT／现代WPF |
-| C007d2 | todo | C007d1b | 迁ReadPackInfo目录／ZIP I/O与两个同步Icon回调；保metadata1MiB、ZIP icon4MiB、Share.ReadWrite|Delete、流生命周期／顺序／五类filter及ref部分更新，WPF decode与LoadImage64MiB文件门面暂宿主。真实文件／ZIP／句柄／锁／原消费者回归后验收 |
+| C007d2 | in_progress | C007d1b | Catalog已成组接Scan/ReadPackInfo/LoadImage，平台Decode同步迁C#；保原1/4/64MiB、share/catch/ref/取消/80次预览，真实文件12组随定向资源96通过，Windows与v7比较符号待CI |
+| C007e | in_progress | C007b2、C007c4 | Transactions成组接导入／导出／重命名／回收恢复，保CreateNew/Flush/取消/finally/先全预验证及原Entry类型泛型物化；6个Windows文件链组和原消费者待CI，HashSet现代Unicode域归N002 |
+| C007u1 | in_progress | C007a、C007d2 | 截图真实后台迁ResourceThumbnailController，保原XAML/Entry字段/Sender/动画host，2并发/640/revision/viewport/卸载/错误dispatch的C#5 WPF验收已补且预编译通过，实际Windows待验；不关闭资源整页C007/C029 |
 
 ## 当前批次与下一步
 
@@ -292,6 +294,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：按新路线仅整理资源功能链当前缺口及必要C#／WPF宿主前置，优先核对固定CE对应实现；先小范围完成G005定向测试／CI路由，随后以C007d2 ReadPackInfo目录／ZIP I/O为链内起点批量推进，使用原Entry对象上的两个同步Icon动作保持WPF归属及单向依赖；不复用c4仅Share.Read的OpenRead替代原Share.ReadWrite|Delete。保metadata完整读取／icon先更新／最后JSON及原五类filter，目录LoadImage自吞FormatException与ZIP直DecodeImage外漏的区别保持。d1b／d1a／c4／c3／c2／c1／b2已通过，不重复前批或重建基线；后续再拆LoadImage／Scan及取消。C005／C006界面母项仍blocked。
+下次入口：先收尾本批资源后端／截图控制器真实Windows结果及G005旧路径断言修复，保留失败证据。当前源文件均已冻结并统一接线，禁止重做已验数字兼容或全仓扫描；v7只为既有ordinal样本增加总序符号，原397输入/gold不删。通过后继续资源页C#控制器／必要宿主前置，沿用固定CE结构经验；CE无LF截图/存档/回收备份对应整页，未复制其代码，不换底座。C007整页、C005／C006界面母项和现代主工程未完成。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

@@ -14,7 +14,7 @@ using PCLCS;
 // Prefix implementation: real MeloongCore c774ae4c85fd94e0eaa171db21e78a65870df19b.
 // Original path/size methods are compiled from git, not reimplemented in this driver.
 internal static class Program {
-    internal const string Protocol = "pcllf-resource-paths-v6";
+    internal const string Protocol = "pcllf-resource-paths-v7";
     private const string Lf = "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983";
     private const string Shared = "c774ae4c85fd94e0eaa171db21e78a65870df19b";
     private const string Outside = "资源路径超出了当前目录。";
@@ -473,6 +473,8 @@ internal static class Program {
                     result["reverseValue"] = InstanceResourcePathText.SamePathText(other, value);
                     result["startsWith"] = InstanceResourcePathText.StartsWithPathText(value, other);
                     result["reverseStartsWith"] = InstanceResourcePathText.StartsWithPathText(other, value);
+                    result["orderSign"] = Math.Sign(InstanceResourcePathText.ComparePathText(value, other));
+                    result["reverseOrderSign"] = Math.Sign(InstanceResourcePathText.ComparePathText(other, value));
                     break;
                 default: throw new InvalidOperationException("Unknown operation in path protocol.");
             }
@@ -704,6 +706,8 @@ internal static class Program {
             new JProperty("numberParseProbeScope", "Primitive CLR4 Double.TryParse(NumberStyles.Float, InvariantCulture) versus the scoped production parser; raw JSON decimal lexemes and exact IEEE result bits. These are API probes, not the original ReadPackInfo block."),
             new JProperty("numberFormatProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "number-format")),
             new JProperty("numberFormatProbeScope", "Primitive CLR4 Double.ToString()/G15/G17/R versus the scoped production formatter and round-trip selector; finite raw IEEE bits under en-US/fr-FR. These are API probes, not the original ReadPackInfo block."),
+            new JProperty("orderingProbeCount", cases.OfType<JObject>().Count(item => (string?)item["operation"] == "ordinal")),
+            new JProperty("orderingProbeScope", "Actual CLR4 StringComparer.OrdinalIgnoreCase comparison signs versus production catalog ordering adapter, both directions. Existing inputs/gold and strict checks remain."),
             new JProperty("requests", cases.DeepClone()),
             new JProperty("baseline", baseline), new JProperty("modern", new JObject(new JProperty("context", Context()), new JProperty("results", modern))),
             new JProperty("contractFailures", failures), new JProperty("nativeCandidateFailures", nativeFailures), new JProperty("differences", differences), new JProperty("informationalDifferences", informational),
@@ -747,6 +751,8 @@ internal static class Program {
             }
             if (operation == "ordinal" && new[] { "reverseValue", "startsWith", "reverseStartsWith" }.Any(field => result[field]?.Type != JTokenType.Boolean))
                 throw new InvalidDataException("Missing real String reverse/prefix baseline comparisons.");
+            if (operation == "ordinal" && new[] { "orderSign", "reverseOrderSign" }.Any(field => result[field]?.Type != JTokenType.Integer || (int)result[field]! < -1 || (int)result[field]! > 1))
+                throw new InvalidDataException("Missing signed Framework ordinal ordering comparisons.");
         } else if ((string?)result["status"] == "exception") {
             if (result["type"]?.Type != JTokenType.String || string.IsNullOrEmpty((string?)result["type"]) || result["message"]?.Type != JTokenType.String)
                 throw new InvalidDataException("Malformed exceptional baseline result.");
@@ -758,7 +764,7 @@ internal static class Program {
         if ((string?)expected["status"] != (string?)actual["status"]) return false;
         if ((string?)expected["status"] == "ok") {
             if (!JToken.DeepEquals(expected["value"], actual["value"])) return false;
-            foreach (string field in new[] { "reverseValue", "startsWith", "reverseStartsWith" })
+            foreach (string field in new[] { "reverseValue", "startsWith", "reverseStartsWith", "orderSign", "reverseOrderSign" })
                 if (expected.Property(field) is not null && !JToken.DeepEquals(expected[field], actual[field])) return false;
             return true;
         }

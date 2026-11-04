@@ -155,3 +155,7 @@ v6保原291例／56比较和所有旧gold／严格门禁，再加34个原始JSON
 [完整v6 artifact 13286793149](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149284/artifacts/13286793149) 已下载逐项核对，ZIP SHA256 `a17d0bcd04bae63a819debe49a224400472c9cdf99ef62899d82dd8b2461b7f5`；实际modern metadata／parser／formatter源哈希分别`296eddfd079847d5a601fc66323ff88747351cd334d791681b1ac56ed8c002c2`／`b695f0e1d9c1cfe1320100335f59e0a720650efea51d4d71f75f4a15b0130aea`／`744b3584b27385c312fe43ae7b193e2a18b9759aae3c189c116c93e6b4f4443a`。
 
 同提交 [v6 Windows Build 41754149252](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149252)：Release job `126326151610`、Debug job `126326151708`各41步success，实际原pack-description／ref／UTF16／error和完整资源／事务／旧桥消费者通过。C007d1b与d1纯显示范围完成；前两次真实失败／artifact不删除。397例并不证明全部CRT位模式／文化／架构或未来现代WPF，数字兼容仅留在本metadata，不向全局推广。ReadPackInfo磁盘／图标／catch继续由C007d2迁，整个Store与长期目标未完成。
+
+## v7 资源目录排序符号待验证
+
+资源扫描迁C#后需要旧OrdinalIgnoreCase的总序，不能用布尔Equals充当Comparer。新ComparePathText在net48保原StringComparer，在现代Windows直接调用已验证来源的CompareStringOrdinal并取符号；其他平台继续原平台Comparer。v7保持原397请求与全部gold，在既有ordinal两端结果追加真实Framework StringComparer.Compare正反符号及生产adapter符号，schema强制-1/0/1并纳入严格比较；未减弱已有布尔／prefix／路径／数字门禁。原3方法／JSON片段仍固定注入，历史v6报告不改。当前两个host编译与旧驱动严格预编译通过，实际Frame排序符号尚待Windows。ExportMany的OrdinalIgnoreCase HashSet仍保原net48逻辑，现代Unicode hash域不据此闭项，N002保留实际链验证。
