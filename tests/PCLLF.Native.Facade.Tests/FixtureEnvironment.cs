@@ -12,6 +12,7 @@ internal sealed class FixtureEnvironment : IDisposable
     private readonly Stack<Action> restore = new();
     private Application? application;
     private int forbiddenIo;
+    private readonly HashSet<string> diagnosticSettingNames = new(StringComparer.Ordinal);
     private bool disposed;
     internal readonly string Root;
     internal string Data => Path.Combine(Root, "data");
@@ -95,15 +96,28 @@ internal sealed class FixtureEnvironment : IDisposable
         evt.RemoveEventHandler(application, Delegate.CreateDelegate(evt.EventHandlerType!, application, method));
     }
 
-    private T Forbidden<T>(string name)
+    private void RecordForbidden(string operation, string? key)
     {
-        Interlocked.Increment(ref forbiddenIo);
+        // Emit once at the attempted boundary: the real Settings engine may
+        // catch this exception before the outer fixture checks the counter.
+        // Only schema-known setting names are disclosed, never values, registry
+        // folders, device inputs or the filename of a rejected profile access.
+        if (Interlocked.Increment(ref forbiddenIo) != 1) return;
+        string setting = key is not null && diagnosticSettingNames.Contains(key) ? key : "<not-a-schema-setting>";
+        string stack = new System.Diagnostics.StackTrace(1, false).ToString();
+        if (stack.Length > 8192) stack = stack[..8192] + "\n<truncated>";
+        Console.Error.WriteLine("FORBIDDEN native facade first attempt: operation=" + operation + "; key=" + setting + "\n" + stack);
+    }
+
+    private T Forbidden<T>(string name, string? key = null)
+    {
+        RecordForbidden(name, key);
         throw new InvalidOperationException("Forbidden real platform access in facade fixture: " + name);
     }
 
-    private void ForbiddenVoid(string name)
+    private void ForbiddenVoid(string name, string? key = null)
     {
-        Interlocked.Increment(ref forbiddenIo);
+        RecordForbidden(name, key);
         throw new InvalidOperationException("Forbidden real platform access in facade fixture: " + name);
     }
 
@@ -130,9 +144,14 @@ internal sealed class FixtureEnvironment : IDisposable
     {
         object backend = Native.Field(Native.Type("PCL.Settings"), "Backend").GetValue(null)!;
         object host = Native.Field(backend.GetType(), "host").GetValue(backend)!;
-        Replace(host, "ReadRegistry", new Func<string, string, string?, string?>((_, _, _) => Forbidden<string?>("Registry read")));
-        Replace(host, "WriteRegistry", new Action<string, string, string?>((_, _, _) => ForbiddenVoid("Registry write")));
-        Replace(host, "HasRegistry", new Func<string, string, bool>((_, _) => Forbidden<bool>("Registry Has")));
+        foreach (string key in Native.Entries.Keys)
+        {
+            diagnosticSettingNames.Add(key);
+            diagnosticSettingNames.Add(key + "_LF"); // Actual Microsoft-isolation registry name.
+        }
+        Replace(host, "ReadRegistry", new Func<string, string, string?, string?>((_, key, _) => Forbidden<string?>("Registry read", key)));
+        Replace(host, "WriteRegistry", new Action<string, string, string?>((_, key, _) => ForbiddenVoid("Registry write", key)));
+        Replace(host, "HasRegistry", new Func<string, string, bool>((_, key) => Forbidden<bool>("Registry Has", key)));
         Replace(host, "OpenRegistry", new Func<string, bool, bool, ILegacySettingsStore?>((_, _, _) => Forbidden<ILegacySettingsStore?>("Registry open")));
         Replace(host, "IdentifyCandidates", new Func<string, List<string>>(_ => Forbidden<List<string>>("Registry identity candidates")));
         Func<string, string, string?, string?> read = (Func<string, string, string?, string?>)Native.Get(host, "ReadIni")!;
@@ -141,22 +160,22 @@ internal sealed class FixtureEnvironment : IDisposable
         Func<string, string, bool> has = (Func<string, string, bool>)Native.Get(host, "HasIni")!;
         Replace(host, "ReadIni", new Func<string, string, string?, string?>((file, key, fallback) =>
         {
-            CheckIni(file);
+            CheckIni(file, key, "read");
             return read(file, key, fallback);
         }));
         Replace(host, "WriteIni", new Action<string, string, string?>((file, key, value) =>
         {
-            CheckIni(file);
+            CheckIni(file, key, "write");
             write(file, key, value);
         }));
         Replace(host, "DeleteIni", new Action<string, string>((file, key) =>
         {
-            CheckIni(file);
+            CheckIni(file, key, "delete");
             delete(file, key);
         }));
         Replace(host, "HasIni", new Func<string, string, bool>((file, key) =>
         {
-            CheckIni(file);
+            CheckIni(file, key, "has");
             return has(file, key);
         }));
         foreach (DictionaryEntry item in Native.Entries)
@@ -182,13 +201,13 @@ internal sealed class FixtureEnvironment : IDisposable
         Native.Cache("LaunchFolderSelect", Path.Combine(Root, "minecraft") + Path.DirectorySeparatorChar);
     }
 
-    private void CheckIni(string file)
+    private void CheckIni(string file, string key, string operation)
     {
         if (file == "Setup")
             return;
         string full = Native.Full(file);
         if (!full.StartsWith(Native.Full(Root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            ForbiddenVoid("INI access outside GUID fixture");
+            ForbiddenVoid("INI " + operation + " outside GUID fixture", key);
     }
 
     internal void AssertNoForbiddenIo() => Native.Check(Volatile.Read(ref forbiddenIo) == 0, "A forbidden Registry/hardware-write/profile access was attempted, even if production caught the exception.");

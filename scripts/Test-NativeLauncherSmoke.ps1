@@ -115,6 +115,7 @@ try{
  Copy-Item -LiteralPath $ExecutablePath -Destination $installed
  if((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.sha256){throw 'Installed fixture bytes differ from actual candidate preflight.'}
  Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeWin32.cs') -ReferencedAssemblies System.Drawing.dll
+ Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeFileRelease.cs')
  $previousLogHash=$null
  foreach($pass in @(1,2)){
   $run=[ordered]@{Pass=$pass;ActualExe=$installed;WorkingDirectory=$differentCwd;NormalExit=$false;ExpectedInformationNoticeVisible=$false};$evidence.Runs+=,$run
@@ -149,14 +150,22 @@ try{
   foreach($name in $mutexNames){Check-Mutex $name $true}
   $run.Screenshot=[PclLfNativeSmoke.Win32]::CaptureOwnWindow($mainWindow.Handle,(Join-Path $fixture ('main-'+$pass+'.png')))
   if($pass -eq 2){$rotated=Join-Path $install 'PCL/Log2.txt';if(-not [IO.File]::Exists($rotated) -or (Hash-OwnedFile $rotated) -cne $previousLogHash){throw 'Reopen did not preserve original LF log rotation.'}}
+  $closeWatch=[Diagnostics.Stopwatch]::StartNew();$closeBudget=$CloseTimeoutSeconds*1000
   if(-not [PclLfNativeSmoke.Win32]::PostClose($mainWindow.Handle)){throw 'Actual selected Main HWND did not accept WM_CLOSE.'}
-  if(-not $nativeProcess.WaitForExit($CloseTimeoutSeconds*1000)){throw 'Actual Main failed normal bounded close; forced cleanup is not success.'}
+  $closeRemaining=[Math]::Max(0,$closeBudget-[int]$closeWatch.ElapsedMilliseconds)
+  if($closeRemaining -le 0 -or -not $nativeProcess.WaitForExit($closeRemaining)){throw 'Actual Main failed normal bounded close; forced cleanup is not success.'}
   $run.ExitCode=$nativeProcess.ExitCode
   $text=Read-OwnedLog;Write-OwnedCloseDiagnostic $run.ExitCode $text ('close-'+$pass)
   Assert-LfNormalClose $run.ExitCode $text $expectedNotice
   $run.NormalExit=$true;$nativeProcess.Dispose();$nativeProcess=$null
   foreach($name in $mutexNames){Check-Mutex $name $false}
-  $exclusive=[IO.File]::Open($installed,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$exclusive.Dispose()
+  # Same WM_CLOSE deadline includes real exit and FileShare.None handle release.
+  # Restart Manager samples only this GUID copied EXE, never shuts down owners.
+  $release=[PclLfNativeSmoke.FileRelease]::WaitForExclusiveRelease($installed,$closeWatch,$closeBudget)
+  $run.ExclusiveFileRelease=$release
+  [IO.File]::WriteAllText((Join-Path $fixture ('file-release-'+$pass+'-diagnostics.json')),($release|ConvertTo-Json -Depth 7),[Text.UTF8Encoding]::new($false))
+  Write-Output ('Actual Native exclusive file release: '+($release|ConvertTo-Json -Depth 7 -Compress))
+  if(-not $release.Succeeded){throw ('Actual owned EXE failed exclusive ReadWrite/FileShare.None release within close deadline: '+$release.ErrorType+'; Win32='+$release.LastWin32Error+'; HResult='+$release.LastHResult+'; '+$release.Error)}
   if([IO.File]::ReadAllText($gameSentinel) -cne $id -or -not [IO.File]::ReadAllText((Join-Path $install 'PCL/Setup.ini')).Contains('NativeSmokeSentinel:'+$id)){throw 'Actual startup/close lost fixture settings/game sentinel.'}
   $updateFolder=Join-Path $install 'PCL/Updates';if([IO.Directory]::Exists($updateFolder) -and @([IO.Directory]::EnumerateFiles($updateFolder,'*.exe',[IO.SearchOption]::AllDirectories)).Count -gt 0){throw 'An update payload appeared without any acceptance action.'}
   Copy-Item -LiteralPath $log -Destination (Join-Path $fixture ('startup-'+$pass+'.log'))

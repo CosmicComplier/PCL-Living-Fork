@@ -325,7 +325,7 @@ jobs:
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'registry-data-runtime.log')
           if ($LASTEXITCODE -ne 0) { throw 'Real Native Registry migration failed or fresh-profile ownership was not established.' }
 
-      - name: Run all eight actual Main facade theme file-task and dependency groups in their isolated STA child
+      - name: Run actual Main facade feature groups in separate isolated STA children
         # A package/cold-entry failure stays failed but must not hide this
         # independent, already-built data/adapter acceptance result.
         if: ${{ !cancelled() && steps.facade.outcome == 'success' }}

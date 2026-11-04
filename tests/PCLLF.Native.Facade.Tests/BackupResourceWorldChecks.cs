@@ -143,9 +143,14 @@ internal static class BackupResourceWorldChecks
 
     private static void Junction(Scope scope, string game)
     {
-        string outside = Path.Combine(scope.Root, "outside"), junction = Path.Combine(game, "saves/Linked"); Put(Path.Combine(outside, "level.dat"), "outside-keep");
+        string outside = Path.GetFullPath(Path.Combine(scope.Root, "outside")).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        string junction = Path.GetFullPath(Path.Combine(game, "saves", "Linked")).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        // cmd builtins parse '/' inside unquoted paths as switches; normalize and
+        // quote both paths explicitly. Reject cmd expansion before any process starts.
+        foreach (string path in new[] { junction, outside }) Native.Check(path.IndexOfAny(['"', '%', '!', '\r', '\n', '\0']) < 0, "Unsafe junction fixture command path.");
+        Put(Path.Combine(outside, "level.dat"), "outside-keep");
         ProcessStartInfo start = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe")) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (string argument in new[] { "/D", "/C", "mklink", "/J", junction, outside }) start.ArgumentList.Add(argument);
+        start.Arguments = "/D /S /V:OFF /C \"mklink /J \"" + junction + "\" \"" + outside + "\"\"";
         Process? process = null;
         try {
             process = Process.Start(start) ?? throw new IOException("Could not create the original directory-junction fixture.");

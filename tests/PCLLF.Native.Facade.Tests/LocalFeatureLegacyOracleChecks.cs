@@ -10,6 +10,7 @@ namespace PCLLF.Native.Facade.Tests;
 internal static class LocalFeatureLegacyOracleChecks
 {
     private const string Driver = """
+$ProgressPreference='SilentlyContinue'
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object Text.UTF8Encoding($false)
 if([Environment]::Version.Major -ne 4 -or $PSVersionTable.PSEdition -ne 'Desktop'){throw 'A real Windows PowerShell CLR4 oracle is mandatory.'}
@@ -29,7 +30,11 @@ foreach($character in [IO.Path]::GetInvalidFileNameChars()){
  try{[IO.Path]::GetFileName(('A'+[string]$character+'B'))|Out-Null}catch{$errorValue=$_.Exception;while($null -ne $errorValue.InnerException){$errorValue=$errorValue.InnerException};$expected=$errorValue.GetType().FullName}
  $paths.Add([pscustomobject]@{Code=[int]$character;Error=$expected})
 }
-[pscustomobject]@{RuntimeMajor=[Environment]::Version.Major;PSEdition=$PSVersionTable.PSEdition;Fov=$fov;Paths=$paths}|ConvertTo-Json -Depth 5 -Compress
+$json=[pscustomobject]@{RuntimeMajor=[Environment]::Version.Major;PSEdition=$PSVersionTable.PSEdition;Fov=$fov;Paths=$paths}|ConvertTo-Json -Depth 5 -Compress
+# Console.Out bypasses PowerShell host/pipeline formatting. Only ASCII crosses
+# redirected stdout; original CLR4 UTF16 values are encoded before that boundary.
+[Console]::Out.WriteLine([Convert]::ToBase64String(([Text.UTF8Encoding]::new($false,$true)).GetBytes($json)))
+[Console]::Out.Flush()
 """;
     internal static JObject Measure()
     {
@@ -48,11 +53,7 @@ foreach($character in [IO.Path]::GetInvalidFileNameChars()){
             if (!process.WaitForExit(Remaining()) || !Task.WaitAll(drains, Remaining()))
                 throw new TimeoutException("CLR4 FOV/path API oracle process/output exceeded the same 15-second deadline.");
             string text = output.GetAwaiter().GetResult(), error = errors.GetAwaiter().GetResult();
-            Native.Check(process.ExitCode == 0 && string.IsNullOrWhiteSpace(error), "Independent CLR4 oracle failed: " + error + text);
-            JObject result = JObject.Parse(text);
-            Native.Check((int?)result["RuntimeMajor"] == 4 && (string?)result["PSEdition"] == "Desktop" && result["Fov"] is JArray { Count: 42 } && result["Paths"] is JArray { Count: > 0 }, "The CLR4 oracle did not measure the complete original sample set.");
-            Native.Check(((JArray)result["Paths"]!).Select(value => (int)value["Code"]!).Distinct().Count() == ((JArray)result["Paths"]!).Count, "Duplicate path oracle samples.");
-            return result;
+            return DecodePacket(process.ExitCode, text, error);
         }
         finally {
             try {
@@ -72,4 +73,30 @@ foreach($character in [IO.Path]::GetInvalidFileNameChars()){
             }
         }
     }
+    private static void TransportCheck(bool condition, string detail)
+    {
+        if (!condition) throw new InvalidDataException(detail);
+    }
+    private static JObject DecodePacket(int exitCode, string stdout, string stderr)
+    {
+        // Progress is disabled at the driver. A real error/CLIXML message or
+        // nonzero child exit still fails; no stderr text is filtered away.
+        TransportCheck(exitCode == 0 && string.IsNullOrWhiteSpace(stderr), "Independent CLR4 oracle failed: exit=" + exitCode + " stderr=" + stderr);
+        string packet = stdout.EndsWith("\r\n", StringComparison.Ordinal) ? stdout[..^2] : stdout.EndsWith('\n') ? stdout[..^1] : stdout;
+        TransportCheck(packet.Length > 0 && packet.Length % 4 == 0 && packet.All(value => value is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '+' or '/' or '='), "CLR4 oracle stdout is not a single ASCII Base64 packet.");
+        byte[] bytes = Convert.FromBase64String(packet);
+        TransportCheck(Convert.ToBase64String(bytes) == packet, "CLR4 oracle used noncanonical Base64.");
+        string json = new UTF8Encoding(false, true).GetString(bytes);
+        JObject result = JObject.Parse(json);
+        TransportCheck((int?)result["RuntimeMajor"] == 4 && (string?)result["PSEdition"] == "Desktop" && result["Fov"] is JArray { Count: 42 } && result["Paths"] is JArray { Count: > 0 }, "The CLR4 oracle did not measure the complete original sample set.");
+        JArray fov = (JArray)result["Fov"]!;
+        for (int index = 28; index <= 31; index++) {
+            string? raw = (string?)fov[index]["Raw"];
+            string symbol = index < 30 ? "Infinity" : "NaN";
+            TransportCheck(raw is not null && raw.Length == symbol.Length + 2 && raw[0] == '\u00a0' && raw[^1] == '\u00a0' && raw[1..^1] == symbol && (bool?)fov[index]["Fallback"] == (index % 2 == 1), "CLR4 NBSP sample codepoints/order were corrupted in transport (expected U+00A0).");
+        }
+        TransportCheck(((JArray)result["Paths"]!).Select(value => (int)value["Code"]!).Distinct().Count() == ((JArray)result["Paths"]!).Count, "Duplicate path oracle samples.");
+        return result;
+    }
+
 }

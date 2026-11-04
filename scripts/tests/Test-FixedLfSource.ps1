@@ -47,7 +47,13 @@ try {
     $common = (& git -C $RepositoryRoot rev-parse --git-common-dir).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Actual baseline object database is unavailable.' }
     $objects = Join-Path ([IO.Path]::GetFullPath((Join-Path $RepositoryRoot $common))) 'objects'
-    [IO.File]::WriteAllText((Join-Path $isolated '.git/objects/info/alternates'), $objects + [Environment]::NewLine)
+    # Git alternates is a byte-oriented LF-delimited file, including on Windows.
+    # Environment.NewLine would append CR to the object directory on that platform.
+    $alternatesPath = Join-Path $isolated '.git/objects/info/alternates'
+    [IO.File]::WriteAllText($alternatesPath, $objects.Replace('\', '/') + "`n", [Text.UTF8Encoding]::new($false))
+    [byte[]]$alternateBytes = [IO.File]::ReadAllBytes($alternatesPath)
+    Check ($alternateBytes[-1] -eq 10 -and $alternateBytes -notcontains 13 -and $alternateBytes -notcontains 92 -and
+        -not ($alternateBytes.Length -ge 3 -and $alternateBytes[0] -eq 0xef -and $alternateBytes[1] -eq 0xbb -and $alternateBytes[2] -eq 0xbf)) 'Git alternates must have forward slashes, LF and no UTF-8 BOM/CR.'
     [IO.Directory]::CreateDirectory((Join-Path $isolated 'scripts/migration')) | Out-Null
     [IO.File]::Copy((Join-Path $tools 'Get-FixedLfSource.ps1'), (Join-Path $isolated 'scripts/Get-FixedLfSource.ps1'))
     $manifestPath = Join-Path $isolated 'scripts/migration/lf-fixed-source-baselines.json'

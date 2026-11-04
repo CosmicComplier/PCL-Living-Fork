@@ -90,11 +90,16 @@ internal static class EnvironmentHistoryChecks
     }
     internal static void WithJunction(string junction, string target, Action verify)
     {
+        junction = Path.GetFullPath(junction).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        target = Path.GetFullPath(target).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        // cmd builtins parse '/' inside unquoted paths as switches; normalize and
+        // quote both paths explicitly. Reject cmd expansion before any process starts.
+        foreach (string path in new[] { junction, target }) Native.Check(path.IndexOfAny(['"', '%', '!', '\r', '\n', '\0']) < 0, "Unsafe junction fixture command path.");
         Native.Check(!Directory.Exists(junction) && !File.Exists(junction), "Refusing an existing junction fixture.");
         Process? process = null;
         try {
             ProcessStartInfo start = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe")) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            foreach (string argument in new[] { "/D", "/C", "mklink", "/J", junction, target }) start.ArgumentList.Add(argument);
+            start.Arguments = "/D /S /V:OFF /C \"mklink /J \"" + junction + "\" \"" + target + "\"\"";
             process = Process.Start(start) ?? throw new IOException("Could not start owned junction command.");
             Task<string> output = process.StandardOutput.ReadToEndAsync(), error = process.StandardError.ReadToEndAsync();
             if (!process.WaitForExit(5000)) throw new TimeoutException("Owned junction command timed out.");
