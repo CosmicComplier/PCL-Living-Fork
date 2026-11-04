@@ -4,11 +4,14 @@ $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition -ne 'Desktop'){throw 'The baseline must execute on Windows PowerShell / CLR4.'}
 Add-Type -AssemblyName System.Drawing,Microsoft.VisualBasic
 $sourcePath=Join-Path $PSScriptRoot 'MyBitmapTransforms.Legacy.vb'
-if((Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant() -cne 'c6c07cb555bfe24ed69053dde74af0ccdfd9822e12da6d6b9109664a5c68a3af'){throw 'The fixed LF bitmap transform baseline changed.'}
+$sha=[Security.Cryptography.SHA256]::Create()
+try{$sourceHash=[BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($sourcePath))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+if($sourceHash -cne 'c6c07cb555bfe24ed69053dde74af0ccdfd9822e12da6d6b9109664a5c68a3af'){throw 'The fixed LF bitmap transform baseline changed.'}
 $compiler=New-Object Microsoft.VisualBasic.VBCodeProvider
 $parameters=New-Object CodeDom.Compiler.CompilerParameters
 $parameters.GenerateInMemory=$true
-$parameters.CompilerOptions='/optioninfer+ /optionstrict-'
+$framework=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
+$parameters.CompilerOptions='/optioninfer+ /optionstrict- /sdkpath:"'+$framework+'" /vbruntime:"'+(Join-Path $framework 'Microsoft.VisualBasic.dll')+'"'
 $parameters.ReferencedAssemblies.Add('System.dll')|Out-Null
 $parameters.ReferencedAssemblies.Add('System.Drawing.dll')|Out-Null
 $compiled=$compiler.CompileAssemblyFromSource($parameters,[IO.File]::ReadAllText($sourcePath))

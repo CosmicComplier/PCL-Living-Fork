@@ -158,7 +158,7 @@ $parameters.ReferencedAssemblies.Add($jsonPath)|Out-Null
 $framework=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
 $parameters.ReferencedAssemblies.Add((Join-Path $framework 'Facades/netstandard.dll'))|Out-Null
 $parameters.GenerateInMemory=$true
-$parameters.CompilerOptions='/optioninfer+ /imports:Microsoft.VisualBasic,System.Threading'
+$parameters.CompilerOptions='/optioninfer+ /imports:Microsoft.VisualBasic,System.Threading /sdkpath:"'+$framework+'" /vbruntime:"'+(Join-Path $framework 'Microsoft.VisualBasic.dll')+'"'
 $policy=Get-Content -LiteralPath (Join-Path $projectRoot 'Plain Craft Launcher 2/Modules/Minecraft/MinecraftFolderPolicy.vb') -Raw
 $compiled=$provider.CompileAssemblyFromSource($parameters,[string[]]@($code,$policy))
 $errors=@($compiled.Errors | Where-Object {-not $_.IsWarning})
