@@ -30,7 +30,11 @@ public partial class MyCheckBoxView : Grid {
 
     public MyCheckBoxView() {
         Uuid = Services.NewUuid();
-        InitializeComponent();
+        if (GetType().Assembly == typeof(MyCheckBoxView).Assembly) InitializeComponent();
+        else if (!_contentLoaded) {
+            _contentLoaded = true;
+            CompiledControlLoader.Load(this, typeof(MyCheckBoxView), "controls/mycheckboxview.xaml");
+        }
         MouseLeftButtonUp += (_, _) => CheckboxMouseUp();
         MouseLeftButtonDown += (_, _) => CheckboxMouseDown();
         MouseLeave += (_, _) => CheckboxMouseLeave();

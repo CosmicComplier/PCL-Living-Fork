@@ -27,7 +27,11 @@ public partial class MyButtonView : Border {
 
     public MyButtonView() {
         Uuid = Services.NewUuid();
-        InitializeComponent();
+        if (GetType().Assembly == typeof(MyButtonView).Assembly) InitializeComponent();
+        else if (!_contentLoaded) {
+            _contentLoaded = true;
+            CompiledControlLoader.Load(this, typeof(MyButtonView), "controls/mybuttonview.xaml");
+        }
         // Preserve LF Handles order: the click is raised before the release animation.
         MouseEnter += RefreshColor;
         MouseLeave += RefreshColor;

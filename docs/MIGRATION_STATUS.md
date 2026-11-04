@@ -63,6 +63,9 @@ cbf8063完整复验：Modern41812928568与Migration41812928614成功；旧Build4
 
 aa72efd实际诊断（Build41813603772 Debug126518768470／Release126518767208）：原资源消费者及末端cold族Run均显示FileNotFoundException PCLLF.Presentation.resources→ResourceManager／ResourcePart→新view InitializeComponent。现原StartsWith白名单误把optional satellite当neutral DLL返回，阻断neutral BAML回退；修仅新库精确.resources simpleName／displayName返回Nothing，旧所有前缀／缓存／其它satellite策略不变。目前尚未到达完整构造／六族行为验收，后续仍须查实际新异常；不提前据框架源码推测通过或修改视觉。
 
+
+5b5dda6实际复验：[Build41814330441](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41814330441) Debug126521255158／Release126521203195仍失败，Migration41814330469成功；satellite修复后已进入BAML加载，原资源页MyCheckBox与cold族MyButton均报实际派生类型没有对应资源URI。WPF公开Application.LoadComponent(object, Uri)要求BAML所属程序集等于component.GetType().Assembly，旧VB壳继承新C#view触发该限制。新增仅跨程序集构造使用的CompiledControlLoader，通过公开Baml2006Reader／XamlObjectWriter把同一编译BAML装入同一旧壳实例，保ConnectionId／原事件／资源URI／NameScope；现代同程序集构造仍走原InitializeComponent，不改XAML视觉或降低六组断言。两真实WPF项目Release已在Linux SDK10.0.403以--no-restore -warnaserror编译，均0警告／0错误（该本地源码图还含下一批已冻结C026动画源，隔离提交树以远端CI为准）；真实Windows页面／cold六组仍待本次修复验证，不据编译推断运行通过。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |

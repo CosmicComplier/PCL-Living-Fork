@@ -22,7 +22,11 @@ public partial class MyRadioButtonView : Border {
 
     public MyRadioButtonView() {
         Uuid = ControlServices.Current.NewUuid();
-        InitializeComponent();
+        if (GetType().Assembly == typeof(MyRadioButtonView).Assembly) InitializeComponent();
+        else if (!_contentLoaded) {
+            _contentLoaded = true;
+            CompiledControlLoader.Load(this, typeof(MyRadioButtonView), "controls/myradiobuttonview.xaml");
+        }
         MouseLeftButtonUp += (_, _) => Radiobox_MouseUp();
         MouseLeftButtonDown += (_, _) => Radiobox_MouseDown();
         MouseLeave += (_, _) => Radiobox_MouseLeave();
