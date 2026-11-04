@@ -2,6 +2,7 @@
 # Instantiate the real controls offscreen. Only GUID temporary instance/profile files are written.
 # No launcher entry point, network, external viewer, game process, restore, or deletion task is started.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
 $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclWorldBackupGroups-'+[Guid]::NewGuid().ToString('N'))
@@ -120,8 +121,8 @@ try{
  if($settings.IsEnabled){throw 'Unbound settings remain interactive'}
  $parameters=$asm.GetType('PCL.WorldBackupsUi',$true).GetMethod('Start',$flags).GetParameters()
  if($parameters[-1].Name -ne 'WorldIdentifier' -or -not $parameters[-1].IsOptional){throw 'Per-world manual backup API is missing or incompatible'}
- $source=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml.vb'))
- $markup=[xml][IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml'))
+ $source=(Read-LfFixedSourceText -Name 'backup-group-code-f4')
+ $markup=[xml](Read-LfFixedSourceText -Name 'backup-group-xaml-f4')
  if($source -match '\.Tag\s*=' -or -not $source.Contains('Row.BindRestorePoint(Point)') -or -not $source.Contains('WorldIdentifier:=Identifier') -or $markup.SelectSingleNode('//*[@*[local-name()="Name" and .="CardSelect"]]')){throw 'Group does not reuse native records and parent selection'}
  Write-Output 'World backup groups passed: real native controls, default collapse and lazy rows, per-folder grouping despite equal world names, shared selection bar and notifications, immutable selection snapshots, remembered expansion across refresh, independent folders/directories, backup-only world actions, read-only settings binding, user-only setting commits, range validation, owner isolation and optional per-world backup API. No game, launcher entry point, network, external viewer, backup, restore or delete task was started.'
 }finally{

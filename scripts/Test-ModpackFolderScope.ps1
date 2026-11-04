@@ -1,4 +1,5 @@
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 # Executes the production folder-loader body using synthetic settings and GUID temporary directories.
 $projectRoot=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName Microsoft.VisualBasic
@@ -161,7 +162,7 @@ $parameters.CoreAssemblyFileName=Join-Path $framework 'mscorlib.dll'
 $parameters.ReferencedAssemblies.Add((Join-Path $framework 'Facades/netstandard.dll'))|Out-Null
 $parameters.GenerateInMemory=$true
 $parameters.CompilerOptions='/optioninfer+ /imports:Microsoft.VisualBasic,System.Threading /sdkpath:"'+$framework+'" /vbruntime:"'+(Join-Path $framework 'Microsoft.VisualBasic.dll')+'"'
-$policy=Get-Content -LiteralPath (Join-Path $projectRoot 'Plain Craft Launcher 2/Modules/Minecraft/MinecraftFolderPolicy.vb') -Raw
+$policy=Read-LfFixedSourceText -Name 'folder-policy-f4'
 $compiled=$provider.CompileAssemblyFromSource($parameters,[string[]]@($code,$policy))
 $errors=@($compiled.Errors | Where-Object {-not $_.IsWarning})
 if($errors.Count){throw (($errors | ForEach-Object {$_.ErrorText}) -join '; ')}

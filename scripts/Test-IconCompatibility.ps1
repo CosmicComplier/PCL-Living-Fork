@@ -1,6 +1,7 @@
 ﻿param([string]$ExecutablePath,[string]$OfficialExecutablePath,[switch]$ProbeOfficialResources)
 # GUID 临时目录；不启动启动器，不访问用户游戏和账号配置。
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
 $root=Split-Path $PSScriptRoot -Parent
 $files=@('Anvil.png','CobbleStone.png','CommandBlock.png','Egg.png','Fabric.png','GoldBlock.png','Grass.png','GrassPath.png','NeoForge.png','OptiFabric.png','RedstoneBlock.png','RedstoneLampOff.png','RedstoneLampOn.png')
@@ -43,7 +44,7 @@ if($ExecutablePath){
  foreach($entry in $entries.Values){$entry.ValueCache['']=$entry.DefaultValue}
 }else{
  # 编译实际兼容类；独立 INI 夹具替身不依赖完整启动器构建。
- $source=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/MinecraftLogoCompatibility.vb'))
+ $source=(Read-LfFixedSourceText -Name 'logo-policy-f4')
  $stub=@'
 Imports System.IO
 Public Module ModBase

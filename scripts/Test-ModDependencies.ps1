@@ -1,7 +1,9 @@
-﻿﻿param([string]$ExecutablePath,[string]$VbcPath,[string]$ReadOnlyLegacyModsFolder)
+﻿param([string]$ExecutablePath,[string]$VbcPath,[string]$ReadOnlyLegacyModsFolder)
 # Read-only metadata fixtures in a GUID temp directory. No launcher entry point, game, real profile, or live dependency API.
-# With no EXE, build real PCLCS, then compile only its thin Inspector/Index VB facades and the tiny instance adapter stub.
+# Without EXE, compile the full fixed LF50 Inspector/Index reference originals and the existing tiny instance stub.
+# Current Core metadata remains a prerequisite guard; its migrated algorithm is not the original reference implementation.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
 $jsonPath=Join-Path $root 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'
@@ -97,7 +99,7 @@ End Class
   $framework=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
   $references=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll')|ForEach-Object {Join-Path $framework $_}
   $references+=@($coreReference,$sharedReference)
-  $arguments=@('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($references -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb'),$stub)
+  $arguments=@('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($references -join ',')),('/reference:'+$jsonPath),(Export-LfFixedSource -Name 'deps-inspector-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),(Export-LfFixedSource -Name 'deps-index-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),$stub)
   & $VbcPath @arguments
   if($LASTEXITCODE -ne 0){throw 'Isolated ModDependencyInspector compilation failed.'}
  }else{

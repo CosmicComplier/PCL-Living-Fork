@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "notes": "Historical test sources only; not product compile inputs. Original behavior sources are distinct from fixed transition adapters. No working-tree fallback.",
+  "revisions": {
+    "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983": {
+      "label": "f4",
+      "license": {
+        "path": "LICENCE",
+        "blob": "ae3dd050edaf0c4f2bf50bf7b4d8d508319394f1",
+        "sha256": "82a74e444215364581d20b6d51f3d5a3ab3c493fca8f9058fa3e89f657ca80f4",
+        "length": 3168
+      }
+    },
+    "a1d2ee1ed215647ab7e38f11c9e45859fbb4fcf7": {
+      "label": "a1",
+      "license": {
+        "path": "LICENCE",
+        "blob": "ae3dd050edaf0c4f2bf50bf7b4d8d508319394f1",
+        "sha256": "82a74e444215364581d20b6d51f3d5a3ab3c493fca8f9058fa3e89f657ca80f4",
+        "length": 3168
+      }
+    },
+    "50b028da5fcad2226d74d901a41d8c43a249bfb2": {
+      "label": "lf50",
+      "license": {
+        "path": "LICENCE",
+        "blob": "ae3dd050edaf0c4f2bf50bf7b4d8d508319394f1",
+        "sha256": "82a74e444215364581d20b6d51f3d5a3ab3c493fca8f9058fa3e89f657ca80f4",
+        "length": 3168
+      }
+    }
+  },
+  "sources": {
+    "credentials-foundation-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-behavior",
+      "path": "Plain Craft Launcher 2/Modules/Base/BuildCredentials.vb",
+      "blob": "2736091fd8248aba5f3bf64c50425ce079d86321",
+      "sha256": "941054836eafae9235cafcaea0a676271f06e3c042720b6aaaf2b348c83c8eb2",
+      "length": 4523
+    },
+    "legacy-modsecret-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "legacy-build-immutability-fixture",
+      "path": "Plain Craft Launcher 2/Modules/ModSecret.vb",
+      "blob": "0aa2cce92f0b58e92df6c5831662b4481c31d4c9",
+      "sha256": "c6e9baea03b5d0130b97cbea9db7cb097cdbda8a08a6f3b4d86e4c18eab562d3",
+      "length": 10551
+    },
+    "legacy-vbproj-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "legacy-build-failure-fixture",
+      "path": "Plain Craft Launcher 2/PCL-Living-Fork.vbproj",
+      "blob": "bc7748a0f1f7b8d840e33c83ddc01803182eef8a",
+      "sha256": "ea23c68bc68dd0cf00e4653d6641391647064da757c453b72839668bdb912731",
+      "length": 44845
+    },
+    "memory-adapter-a1": {
+      "revision": "a1d2ee1ed215647ab7e38f11c9e45859fbb4fcf7",
+      "scope": "fixed-transitional-ABI-adapter",
+      "path": "Plain Craft Launcher 2/Modules/Base/NativeMemoryOptimizer.vb",
+      "blob": "1c081ad3b9a0767f00ada84621a55f22d407191f",
+      "sha256": "40fc9628c40831fd02d98cddc8f92faffcd155032ef06a903e5525aef7b38a4e",
+      "length": 3525
+    },
+    "backups-adapter-a1": {
+      "revision": "a1d2ee1ed215647ab7e38f11c9e45859fbb4fcf7",
+      "scope": "fixed-transitional-ABI-adapter",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb",
+      "blob": "a1e96299ad458306c14eec3560f17b1ec5c2ec27",
+      "sha256": "73280e6e5ba5d148ca8819b5082f95fdecfec7ef2bfd48ccc5698918e2b04db5",
+      "length": 9535
+    },
+    "localdata-adapter-a1": {
+      "revision": "a1d2ee1ed215647ab7e38f11c9e45859fbb4fcf7",
+      "scope": "fixed-transitional-ABI-adapter",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb",
+      "blob": "885312f042d5a77ecb76ed08d1e2f4df85ff534d",
+      "sha256": "348d9aec9888fbaea7583987f4b68338d19e840a1874708540c83372ec561f24",
+      "length": 1531
+    },
+    "folder-policy-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-behavior",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/MinecraftFolderPolicy.vb",
+      "blob": "bfe48d6bd5ff9df45018f57d7a96741e0ab2bcb2",
+      "sha256": "c45e5adc854a335e97363c699e22d8c470adf8272e02b9d70f00f71b10f158ad",
+      "length": 1258
+    },
+    "logo-policy-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-behavior",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/MinecraftLogoCompatibility.vb",
+      "blob": "90217e302330833b2bebe4ed159c5a45c126abda",
+      "sha256": "5f28e10b7071c39f9ef5b8d07be68b2faeeb917d740b6e8edf0f1a984377272e",
+      "length": 7291
+    },
+    "backup-group-xaml-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-source-contract",
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml",
+      "blob": "e2c75b94dad1178144dc941ef5be503044a3ecce",
+      "sha256": "e27dfa6d16c2101a176a1c8e62756338dd305aec0bc83046fc1e706835fe8ee0",
+      "length": 849
+    },
+    "backup-group-code-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-source-contract",
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml.vb",
+      "blob": "d3168db2aa7a77ce3c8d831e0b913ca91a046bf2",
+      "sha256": "1375be148fdddfd2caac84be0c081b0034bb0d70c43e8da81ba37b09221ecff8",
+      "length": 8991
+    },
+    "backup-settings-xaml-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-source-contract",
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml",
+      "blob": "dd8d8e141ea0db8a1a557fb5b426c523721120da",
+      "sha256": "b0d4e888aaa2d072863f19e3f42543272737d4d5596ea6a4165c8080f01cdbb2",
+      "length": 1160
+    },
+    "backup-settings-code-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-source-contract",
+      "path": "Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml.vb",
+      "blob": "e6af963ae94d03828a131c2c5b1badff5d587277",
+      "sha256": "cb8713022d80a25b450213d817283d5b9b62221d93001bb269f447d44cb42397",
+      "length": 2945
+    },
+    "startup-source-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-source-contract",
+      "path": "Plain Craft Launcher 2/Application.xaml.vb",
+      "blob": "2fbe62f960482f7adce6a7838e95534f83eb22f5",
+      "sha256": "4e08c0e2e069f9054b7980dd74253d11ceab173ae83e24144331bfd4284d79e8",
+      "length": 17968
+    },
+    "mainwindow-source-f4": {
+      "revision": "f4aa0fae62c3ee8af24c81e61844c8fdd13c8983",
+      "scope": "original-source-contract",
+      "path": "Plain Craft Launcher 2/FormMain.xaml.vb",
+      "blob": "fef3112121ef23612bbbc9b8ab5ea3e57ae61d5d",
+      "sha256": "db01ceedaa9b84994081a72160144709ce2f8565d264cde6734e04ad84e1d5f5",
+      "length": 69444
+    },
+    "deps-inspector-lf50": {
+      "revision": "50b028da5fcad2226d74d901a41d8c43a249bfb2",
+      "scope": "original-LF50-CLR4-reference",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb",
+      "blob": "ec8bca5707285707bf16bb88022ab27bfee8d31f",
+      "sha256": "62f676cef087b0086f04c7a0e7332ee0b4bd3664f92d81ac970a927faf7b8e23",
+      "length": 126407
+    },
+    "deps-index-lf50": {
+      "revision": "50b028da5fcad2226d74d901a41d8c43a249bfb2",
+      "scope": "original-LF50-CLR4-reference",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb",
+      "blob": "00463e9b952454b050e337ba6a3592ca0be77300",
+      "sha256": "d9c6614dbd919565f52d37913bf1f6563dc137ab6bfb17addf8ccd10260e3caf",
+      "length": 17997
+    },
+    "deps-online-lf50": {
+      "revision": "50b028da5fcad2226d74d901a41d8c43a249bfb2",
+      "scope": "original-LF50-CLR4-reference",
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb",
+      "blob": "e4c07b80a2e05d4fa8b2ff643672ee3a7e91a395",
+      "sha256": "fce7b288a96ddf1c7ea0d4a4b73c400e2eff3c4b51d76dca48215c064331feb3",
+      "length": 49299
+    }
+  }
+}

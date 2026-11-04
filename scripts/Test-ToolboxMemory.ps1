@@ -5,6 +5,7 @@ param(
 # 只打开当前令牌作角色检查，并注入虚构清理/提权委托；不调整权限、不清理内存、不触发 UAC。
 # 不传 ExecutablePath 时只编译独立帮助类，不构建或启动启动器，不读配置及私有构建输入。
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Run with powershell -NoProfile (.NET Framework), not pwsh.' }
 $fixture = $null
 $backendResolver = $null
@@ -15,7 +16,7 @@ try {
         $fixture = Join-Path ([IO.Path]::GetTempPath()) ('LivingPCL-ToolboxMemory-' + [Guid]::NewGuid().ToString('N'))
         [IO.Directory]::CreateDirectory($fixture) | Out-Null
         $output = Join-Path $fixture 'MemoryChecks.dll'
-        $source = Join-Path (Split-Path $PSScriptRoot -Parent) 'Plain Craft Launcher 2/Modules/Base/NativeMemoryOptimizer.vb'
+        $source = Export-LfFixedSource -Name 'memory-adapter-a1' -Directory (Join-Path $fixture 'fixed-baseline')
         if (-not $CompilerPath) {
             $sdk = & dotnet --list-sdks | Select-Object -Last 1
             if ($sdk -notmatch '^(\S+)\s+\[(.+)\]$') { throw 'A .NET SDK is required for standalone memory helper checks.' }

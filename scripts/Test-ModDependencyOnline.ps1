@@ -1,6 +1,7 @@
 ﻿param([string]$ExecutablePath,[string]$VbcPath)
 # GUID fixtures and injected API responses only. No live dependency HTTP, launcher startup, accounts, or real mods.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclModDependencyOnline-'+[Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($fixture)|Out-Null
@@ -125,7 +126,7 @@ End Module
   $ExecutablePath=Join-Path $fixture 'ModDependencyOnlineFixture.dll'
   $refs=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll','System.Net.Http.dll')|ForEach-Object {Join-Path $framework $_}
   $refs+=@($coreReference,$sharedReference)
-  & $VbcPath @('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($refs -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb'),$stub)
+  & $VbcPath @('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($refs -join ',')),('/reference:'+$jsonPath),(Export-LfFixedSource -Name 'deps-inspector-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),(Export-LfFixedSource -Name 'deps-index-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),(Export-LfFixedSource -Name 'deps-online-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),$stub)
   if($LASTEXITCODE -ne 0){throw 'Isolated online dependency compilation failed.'}
  }else {
   foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll')){

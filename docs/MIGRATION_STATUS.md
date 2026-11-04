@@ -105,6 +105,10 @@ cb07276首轮真实Native Windows [41905168597](https://github.com/DDZmumo/PCL-L
 
 新updater族已将原Test-Release更新器断言接到实际Main（REL-01..08），覆盖版本/源/附件/SHA/身份、真实磁盘替换、四种文件名与config，以及真实重启拒绝后的回滚。UPD-01..04使用真实Main LoaderWorker/Shared worker/DownloadUpdate与GUID会话锁组合，检查同一OCE、取消无fallback及实际负载收尾后释放；传输受控，不冒称HTTP或完整UI编排。官方外部样本/真实旧版跨进程分别明确EXTERNAL-01/02待验；后者仍由独立升级job承担。现9族宿主strict跨编0W0E，Windows运行待新检查点；文件事务回滚样本还窄补反射Digest的原sha1默认参数，生产API与原锁/取消/回滚断言不改。
 
+db718e5 的 [Native41914145873](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41914145873)：Debug126869392945完整success；Release126869392819仅cold复开失败，真实Registry和全部9族（包括主题/文件锁取消回滚/两依赖/updater REL与UPD）均success，原生包/54资源/身份11/原联机模式编译也实际通过。小artifact13365095955已下载，370096bytes、SHA256 `564b5800918739009e79095469dc50ef6d21e7169e85ec53debdcd01545f25ee`：首轮真实Main稳定4286ms、900×550 HWND与非均匀截图、WM_CLOSE后-1/有序Success/锁释放与EXE独占均通过。第二轮只有新PID6392，在早期MainModule路径比较处失败且强制收尾；没有记录实际MainModule值，不能编造原因或记复开通过，独立旧版升级仍skip。Modern41914145939及Migration41914145850全部success。旧Build41914145859两配置已过原账号修复后的前序门禁，bulk在Test-ModDependencies的双BOM使param被当命令、参数未绑定时失败，未跑后续不计通过。
+
+R001固定历史读取前置已接：9个真实source-mode调用者改读Git固定对象，17源逐一校验长度/Git blob/SHA256并同时导出3份对应LICENCE与来源作用域，拒绝未知key/目录链接/工作树目标/未知覆盖；完整历史缺失明确失败，不退回当前C#适配源码。f4为原LF行为来源，a1d2ee1仅固定memory/backup/local-data的ABI适配器，不能称独立原算法；LF50独立Inspector/Index/Online三源无PCLCS/LivingPCL运行引用。Build-Release新增可选ProjectRoot，将失败/并发凭据构建真正限制在同一GUID源码夹具，默认旧发布行为不变。根旧Build取得完整历史并自动执行新导出器测试。Root实际9参数声明契约及17源/许可/幂等/篡改工作树隔离/5拒绝全部通过，原双BOM故障对照会被新参数块前提拒绝；仅删多余首3bytes保单BOM及全部原文。9脚本原throw/If/字面夹具AST未改，固定LF50三源net48严格跨编0W0E；WindowsPS5/source-mode/CLR4运行仍待后继CI，旧产品VB默认构建及实体尚未退役。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -334,9 +338,9 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
 | N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF产品与当前LF50功能已接；默认false实际完整Release两阶段0E/80W，原LegacyLink=true补真条件/35typed部件/14事件与原UDP声明点初始化，正式LF50开启图0E/86W，未运行外部服务。资源生成已改显式现代18键/schema与57实际Main资产，不读VB/designer/vbproj/resx；manifest本机迁入。原生单文件实际publish成功（191484639bytes），bounded reader确认LivingPCL/PCL Living Fork/1.3.5-pre-3，凭据GUID清理0。真实Windows Debug/Release完整Main与54资源运行已通过41905168597；打包/宿主基础设施失败已定位修复，真实入口/主要交互尚待重验，不据子步关闭整链 |
-| N004 | in_progress | N003、C022 | 实际Main设置/旧DES/Windows Registry的registry-data独立族已接，sole/fresh hosted/GUID原子owner与未知拒绝/本人标记清理保持；_LF隔离/旧格式升级退出/非MS/原kind回滚/取消/INI/JSON断言保留。5a67真Windows已过owner/CurrentIdentify/DES，schema泛型枚举错误阻断后续，现窄改Keys枚举、strict编译0W0E待复验；77内存隔离断言原settings族已过，不外推真实账号链 |
+| N004 | in_progress | N003、C022 | db718 Release真实registry-data成功：actual Main Settings/CurrentIdentify/DES→Windows adapter，13个_LF值/种类与外来哨兵、同namespace旧缓存升级/退出、非MS迁移、原kind恢复/取消/INI与JSON未知数据均实际通过，sole/fresh hosted/GUID owner和仅本人清理保留。完整旧版升级后的账号/UI链仍待R003，不读取真实用户凭据；内存77断言与本次真实Registry证据分开记录 |
 | N005 | in_progress | N003、N004 | 唯一GUID C#凭据wrapper及finally清理、真实默认NativeEXE/ZIP/canonical managed旧桥/四角色SHA索引已由5a67 Windows两配置通过，原四参程序保持；实际身份11项PASS后的脚本退出码、Main关闭原LF self-Kill契约已修待复验。Release冷启已到真实稳定HWND/三阶段/锁/截图；正常关闭重开和独立旧版升级job仍待实际通过，无外部release发布。默认9族分别执行，原联机模式仅编译不启动服务 |
-| R001 | in_progress | N003、N005 | 正式现代产品不编译/读取业务VB或vbproj；旧比较树仍留，最终产品VB文件退休/清单与必要旧脚本迁验未完成。原默认关闭联机的两页/条件/handles/UDP声明点语义已真正C#接线、开启/关闭图可编；不得靠开关关闭或源码统计认定功能验收。Native实际运行与旧版兼容通过后统一退役旧产品工程 |
+| R001 | in_progress | N003、N005 | 正式完整现代产品不编译/读取业务VB或vbproj，原联机可选图真实C#接线。9个source-mode调用者现接固定Git对象/17源/对应许可与provenance，f4原行为/a1 ABI适配/LF50独立算法作用域明确；9参数+导出/拒绝实际通过，Windows源码模式待验。旧Build默认VB构建及产品实体、vendor字节/许可归属尚未退休；待Native复开/旧桥必要门禁通过后统一切换，不靠排除/改扩展名虚报清零 |
 | R002 | todo | R001 | 迁移后的完整 Windows Debug／Release 自动化回归、现有 MMC 和普通整合包样本；每项保存真实命令、提交和 CI 结果 |
 | R003 | todo | R002 | 实际 Windows 运行与新旧 UI 对照；账号、游戏启动／退出、文件中断恢复、按钮、滚动、页面及动画行为验收 |
 | R004 | todo | R003 | 汇总全部完成证据和剩余限制，自审最终差异与远端状态；仅在目标全部验收后标 `completed` 并暂停续跑 |

@@ -1,10 +1,13 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [string]$OutputPath,
-    [string]$MSBuildPath = 'msbuild'
+    [string]$MSBuildPath = 'msbuild',
+    [string]$ProjectRoot
 )
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path $PSScriptRoot -Parent
+# A historical source-mode failure fixture can select its own fixed GUID workspace.
+# Default legacy publishing remains unchanged until the coordinated cutover.
+$projectRoot = if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { Split-Path $PSScriptRoot -Parent } else { [IO.Path]::GetFullPath($ProjectRoot) }
 $generatedRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'Plain Craft Launcher 2\obj\CredentialBuild'))
 $generatedFolder = Join-Path $generatedRoot ([Guid]::NewGuid().ToString('N'))
 $generatedSource = Join-Path $generatedFolder 'BuildCredentials.g.vb'

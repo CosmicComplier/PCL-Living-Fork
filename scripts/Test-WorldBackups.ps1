@@ -1,6 +1,7 @@
 ﻿param([string]$ExecutablePath,[switch]$EngineOnly)
 # Only GUID-named temporary worlds and local profiles are touched. No game or launcher is started.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclWorldBackups-'+[Guid]::NewGuid().ToString('N'))
 $flags=[Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
@@ -26,12 +27,12 @@ try{
   $coreAssembly=[Reflection.Assembly]::LoadFrom($core)
   $backupEngineType=$coreAssembly.GetType('PCLCS.WorldBackupEngine`1',$false)
   if($null -eq $backupEngineType){throw 'Build the current PCLCS library containing WorldBackupEngine before -EngineOnly.'}
-  $engine=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb'))
+  $engine=(Read-LfFixedSourceText -Name 'backups-adapter-a1')
   $uiBoundary=[regex]::Matches($engine,'(?m)^Friend NotInheritable Class WorldBackupsUi\r?$')
   if($uiBoundary.Count -ne 1){throw 'Expected exactly one production backup UI boundary for isolated facade compilation.'}
   $engine=$engine.Substring(0,$uiBoundary[0].Index)
   Put (Join-Path $fixture 'Engine.vb') $engine
-  Put (Join-Path $fixture 'LocalGameData.vb') ([IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb')))
+  Put (Join-Path $fixture 'LocalGameData.vb') ((Read-LfFixedSourceText -Name 'localdata-adapter-a1'))
   $stubs=@'
 Imports System
 Imports System.IO
@@ -313,10 +314,10 @@ End Module
  if(-not [IO.File]::Exists((Join-Path $deleted ($selected[0]+'/world.zip')))){throw 'Removed backup is not recoverable'}
  AssertText (Join-Path $world 'level.dat') 'retention-3'
  # Backups now live below each world in the saves page, using native collapsible groups.
- $groupXml=[xml][IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml'))
- $groupSource=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml.vb'))
- $settingsXml=[xml][IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml'))
- $settingsSource=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml.vb'))
+ $groupXml=[xml](Read-LfFixedSourceText -Name 'backup-group-xaml-f4')
+ $groupSource=(Read-LfFixedSourceText -Name 'backup-group-code-f4')
+ $settingsXml=[xml](Read-LfFixedSourceText -Name 'backup-settings-xaml-f4')
+ $settingsSource=(Read-LfFixedSourceText -Name 'backup-settings-code-f4')
  foreach($control in @('MyCard','MyIconTextButton')){if(-not $groupXml.SelectSingleNode("//*[local-name()='$control']")){throw ('Missing native backup-group control '+$control)}}
  foreach($control in @('MyCard','MyCheckBox','MyTextBox')){if(-not $settingsXml.SelectSingleNode("//*[local-name()='$control']")){throw ('Missing native backup-settings control '+$control)}}
  if(-not $groupSource.Contains('Row.BindRestorePoint(Point)') -or -not $groupSource.Contains('Row.RestorePoint(') -or -not $groupSource.Contains('CardBackups.SwapControl = PanContent') -or $groupSource -match '\.Tag\s*=' -or -not $settingsSource.Contains('BindOwner') -or -not $settingsSource.Contains('CardSettings.SwapControl = PanSettings')){throw 'Native grouped backup UI contract failed'}
