@@ -485,10 +485,7 @@
     <None Include="Controls\MyHint.xaml" />
     <None Include="Controls\MyListItem.xaml" />
     <None Include="Controls\MyIconButton.xaml" />
-    <Page Include="Controls\MyLoading.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
+    <None Include="Controls\MyLoading.xaml" />
     <Page Include="Controls\MyMsg\MyMsgInput.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -501,10 +498,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\MyRadioBox.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
+    <None Include="Controls\MyRadioBox.xaml" />
     <Page Include="Controls\MyIconTextButton.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -513,10 +507,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\MySlider.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
+    <None Include="Controls\MySlider.xaml" />
     <Page Include="FormMain.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

@@ -19,6 +19,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../PCLCS/PCLCS.csproj" />
     <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Numerics" />

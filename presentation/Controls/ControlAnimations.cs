@@ -5,7 +5,7 @@ using System.Windows;
 
 namespace PCLLF.Presentation.Controls;
 
-public enum ControlEase { Linear, OutFluent, InFluent, OutBack, OutFluentWithInitial }
+public enum ControlEase { Linear, OutFluent, InFluent, OutBack, OutFluentWithInitial, InBack, OutElastic }
 public enum ControlEasePower { Weak, Middle, Strong, ExtraStrong }
 
 public readonly struct ControlAnimationSpec {
@@ -39,6 +39,10 @@ public abstract class ControlAnimations {
     public abstract ControlAnimation ColorTo(FrameworkElement target, DependencyProperty property, ControlColor value, ControlAnimationSpec spec);
     public abstract ControlAnimation Scale(FrameworkElement target, double value, ControlAnimationSpec spec, bool absolute = false);
     public abstract ControlAnimation ScaleTransform(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract double Speed { get; }
+    public abstract ControlAnimation Width(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation X(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation Y(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation Height(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation Opacity(FrameworkElement target, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation RotateTransform(FrameworkElement target, double value, ControlAnimationSpec spec);
@@ -59,6 +63,10 @@ public sealed class ControlAnimationHost<TAnimation> : ControlAnimations where T
     public Func<FrameworkElement, DependencyProperty, ControlColor, ControlAnimationSpec, TAnimation> CreateColorTo = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, bool, TAnimation> CreateScale = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateScaleTransform = null!;
+    public Func<double> ReadSpeed = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateWidth = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateX = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateY = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateHeight = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateOpacity = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateRotateTransform = null!;
@@ -71,6 +79,10 @@ public sealed class ControlAnimationHost<TAnimation> : ControlAnimations where T
     public override ControlAnimation ColorTo(FrameworkElement target, DependencyProperty property, ControlColor value, ControlAnimationSpec spec) => new Frame(CreateColorTo(target, property, value, spec));
     public override ControlAnimation Scale(FrameworkElement target, double value, ControlAnimationSpec spec, bool absolute = false) => new Frame(CreateScale(target, value, spec, absolute));
     public override ControlAnimation ScaleTransform(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateScaleTransform(target, value, spec));
+    public override double Speed => ReadSpeed();
+    public override ControlAnimation Width(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateWidth(target, value, spec));
+    public override ControlAnimation X(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateX(target, value, spec));
+    public override ControlAnimation Y(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateY(target, value, spec));
     public override ControlAnimation Height(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateHeight(target, value, spec));
     public override ControlAnimation Opacity(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateOpacity(target, value, spec));
     public override ControlAnimation RotateTransform(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateRotateTransform(target, value, spec));

@@ -13,6 +13,10 @@ Friend NotInheritable Class PresentationRuntime
                 .CreateColorTo = Function(Target, Prop, Value, Spec) AaColor(Target, Prop, New MyColor(Value.A, Value.R, Value.G, Value.B) - CType(Target.GetValue(Prop), Brush), Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateScale = Function(Target, Value, Spec, Absolute) AaScale(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After, Absolute),
                 .CreateScaleTransform = Function(Target, Value, Spec) AaScaleTransform(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
+                .ReadSpeed = Function() AniSpeed,
+                .CreateWidth = Function(Target, Value, Spec) AaWidth(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
+                .CreateX = Function(Target, Value, Spec) AaX(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
+                .CreateY = Function(Target, Value, Spec) AaY(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateHeight = Function(Target, Value, Spec) AaHeight(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateOpacity = Function(Target, Value, Spec) AaOpacity(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
                 .CreateRotateTransform = Function(Target, Value, Spec) AaRotateTransform(Target, Value, Spec.Duration, Spec.Delay, ToEase(Spec), Spec.After),
@@ -62,6 +66,10 @@ Friend NotInheritable Class PresentationRuntime
                 Return New AniEaseInFluent(ToPower(Spec.Power))
             Case ControlEase.OutBack
                 Return New AniEaseOutBack(ToPower(Spec.Power))
+            Case ControlEase.InBack
+                Return New AniEaseInBack(ToPower(Spec.Power))
+            Case ControlEase.OutElastic
+                Return New AniEaseOutElastic(ToPower(Spec.Power))
             Case ControlEase.OutFluentWithInitial
                 Return New AniEaseOutFluentWithInitial(Spec.InitialSpeed, Spec.TotalSeconds, Spec.TotalDistance)
             Case Else
