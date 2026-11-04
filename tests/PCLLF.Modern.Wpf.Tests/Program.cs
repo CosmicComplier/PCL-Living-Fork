@@ -18,11 +18,26 @@ namespace PCLLF.Modern.Wpf.Tests;
 internal static class Program {
     [STAThread]
     private static int Main(string[] arguments) {
+        bool animationChild = arguments.Length == 2 && arguments[1] == "--animation-driver-child";
         try {
+            if (animationChild) {
+                string root = Path.GetFullPath(arguments[0]);
+                if (!File.Exists(Path.Combine(root, "PCLCS", "PCLCS.csproj")))
+                    throw new DirectoryNotFoundException("The animation child requires an explicit LF repository root.");
+                Require(Thread.CurrentThread.GetApartmentState() == ApartmentState.STA && Environment.Version.Major == 10,
+                    "The animation child must execute on the actual .NET 10 STA entry thread.");
+                _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                AnimationTests.RunThreadDriverChild();
+                Console.Out.Flush();
+                // The original LF driver has no stop token and owns a foreground
+                // worker. Process isolation ends it without changing production.
+                Environment.Exit(0);
+            }
             Run(arguments);
             return 0;
         } catch (Exception error) {
             Console.Error.WriteLine(error.ToString());
+            if (animationChild) { Console.Error.Flush(); Environment.Exit(1); }
             return 1;
         }
     }
@@ -57,6 +72,7 @@ internal static class Program {
             Console.WriteLine("PASS shared keybinding controller acceptance: capture, confirmation, owner switch, actual options transactions and failure callbacks.");
             CheckImageDecoding(Path.Combine(fixture, "images"));
             AnimationTests.Run();
+            AnimationTests.RunThreadDriverProcess(repositoryRoot);
             Require(!AppDomain.CurrentDomain.GetAssemblies().Any(assembly => IsLegacyWpf(assembly.GetName())),
                 "The modern runtime loaded the historical Meloong WPF assembly.");
         } finally {

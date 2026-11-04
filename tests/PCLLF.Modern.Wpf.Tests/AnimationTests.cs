@@ -1,9 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Versioning;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -17,6 +22,7 @@ namespace PCLLF.Modern.Wpf.Tests;
 // LF native frame acceptance. Platform log/custom-event callbacks record observations;
 // the host, factories, engine, WPF targets and control animation plans are production code.
 internal static class AnimationTests {
+    private const string DriverPass = "PASS native animation ThreadDriver: real foreground Animation worker, AboveNormal, synchronous STA frames and terminal callback.";
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private static void Near(double expected, double actual, string message) => Require(Math.Abs(expected - actual) < .000001, message + ": " + actual);
     private sealed class Session {
@@ -44,6 +50,94 @@ internal static class AnimationTests {
             typeof(MyButtonView).Assembly == assembly && typeof(MyRadioButtonView).Assembly == assembly && typeof(MyCheckBoxView).Assembly == assembly,
             "Native animation or controls did not come from the actual modern LF presentation assembly.");
         NumericAndCancel(); DelaysAndReplacement(); ColorsAndResources(); CallbackFailure(); NativeControls();
+    }
+
+    internal static void RunThreadDriverProcess(string repositoryRoot) =>
+        RunThreadDriverProcessAsync(repositoryRoot).GetAwaiter().GetResult();
+
+    private static async Task RunThreadDriverProcessAsync(string repositoryRoot) {
+        string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot locate the actual WPF test host.");
+        ProcessStartInfo start = new(executable) {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+            CreateNoWindow = true, WorkingDirectory = repositoryRoot
+        };
+        if (string.Equals(Path.GetFileNameWithoutExtension(executable), "dotnet", StringComparison.OrdinalIgnoreCase))
+            start.ArgumentList.Add(typeof(AnimationTests).Assembly.Location);
+        start.ArgumentList.Add(repositoryRoot);
+        start.ArgumentList.Add("--animation-driver-child");
+        using Process child = new() { StartInfo = start };
+        bool started = false;
+        try {
+            started = child.Start();
+            Require(started, "The real animation driver child did not start.");
+            Task<string> output = child.StandardOutput.ReadToEndAsync(), errors = child.StandardError.ReadToEndAsync();
+            try {
+                await Task.WhenAll(child.WaitForExitAsync(), output, errors).WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+            } catch (TimeoutException) {
+                if (!child.HasExited) child.Kill(entireProcessTree: true);
+                await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                throw new TimeoutException("The real foreground animation driver child exceeded 15 seconds.\n" +
+                    (output.IsCompletedSuccessfully ? output.Result : "stdout incomplete") + "\n" +
+                    (errors.IsCompletedSuccessfully ? errors.Result : "stderr incomplete"));
+            }
+            string stdout = await output.ConfigureAwait(false), stderr = await errors.ConfigureAwait(false);
+            Require(child.ExitCode == 0 && stdout.Contains(DriverPass, StringComparison.Ordinal) && string.IsNullOrWhiteSpace(stderr),
+                "Actual animation driver child failed (exit " + child.ExitCode + ").\n" + stdout + "\n" + stderr);
+            Console.Write(stdout);
+        } finally {
+            if (started && !child.HasExited) {
+                child.Kill(entireProcessTree: true);
+                Require(child.WaitForExit(2000), "The animation child did not exit after its process tree was killed.");
+            }
+        }
+    }
+
+    internal static void RunThreadDriverChild() {
+        // This watchdog also ends a child whose UI Dispatcher is blocked inside
+        // the original synchronous UiWait; it never changes the native driver.
+        using System.Threading.Timer watchdog = new(_ => {
+            Console.Error.WriteLine("Actual animation driver child exceeded its 10 second watchdog.");
+            Console.Error.Flush(); Environment.Exit(1);
+        }, null, TimeSpan.FromSeconds(10), Timeout.InfiniteTimeSpan);
+        Dispatcher dispatcher = Application.Current.Dispatcher;
+        int uiThread = Thread.CurrentThread.ManagedThreadId;
+        ConcurrentQueue<string> faults = new();
+        AnimationHost host = AnimationNativeHost.Create(() => 9, () => false, () => 0, (_, _) => { }, _ => { },
+            (error, message) => faults.Enqueue(message + ": " + error),
+            (error, message) => faults.Enqueue(message + ": " + error));
+        Thread observedWorker = null;
+        Action<Action, string, ThreadPriority> nativeStart = host.StartThread;
+        host.StartThread = (work, name, priority) => nativeStart(() => {
+            Volatile.Write(ref observedWorker, Thread.CurrentThread);
+            work();
+        }, name, priority);
+        AnimationNativeRuntime runtime = new(host);
+        Border target = new() { Opacity = 0 };
+        bool middle = false; int frames = 0, callbacks = 0;
+        DependencyPropertyDescriptor opacity = DependencyPropertyDescriptor.FromProperty(UIElement.OpacityProperty, typeof(Border));
+        EventHandler changed = (_, _) => {
+            Require(dispatcher.CheckAccess() && Thread.CurrentThread.ManagedThreadId == uiThread && Thread.CurrentThread.GetApartmentState() == ApartmentState.STA,
+                "The actual driver changed WPF opacity outside its STA/UI dispatcher.");
+            frames++;
+            if (target.Opacity > 0 && target.Opacity < 1) middle = true;
+        };
+        opacity.AddValueChanged(target, changed);
+        try {
+            runtime.Engine.AniStart(new[] { runtime.Factories.AaOpacity(target, 1, 1200), runtime.Factories.AaCode(() => {
+                Require(dispatcher.CheckAccess() && Thread.CurrentThread.ManagedThreadId == uiThread && Thread.CurrentThread.GetApartmentState() == ApartmentState.STA,
+                    "The real After callback left its STA/UI dispatcher.");
+                callbacks++;
+            }, after: true) }, "actual-driver");
+            runtime.Engine.AniStart();
+            Require(runtime.Running, "The real no-argument AniStart did not publish Running.");
+            PumpUntil(() => callbacks == 1 && !runtime.Engine.AniIsRun("actual-driver"));
+            Thread worker = Volatile.Read(ref observedWorker);
+            Require(worker != null && worker.IsAlive && worker.Name == "Animation" && worker.Priority == ThreadPriority.AboveNormal && !worker.IsBackground &&
+                worker.ManagedThreadId != uiThread && runtime.Running, "The real native worker lost its original name, priority, foreground or running semantics.");
+            Near(1, target.Opacity, "The actual ThreadDriver did not reach its terminal WPF value");
+            Require(middle && frames >= 2 && callbacks == 1 && faults.IsEmpty, "The real driver skipped middle frames, repeated its callback or logged a fault: " + string.Join("\n", faults));
+            Console.WriteLine(DriverPass);
+        } finally { opacity.RemoveValueChanged(target, changed); }
     }
 
     private static void NumericAndCancel() {
