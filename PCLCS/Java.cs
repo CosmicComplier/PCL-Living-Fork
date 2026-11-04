@@ -203,10 +203,11 @@ public static class JavaUtils {
                         // 判断文件夹是否包含重解析点（例如符号链接）
                         static bool HasReparsePoint(FileSystemInfo info) {
                             if (PathUtils.IsParentOf(Paths.AppData + @".minecraft\runtime\", info.FullName)) return false; // 不筛查 PCL 的下载路径（#8928）
+                            FileSystemInfo? current = info;
                             do {
-                                if (info.Attributes.HasFlagF(FileAttributes.ReparsePoint)) return true;
-                                info = info is FileInfo fileInfo ? fileInfo.Directory : ((DirectoryInfo) info).Parent;
-                            } while (info is not null);
+                                if (current.Attributes.HasFlagF(FileAttributes.ReparsePoint)) return true;
+                                current = current is FileInfo fileInfo ? fileInfo.Directory : ((DirectoryInfo) current).Parent;
+                            } while (current is not null);
                             return false;
                         }
                         // 结果

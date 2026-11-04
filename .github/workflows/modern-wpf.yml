@@ -1,0 +1,122 @@
+name: Modern .NET 10 WPF
+
+on:
+  push:
+    branches:
+      - migration/csharp-modern-dotnet
+    paths:
+      - 'PCLCS/**'
+      - 'modern/**'
+      - 'MeloongCore'
+      - 'MeloongCore/**'
+      - '.gitmodules'
+      - 'tests/PCLLF.Modern.Wpf.Tests/**'
+      - 'tests/PCLLF.Windows.Tests/**'
+      - 'scripts/Test-ScreenshotGallery.ps1'
+      - 'scripts/Test-KeybindingGroups.ps1'
+      - '.github/workflows/modern-wpf.yml'
+  pull_request:
+    branches:
+      - migration/csharp-modern-dotnet
+    paths:
+      - 'PCLCS/**'
+      - 'modern/**'
+      - 'MeloongCore'
+      - 'MeloongCore/**'
+      - '.gitmodules'
+      - 'tests/PCLLF.Modern.Wpf.Tests/**'
+      - 'tests/PCLLF.Windows.Tests/**'
+      - 'scripts/Test-ScreenshotGallery.ps1'
+      - 'scripts/Test-KeybindingGroups.ps1'
+      - '.github/workflows/modern-wpf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}
+  cancel-in-progress: true
+
+jobs:
+  modern-wpf:
+    name: Modern WPF (${{ matrix.configuration }})
+    if: github.ref == 'refs/heads/migration/csharp-modern-dotnet' || (github.event_name == 'pull_request' && github.base_ref == 'migration/csharp-modern-dotnet')
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+    steps:
+      - name: Checkout LF and the pinned Shared dependency
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Record the real toolchain and fixed source context
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $logDirectory = Join-Path $env:GITHUB_WORKSPACE 'artifacts/modern-wpf/${{ matrix.configuration }}'
+          New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+          $sharedRevision = (& git -C MeloongCore rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sharedRevision -cne 'c774ae4c85fd94e0eaa171db21e78a65870df19b') {
+            throw 'The modern runtime check requires the fixed LF Shared revision.'
+          }
+          & dotnet --info 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'toolchain.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Reading the actual .NET SDK failed.' }
+          [ordered]@{
+            commit = $env:GITHUB_SHA
+            configuration = '${{ matrix.configuration }}'
+            shared = $sharedRevision
+            targetFramework = 'net10.0-windows'
+            scope = 'LF PCLCS modern graph, four resource payloads, STA WPF image decode and shared live controller checks; not the complete migrated launcher.'
+          } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $logDirectory 'context.json')
+
+      - name: Restore the modern-only WPF test graph
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $logDirectory = Join-Path $env:GITHUB_WORKSPACE 'artifacts/modern-wpf/${{ matrix.configuration }}'
+          & dotnet restore tests/PCLLF.Modern.Wpf.Tests/PCLLF.Modern.Wpf.Tests.csproj --verbosity minimal -p:Configuration=${{ matrix.configuration }} 2>&1 |
+            Tee-Object -FilePath (Join-Path $logDirectory 'restore.log')
+          if ($LASTEXITCODE -ne 0) { throw 'The modern WPF graph did not restore.' }
+
+      - name: Build real LF CSharp and WPF sources with warnings as errors
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $logDirectory = Join-Path $env:GITHUB_WORKSPACE 'artifacts/modern-wpf/${{ matrix.configuration }}'
+          & dotnet build tests/PCLLF.Modern.Wpf.Tests/PCLLF.Modern.Wpf.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore --verbosity minimal -warnaserror -p:ContinuousIntegrationBuild=true 2>&1 |
+            Tee-Object -FilePath (Join-Path $logDirectory 'build.log')
+          if ($LASTEXITCODE -ne 0) { throw 'The modern WPF graph did not build without warnings.' }
+
+      - name: Run actual NET10 STA resources images and shared live controllers
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $logDirectory = Join-Path $env:GITHUB_WORKSPACE 'artifacts/modern-wpf/${{ matrix.configuration }}'
+          & dotnet run --project tests/PCLLF.Modern.Wpf.Tests/PCLLF.Modern.Wpf.Tests.csproj --configuration ${{ matrix.configuration }} --no-build -- "$env:GITHUB_WORKSPACE" 2>&1 |
+            Tee-Object -FilePath (Join-Path $logDirectory 'runtime.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual modern WPF runtime verification failed.' }
+
+      - name: Upload actual modern WPF build and runtime logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: modern-wpf-${{ matrix.configuration }}
+          path: artifacts/modern-wpf/${{ matrix.configuration }}/
+          if-no-files-found: warn

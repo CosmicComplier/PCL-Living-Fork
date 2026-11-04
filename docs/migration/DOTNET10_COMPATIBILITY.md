@@ -6,6 +6,8 @@ CE 稳定参考固定为 [`v2.15.1`／`1a7653127d578efdb2a9388999a3fdc67d9e49d5`
 
 已有证据：[初始 Windows Build](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41656492901) 的 Debug、Release 均成功；账本另有 Linux 上现有 net48 辅助库编译与 .NET 10 纯 NBT 测试记录。本次仅实查 SDK `10.0.403`、Linux `Microsoft.NETCore.App 10.0.14` 可用，没有重新构建，也没有 Windows Desktop 运行结果。以下“阻塞”指对应现代框架／发布验收尚不能关闭，不阻止独立的 C# 等价转换继续推进。
 
+2026-11-04 N002a实施更新：新增LF管理的[现代PCLCS工程](../../modern/PCLCS/PCLCS.Modern.csproj)，链接当前全部52份真实C#源码及原4资源、保AssemblyName与固定Shared完整依赖图；实查MeloongCore.Wpf只是旧项目默认using／引用，无真实Core调用，现代工程不需要该依赖。旧net48工程／子模块源码不改。SDK10.0.403在Linux真实构建现代库及[STA WPF组件验收工程](../../tests/PCLLF.Modern.Wpf.Tests/PCLLF.Modern.Wpf.Tests.csproj)为0警告／错误，实际Windows双配置资源精确名称／字节、解码冻结和同源live控制器执行待[新工作流](../../.github/workflows/modern-wpf.yml)。现代选中Newtonsoft13.0.3/net6.0、ThrottleDebounce2.0.2/netstandard2.0与WPF reference10.0.14。Java遍历父目录只补nullable局部，不变行为。以下初始审计表保原时间背景；N002／N003和全产品GUI／账号／发布仍未关闭。Linux生成的资源名称为平台正斜线，旧net48本地亦如此，Windows发布仍必须实际检查原反斜线LogicalName和Shared精确读取，不能用交叉编译冒充资源运行验收。
+
 ## 当前工程与依赖边界
 
 | 实际入口 | 当前状态 | 现代目标与待证实条件 |

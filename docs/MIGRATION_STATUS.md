@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。用户已恢复任务，按完整功能链＋LF兼容＋定向测试推进。G005、资源整页C007与地图／回收链C008已实际验收；C009在线更新和C010备份引擎正在互不冲突文件中成组迁移。整个迁移目标未完成。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
 - 最新已验收检查点 `8c706ee11d705006f6ce9055532214c6da5aef85`（含前一2304fc5）：Windows Build41798578440 Debug126468571779／Release126468571785各41步成功，原资源在线更新／备份EngineOnly／原生GUI与旧桥通过；Migration41798578476 Ubuntu126468575296 **388／388**、Windows126468575178 **439／439**，严格v7 397例无差异。主产品仍net48／VB，非现代全产品验收。
-- 当前交付批次：C005c2产品编译与原native分组已通过，但新增验收KeyEventArgs使用null PresentationSource导致测试fixture失败；共享验收源已修真实隐藏HwndSource并保断言，待Windows。C006d全近期UI／启动交接已冻结，现代LF全C#库／WPF实际工程与运行验收接线同步集成中。
+- 当前交付批次：C005c2测试输入fixture已修，C006d近期UI／启动交接已冻结并提交1af62f6；N002a现代真实全库及双配置Windows运行工作流成组接入。旧Frame脚本与现代test工程复用同一C#5控制器验收源，保原断言并避免重复语料；实际Windows尚待本批推送。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原9组已验，C010追加独立world-backups第10组，resources始终只4组；备份源精确选新组＋10真实消费者，不拉无关Store大集。C009框架引用及C010路由／组定义本批合并一个完整检查点，后续具体页修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
@@ -156,16 +156,16 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 
 ## 当前批次文件与协作归属
 
-2026-11-04最初从干净7beef22恢复，资源整页／C008已推0df889a且真实验收。C009已本地提交2304fc5，正与C010成组准备下一次推送。以下均为已知独占改动，禁止reset／clean覆盖；代理不提交、不切分支，主执行者统一集成。
+现远端ebdb594，本地额外已提交近期世界整链1af62f6，待与现代工程同次推送。资源／回收／在线更新／备份至8c706ee均已验收。以下为本批已知独占实现，全部作者冻结，由主执行者统一接管；禁止reset／clean覆盖，不切分支。
 
 | 范围 | 执行归属／状态 |
 | --- | --- |
-| InstanceResourceOnlineFiles／旧Updates.vb／8组测试 | 已冻结并提交2304fc5；47／47资源文件组、本地Core编译及独立源审通过，Windows消费者与6新Windows组待下次CI |
-| WorldBackupContracts／Engine／Restore／Workflow与旧WorldBackups.vb | 页面代理及子代理冻结；全部原Friend与Metadata／ReadArchive入口、单例状态保留；完整Core强制Rebuild零警告错误及真实EngineOnly门面严格VB编译通过 |
-| WorldBackupPipelineTests、runner／项目／selector | 测试及CI代理冻结、主执行者统一注册独立world-backups；5／5跨平台真实文件与故障事务通过，Windows第6锁组待CI；精确10消费者与资源4组隔离核对 |
-| Test-WorldBackups.ps1 | CI代理冻结；编译真实新VB门面并核闭合泛型实际绑定Core，原stub／全部故障fixture与断言／cleanup保持，Windows执行待CI |
-| KeybindingPageController.cs／原按键页VB | 下一互斥批已冻结；控制器全业务＋原typed控件平台适配，完整Core Rebuild含此C#通过、独立源审通过；Test-KeybindingGroups原两私有field→property及真实窄WPF保存回归进行中，未提交，不得丢弃 |
-| docs／集成／CI与提交 | 主执行者；已经通过的0df889a资源页不重复改写，当前C009／C010和按键页的Windows待验范围分别保留 |
+| RecentWorld两C#＋PageLaunchRight相关区段／QuickPlayWorlds.Start | 已提交1af62f6；net48与现代编译、独立源审通过，原真实动画script无须改动，Windows待验 |
+| modern/PCLCS项目＋Java.cs nullable局部 | 现代代理冻结；全52源＋4资源、真实Shared依赖图，Release 0警告错误；旧net48项目／子模块源码不改，产物隔离 |
+| 两共享C#5验收源＋原截图／按键PS脚本 | CI代理冻结；截图逐字提取，按键只修Windows发现的真实HwndSource输入fixture／异常完整栈，所有原断言保留；共享C#5实编译通过 |
+| tests/PCLLF.Modern.Wpf.Tests | 现代STA组件验收，真实Core/Shared／4资源名及bytes／图片流与Freeze／同源缩略图和按键控制器；Linux交叉编译0警告错误，未运行Windows |
+| modern-wpf工作流／selector | CI代理冻结；Windows Debug／Release SDK10／固定Shared／编译运行真实log，已知新controller及两共享verifier精确路由，公共项目／未知变更full；YAML与实际selector集合检查通过 |
+| docs／整合／提交／CI记录 | 主执行者；C005新增测试fixture首次失败保留，现代库／测试编译不是主产品现代运行或账号游戏验收 |
 
 ## 任务依赖与验收
 
@@ -212,7 +212,8 @@ python3 scripts/Inventory-Migration.py --ref HEAD --output artifacts/migration/s
 | C030 | todo | C022、C027 | 完成设置、个性化、工具、帮助、关于及现有可选联机页面的迁移；默认关闭项单独验收，不静默删除 |
 | C031 | todo | C023、C025、C026、C027、C028、C029、C030 | 成组完成 `Application`、`FormMain`、`ModMain`、事件／音乐／维护等剩余入口；窗口、路由、单实例和关闭生命周期回归 |
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
-| N002 | todo | N001、C024、C025 | 将 LF 自有 C# 库适配 .NET 10；实际项目构建、依赖加载和纯业务测试通过，框架过渡不遮蔽旧路径 |
+| N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
+| N002a | in_progress | B001、G003 | 新modern/PCLCS/PCLCS.Modern.csproj链接全部52份实际PCLCS源及原4资源，AssemblyName=PCLCS，固定Shared ProjectRef／Newtonsoft13.0.3；不依赖历史无实际用处的Meloong.Wpf。现代全库＋真实STA WPF验收工程Release编译0警告错误；Windows双配置exact资源／实际解码／共用live verifier待新CI |
 | N003 | todo | N002、C031 | 主程序切换 C# SDK WPF／.NET 10，处理 My／VB 生成代码、XAML、资源名和程序启动；Windows Debug／Release 实构建与运行 |
 | N004 | todo | N003、C022 | 验证旧账号和配置数据、共享目录、版本隔离、备份／还原点与旧格式写回，保留脱敏样本和实际结果 |
 | N005 | todo | N003、N004 | 完成凭据生成、资源依赖、发布脚本、产物命名、单实例与旧版更新桥；测试发布产物和旧更新入口交接 |

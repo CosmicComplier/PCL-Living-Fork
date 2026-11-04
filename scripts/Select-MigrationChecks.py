@@ -93,6 +93,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
     groups: set[str] = set()
     scripts: set[str] = set()
     oracle = inventory = product = False
+    modern_test_change = False
     reasons = [reason]
     unknown = []
 
@@ -108,6 +109,14 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         leaf = name.rsplit("/", 1)[-1]
         if name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
             inventory = True
+        elif name.startswith("tests/PCLLF.Modern.Wpf.Tests/") or name == ".github/workflows/modern-wpf.yml":
+            # These sources execute in their own real NET10 WPF workflow and do
+            # not reference the VB product or require its unrelated regressions.
+            modern_test_change = True
+        elif name == "tests/PCLLF.Windows.Tests/ResourceThumbnailControllerChecks.cs":
+            include((), {"Test-ScreenshotGallery"})
+        elif name == "tests/PCLLF.Windows.Tests/KeybindingControllerChecks.cs":
+            include((), {"Test-KeybindingGroups"})
         elif name == "scripts/Select-MigrationChecks.py" or name.startswith(".github/workflows/"):
             full = True
             reasons.append("check routing/workflow changed")
@@ -147,6 +156,11 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(("world-backups",), WORLD_BACKUP_CHECKS)
         elif name == "PCLCS/Platform/Windows/KeybindingPageController.cs":
             include(("keybindings",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-KeybindingGroups"})
+        elif name in {"PCLCS/Platform/Windows/RecentWorldPageController.cs", "PCLCS/Platform/Windows/RecentWorldQuickPlay.cs"}:
+            # These exact controllers own only the recent-world card chain.
+            # PageLaunchRight remains a shared account/launch VB page and keeps
+            # the conservative full fallback for future edits outside that chain.
+            include(("quick-play",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-RecentWorldCard"})
         elif name in RESOURCE_PAGE_PATHS:
             include(RESOURCE_GROUPS, RESOURCE_PAGE_CHECKS)
         elif name in RESOURCE_IMAGE_PATHS:
@@ -199,6 +213,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             pass
         else:
             unknown.append(name)
+    if modern_test_change:
+        reasons.append("modern WPF test/workflow changes run in modern-wpf.yml")
     if unknown:
         full = True
         reasons.append("unclassified/shared change: " + ", ".join(unknown))
