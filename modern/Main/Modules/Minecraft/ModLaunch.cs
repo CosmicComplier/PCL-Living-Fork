@@ -764,6 +764,7 @@ namespace PCL
         }
         private static global::PCLCS.LegacyLaunchDependencyReport DependencyReport(global::System.String Folder, global::PCL.ModDependencyInspector.InspectionReport Report)
         {
+            global::PCL.ModBase.RunInUi(() => global::PCL.ModMain.FrmInstanceMod?.ApplyLoaderWarnings());
             return new global::PCLCS.LegacyLaunchDependencyReport()
             {
                 Source = Report,

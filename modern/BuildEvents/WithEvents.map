@@ -778,3 +778,9 @@ PCL.FormMain	BtnExtraDownload	global::PCL.MyExtraButton
 PCL.FormMain	BtnExtraApril	global::PCL.MyExtraButton
 PCL.FormMain	BtnExtraShutdown	global::PCL.MyExtraButton
 PCL.FormMain	BtnExtraBack	global::PCL.MyExtraButton
+PCL.PageInstanceMod	BtnManageIndex	global::PCL.MyButton
+PCL.MyLocalModItem	LoaderWarningBorder	global::System.Windows.Controls.Border
+PCL.PageSetupUI	ComboLauncherColorMode	global::PCL.MyComboBox
+PCL.PageSetupUI	SliderPanelOpacity	global::PCL.MySlider
+PCL.PageSetupSystem	ComboLauncherUpdateSource	global::PCL.MyComboBox
+PCL.PageSetupSystem	ComboLauncherUpdateChannel	global::PCL.MyComboBox

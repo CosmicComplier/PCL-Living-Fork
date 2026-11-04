@@ -14,6 +14,7 @@ internal static class InstanceClonePipelineTests {
         yield return ("instance clone pipeline rejects stale previews then captures real history before inspecting the retained transaction boundary", MigrationPlanBoundary);
         yield return ("instance clone pipeline groups actual clone origins and keeps missing malformed or cyclic parents visible", ActualOriginGroups);
         yield return ("instance clone export pipeline reads real ZIP choices and preserves Windows relative routing without a fake INI host", ExportArchivePolicy);
+        foreach (var check in FileTaskProgressTests.CloneCases()) yield return check;
     }
 
     private static void CloneFilesAndMetadata() {

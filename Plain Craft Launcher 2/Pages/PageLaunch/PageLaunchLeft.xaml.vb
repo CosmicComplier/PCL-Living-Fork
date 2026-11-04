@@ -50,7 +50,7 @@ Public Class PageLaunchLeft
             .AprilEnabled = Function() IsAprilEnabled, .AprilGiveUp = Function() IsAprilGiveup, .SetAprilGiveUp = Sub(Value) IsAprilGiveup = Value,
             .ResetGlobalAprilTransforms = AddressOf ResetGlobalAprilTransforms, .RefreshAprilButton = Sub() FrmMain.BtnExtraApril.ShowRefresh(),
             .ModpackMode = Function() ModModpackMode.Enabled, .HiddenForceShow = Function() PageSetupUI.HiddenForceShow,
-            .SelectedInstanceLocked = Function() McInstanceLock.IsLocked(McInstanceSelected), .AllowsInstance = AddressOf ModModpackMode.AllowsInstance,
+            .SelectedInstanceLocked = Function() McInstanceLock.BlocksNavigation(McInstanceSelected), .AllowsInstance = AddressOf ModModpackMode.AllowsInstance,
             .ApplyModpackLayout = Sub() ModModpackMode.ApplyLaunchLayout(FrmLaunchLeft),
             .GlobalButtons = New LegacyLaunchButtonView With {
                 .Text = Sub(Value) FrmLaunchLeft.BtnLaunch.Text = Value, .VersionText = Sub(Value) FrmLaunchLeft.LabVersion.Text = Value,

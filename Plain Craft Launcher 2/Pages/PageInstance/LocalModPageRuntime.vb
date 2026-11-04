@@ -9,6 +9,8 @@ Friend NotInheritable Class LocalModPageRuntime
             .Items = Function() Owner.ModItems, .Selected = Function() Owner.SelectedMods, .SetSelected = Sub(Value) Owner.SelectedMods = Value,
             .Output = Function() LocalResourceLoader.Output, .UpdatingFolders = Function() PageInstanceMod.UpdatingInstanceModFolders,
             .Instance = Function() PageInstanceLeft.Instance, .GlobalInstance = Function() McInstanceSelected,
+            .AnyLocked = Function() McInstanceLock.IsAnyLocked, .ResetIndexLookups = AddressOf ModDependencyAutoFill.ResetIndexLookups,
+            .RebuildIndex = AddressOf RebuildIndex, .RefreshLoaderWarning = Sub(Item, Target) Item.RefreshLoaderWarning(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target)),
             .GameFolder = Function(Value) Value.PathIndie, .InstanceName = Function(Value) Value.Name, .Modable = Function(Value) Value.Modable, .Locked = AddressOf McInstanceLock.IsLocked,
             .LastWasDetails = Function() FrmMain.PageLast.Page = FormMain.PageType.ResourceDetail, .IsCurrentPage = Function() FrmMain.PageRight Is Owner,
             .CtrlDown = Function() My.Computer.Keyboard.CtrlKeyDown, .ShiftDown = Function() My.Computer.Keyboard.ShiftKeyDown,
@@ -39,6 +41,11 @@ Friend NotInheritable Class LocalModPageRuntime
             .ToNetFile = Function(Value, Address) Value.ToNetFile(Address, ResourceVersion.DownloadReason.Update, PageInstanceLeft.Instance.Version.VanillaName, PageInstanceLeft.Instance.Version.ModLoaders),
             .CreateUpdateJob = AddressOf CreateUpdateJob, .CaptureHistory = Sub(Instance, Caption, Token) EnvironmentHistory.CaptureInstance(Instance, Caption, Token),
             .RefreshDownloadButton = Sub() FrmMain.BtnExtraDownload.ShowRefresh(), .RibbleDownloadButton = Sub() FrmMain.BtnExtraDownload.Ribble(), .FormatSize = AddressOf StringUtils.FormatByteSize}
+    End Function
+    Private Shared Function RebuildIndex(Target As McInstance, Progress As Action(Of Integer, Integer)) As LegacyModDependencyIndexResult
+        Dim Report = ModDependencyOnline.RebuildWithOnline(IO.Path.Combine(Target.PathIndie, "mods"), ModDependencyInspector.ContextForInstance(Target),
+            Options:=New ModDependencyOnline.LookupOptions With {.Progress = Progress})
+        Return New LegacyModDependencyIndexResult With {.IndexReadFailed = Function() Report.IndexReadFailed, .IndexPersisted = Function() Report.IndexPersisted, .OnlineIncomplete = Function() Report.OnlineIncomplete}
     End Function
     Private Shared Sub ShowHint(Text As String, Kind As Integer, WriteLog As Boolean)
         Dim Color = If(Kind = 1, HintType.Red, If(Kind = 2, HintType.Green, If(Kind = 3, HintType.Blue, HintType.Blue)))

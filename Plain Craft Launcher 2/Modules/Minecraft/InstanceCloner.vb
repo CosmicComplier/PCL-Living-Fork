@@ -56,6 +56,13 @@ Friend NotInheritable Class InstanceCloner
         Optional AfterFileCopied As Action(Of Integer) = Nothing) As InstanceCloneResult
         Return Service.Clone(VersionFolder, GameRoot, NewName, Options, Token, AfterFileCopied)
     End Function
+    Friend Shared Function CloneInstanceWithProgress(Instance As McInstance, NewName As String, Options As InstanceCloneOptions, Token As CancellationToken, Progress As Action(Of Double)) As InstanceCloneResult
+        Return Service.CloneInstanceWithProgress(Instance, NewName, Options, Token, Progress)
+    End Function
+    Friend Shared Function CloneWithProgress(VersionFolder As String, GameRoot As String, NewName As String, Options As InstanceCloneOptions, Token As CancellationToken, Progress As Action(Of Double),
+        Optional AfterFileCopied As Action(Of Integer) = Nothing) As InstanceCloneResult
+        Return Service.CloneWithProgress(VersionFolder, GameRoot, NewName, Options, Token, Progress, AfterFileCopied)
+    End Function
     Friend Shared Function SourceVersionFolder(CloneFolder As String) As String
         Return Service.SourceVersionFolder(CloneFolder)
     End Function
@@ -121,6 +128,7 @@ Friend NotInheritable Class InstanceClonerUi
     Private Shared Sub Run(Instance As McInstance, Work As PCLCS.InstanceCloneWork)
         Dim StepLoader As New LoaderTask(Of String, String)(Work.StepName,
             Sub(Task)
+                Work.Progress = PCLCS.FileTaskProgress.ForTask(Function() Task.Progress, Sub(Value) Task.Progress = Value)
                 Work.Execute(Task.CreateCancellationToken(), Sub(Output) Task.Output = Output)
             End Sub)
         Dim Loader As New LoaderCombo(Of String)(Work.Title, {StepLoader}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
@@ -129,7 +137,7 @@ Friend NotInheritable Class InstanceClonerUi
         Dim Worker As New RedoableWorker(Sub()
                                             If Not Abandoned Then Workload()
                                         End Sub)
-        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then
+        If Not If(Work.LockSource, McInstanceLock.TryAcquire(Worker, Instance.PathVersion), McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion)) Then
             Work.ReleaseBusy()
             Return
         End If

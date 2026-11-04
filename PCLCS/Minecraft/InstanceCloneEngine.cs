@@ -143,40 +143,57 @@ public sealed partial class InstanceCloneEngine<TInstance, TOptions, TResult, TC
         if (result.Count > MaxFiles) throw new IOException("复制文件过多。");
         return result;
     }
-    public string Digest(string address, CancellationToken token) {
+    public string Digest(string address, CancellationToken token) => DigestWithProgress(address, token, null);
+
+    private string DigestWithProgress(string address, CancellationToken token, Action<double>? progress) {
         EnsureNoLinks(address);
         using (FileStream input = new(address, FileMode.Open, FileAccess.Read, FileShare.Read))
         using (SHA1 hash = SHA1.Create()) {
-            byte[] buffer = new byte[128 * 1024];
-            while (true) { token.ThrowIfCancellationRequested(); int count = input.Read(buffer, 0, buffer.Length); if (count == 0) break; hash.TransformBlock(buffer, 0, count, null, 0); }
+            byte[] buffer = new byte[128 * 1024]; Action<long>? read = FileTaskProgress.Bytes(input.Length, progress);
+            while (true) { token.ThrowIfCancellationRequested(); int count = input.Read(buffer, 0, buffer.Length); if (count == 0) break; hash.TransformBlock(buffer, 0, count, null, 0); read?.Invoke(count); }
             hash.TransformFinalBlock(new byte[0], 0, 0);
+            progress?.Invoke(1);
             return "sha1:" + BitConverter.ToString(hash.Hash!).Replace("-", "").ToLowerInvariant();
         }
     }
-    private Dictionary<string, string> Fingerprints(Dictionary<string, string> entries, CancellationToken token) {
+    private Dictionary<string, string> Fingerprints(Dictionary<string, string> entries, CancellationToken token, Action<double>? progress = null) {
         Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
-        long bytes = 0;
+        long bytes = 0, total = ProgressWeight(entries, token), completed = 0;
         foreach (KeyValuePair<string, string> pair in entries) {
             token.ThrowIfCancellationRequested();
             bytes = checked(bytes + new FileInfo(pair.Value).Length);
             if (bytes > MaxBytes) throw new IOException("复制范围超过 512 GiB，请先缩小复制范围。");
-            result.Add(pair.Key, Digest(pair.Value, token));
+            long weight = Math.Max(1L, new FileInfo(pair.Value).Length);
+            result.Add(pair.Key, DigestWithProgress(pair.Value, token, FileTaskProgress.Slice(progress, (double)completed / total, (double)checked(completed + weight) / total)));
+            completed = checked(completed + weight);
         }
+        progress?.Invoke(1);
         return result;
+    }
+    private static long ProgressWeight(Dictionary<string, string> entries, CancellationToken token) {
+        long bytes = 0, weight = 0;
+        foreach (string address in entries.Values) {
+            token.ThrowIfCancellationRequested();
+            long length = new FileInfo(address).Length;
+            bytes = checked(bytes + length);
+            if (bytes > MaxBytes) throw new IOException("复制范围超过 512 GiB，请先缩小复制范围。");
+            weight = checked(weight + Math.Max(1L, length));
+        }
+        return Math.Max(1L, weight);
     }
     private static void Verify(Dictionary<string, string> expected, Dictionary<string, string> actual) {
         if (expected.Count != actual.Count || expected.Any(pair => !actual.ContainsKey(pair.Key) || !SameText(actual[pair.Key], pair.Value))) throw new IOException("操作期间环境目录发生变化，请等待修改完成后重试。");
     }
-    private void CopyFile(string source, string destination, string expectedHash, CancellationToken token) {
+    private void CopyFile(string source, string destination, string expectedHash, CancellationToken token, Action<double>? progress = null) {
         EnsureNoLinks(source); EnsureNoLinks(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         using (FileStream input = new(source, FileMode.Open, FileAccess.Read, FileShare.Read))
         using (FileStream output = new(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
-            byte[] buffer = new byte[128 * 1024];
-            while (true) { token.ThrowIfCancellationRequested(); int count = input.Read(buffer, 0, buffer.Length); if (count == 0) break; output.Write(buffer, 0, count); }
+            byte[] buffer = new byte[128 * 1024]; Action<long>? copied = FileTaskProgress.Bytes(input.Length, FileTaskProgress.Slice(progress, 0, 0.75));
+            while (true) { token.ThrowIfCancellationRequested(); int count = input.Read(buffer, 0, buffer.Length); if (count == 0) break; output.Write(buffer, 0, count); copied?.Invoke(count); }
             output.Flush(true);
         }
-        if (!SameText(Digest(destination, token), expectedHash)) throw new IOException("复制期间来源文件发生变化，未生成测试副本。");
+        if (!SameText(DigestWithProgress(destination, token, FileTaskProgress.Slice(progress, 0.75, 1)), expectedHash)) throw new IOException("复制期间来源文件发生变化，未生成测试副本。");
         File.SetLastWriteTimeUtc(destination, File.GetLastWriteTimeUtc(source));
     }
     private void DeleteStage(string parent, string stage) {
@@ -232,7 +249,13 @@ public sealed partial class InstanceCloneEngine<TInstance, TOptions, TResult, TC
         }
     }
     public TResult CloneInstance(TInstance instance, string newName, TOptions? options, CancellationToken token) => Clone(host.VersionPath(instance), GameRootForInstance(instance), newName, options, token);
-    public TResult Clone(string versionFolder, string gameRoot, string newName, TOptions? options, CancellationToken token, Action<int>? afterFileCopied = null) {
+    public TResult CloneInstanceWithProgress(TInstance instance, string newName, TOptions? options, CancellationToken token, Action<double>? progress) =>
+        CloneWithProgress(host.VersionPath(instance), GameRootForInstance(instance), newName, options, token, progress);
+
+    public TResult Clone(string versionFolder, string gameRoot, string newName, TOptions? options, CancellationToken token, Action<int>? afterFileCopied = null) =>
+        CloneWithProgress(versionFolder, gameRoot, newName, options, token, null, afterFileCopied);
+
+    public TResult CloneWithProgress(string versionFolder, string gameRoot, string newName, TOptions? options, CancellationToken token, Action<double>? progress, Action<int>? afterFileCopied = null) {
         lock (Gate) {
             AssertStopped(gameRoot);
             token.ThrowIfCancellationRequested();
@@ -245,14 +268,19 @@ public sealed partial class InstanceCloneEngine<TInstance, TOptions, TResult, TC
             EnsureNoLinks(destination);
             if (File.Exists(destination) || Directory.Exists(destination) || host.SamePath(versionFolder, destination)) throw new IOException("同名版本已存在，请使用新的测试版本名称。");
             if (host.HasPending(versionFolder)) throw new IOException("原版本有未完成的环境修改，请先完成恢复后再克隆。");
-            Dictionary<string, string> entries = Inventory(versionFolder, gameRoot, options, token), before = Fingerprints(entries, token);
-            int count = 0; long bytes = 0;
+            Dictionary<string, string> entries = Inventory(versionFolder, gameRoot, options, token);
+            progress?.Invoke(0.02);
+            Dictionary<string, string> before = Fingerprints(entries, token, FileTaskProgress.Slice(progress, 0.02, 0.22));
+            int count = 0; long bytes = 0, completed = 0;
+            long total = ProgressWeight(entries, token);
             Directory.CreateDirectory(stage);
             try {
                 foreach (KeyValuePair<string, string> pair in entries) {
                     token.ThrowIfCancellationRequested();
                     string relative = pair.Key.Substring(2), targetFile = Target(stage, relative);
-                    CopyFile(pair.Value, targetFile, before[pair.Key], token);
+                    long weight = Math.Max(1L, new FileInfo(pair.Value).Length);
+                    CopyFile(pair.Value, targetFile, before[pair.Key], token, FileTaskProgress.Slice(progress, 0.22 + 0.6 * completed / total, 0.22 + 0.6 * checked(completed + weight) / total));
+                    completed = checked(completed + weight);
                     count = checked(count + 1); bytes = checked(bytes + new FileInfo(targetFile).Length);
                     afterFileCopied?.Invoke(count);
                 }
@@ -261,11 +289,12 @@ public sealed partial class InstanceCloneEngine<TInstance, TOptions, TResult, TC
                 JObject origin = new(new JProperty("schema", 1), new JProperty("sourceVersionFolder", versionFolder), new JProperty("sourceGameRoot", gameRoot), new JProperty("sourceName", Path.GetFileName(versionFolder)), new JProperty("cloneName", newName), new JProperty("created", DateTime.UtcNow));
                 File.WriteAllText(Target(stage, OriginName), origin.ToString(), new UTF8Encoding(false));
                 AssertStopped(gameRoot);
-                Verify(before, Fingerprints(Inventory(versionFolder, gameRoot, options, token), token));
+                Verify(before, Fingerprints(Inventory(versionFolder, gameRoot, options, token), token, FileTaskProgress.Slice(progress, 0.85, 0.99)));
                 token.ThrowIfCancellationRequested();
                 EnsureNoLinks(parent); EnsureNoLinks(stage); EnsureNoLinks(destination);
                 if (File.Exists(destination) || Directory.Exists(destination)) throw new IOException("目标名称已被其他操作占用。");
                 Directory.Move(stage, destination);
+                progress?.Invoke(1);
                 TResult result = createResult(); result.Name = newName; result.VersionFolder = host.AddSlashSuffix(destination); result.FileCount = count; result.Bytes = bytes;
                 return result;
             } finally { DeleteStage(parent, stage); }

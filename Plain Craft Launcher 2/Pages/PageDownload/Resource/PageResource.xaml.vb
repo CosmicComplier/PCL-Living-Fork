@@ -4,6 +4,14 @@ Imports SearchCore = PCLCS.ResourceSearchPageController(Of PCL.ModMinecraft.McIn
 <ContentProperty("SearchTags")>
 Public Class PageResource
     Public Shared TargetInstance As McInstance = Nothing
+    Friend Property DownloadTargetInstance As McInstance
+        Get
+            Return Service.DownloadTargetInstance
+        End Get
+        Set(value As McInstance)
+            Service.DownloadTargetInstance = value
+        End Set
+    End Property
     Public Shared TargetName As String = Nothing
     Public Loader As LoaderTask(Of ResourceSearcher.SearchRequest, Integer) = ResourceSearcher.GetLoader(AddressOf LoaderInput)
     Public Storage As New ResourceSearcher.SearchResult

@@ -124,7 +124,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
 
     public static void ResetRegistryPreference(ILegacySettingsStore store, TEntry entry) {
         if (!IsCompatibleSetting(entry)) {
-            store.DeleteValue(entry.Key, false);
+            store.DeleteValue(RegistryValueName(entry), false);
             return;
         }
         string value = Convert.ToString(entry.DefaultValue, CultureInfo.InvariantCulture)!;

@@ -43,6 +43,7 @@ namespace PCL
         public global::PCL.ResourceSearcher.SearchResult Storage;
         public const global::System.Int32 PAGE_SIZE = 40;
         public global::System.Int32 Page;
+        internal ModMinecraft.McInstance DownloadTargetInstance { get => Service.DownloadTargetInstance; set => Service.DownloadTargetInstance = value; }
         private global::PCLCS.ResourceSearchPageController<global::PCL.ModMinecraft.McInstance, global::PCL.ModMinecraft.McInstance.McInstanceState, global::PCL.ModMinecraft.McInstanceCardType, global::PCL.ResourceProject, global::PCL.ResourceSearcher.SearchResult, global::PCL.ResourceSearcher.SearchRequest> Controller;
         private global::PCLCS.ResourceSearchPageController<global::PCL.ModMinecraft.McInstance, global::PCL.ModMinecraft.McInstance.McInstanceState, global::PCL.ModMinecraft.McInstanceCardType, global::PCL.ResourceProject, global::PCL.ResourceSearcher.SearchResult, global::PCL.ResourceSearcher.SearchRequest> Service
         {

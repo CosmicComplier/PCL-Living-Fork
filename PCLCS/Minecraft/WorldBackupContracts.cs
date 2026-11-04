@@ -35,9 +35,11 @@ public sealed class WorldBackupHost<TInstance> where TInstance : class {
 
 /// <summary>One actual loader workload; LF owns its worker, file lock and taskbar lifetime.</summary>
 public sealed class WorldBackupWork {
+    public Func<bool> SnapshotReservation = null!;
     public string StepName = null!;
     public string Title = null!;
     public Action<CancellationToken, Action<string?>> Execute = null!;
+    public Action<double>? Progress;
     public Action Stopped = null!;
 }
 

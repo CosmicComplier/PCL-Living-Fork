@@ -70,7 +70,7 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
                 if (!File.Exists(fullPath) || new FileInfo(fullPath).Length != host.Size(entry.Version) || !SameText(host.FileHash(fullPath, host.Hash(entry.Version)!.Length == 32), host.Hash(entry.Version)))
                     throw new IOException("下载的前置文件校验失败，未加入模组目录。");
             }
-            TReport added = Inspect(stage, before.Context, token);
+            TReport added = ModDependencyInspection<TContext,TMod,TDependency,TEdge,TIssue,TImpact,TReport,TOnlineProject,TOnlineDependency,TOnlineFile>.ScanRaw(stage, before.Context, token, true);
             if (added.MetadataIncomplete) throw new IOException("前置文件的元数据未能完整识别，未自动安装。");
             TReport ready = WithEnabledFiles(before, plan.Enables.Select(item => item.Source), token);
             HashSet<string> existingIds = new(ready.Mods.Where(value => value.Enabled && !value.IsNested).Select(value => value.Id), StringComparer.Ordinal);

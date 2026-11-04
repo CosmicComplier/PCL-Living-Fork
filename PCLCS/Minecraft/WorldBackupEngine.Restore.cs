@@ -46,31 +46,30 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
     }
 
     public List<JObject> Points(string gameFolder) {
-        lock (Gate) {
-            string folder = Safe(Store(gameFolder), "points");
-            List<JObject> result = new();
-            if (!Directory.Exists(folder)) return result;
-            foreach (string child in Directory.EnumerateDirectories(folder)) {
-                string id = Path.GetFileName(child);
-                if (!Regex.IsMatch(id, @"\A[a-f0-9]{32}\z")) continue;
-                try { result.Add(Metadata(gameFolder, id)); }
-                catch (Exception ex) { host.Warn(ex, "忽略不可读取的存档备份记录：" + id); }
-            }
-            return result.OrderByDescending(item => item["created"]!.ToObject<DateTime>()).ToList();
+        string folder = Safe(Store(gameFolder), "points");
+        List<JObject> result = new();
+        if (!Directory.Exists(folder)) return result;
+        foreach (string child in Directory.EnumerateDirectories(folder)) {
+            string id = Path.GetFileName(child);
+            if (!Regex.IsMatch(id, @"\A[a-f0-9]{32}\z")) continue;
+            try { result.Add(Metadata(gameFolder, id)); }
+            catch (Exception ex) { host.Warn(ex, "忽略不可读取的存档备份记录：" + id); }
         }
+        return result.OrderByDescending(item => item["created"]!.ToObject<DateTime>()).ToList();
     }
 
-    public void ReadArchive(string folder, JObject point, CancellationToken token, string? destination = null) {
+    public void ReadArchive(string folder, JObject point, CancellationToken token, string? destination = null, Action<double>? progress = null) {
         JObject files = (JObject)point["files"]!;
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        Action<long>? copied = FileTaskProgress.Bytes(point["bytes"]!.ToObject<long>(), progress);
         if (destination is not null) {
             foreach (JToken child in (JArray)point["directories"]!) {
                 token.ThrowIfCancellationRequested();
                 Directory.CreateDirectory(Safe(destination, child.ToString()));
             }
         }
-        using FileStream stream = new(Safe(folder, "world.zip"), FileMode.Open, FileAccess.Read, FileShare.Read);
-        using ZipArchive archive = new(stream, ZipArchiveMode.Read);
+        using (FileStream stream = new(Safe(folder, "world.zip"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (ZipArchive archive = new(stream, ZipArchiveMode.Read)) {
         if (archive.Entries.Count != files.Count) throw new IOException("备份压缩包与文件清单不一致。");
         foreach (ZipArchiveEntry entry in archive.Entries) {
             token.ThrowIfCancellationRequested();
@@ -82,33 +81,37 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
             if (expected is null || entry.Length != expected["length"]!.ToObject<long>()) throw new IOException("备份包含未记录的文件或大小异常。");
             using Stream input = entry.Open();
             Tuple<long, string> actual;
-            if (destination is null) actual = CopyHash(input, null, token, entry.Length);
+            if (destination is null) actual = CopyHash(input, null, token, entry.Length, copied);
             else {
                 string fileName = Safe(destination, entry.FullName);
                 Directory.CreateDirectory(Path.GetDirectoryName(fileName)!);
                 using (FileStream output = new(fileName, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
-                    actual = CopyHash(input, output, token, entry.Length);
+                    actual = CopyHash(input, output, token, entry.Length, copied);
                     output.Flush(true);
                 }
                 File.SetLastWriteTimeUtc(fileName, expected["writeUtc"]!.ToObject<DateTime>().ToUniversalTime());
             }
             if (actual.Item2 != expected["sha256"]!.ToString()) throw new IOException("备份内容校验失败，尚未替换当前世界。");
         }
+        }
+        progress?.Invoke(1);
     }
 
-    private void MatchTree(string world, JObject point, CancellationToken token) {
+    private void MatchTree(string world, JObject point, CancellationToken token, Action<double>? progress = null) {
         JObject files = (JObject)point["files"]!;
         List<string> directories = new();
         Dictionary<string, FileInfo> tree = ScanTree(world, token, directories);
+        Action<long>? read = FileTaskProgress.Bytes(point["bytes"]!.ToObject<long>(), progress);
         if (tree.Count != files.Count || !new HashSet<string>(directories, StringComparer.OrdinalIgnoreCase).SetEquals(((JArray)point["directories"]!).Select(item => item.ToString())))
             throw new IOException("当前世界已被其他程序修改，停止恢复以保留当前进度。");
         foreach (KeyValuePair<string, FileInfo> pair in tree) {
             JToken? expected = files[pair.Key];
             if (expected is null) throw new IOException("当前世界已变化，停止恢复。");
             using FileStream input = new(Safe(world, pair.Key), FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (CopyHash(input, null, token, expected["length"]!.ToObject<long>()).Item2 != expected["sha256"]!.ToString())
+            if (CopyHash(input, null, token, expected["length"]!.ToObject<long>(), read).Item2 != expected["sha256"]!.ToString())
                 throw new IOException("当前世界已被其他程序修改，停止恢复以保留当前进度。");
         }
+        progress?.Invoke(1);
     }
 
     private string RestorePath(string gameFolder, string transaction, string suffix) {
@@ -173,7 +176,15 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
         }
     }
 
-    public string? Restore(string gameFolder, string id, int retention, CancellationToken token, Action<int>? beforeCommit = null) {
+    public bool HasPendingRecovery(string gameFolder) {
+        string folder = Safe(Store(gameFolder), "transactions");
+        return Directory.Exists(folder) && Directory.EnumerateFiles(folder, "*.json").Any();
+    }
+
+    public string? Restore(string gameFolder, string id, int retention, CancellationToken token, Action<int>? beforeCommit = null) =>
+        RestoreWithProgress(gameFolder, id, retention, token, null, beforeCommit);
+
+    public string? RestoreWithProgress(string gameFolder, string id, int retention, CancellationToken token, Action<double>? progress, Action<int>? beforeCommit = null) {
         lock (Gate) {
             using BusyScope scope = new(this);
             Retain(retention);
@@ -189,9 +200,9 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
             try {
                 token.ThrowIfCancellationRequested();
                 Directory.CreateDirectory(stage);
-                ReadArchive(PointFolder(gameFolder, id), point, token, stage);
+                ReadArchive(PointFolder(gameFolder, id), point, token, stage, FileTaskProgress.Slice(progress, 0.02, 0.4));
                 bool existed = Directory.Exists(world);
-                if (existed) undo = CaptureCore(gameFolder, identifier, "恢复前自动保存", token);
+                if (existed) undo = CaptureCore(gameFolder, identifier, "恢复前自动保存", token, FileTaskProgress.Slice(progress, 0.4, 0.8));
                 JObject journal = new(new JProperty("gameFolder", Full(gameFolder)), new JProperty("world", identifier), new JProperty("point", id), new JProperty("undo", undo), new JProperty("existed", existed), new JProperty("complete", false));
                 using (Process owner = Process.GetCurrentProcess()) {
                     journal["ownerPid"] = owner.Id;
@@ -202,7 +213,7 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
                 beforeCommit?.Invoke(0);
                 using (FileStream? held = existed ? SessionLock(world) : null) {
                     RequireStopped(gameFolder);
-                    if (existed) MatchTree(world, Metadata(gameFolder, undo!), token);
+                    if (existed) MatchTree(world, Metadata(gameFolder, undo!), token, FileTaskProgress.Slice(progress, 0.8, 0.95));
                 }
                 // Windows cannot move a directory containing a handle held by this process.
                 // Commit immediately after validation releases the lock; IsBusy and the owner lock block launcher starts.
@@ -218,6 +229,7 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
                 journal["complete"] = true;
                 WriteJson(journalFile, journal);
                 completed = true;
+                progress?.Invoke(0.98);
             } catch (Exception ex) {
                 try {
                     if (installed) { NoLinks(world); Directory.Move(world, stage); }
@@ -238,6 +250,7 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
                 if (undo is not null) Prune(gameFolder, identifier, retention);
                 NotifyChanged();
             }
+            progress?.Invoke(1);
             return undo;
         }
     }

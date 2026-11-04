@@ -45,10 +45,13 @@ namespace PCL
                 EnableDisable = new Action<bool>(Value => this.BtnSelectDisable.IsEnabled = Value),
                 EnableEnable = new Action<bool>(Value => this.BtnSelectEnable.IsEnabled = Value),
                 EnableUpdate = new Action<bool>(Value => this.BtnSelectUpdate.IsEnabled = Value),
+                EnableIndex = Value => this.BtnManageIndex.IsEnabled = Value, IndexText = Value => this.BtnManageIndex.Text = Value,
                 SelectionBar = RefreshNativeSelectionBar
             };
         }
 
+        internal void ApplyLoaderWarnings() => Native.ApplyLoaderWarnings();
+        private void RebuildDependencyIndex() => Native.RebuildDependencyIndex();
         private ResourcePageFilter[] ReadFilterViews()
         {
             return new[]

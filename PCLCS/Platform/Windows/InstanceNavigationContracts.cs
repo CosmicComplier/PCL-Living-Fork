@@ -7,6 +7,7 @@ using MeloongCore;
 namespace PCLCS;
 
 public static class InstanceNavigationRules {
+    public static bool IsEditingPage(int id) => id is 1 or 2 or 11;
     public static void ReloadJava<TInstance>(Func<int> animation, Func<TInstance?> instance, RedoableWorker<Java> worker) where TInstance : class {
         if (animation() != 0) return; if (instance() is null) return; worker.Start();
     }
@@ -19,7 +20,9 @@ public sealed class InstanceNavigationView<TItem> where TItem : FrameworkElement
 public sealed class InstanceNavigationHost<TInstance, TId, TItem, TButton, TPage, TResource>
     where TInstance : class where TId : struct, Enum where TItem : FrameworkElement where TButton : FrameworkElement where TPage : FrameworkElement where TResource : TPage {
     public Func<TInstance?> Instance = null!;
-    public Func<TInstance, bool> Locked = null!, Modable = null!;
+    public Func<TInstance, bool> Locked = null!, BlocksNavigation = null!, Modable = null!;
+    public Func<bool> IsSyncingSelection = null!;
+    public Action<bool> SetSyncingSelection = null!;
     public Func<TId> PageId = null!, CurrentSubPage = null!;
     public Action<TId> SetPageId = null!;
     public Func<TId, TId> Normalize = null!;
@@ -49,6 +52,7 @@ public sealed class InstanceNavigationHost<TInstance, TId, TItem, TButton, TPage
     public Action<TButton, double> SetButtonScale = null!;
     public Action<TButton, Action> OnClick = null!;
     public Action<TItem, bool> SetChecked = null!;
+    public Action<TItem, bool, bool, bool> SetCheckedState = null!;
     public Func<string> RestoreLogo = null!;
     public Func<bool> ModpackEnabled = null!;
 }

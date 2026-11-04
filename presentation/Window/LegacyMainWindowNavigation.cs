@@ -33,7 +33,6 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             }
             PageChangeActual(stack, subType);
         } else {
-            if (stack.PageCode == (int)LegacyMainPage.InstanceSetup) EnsureLeft(stack.PageCode).Item(subType).SetChecked(true, true, Same(stack, PageCurrent));
             PageChangeActual(stack, subType);
         }
     }
@@ -45,10 +44,16 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
     public void PageChangeActual(TStack stack, int subType = -1) {
         if (host.PackBlocksPage(stack.PageCode)) return;
         if (stack.PageCode == (int)LegacyMainPage.Setup && subType >= 0) subType = host.NormalizeSetupPage(subType);
-        if (stack.PageCode == (int)LegacyMainPage.InstanceSetup && subType >= 0) subType = host.NormalizeInstancePage(subType);
-        if (Same(PageCurrent, stack) && (PageCurrentSub == subType || subType == -1)) return;
-        if (stack.PageCode == (int)LegacyMainPage.InstanceSetup && host.SettingsInstance() is not null && host.InstanceLocked(host.SettingsInstance()!)) {
-            Hint("该版本正在被修改，暂时无法进入版本设置！", LegacyMainHint.Red); return;
+        if (stack.PageCode == (int)LegacyMainPage.InstanceSetup) {
+            if (host.InstanceBlocksNavigation(host.SettingsInstance())) { Hint("该版本正在被修改，暂时无法进入版本设置！", LegacyMainHint.Red); return; }
+            LegacyMainLeftPage left = EnsureLeft(stack.PageCode);
+            if (subType < 0) subType = left.PageId();
+            subType = host.NormalizeInstancePage(subType);
+            if (host.InstanceLocked(host.SettingsInstance()!) && InstanceNavigationRules.IsEditingPage(subType)) subType = 0;
+        }
+        if (Same(PageCurrent, stack) && (PageCurrentSub == subType || subType == -1)) {
+            if (stack.PageCode == (int)LegacyMainPage.InstanceSetup) EnsureLeft(stack.PageCode).SyncSelection(subType);
+            return;
         }
         AniControlEnabled = checked(AniControlEnabled + 1);
         try {
@@ -71,8 +76,11 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             PageLast = PageCurrent; PageCurrent = stack;
             switch ((LegacyMainPage)stack.PageCode) {
                 case LegacyMainPage.Launch: PageChangeAnim(host.LeftPage(stack.PageCode).Element, host.RightPage(stack.PageCode)); break;
-                case LegacyMainPage.Download: case LegacyMainPage.Setup: case LegacyMainPage.Other: case LegacyMainPage.InstanceSetup: {
+                case LegacyMainPage.Download: case LegacyMainPage.Setup: case LegacyMainPage.Other: {
                     LegacyMainLeftPage left = EnsureLeft(stack.PageCode); PageChangeAnim(left.Element, left.PageGet(subType)); break;
+                }
+                case LegacyMainPage.InstanceSetup: {
+                    LegacyMainLeftPage left = EnsureLeft(stack.PageCode); MyPageRightView target = left.PageGet(subType); left.SyncSelection(subType); PageChangeAnim(left.Element, target); break;
                 }
                 case LegacyMainPage.Link:
                     if (host.LegacyLink) { host.EnsureRightPage(stack.PageCode); PageChangeAnim(host.NewBlankLeft(), host.RightPage(stack.PageCode)); } else return;

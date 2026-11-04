@@ -1,6 +1,6 @@
-﻿param([string]$ExecutablePath,[string]$VbcPath)
+﻿﻿param([string]$ExecutablePath,[string]$VbcPath,[string]$ReadOnlyLegacyModsFolder)
 # Read-only metadata fixtures in a GUID temp directory. No launcher entry point, game, real profile, or live dependency API.
-# With no EXE, build real PCLCS, then compile only its thin VB facade and the tiny instance adapter stub.
+# With no EXE, build real PCLCS, then compile only its thin Inspector/Index VB facades and the tiny instance adapter stub.
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
@@ -12,11 +12,11 @@ $flags=[Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 $script:assertions=0
 function Assert([bool]$value,[string]$message){$script:assertions++;if(-not $value){throw $message}}
 function Folder([string]$name){$path=Join-Path $fixture $name;[IO.Directory]::CreateDirectory($path)|Out-Null;return $path}
-function New-Jar([string]$path,[hashtable]$entries){
+function New-Jar([string]$path,[hashtable]$entries,[IO.Compression.CompressionLevel]$level=[IO.Compression.CompressionLevel]::Optimal){
  $archive=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
  try {
   foreach($name in $entries.Keys){
-   $stream=$archive.CreateEntry($name).Open()
+   $stream=$archive.CreateEntry($name,$level).Open()
    try {
     $value=$entries[$name]
     $bytes=if($value -is [byte[]]){$value}else{[Text.Encoding]::UTF8.GetBytes([string]$value)}
@@ -37,6 +37,22 @@ function Quilt([string]$folder,[string]$file,[string]$id,[hashtable]$extra=@{},[
  $data=@{schema_version=1;quilt_loader=$loader}
  foreach($key in $rootExtra.Keys){$data[$key]=$rootExtra[$key]}
  return New-Jar (Join-Path $folder $file) @{'quilt.mod.json'=($data|ConvertTo-Json -Depth 25 -Compress)}
+}
+# A JVM class file with a genuine class-level runtime @Mod annotation, without executing Java.
+function Legacy-Class([hashtable]$values,[string]$descriptor='Lnet/minecraftforge/fml/common/Mod;'){
+ $pool=New-Object 'Collections.Generic.List[string]'
+ foreach($text in @($descriptor,'RuntimeVisibleAnnotations','fixture/Mod','java/lang/Object')){$pool.Add($text)}
+ foreach($key in $values.Keys){$pool.Add([string]$key);$pool.Add([string]$values[$key])}
+ $stream=New-Object IO.MemoryStream;$writer=New-Object IO.BinaryWriter($stream)
+ function U2([int]$v){$writer.Write([byte](($v -shr 8) -band 255));$writer.Write([byte]($v -band 255))}
+ function U4([long]$v){U2 ([int](($v -shr 16) -band 65535));U2 ([int]($v -band 65535))}
+ U4 3405691582;U2 0;U2 52;U2 ($pool.Count+3)
+ foreach($text in $pool){$bytes=[Text.Encoding]::UTF8.GetBytes($text);$writer.Write([byte]1);U2 $bytes.Length;$writer.Write($bytes)}
+ $writer.Write([byte]7);U2 3;$writer.Write([byte]7);U2 4
+ U2 33;U2 ($pool.Count+1);U2 ($pool.Count+2);U2 0;U2 0;U2 0;U2 1;U2 2;U4 (6+5*$values.Count)
+ U2 1;U2 1;U2 $values.Count
+ $index=5;foreach($key in $values.Keys){U2 $index;$writer.Write([byte][char]'s');U2 ($index+1);$index+=2}
+ $writer.Flush();$bytes=$stream.ToArray();$writer.Dispose();$stream.Dispose();return ,$bytes
 }
 try {
  if(-not $ExecutablePath){
@@ -81,7 +97,7 @@ End Class
   $framework=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
   $references=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll')|ForEach-Object {Join-Path $framework $_}
   $references+=@($coreReference,$sharedReference)
-  $arguments=@('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($references -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),$stub)
+  $arguments=@('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($references -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb'),$stub)
   & $VbcPath @arguments
   if($LASTEXITCODE -ne 0){throw 'Isolated ModDependencyInspector compilation failed.'}
  }else{
@@ -94,6 +110,9 @@ End Class
  # Byte loading leaves the generated DLL removable after the test.
  $asm=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($ExecutablePath))
  $inspector=$asm.GetType('PCL.ModDependencyInspector',$true)
+ $indexType=$asm.GetType('PCL.ModDependencyIndex')
+ Assert ($null -ne $indexType) 'Persistent dependency-tree indexing is not implemented.'
+ $indexType.GetProperty('CacheDirectory',$flags).SetValue($null,(Join-Path $fixture 'dependency-index'),$null)
  $contextType=$asm.GetType('PCL.ModDependencyInspector+InspectionContext',$true)
  $inspect=$inspector.GetMethod('Inspect',$flags);$match=$inspector.GetMethod('MatchVersion',$flags)
  $samePath=$inspector.GetMethod('SameFilePath',$flags)
@@ -105,7 +124,7 @@ End Class
  $getImpacts=$inspector.GetMethod('GetImpacts',$flags);$describeImpacts=$inspector.GetMethod('DescribeImpacts',$flags)
  function Context([string]$loader='fabricloader',[string]$version='0.16.0'){
   $context=[Activator]::CreateInstance($contextType)
-  $context.MinecraftVersion='1.20.1';$context.JavaVersion='17.0.9';$context.LoaderKnown=$true
+  $context.MinecraftVersion=if($loader -eq 'neoforge'){'1.21.1'}else{'1.20.1'};$context.JavaVersion='17.0.9';$context.LoaderKnown=$true
   if($loader){$context.LoaderVersions.Add($loader,$version)}
   return $context
  }
@@ -123,7 +142,8 @@ End Class
   @('1.2.3','>=1.2.0 <2.0','Satisfied'),@('1.2.3','>= 1.2.0 < 2.0','Satisfied'),
   @('2.0','>=1.2.0 <2.0','Unsatisfied'),@('1.20.10','1.20.1','Unsatisfied'),
   @('1.2.3','1.2.x','Satisfied'),@('1.3.0','1.2.*','Unsatisfied'),@('1.2.3','~1.2','Satisfied'),@('1.3.0','~1.2','Unsatisfied'),
-  @('0.2.9','^0.2.1','Satisfied'),@('0.3','^0.2.1','Unsatisfied'),@('1.0','1.0.0','Satisfied'),
+  @('0.2.9','^0.2.1','Satisfied'),@('0.3','^0.2.1','Satisfied'),@('0.9.0','^0.2.1','Satisfied'),@('1.0.0-alpha','^0.2.1','Unsatisfied'),@('1.0','1.0.0','Satisfied'),
+  @('1.0.5','~1','Satisfied'),@('1.1','~1','Unsatisfied'),@('1.3.0-alpha','~1.2','Unsatisfied'),
   @('1.0.0-rc.1','>=1.0.0','Unsatisfied'),@('1.0.0','>1.0.0-rc.1','Satisfied'),
   @('2.0','1.0 || >=2.0','Satisfied'),@('1.5','1.0 || >=2.0','Unsatisfied'),
   @('1.0','latest.release','Unknown'),@('1.0','1.+','Unknown'),@('24w14a','>=1.20.1','Unknown'),
@@ -267,7 +287,7 @@ java_version="[17,)"
  Assert ($report.Mods.Count -eq 2 -and -not $report.HasErrors) 'Forge multi-mod TOML parsing, multiline quoting, side or optional handling failed.'
  Assert (($report.Mods|Where-Object Id -eq 'multi_one').Version -eq '1.2.3') 'file.jarVersion was not resolved from the manifest.'
  Assert (-not @($report.Edges|Where-Object {$_.Requirement.Id -eq 'fake_from_description'}).Count) 'Description contents became a dependency declaration.'
- $null=Fabric $folder 'optional.jar' 'optional_library' '1.0'
+ $null=New-Jar (Join-Path $folder 'optional.jar') @{'META-INF/mods.toml'="[[mods]]`nmodId=`"optional_library`"`nversion=`"1.0`""}
  $optionalToml=@'
 modLoader="javafml"
 loaderVersion="[47,)"
@@ -309,7 +329,7 @@ versionRange="[1,2)"
  $null=New-Jar (Join-Path $folder 'neo.jar') @{'META-INF/neoforge.mods.toml'=$neo}
  $report=Scan $folder (Context 'neoforge' '21.1.100')
  Assert (-not $report.HasErrors) 'NeoForge language loader version must not be compared with the NeoForge platform version.'
- $null=Fabric $folder 'bad.jar' 'bad' '1.5'
+ $null=New-Jar (Join-Path $folder 'bad.jar') @{'META-INF/neoforge.mods.toml'="[[mods]]`nmodId=`"bad`"`nversion=`"1.5`""}
  $report=Scan $folder (Context 'neoforge' '21.1.100')
  Assert ((Issues $report 'Incompatible' 'neo').Count -eq 1) 'NeoForge incompatible dependency should be reported when present and in range.'
 
@@ -332,6 +352,39 @@ versionRange="[1,2)"
  $null=New-Jar (Join-Path $folder 'quilt-parent.jar') @{'quilt.mod.json'=$quiltData;'META-INF/jars/quilt.jar'=[IO.File]::ReadAllBytes($quiltNested)}
  $report=Scan $folder (Context 'quilt_loader' '0.28')
  Assert (@($report.Mods|Where-Object Id -eq 'quilt_inner').Count -eq 1) 'Quilt string nested-jar declaration was not read.'
+ $displayEmbedded=$inspector.GetMethod('EmbeddedModsForDisplay',$flags)
+ Assert (@($displayEmbedded.Invoke($null,@($report,[string](Join-Path $folder 'quilt-parent.jar')))).Count -eq 1) 'An independent Quilt nested mod was hidden.'
+
+ # Arbitrary project IDs: display grouping must come from metadata, never a mod-name list.
+ $folder=Folder 'embedded-display'
+ $parts=@{
+  source_part=@{contact=@{sources='https://source.example/team/toolkit.git'}}
+  object_part=@{custom=@{modmenu=@{parent=@{id='toolkit_alias'}}}}
+  string_part=@{custom=@{modmenu=@{parent='toolkit'}}}
+  generated_part=@{custom=@{'fabric-loom:generated'=$true}}
+  independent_library=@{contact=@{sources='https://source.example/team/library';homepage='https://team.example'}}
+  toolkit_independent=@{contact=@{homepage='https://team.example'}}
+  invalid_hint=@{custom=@{modmenu=@{parent=123};'fabric-loom:generated'='true'};contact=@{sources='not a URL'}}
+ }
+ $entries=@{};$jars=@();$requires=@{}
+ foreach($id in $parts.Keys){
+  $inner=Fabric $embeddedFolder ($id+'.jar') $id '1.0' $parts[$id]
+  $path='META-INF/jars/'+$id+'.jar';$entries[$path]=[IO.File]::ReadAllBytes($inner);$jars+=@{file=$path};$requires[$id]='>=1'
+ }
+ $entries['fabric.mod.json']=(@{schemaVersion=1;id='toolkit';version='1';provides=@('toolkit_alias');contact=@{sources='https://source.example/team/toolkit/';homepage='https://team.example'};depends=$requires;jars=$jars}|ConvertTo-Json -Depth 15 -Compress)
+ $toolkit=New-Jar (Join-Path $folder 'toolkit.jar') $entries
+ $report=Scan $folder
+ $shown=@($displayEmbedded.Invoke($null,@($report,[string]$toolkit)))
+ Assert (-not $report.HasErrors -and $shown.Count -eq 3 -and 'independent_library' -in $shown.Id -and 'toolkit_independent' -in $shown.Id -and 'invalid_hint' -in $shown.Id) 'Internal parents, same-project modules or generated libraries leaked into the embedded display, or an unrelated library was hidden.'
+ Assert (@($report.Mods|Where-Object {$_.Id -eq 'generated_part' -and $_.IsGeneratedLibrary}).Count -eq 1 -and @($report.Mods|Where-Object {$_.Id -eq 'object_part' -and $_.DisplayParentId -eq 'toolkit_alias'}).Count -eq 1) 'Display hints were not parsed from actual nested metadata.'
+ $indexType.GetMethod('ClearMemory',$flags).Invoke($null,@())|Out-Null
+ $cached=Scan $folder
+ Assert ($cached.GetType().GetField('IndexHit',$flags).GetValue($cached) -and @($displayEmbedded.Invoke($null,@($cached,[string]$toolkit))).Count -eq 3) 'Persistent indexes lost embedded display ownership.'
+ # Hiding internal components is presentation only: their dependency errors remain real.
+ $null=Fabric $folder 'bad-consumer.jar' 'bad_consumer' '1' @{depends=@{source_part='>=2'}}
+ $broken=Scan $folder
+ Assert ($broken.HasErrors -and (Issues $broken 'VersionMismatch' 'bad_consumer').Count -eq 1) 'A grouped internal module stopped participating in version checks.'
+
  $folder=Folder 'unused-nested'
  $unusedFile=Fabric $embeddedFolder 'unused.jar' 'unused' '1.0' @{depends=@{candidate_missing='*'}}
  $unusedData=@{schemaVersion=1;id='candidate_parent';version='1.0';breaks=@{unused='*'};jars=@(@{file='META-INF/jars/unused.jar'})}|ConvertTo-Json -Depth 10 -Compress
@@ -352,6 +405,13 @@ version="1.0"
  $null=New-Jar (Join-Path $folder 'outer.jar') @{'META-INF/neoforge.mods.toml'=$outerNeo;'META-INF/jarjar/metadata.json'='{"jars":[{"path":"META-INF/jarjar/library.jar"}]}';'META-INF/jarjar/library.jar'=[IO.File]::ReadAllBytes($inner)}
  $report=Scan $folder (Context 'neoforge' '21.1.1')
  Assert (-not $report.HasErrors -and @($report.Mods|Where-Object Id -eq 'jarjar_library').Count -eq 1) 'NeoForge JarJar metadata was not read.'
+ Assert (@($displayEmbedded.Invoke($null,@($report,[string](Join-Path $folder 'outer.jar')))).Count -eq 1) 'A real NeoForge JarJar mod was hidden with loader internals.'
+ $folder=Folder 'forge-jarjar-display'
+ $forgeInner=New-Jar (Join-Path $embeddedFolder 'forge-display.jar') @{'META-INF/mods.toml'=$innerToml.Replace('[4,)','[47,)')}
+ $forgeOuter=$outerNeo.Replace('modId="neo"','modId="forge_host"').Replace('dependencies.neo','dependencies.forge_host').Replace('modId="neoforge"','modId="forge"').Replace('[21.1,22)','[47,)').Replace('[4,)','[47,)')
+ $forgeJar=New-Jar (Join-Path $folder 'outer.jar') @{'META-INF/mods.toml'=$forgeOuter;'META-INF/jarjar/metadata.json'='{"jars":[{"path":"META-INF/jarjar/library.jar"}]}';'META-INF/jarjar/library.jar'=[IO.File]::ReadAllBytes($forgeInner)}
+ $report=Scan $folder (Context 'forge' '47.1.0')
+ Assert (@($displayEmbedded.Invoke($null,@($report,[string]$forgeJar))).Count -eq 1 -and @($report.Mods|Where-Object IsNested).Count -eq 1) 'A real Forge JarJar mod was hidden or a language-loader component was listed as an embedded mod.'
 
  $folder=Folder 'uncertain'
  $null=Fabric $folder 'consumer.jar' 'consumer' '1.0' @{depends=@{missing='*'}}
@@ -368,12 +428,106 @@ version="1.0"
  try{$inspect.Invoke($null,@([string]$folder,(Context),$cancel.Token))|Out-Null}catch{$reason=$_.Exception;while($reason.InnerException){$reason=$reason.InnerException};$rejected=$reason -is [OperationCanceledException]}finally{$cancel.Dispose()}
  Assert $rejected ('Cancellation was not honoured. '+[string]$reason)
 
+ $folder=Folder 'loader-mismatch'
+ $foreignToml='modLoader="javafml"'+"`n"+'loaderVersion="[47,)"'+"`n"+'[[mods]]'+"`n"+'modId="foreign"'+"`n"+'version="1"'+"`n"+'[[dependencies.foreign]]'+"`n"+'modId="foreign_only_dependency"'+"`n"+'mandatory=true'
+ $foreign=New-Jar (Join-Path $folder 'forge-only.jar') @{'META-INF/mods.toml'=$foreignToml}
+ $null=New-Jar (Join-Path $folder 'neo-only.jar') @{'META-INF/neoforge.mods.toml'=$foreignToml.Replace('foreign','neo_foreign')}
+ $null=New-Jar (Join-Path $folder 'disabled.jar.disabled') @{'META-INF/mods.toml'=$foreignToml}
+ $null=New-Jar (Join-Path $folder 'universal.jar') @{'META-INF/mods.toml'=$foreignToml;'fabric.mod.json'='{"schemaVersion":1,"id":"universal","version":"1"}'}
+ $report=Scan $folder
+ Assert ((Issues $report 'LoaderMismatch').Count -eq 2 -and (Issues $report 'MissingRequired').Count -eq 0 -and (Issues $report 'DuplicateId').Count -eq 0) 'Foreign Forge/NeoForge files were not isolated from a Fabric dependency graph, or disabled/universal files were falsely flagged.'
+ Assert ((Issues $report 'LoaderMismatch')[0].Message.Contains('禁用') -and (Issues $report 'LoaderMismatch')[0].Message.Contains('Fabric')) 'Wrong-loader warnings do not identify the active loader and a concrete solution.'
+ $warning=$inspector.GetMethod('LoaderWarningFor',$flags)
+ Assert (-not [string]::IsNullOrEmpty($warning.Invoke($null,@([string]$folder,[string]$foreign,(Context))))) 'A completed inspection did not publish the wrong-loader list marker.'
+ Assert ([string]::IsNullOrEmpty($warning.Invoke($null,@([string]$folder,[string]$foreign,(Context 'forge' '47.2.0'))))) 'A marker from the previous loader leaked into the new instance context.'
+ $oldBytes=[IO.File]::ReadAllBytes($foreign);[IO.File]::WriteAllBytes($foreign,([byte[]]($oldBytes+0)))
+ Assert ([string]::IsNullOrEmpty($warning.Invoke($null,@([string]$folder,[string]$foreign,(Context))))) 'Replacing a mod kept a stale red marker.'
+ [IO.File]::WriteAllBytes($foreign,$oldBytes);$report=Scan $folder
+ $requirement=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+Dependency'));$requirement.Id='foreign'
+ Assert (-not $inspector.GetMethod('FileSatisfiesDependency',$flags).Invoke($null,@($report,$foreign,$requirement))) 'An incompatible-loader file can be auto-enabled as a dependency.'
+ $report=Scan $folder (Context 'forge' '47.2.0')
+ Assert (@(Issues $report 'LoaderMismatch' 'neo_foreign').Count -eq 1 -and @(Issues $report 'LoaderMismatch' 'foreign').Count -eq 0) 'Forge and NeoForge mismatch detection failed.'
+ $folder=Folder 'quilt-only';$null=Quilt $folder 'quilt.jar' 'quilt_only'
+ Assert ((Issues (Scan $folder) 'LoaderMismatch').Count -eq 1 -and (Issues (Scan $folder (Context 'quilt_loader' '0.27.0')) 'LoaderMismatch').Count -eq 0) 'Quilt-only metadata was incorrectly accepted as Fabric.'
+ Assert ((Issues (Scan $folder (Context '' '')) 'LoaderMismatch').Count -eq 0) 'An unknown installed loader produced a definite mismatch.'
+
+ $folder=Folder 'forge-neo-platform';$platformToml="[[mods]]`nmodId=`"platform_owner`"`nversion=`"1`"`n[[dependencies.platform_owner]]`nmodId=`"forge`"`nmandatory=true`nversionRange=`"[47,)`""
+ $null=New-Jar (Join-Path $folder 'forge.jar') @{'META-INF/mods.toml'=$platformToml}
+ $null=New-Jar (Join-Path $folder 'old-neo.jar') @{'META-INF/mods.toml'=$platformToml.Replace('platform_owner','neo_owner').Replace('modId="forge"','modId="neoforge"').Replace('[47,)','[20,)')}
+ $neoContext=Context 'neoforge' '20.4.200';$neoContext.MinecraftVersion='1.20.4';$report=Scan $folder $neoContext
+ Assert ((Issues $report 'LoaderMismatch' 'platform_owner').Count -eq 1 -and (Issues $report 'LoaderMismatch' 'neo_owner').Count -eq 0) 'Legacy NeoForge mods.toml was confused with a Forge-only mod.'
+ $report=Scan $folder (Context 'forge' '47.2.0')
+ Assert ((Issues $report 'LoaderMismatch' 'neo_owner').Count -eq 1 -and (Issues $report 'LoaderMismatch' 'platform_owner').Count -eq 0) 'A NeoForge declaration in mods.toml was accepted by Forge.'
+ $folder=Folder 'loader-list-trailing';$foreign=New-Jar (Join-Path $folder 'forge.jar') @{'META-INF/mods.toml'=$platformToml}
+ $null=Scan ($folder+'\')
+ Assert (-not [string]::IsNullOrEmpty($warning.Invoke($null,@([string]$folder,[string]$foreign,(Context))))) 'A trailing separator in the real mod-list loader hid its red marker.'
+
+ $folder=Folder 'fabric-schema-zero'
+ $null=New-Jar (Join-Path $folder 'old.jar') @{'fabric.mod.json'='{"id":"old_fabric","version":"1","side":"universal","requires":{"old_missing":[">=1 <2",">=3"]},"recommends":{"ignored_suggestion":"*"}}'}
+ $null=New-Jar (Join-Path $folder 'server.jar') @{'fabric.mod.json'='{"schemaVersion":0,"id":"old_server","version":"1","side":"server","requires":{"server_missing":"*"}}'}
+ $report=Scan $folder
+ Assert ((Issues $report 'MissingRequired' 'old_fabric').Count -eq 1 -and (Issues $report 'MissingRequired' 'old_server').Count -eq 0 -and -not $report.MetadataIncomplete) 'Fabric schema 0 requires/side was not read using its own schema.'
+ $null=Fabric $folder 'old-target.jar' 'old_missing' '1.5';$report=Scan $folder
+ Assert (-not $report.HasErrors -and (Issues $report 'Recommendation').Count -eq 0) 'Fabric schema 0 OR ranges or informational recommendations were misclassified.'
+
+ $folder=Folder 'forge-file-properties'
+ $propsToml="modLoader=`"javafml`"`nloaderVersion=`"[47,)`"`n[[mods]]`nmodId=`"props_library`"`nversion=`"`${file.libraryVersion}`"`n[properties]`nlibraryVersion=`"1.2.3`""
+ $null=New-Jar (Join-Path $folder 'properties.jar') @{'META-INF/mods.toml'=$propsToml}
+ $report=Scan $folder (Context 'forge' '47.2.0')
+ Assert ($report.Mods[0].Version -eq '1.2.3') 'Forge file properties were not substituted into the real mod version.'
+
+ $folder=Folder 'neo-metadata-generations';$oldNeo=$platformToml.Replace('platform_owner','neo_owner').Replace('modId="forge"','modId="neoforge"').Replace('[47,)','[20,)')
+ $null=New-Jar (Join-Path $folder 'old-format.jar') @{'META-INF/mods.toml'=$oldNeo}
+ $null=New-Jar (Join-Path $folder 'new-format.jar') @{'META-INF/neoforge.mods.toml'=$oldNeo}
+ $report=Scan $folder (Context 'neoforge' '21.1.100')
+ Assert ((Issues $report 'LoaderMismatch').Count -eq 1 -and [IO.Path]::GetFileName((Issues $report 'LoaderMismatch')[0].Owner.RootPath) -eq 'old-format.jar') 'Current NeoForge silently accepted an unsupported old mods.toml file.'
+ $report=Scan $folder $neoContext
+ Assert ((Issues $report 'LoaderMismatch').Count -eq 1 -and [IO.Path]::GetFileName((Issues $report 'LoaderMismatch')[0].Owner.RootPath) -eq 'new-format.jar') 'Legacy NeoForge silently accepted a future neoforge.mods.toml format.'
+ $folder=Folder 'neo-dual-generations';$null=New-Jar (Join-Path $folder 'dual.jar') @{'META-INF/mods.toml'=$oldNeo;'META-INF/neoforge.mods.toml'=$oldNeo}
+ Assert (-not (Scan $folder $neoContext).HasErrors -and -not (Scan $folder (Context 'neoforge' '21.1.100')).HasErrors) 'NeoForge did not choose the declaration matching its metadata generation.'
+
+ $folder=Folder 'three-loader-matrix'
+ $null=Fabric $folder 'fabric.jar' 'fabric_matrix' '1' @{depends=@{fabricloader='>=0.15'}}
+ $null=New-Jar (Join-Path $folder 'forge.jar') @{'META-INF/mods.toml'=$platformToml.Replace('[47,)','[52,)')}
+ $null=New-Jar (Join-Path $folder 'neo.jar') @{'META-INF/neoforge.mods.toml'=$oldNeo}
+ foreach($loader in @('fabricloader','forge','neoforge')){
+  $matrixContext=Context $loader $(if($loader -eq 'fabricloader'){'0.16.10'}elseif($loader -eq 'forge'){'52.0.0'}else{'21.1.100'});$matrixContext.MinecraftVersion='1.21.1'
+  $report=Scan $folder $matrixContext
+  Assert ((Issues $report 'LoaderMismatch').Count -eq 2 -and (Issues $report 'MissingRequired').Count -eq 0 -and (Issues $report 'VersionMismatch').Count -eq 0) ('Three-loader compatibility matrix failed for '+$loader)
+ }
+
+ $folder=Folder 'legacy-annotations';$legacyContext=Context 'forge' '14.23.5.2855';$legacyContext.MinecraftVersion='1.12.2'
+ $modernTemplate='modLoader="javafml"'+"`n"+'loaderVersion="[31,)"'+"`n"+'[[mods]]'+"`n"+'modId="examplemod"'+"`n"+'version="1"'
+ $null=New-Jar (Join-Path $folder 'scaling.jar') @{'mcmod.info'='[{"modid":"bountiful","version":"1","requiredMods":["MinecraftForge,missing_template"]}]';'META-INF/mods.toml'=$modernTemplate;'fixture/Mod.class'=(Legacy-Class @{modid='scalingwealth';name='Scaling Wealth';version='1.0.1';dependencies='required-after:forge@[14.21.1.2443,)';acceptedMinecraftVersions='[1.12]'})}
+ $null=New-Jar (Join-Path $folder 'bountiful.jar') @{'mcmod.info'='[{"modid":"bountiful","version":"2"}]';'fixture/Mod.class'=(Legacy-Class @{modid='bountiful';name='Bountiful';version='2.2.2'})}
+ $report=Scan $folder $legacyContext
+ Assert (@($report.Mods|Where-Object Id -eq 'scalingwealth').Count -eq 1 -and -not $report.Issues.Count) 'Legacy Forge selected modern TOML/template mcmod.info instead of the actual @Mod ID and dependency declaration.'
+ $null=New-Jar (Join-Path $folder 'annotation-only.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='bare_legacy';version='1'})}
+ Assert ((Issues (Scan $folder) 'LoaderMismatch').Count -eq 3) 'Legacy Forge @Mod jars, including annotation-only files, were not detected in a Fabric instance.'
+ $null=New-Jar (Join-Path $folder 'scala-mirror.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='scala_fixture';version='1'});'fixture/Mod$.class'=(Legacy-Class @{modid='scala_fixture';version='1'});'fixture/Mod 2.class'=(Legacy-Class @{modid='scala_fixture';version='1'});'__MACOSX/Mod.class'=(Legacy-Class @{modid='scala_fixture';version='1'})}
+ Assert ((Issues (Scan $folder $legacyContext) 'DuplicateId').Count -eq 0) 'Scala companion classes, whitespace copies or __MACOSX entries became duplicate mods.'
+ $null=New-Jar (Join-Path $folder 'requires.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='actual_owner';version='1';dependencies='required-client-after:actual_missing@[1,2);after:absent_optional@[2,);required-server:server_only';acceptedMinecraftVersions='[1.12.2]'})}
+ $report=Scan $folder $legacyContext
+ Assert ((Issues $report 'MissingRequired' 'actual_owner').Count -eq 1 -and (Issues $report 'MissingRequired' 'actual_owner')[0].Requirement.Id -eq 'actual_missing') 'Real legacy required annotations were lost, or optional/server dependencies were treated as required.'
+ $null=New-Jar (Join-Path $folder 'duplicate.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='scalingwealth';version='1'})}
+ Assert ((Issues (Scan $folder $legacyContext) 'DuplicateId').Count -eq 1) 'A real duplicate legacy @Mod ID was suppressed.'
+
+ $folder=Folder 'legacy-contained';$embeddedFolder=Folder 'legacy-embedded'
+ $inner=New-Jar (Join-Path $embeddedFolder 'contained.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='legacy_inner';version='1.1'})}
+ $outer=New-Jar (Join-Path $folder 'outer.jar') @{'META-INF/MANIFEST.MF'="Manifest-Version: 1.0`r`nContainedDeps: contained.jar`r`n`r`n";'META-INF/libraries/contained.jar'=[IO.File]::ReadAllBytes($inner);'fixture/Mod.class'=(Legacy-Class @{modid='legacy_outer';version='1';dependencies='required-after:legacy_inner@[1,2)'})}
+ $report=Scan $folder $legacyContext
+ Assert ($report.Mods.Count -eq 2 -and -not $report.Issues.Count -and -not $report.MetadataIncomplete) 'Declared legacy ContainedDeps under META-INF/libraries did not supply a required dependency.'
+ $report.Mods[0].Name='mutated fixture';$cached=Scan $folder $legacyContext
+ Assert ($cached.Mods[0].Name -ne 'mutated fixture' -and -not $cached.Issues.Count) 'Legacy scan cache leaked mutable report objects.'
+ [IO.File]::Delete($outer);$null=New-Jar $outer @{'fixture/Mod.class'=(Legacy-Class @{modid='legacy_outer';version='2';dependencies='required-after:truly_missing'})}
+ Assert ((Issues (Scan $folder $legacyContext) 'MissingRequired').Count -eq 1) 'Changing a legacy JAR reused stale dependency metadata.'
+
  $folder=Folder 'legacy'
  $null=New-Jar (Join-Path $folder 'legacy.jar') @{'mcmod.info'='[{"modid":"legacy","name":"Legacy","version":"1.0","requiredMods":["old_library@[1,2)"]}]'}
  $report=Scan $folder (Context 'forge' '14.23')
  Assert ($report.Mods.Count -eq 1 -and $report.MetadataIncomplete -and -not $report.HasErrors) 'Legacy Forge declarations must remain conservative about annotation-only dependencies.'
  $versionFolder=Join-Path $folder '1.12.2';[IO.Directory]::CreateDirectory($versionFolder)|Out-Null
- $null=Fabric $versionFolder 'legacy-folder.jar' 'version_folder'
+ $null=New-Jar (Join-Path $versionFolder 'legacy-folder.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='version_folder';version='1'})}
  $context=Context 'forge' '14.23';$context.LegacyForgeVersionFolder='1.12.2'
  Assert ((Scan $folder $context).Mods.Count -eq 2) 'Explicit legacy Forge version folder was not included.'
 
@@ -387,11 +541,105 @@ version="1.0"
   $instance.Version.ModLoaderVersions.Clear();$instance.Version.ModLoaderVersions.Add('Forge','14.23.5');$instance.Version.VanillaName='1.12.2';$instance.JsonObject=[Newtonsoft.Json.Linq.JObject]::Parse('{}')
   $factory=$inspector.GetMethod('ContextForInstance',$flags).Invoke($null,@($instance,[string]'17.0.1'))
   Assert ($factory.LoaderVersions['forge'] -eq '14.23.5' -and $factory.LegacyForgeVersionFolder -eq '1.12.2') 'Instance loader or legacy-folder mapping failed.'
+  $instance.Version.ModLoaderVersions.Clear();$instance.Version.ModLoaderVersions.Add('NeoForge','21.1.100');$instance.Version.VanillaName='1.21.1';$instance.JsonObject=[Newtonsoft.Json.Linq.JObject]::Parse('{"libraries":[{"name":"net.neoforged.fancymodloader:loader:4.0.42"}]}')
+  $factory=$inspector.GetMethod('ContextForInstance',$flags).Invoke($null,@($instance,[string]'21.0.1'))
+  Assert ($factory.AdditionalBuiltins['javafml'] -eq '4.0.42') 'NeoForge Java FML was not derived from the actual FML library version.'
   $instance.Version.Reliable=$false
   $factory=$inspector.GetMethod('ContextForInstance',$flags).Invoke($null,@($instance,$null))
   Assert (-not $factory.MinecraftVersion) 'A guessed Minecraft version must not produce definite version mismatches.'
  }
- Write-Output ("Mod dependency fixtures passed: "+$script:assertions+" assertions; version boundaries, Fabric/Quilt/Forge/NeoForge, aliases, multi-mod and nested jars, disabled/duplicate IDs, reverse graph, batch/transitive impacts, conservative errors, cancellation and read-only bytes.")
+ # Full graph snapshots must survive process restart without reopening any unchanged JAR.
+ $folder=Folder 'persistent-tree';$indexContext=Context
+ $core=Fabric $folder 'cached-core.jar' 'cached_core' '1.0'
+ $consumer=Fabric $folder 'cached-user.jar' 'cached_user' '1.0' @{depends=@{cached_core='>=1';java='>=21'}}
+ $first=Scan $folder $indexContext
+ function Index-Flag($value,[string]$name){return $value.GetType().GetField($name,$flags).GetValue($value)}
+ Assert (-not (Index-Flag $first 'IndexHit') -and (Index-Flag $first 'IndexPersisted')) 'First inspection did not persist a new dependency tree.'
+ $indexPath=$indexType.GetMethod('IndexPath',$flags).Invoke($null,@([string]$folder,$indexContext))
+ $lease=[IO.File]::Open($consumer,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+ try{
+  $indexType.GetMethod('ClearMemory',$flags).Invoke($null,@())|Out-Null
+  $second=Scan $folder $indexContext
+  Assert ((Index-Flag $second 'IndexHit') -and $second.Mods.Count -eq 2) 'Disk tree reuse reopened an exclusively locked, unchanged JAR.'
+  $edge=$second.Edges|Where-Object {$_.Requirement.Id -eq 'cached_core'}|Select-Object -First 1
+  Assert ([Object]::ReferenceEquals($edge.Owner,($second.Mods|Where-Object Id -eq 'cached_user')) -and [Object]::ReferenceEquals($edge.Requirement,($edge.Owner.Dependencies|Where-Object Id -eq 'cached_core'))) 'Persistent tree lost graph identity, breaking dependency/reverse relations.'
+  $newRuntime=Context;$newRuntime.JavaVersion='21.0.2';$third=Scan $folder $newRuntime
+  Assert ((Index-Flag $third 'IndexHit') -and (Index-Flag $third 'IndexReevaluated') -and -not $third.HasErrors) 'Changing Java reread JARs or retained the previous runtime errors.'
+  $child=Join-Path $fixture 'ReadIndex.ps1'
+  [IO.File]::WriteAllText($child,@'
+param($Executable,$Project,$Mods,$Cache)
+$ErrorActionPreference='Stop'
+foreach($file in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')){if(Test-Path -LiteralPath (Join-Path $Project $file)){[Reflection.Assembly]::LoadFrom((Join-Path $Project $file))|Out-Null}}
+$a=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Executable));$f=[Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
+$a.GetType('PCL.ModDependencyIndex').GetProperty('CacheDirectory',$f).SetValue($null,$Cache,$null)
+$c=[Activator]::CreateInstance($a.GetType('PCL.ModDependencyInspector+InspectionContext'));$c.MinecraftVersion='1.20.1';$c.JavaVersion='21.0.2';$c.LoaderKnown=$true;$c.LoaderVersions.Add('fabricloader','0.16.0')
+$r=$a.GetType('PCL.ModDependencyInspector').GetMethod('Inspect',$f).Invoke($null,@([string]$Mods,$c,[Threading.CancellationToken]::None))
+if(-not $r.GetType().GetField('IndexHit',$f).GetValue($r) -or $r.HasErrors -or $r.Mods.Count -ne 2){throw 'Restart did not restore the persistent tree'}
+Write-Output 'PASS: a fresh process reused the disk tree while its mod JAR was exclusively locked.'
+'@,[Text.UTF8Encoding]::new($true))
+  & powershell -NoProfile -File $child -Executable $ExecutablePath -Project $root -Mods $folder -Cache (Join-Path $fixture 'dependency-index')
+  Assert ($LASTEXITCODE -eq 0) 'A fresh launcher process rebuilt an unchanged dependency tree.'
+ }finally{$lease.Dispose()}
+ $first.Mods[0].Name='mutated report';$fresh=Scan $folder $newRuntime
+ Assert ($fresh.Mods[0].Name -ne 'mutated report') 'A caller mutation corrupted the cached tree.'
+ [IO.File]::Move($core,$core+'.disabled');$disabled=Scan $folder $newRuntime
+ Assert (-not (Index-Flag $disabled 'IndexHit') -and (Issues $disabled 'MissingRequired').Count -eq 1) 'Disabling a mod reused a stale graph.'
+ [IO.File]::Move($core+'.disabled',$core);$enabled=Scan $folder $newRuntime
+ Assert (-not (Index-Flag $enabled 'IndexHit') -and -not $enabled.HasErrors) 'Re-enabling a mod did not update the tree.'
+ $added=Fabric $folder 'new-mod.jar' 'new_mod';$expanded=Scan $folder $newRuntime
+ Assert (-not (Index-Flag $expanded 'IndexHit') -and $expanded.Mods.Count -eq 3) 'Adding a mod did not invalidate the tree.'
+ [IO.File]::Delete($added);$enabled=Scan $folder $newRuntime
+ Assert (-not (Index-Flag $enabled 'IndexHit') -and $enabled.Mods.Count -eq 2) 'Removing a mod did not invalidate the tree.'
+ $generation=Index-Flag $enabled 'IndexGeneration'
+ $forced=$inspector.GetMethod('RebuildIndex',$flags).Invoke($null,@([string]$folder,$newRuntime,[Threading.CancellationToken]::None))
+ Assert (-not (Index-Flag $forced 'IndexHit') -and (Index-Flag $forced 'IndexGeneration') -ne $generation) 'Manual index update reused the old snapshot.'
+ [IO.File]::WriteAllText($indexPath,'{broken snapshot');$indexType.GetMethod('ClearMemory',$flags).Invoke($null,@())|Out-Null
+ Assert (-not (Index-Flag (Scan $folder $newRuntime) 'IndexHit')) 'A corrupt index was not automatically rebuilt.'
+ $document=[Newtonsoft.Json.Linq.JObject]::Parse([IO.File]::ReadAllText($indexPath));$document['Tree']['Mods']=[Newtonsoft.Json.Linq.JValue]::CreateNull();[IO.File]::WriteAllText($indexPath,$document.ToString())
+ $indexType.GetMethod('ClearMemory',$flags).Invoke($null,@())|Out-Null
+ Assert (-not (Index-Flag (Scan $folder $newRuntime) 'IndexHit')) 'A valid JSON index with a broken graph was trusted.'
+ $cancel=[Threading.CancellationTokenSource]::new();$cancel.Cancel();$cancelled=$false
+ try{$inspect.Invoke($null,@([string]$folder,$newRuntime,$cancel.Token))|Out-Null}catch{$e=$_.Exception;while($e.InnerException){$e=$e.InnerException};$cancelled=$e -is [OperationCanceledException]}finally{$cancel.Dispose()}
+ Assert $cancelled 'Cache hits ignored a cancelled dependency check.'
+
+ $lockedFolder=Folder 'first-index-locked';$lockedJar=Fabric $lockedFolder 'locked.jar' 'locked_mod';$lease=[IO.File]::Open($lockedJar,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+ try{$partial=Scan $lockedFolder;$failedRead=Index-Flag $partial 'IndexReadFailed';Assert ($failedRead -and -not (Index-Flag $partial 'IndexPersisted')) 'A transient file-read failure was committed as a complete dependency tree.'}finally{$lease.Dispose()}
+ $recovered=Scan $lockedFolder
+ Assert (-not (Index-Flag $recovered 'IndexHit') -and (Index-Flag $recovered 'IndexPersisted') -and $recovered.Mods.Count -eq 1) 'Releasing an unchanged JAR did not recover the failed initial index.'
+ $legacyFolder=Folder 'manual-legacy-index';$packages=Folder 'manual-legacy-packages';$legacyIndexContext=Context 'forge' '14.23.5.2855';$legacyIndexContext.MinecraftVersion='1.12.2'
+ $legacyJar=New-Jar (Join-Path $legacyFolder 'manual.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='manual_legacy';version='1'})} ([IO.Compression.CompressionLevel]::NoCompression)
+ $newLegacy=New-Jar (Join-Path $packages 'replacement.jar') @{'fixture/Mod.class'=(Legacy-Class @{modid='manual_legacy';version='2'})} ([IO.Compression.CompressionLevel]::NoCompression)
+ $originalInfo=Get-Item -LiteralPath $legacyJar;$written=$originalInfo.LastWriteTimeUtc;$created=$originalInfo.CreationTimeUtc
+ Assert ((Scan $legacyFolder $legacyIndexContext).Mods[0].Version -eq '1') 'Legacy manual-rebuild fixture was not indexed.'
+ Assert ((Get-Item -LiteralPath $newLegacy).Length -eq $originalInfo.Length) 'Manual-rebuild fixture must preserve the file size.'
+ [IO.File]::WriteAllBytes($legacyJar,[IO.File]::ReadAllBytes($newLegacy));[IO.File]::SetCreationTimeUtc($legacyJar,$created);[IO.File]::SetLastWriteTimeUtc($legacyJar,$written)
+ $manual=$inspector.GetMethod('RebuildIndex',$flags).Invoke($null,@([string]$legacyFolder,$legacyIndexContext,[Threading.CancellationToken]::None))
+ Assert ($manual.Mods[0].Version -eq '2') 'Manual rebuild did not bypass both disk-tree and legacy class-metadata caches.'
+
+ $cachePath=$indexType.GetProperty('CacheDirectory',$flags).GetValue($null,$null);$blockedCache=Join-Path $fixture 'cache-is-a-file';[IO.File]::WriteAllText($blockedCache,'fixture')
+ try{
+  $indexType.GetProperty('CacheDirectory',$flags).SetValue($null,$blockedCache,$null);$memoryOnly=Scan $folder $newRuntime
+  Assert (-not (Index-Flag $memoryOnly 'IndexPersisted') -and -not $memoryOnly.HasErrors) 'An unavailable disk cache blocked dependency checking or falsely reported persistence.'
+  $lease=[IO.File]::Open($consumer,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+  try{$memoryOnly=Scan $folder $newRuntime;Assert ((Index-Flag $memoryOnly 'IndexHit') -and -not (Index-Flag $memoryOnly 'IndexPersisted')) 'Memory fallback reopened JARs or falsely claimed its index was on disk.'}finally{$lease.Dispose()}
+ }finally{$indexType.GetProperty('CacheDirectory',$flags).SetValue($null,$cachePath,$null)}
+
+ if($ReadOnlyLegacyModsFolder){
+  $legacyContext=Context 'forge' '14.23.5.2855';$legacyContext.MinecraftVersion='1.12.2';$legacyContext.LegacyForgeVersionFolder='1.12.2'
+  $timer=[Diagnostics.Stopwatch]::StartNew();$actual=Scan $ReadOnlyLegacyModsFolder $legacyContext;$timer.Stop()
+  Write-Output ('Read-only legacy pack: '+$actual.Mods.Count+' mods; '+$actual.Issues.Count+' issues; '+$actual.Notices.Count+' notices; '+[Math]::Round($timer.Elapsed.TotalSeconds,2)+'s')
+  $actual.Issues|ForEach-Object {Write-Output ($_.Kind.ToString()+' '+$_.Message)}
+  $actual.Mods|Where-Object {$_.Id -match 'hammer|mixin|hurt|scalingwealth|examplemod'}|ForEach-Object {Write-Output ('MOD '+$_.Id+' '+$_.Version+' '+[IO.Path]::GetFileName($_.RootPath))}
+  $actual.Notices|Select-Object -First 8
+  $timer.Restart();$cachedActual=Scan $ReadOnlyLegacyModsFolder $legacyContext;$timer.Stop()
+  Assert ($cachedActual.Issues.Count -eq $actual.Issues.Count -and $cachedActual.Mods.Count -eq $actual.Mods.Count) 'Cached legacy pack scan changed its dependency result.'
+  Write-Output ('Cached read-only legacy scan: '+[Math]::Round($timer.Elapsed.TotalSeconds,2)+'s')
+  $indexType.GetMethod('ClearMemory',$flags).Invoke($null,@())|Out-Null
+  $timer.Restart();$diskActual=Scan $ReadOnlyLegacyModsFolder $legacyContext;$timer.Stop()
+  Assert ((Index-Flag $diskActual 'IndexHit') -and $diskActual.Mods.Count -eq $actual.Mods.Count -and $diskActual.Issues.Count -eq $actual.Issues.Count) 'The full legacy pack was reindexed after dropping process memory.'
+  Write-Output ('Disk dependency-tree reuse: '+[Math]::Round($timer.Elapsed.TotalSeconds,2)+'s')
+ }
+ Write-Output ("Mod dependency fixtures passed: "+$script:assertions+" assertions; version boundaries, Fabric/Quilt/Forge/NeoForge, legacy @Mod and template metadata, aliases, multi-mod and nested jars, disabled/duplicate IDs, reverse graph, batch/transitive impacts, conservative errors, cancellation and read-only bytes.")
 } finally {
  $full=[IO.Path]::GetFullPath($fixture)
  $temp=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'

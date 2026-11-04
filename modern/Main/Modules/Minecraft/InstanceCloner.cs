@@ -105,6 +105,14 @@ namespace PCL
         {
             return global::PCL.InstanceCloner.Service.Clone(VersionFolder, GameRoot, NewName, Options, Token, AfterFileCopied);
         }
+        internal static InstanceCloneResult CloneWithProgress(string VersionFolder, string GameRoot, string NewName, InstanceCloneOptions Options, CancellationToken Token, Action<double> Progress, Action<int> AfterFileCopied = null)
+        {
+            return Service.CloneWithProgress(VersionFolder, GameRoot, NewName, Options, Token, Progress, AfterFileCopied);
+        }
+        internal static InstanceCloneResult CloneInstanceWithProgress(ModMinecraft.McInstance Instance, string NewName, InstanceCloneOptions Options, CancellationToken Token, Action<double> Progress)
+        {
+            return Service.CloneInstanceWithProgress(Instance, NewName, Options, Token, Progress);
+        }
         internal static global::System.String SourceVersionFolder(global::System.String CloneFolder)
         {
             return global::PCL.InstanceCloner.Service.SourceVersionFolder(CloneFolder);
@@ -195,12 +203,16 @@ namespace PCL
         // 原 Loader、双实例锁、废弃 Worker 及停止／任务栏生命周期。
         private static void Run(global::PCL.ModMinecraft.McInstance Instance, global::PCLCS.InstanceCloneWork Work)
         {
-            var StepLoader = new global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>(Work.StepName, Task => Work.Execute(Task.CreateCancellationToken(), Output => Task.Output = Output));
+            var StepLoader = new global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>(Work.StepName, Task => {
+                var Token = Task.CreateCancellationToken();
+                Work.Progress = global::PCLCS.FileTaskProgress.ForTask(() => Task.Progress, Value => Task.Progress = Value);
+                Work.Execute(Token, Output => Task.Output = Output);
+            });
             var Loader = new global::PCL.ModLoader.LoaderCombo<global::System.String>(Work.Title, new[] { StepLoader }) { OnStateChanged = global::PCL.ModDownloadLib.LoaderStateChangedHintOnly };
             var Abandoned = default(global::System.Boolean);
             var Workload = global::PCL.LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion);
             var Worker = new global::MeloongCore.RedoableWorker(() => { if (!(Abandoned)) Workload(); });
-            if (!(global::PCL.ModMinecraft.McInstanceLock.TryAcquire(Worker, Instance.PathVersion)))
+            if (!(Work.LockSource ? global::PCL.ModMinecraft.McInstanceLock.TryAcquire(Worker, Instance.PathVersion) : global::PCL.ModMinecraft.McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion)))
             {
                 Work.ReleaseBusy();
                 return;

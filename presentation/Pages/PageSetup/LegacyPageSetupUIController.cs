@@ -221,6 +221,7 @@ public sealed class LegacyPageSetupUIController {
         if (Common.AnimationSuppression() == 0 && Conversions.ToBoolean(NewLateBinding.LateGet(sender, null, "Checked", Array.Empty<object>(), null, null, null))) Common.Hint("按 F12 即可暂时关闭功能隐藏设置。千万别忘了，要不然设置就改不回来了……", LegacySetupHint.Blue, true);
     }
     public void SliderLoad() {
+        View.SliderPanelOpacity().GetHintText = new Func<object, object>(value => LegacySetupText.Number(Math.Round(Conversions.ToDouble(Operators.MultiplyObject(value, 0.1)))) + "%");
         SliderMusicVolume.GetHintText = new Func<object, object>(value => LegacySetupText.Number(Math.Ceiling(Conversions.ToDouble(Operators.MultiplyObject(value, 0.1)))) + "%");
         SliderLauncherTransparent.GetHintText = new Func<object, object>(value => LegacySetupText.Number(Math.Round(Conversions.ToDouble(Operators.AddObject(40, Operators.MultiplyObject(value, 0.1))))) + "%");
         SliderBackgroundOpacity.GetHintText = new Func<object, object>(value => LegacySetupText.Number(Math.Round(Conversions.ToDouble(Operators.MultiplyObject(value, 0.1)))) + "%");

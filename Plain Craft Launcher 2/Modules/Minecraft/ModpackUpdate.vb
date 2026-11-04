@@ -110,6 +110,10 @@ Friend NotInheritable Class ModpackUpdate
         Optional BeforeApply As Action(Of Integer) = Nothing, Optional Box As String = Nothing) As String
         Return Engine.ApplyTransaction(GameRoot, VersionFolder, Operations, Token, BeforeApply, Box)
     End Function
+    Friend Shared Function ApplyTransactionWithProgress(GameRoot As String, VersionFolder As String, Operations As List(Of Tuple(Of String, String, String)), Token As CancellationToken, Progress As Action(Of Double),
+        Optional BeforeApply As Action(Of Integer) = Nothing, Optional Box As String = Nothing) As String
+        Return Engine.ApplyTransactionWithProgress(GameRoot, VersionFolder, Operations, Token, Progress, BeforeApply, Box)
+    End Function
     Private Shared Sub ReplaceFrom(Source As String, Destination As String)
         UpdateEngine.ReplaceFrom(Source, Destination)
     End Sub

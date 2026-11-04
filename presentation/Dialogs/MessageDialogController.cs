@@ -38,6 +38,7 @@ public sealed class MessageDialogHost {
     public Func<double, double> PixelToWpf = null!;
     public Func<ControlAnimations> Animations = null!;
     // These project the actual LF body classes; precedence, bounds and enablement policy remain below.
+    public Func<FrameworkElement?, double?>? UpdateWidth;
     public Func<FrameworkElement?, double?> ModpackWidth = null!, DependenciesWidth = null!, GraphWidth = null!, ImpactsWidth = null!;
     public Func<object?, ModalSelectionPort?> VersionSelection = null!;
     public Func<FrameworkElement, ModalRadioPort> Radio = null!;
@@ -192,7 +193,7 @@ public sealed class MessageTextController<TKind, TValidation> : MessageDialogCon
         if (!HasConverter || Converter.ContentFactory is null) return;
         Grid? panel = Host.MessagePanel();
         FrameworkElement? body = text.Caption().Content as FrameworkElement;
-        double preferred = Host.ModpackWidth(body) ?? Host.DependenciesWidth(body) ?? Host.GraphWidth(body) ?? Host.ImpactsWidth(body) ?? 980;
+        double preferred = Host.UpdateWidth?.Invoke(body) ?? Host.ModpackWidth(body) ?? Host.DependenciesWidth(body) ?? Host.GraphWidth(body) ?? Host.ImpactsWidth(body) ?? 980;
         Parts.Root.Width = Math.Min(preferred, Math.Max(0, (panel is null ? 1000 : panel.ActualWidth) - 50));
         Parts.Root.MaxHeight = Math.Max(0, (panel is null ? 740 : panel.ActualHeight) - 50);
         if (body is not null) body.MaxHeight = Math.Max(0, Parts.Root.MaxHeight - 156);

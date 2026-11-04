@@ -85,4 +85,7 @@ Friend NotInheritable Class ModDependencyAutoFill
             End Using
         End If
     End Sub
+    Friend Shared Sub ResetIndexLookups()
+        Service.ResetIndexLookups()
+    End Sub
 End Class

@@ -97,11 +97,23 @@ Friend NotInheritable Class WorldBackups
     Friend Shared Function CaptureWorld(GameFolder As String, Identifier As String, Reason As String, Retention As Integer, Token As CancellationToken, Optional ExitedProcess As Process = Nothing) As String
         Return Service.CaptureWorld(GameFolder, Identifier, Reason, Retention, Token, ExitedProcess)
     End Function
+    Friend Shared Function CaptureWorldWithProgress(GameFolder As String, Identifier As String, Reason As String, Retention As Integer, Token As CancellationToken, Progress As Action(Of Double), Optional ExitedProcess As Process = Nothing) As String
+        Return Service.CaptureWorldWithProgress(GameFolder, Identifier, Reason, Retention, Token, Progress, ExitedProcess)
+    End Function
     Friend Shared Function CaptureAll(Instance As McInstance, Reason As String, Token As CancellationToken, Optional ExitedProcess As Process = Nothing) As List(Of String)
         Return Service.CaptureAll(Instance, Reason, Token, ExitedProcess)
     End Function
+    Friend Shared Function CaptureAllWithProgress(Instance As McInstance, Reason As String, Token As CancellationToken, Progress As Action(Of Double)) As List(Of String)
+        Return Service.CaptureAllWithProgress(Instance, Reason, Token, Progress)
+    End Function
     Friend Shared Function CaptureFolder(GameFolder As String, Reason As String, Retention As Integer, Token As CancellationToken, Optional ExitedProcess As Process = Nothing) As List(Of String)
         Return Service.CaptureFolder(GameFolder, Reason, Retention, Token, ExitedProcess)
+    End Function
+    Friend Shared Function CaptureFolderWithProgress(GameFolder As String, Reason As String, Retention As Integer, Token As CancellationToken, Progress As Action(Of Double), Optional ExitedProcess As Process = Nothing) As List(Of String)
+        Return Service.CaptureFolderWithProgress(GameFolder, Reason, Retention, Token, Progress, ExitedProcess)
+    End Function
+    Friend Shared Function HasPendingRecovery(GameFolder As String) As Boolean
+        Return Service.HasPendingRecovery(GameFolder)
     End Function
     Friend Shared Sub RecoverPending(GameFolder As String, Token As CancellationToken)
         Service.RecoverPending(GameFolder, Token)
@@ -111,6 +123,9 @@ Friend NotInheritable Class WorldBackups
     End Sub
     Friend Shared Function Restore(GameFolder As String, Id As String, Retention As Integer, Token As CancellationToken, Optional BeforeCommit As Action(Of Integer) = Nothing) As String
         Return Service.Restore(GameFolder, Id, Retention, Token, BeforeCommit)
+    End Function
+    Friend Shared Function RestoreWithProgress(GameFolder As String, Id As String, Retention As Integer, Token As CancellationToken, Progress As Action(Of Double), Optional BeforeCommit As Action(Of Integer) = Nothing) As String
+        Return Service.RestoreWithProgress(GameFolder, Id, Retention, Token, Progress, BeforeCommit)
     End Function
     Friend Shared Function DeletePoints(GameFolder As String, Ids As IEnumerable(Of String)) As String
         Return Service.DeletePoints(GameFolder, Ids)
@@ -171,11 +186,14 @@ Friend NotInheritable Class WorldBackupsUi
     Private Shared Function StartWork(Instance As McInstance, Work As PCLCS.WorldBackupWork) As Boolean
         Dim StepLoader As New LoaderTask(Of String, String)(Work.StepName,
             Sub(Task)
-                Work.Execute(Task.CreateCancellationToken(), Sub(Output) Task.Output = Output)
+                Dim Token = Task.CreateCancellationToken()
+                Work.Progress = PCLCS.FileTaskProgress.ForTask(Function() Task.Progress, Sub(Value) Task.Progress = Value)
+                Work.Execute(Token, Sub(Output) Task.Output = Output)
             End Sub)
         Dim Loader As New LoaderCombo(Of String)(Work.Title, {StepLoader}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
         Dim Worker As New RedoableWorker(LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion))
-        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then Return False
+        Dim BrowseOnly = Work.SnapshotReservation()
+        If Not If(BrowseOnly, McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion), McInstanceLock.TryAcquire(Worker, Instance.PathVersion)) Then Return False
         AddHandler Worker.Stopped, Sub() Work.Stopped()
         Worker.Start()
         LoaderTaskbarAdd(Loader)

@@ -78,6 +78,7 @@ namespace PCL
             MainBackground = new Func<global::System.Windows.Controls.Panel>(() => global::PCL.ModMain.FrmMain.ImgBack),
             TitleLogo = new Func<global::PCLLF.Presentation.Controls.MyImageView>(() => global::PCL.ModMain.FrmMain.ImageTitleLogo),
             ApplyBackground = new Action<global::System.Windows.Controls.Panel, global::System.Windows.Controls.Panel>((Panel, Image) => global::PCL.ModSecret.ApplyMainBackground(Panel, Image)),
+            UseDefaultBackground = ModTheme.UseDefaultBackground, MarkCustomBackground = ModTheme.MarkCustomBackground,
             UpdateBackgroundAndTitle = new Action(() => global::PCL.ModMain.FrmMain.UpdateBackgroundAndTitleBar()),
             RandomPicture = new Func<global::System.Collections.Generic.IList<global::System.String>, global::System.String>(Pictures => global::PCL.ModBase.RandomOne(Pictures)),
             MusicAll = new Func<global::System.Collections.Generic.List<global::System.String>>(() => global::PCL.ModMusic.MusicAllList),
@@ -148,7 +149,9 @@ namespace PCL
             ToggleModpack = new Action<global::PCLLF.Presentation.Controls.MyCheckBoxView, global::System.Boolean>((Control, User) => global::PCL.ModModpackMode.Toggle((global::PCL.MyCheckBox)Control, User)),
             LauncherDisplayName = new Func<global::System.String>(() => global::PCL.ModBase.LauncherDisplayName),
             LauncherVersion = new Func<global::System.String>(() => global::PCL.ModBase.VersionBaseName),
-            CheckLauncherUpdate = global::PCL.ModSecret.UpdateCheckByButton
+            CheckLauncherUpdate = global::PCL.ModSecret.UpdateCheckByButton,
+            PreferredUpdateChannel = () => (int)ModLauncherUpdate.PreferredUpdateChannel(),
+            ChangeUpdateChannel = ModLauncherUpdate.ChangeUpdateChannel
         };
         private static void ConnectItemClick(global::PCLLF.Presentation.Controls.MyListItemView Item, global::System.Action Work)
         {

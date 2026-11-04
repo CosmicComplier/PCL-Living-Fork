@@ -231,11 +231,20 @@ internal static class ModDependencyInspectorPipelineTests {
     }
     private sealed class Fixture : IDisposable {
         private readonly string root = Path.Combine(Path.GetTempPath(), "PclModInspector-" + Guid.NewGuid().ToString("N"));
-        internal Fixture() => Directory.CreateDirectory(root);
+        private readonly string previousIndexCache = Inspector.Index.CacheDirectory;
+        internal Fixture() {
+            Directory.CreateDirectory(root);
+            Inspector.Index.CacheDirectory = Path.Combine(root, "dependency-index");
+            Inspector.Index.ClearMemory();
+        }
         internal string Folder(string name) { string path = Path.Combine(root, name); Directory.CreateDirectory(path); return path; }
         internal string Jar(string folder, string name, IReadOnlyDictionary<string, byte[]> entries) { string path = Path.Combine(folder, name); using FileStream stream = File.Create(path); WriteArchive(stream, entries); return path; }
         internal string Fabric(string folder, string file, string id, string version = "1.0", JObject? extra = null) => Jar(folder, file, new Dictionary<string, byte[]> { ["fabric.mod.json"] = Json(ModDependencyInspectorPipelineTests.Fabric(id, version, extra)) });
-        public void Dispose() => Directory.Delete(root, true);
+        public void Dispose() {
+            Inspector.Index.ClearMemory();
+            Inspector.Index.CacheDirectory = previousIndexCache;
+            Directory.Delete(root, true);
+        }
     }
 
     internal sealed class Context : Inspector.ContextData { public Context() { } }

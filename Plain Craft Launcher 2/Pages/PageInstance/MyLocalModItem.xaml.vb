@@ -23,7 +23,7 @@ Public Class MyLocalModItem
     End Sub
     Private Function CreateView() As LegacyLocalModItemView
         Return New LegacyLocalModItemView With {
-            .Root = Function() Me, .Title = Function() LabTitle, .Subtitle = Function() LabSubtitle, .Description = Function() LabInfo,
+            .LoaderWarningBorder = Function() LoaderWarningBorder, .Root = Function() Me, .Title = Function() LabTitle, .Subtitle = Function() LabSubtitle, .Description = Function() LabInfo,
             .Tags = Function() PanTags, .UpdateButton = Function() BtnUpdate, .ResourceLogoElement = Function() ResourceLogo,
             .PathLogoElement = Function() PathLogo, .ResourceLogo = Function() ResourceLogo,
             .PaddingRight = Function() ColumnPaddingRight, .TitleColumn = Function() ColumnTitle, .SubtitleColumn = Function() ColumnSubtitle, .ExtendColumn = Function() ColumnExtend,
@@ -58,6 +58,17 @@ Public Class MyLocalModItem
         Return RestorePointDisplay
     End Function
 
+    Friend ReadOnly Property LoaderWarning As String
+        Get
+            Return Controller.LoaderWarning
+        End Get
+    End Property
+    Friend Sub RefreshLoaderWarning(Folder As String, Context As ModDependencyInspector.InspectionContext)
+        Controller.RefreshLoaderWarning(Function() ModDependencyInspector.LoaderWarningFor(Folder, Entry.File.FullName, Context))
+    End Sub
+    Private Sub SetLoaderWarning(Message As String)
+        Controller.SetLoaderWarning(Message)
+    End Sub
     Friend Sub BindRestorePoint(Value As JObject)
         Controller.BindRestorePoint(Value)
     End Sub

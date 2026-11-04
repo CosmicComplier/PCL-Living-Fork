@@ -28,13 +28,15 @@ namespace PCL
         #region 声明
 
         // 下列版本信息由更新器自动修改
-        public const string VersionBaseName = "1.3.4"; // LivingPCL 显示用版本名；内部兼容码沿用代码基线。
+        public const string VersionBaseName = "1.3.5-pre-3"; // LivingPCL 显示用版本名；内部兼容码沿用代码基线。
         public const string LauncherDisplayName = "PCL Living Fork";
         public const string LauncherExecutableName = "PCL-Living-Fork-" + VersionBaseName + ".exe";
         public const string LauncherRepository = "DDZmumo/PCL-Living-Fork";
         public const string LauncherRepositoryUrl = "https://github.com/" + LauncherRepository;
         public const string LauncherIssuesUrl = LauncherRepositoryUrl + "/issues";
         public const string LauncherReleasesUrl = LauncherRepositoryUrl + "/releases";
+        public const string LauncherCnbRepository = "ddzmumo/PCL-Living-Fork";
+        public const string LauncherCnbUrl = "https://cnb.cool/" + LauncherCnbRepository;
         public const string CommitHash = ""; // Commit Hash，由 GitHub Workflow 自动替换
 #if RELEASE
         public const int VersionCode = 411; // 正式版
@@ -46,7 +48,7 @@ namespace PCL
         public const string BuildTypeDisplay = "开发版";
         public const BuildTypes BuildType = BuildTypes.Debug;
 #elif RELEASE
-        public const string BuildTypeDisplay = "正式版";
+        public const string BuildTypeDisplay = "预发布版";
         public const BuildTypes BuildType = BuildTypes.Release;
 #else
         public const string BuildTypeDisplay = "快照版";

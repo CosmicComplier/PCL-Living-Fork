@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -41,6 +42,9 @@ public partial class MyCheckBoxView : Grid {
         IsEnabledChanged += (_, _) => CheckboxIsEnabledChanged();
         MouseEnter += (_, _) => CheckboxMouseEnterAnimation();
         MouseLeave += (_, _) => CheckboxMouseLeaveAnimation();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, CheckboxIsEnabledChanged);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, CheckboxIsEnabledChanged);
     }
 
     public bool Checked {

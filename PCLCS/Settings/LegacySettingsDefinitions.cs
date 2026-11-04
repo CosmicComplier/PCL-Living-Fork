@@ -144,6 +144,10 @@ public static class LegacySettingsDefinitions {
         Add("ToolDownloadMod", 2, LegacySettingSource.Registry);
         Add("ToolModLocalNameStyle", 0, LegacySettingSource.Registry);
         Add("ToolLauncherUpdateIgnoredTag", "", LegacySettingSource.Registry);
+        Add("ToolLauncherUpdateSource", 0);
+        Add("ToolLauncherUpdateChannel", 0);
+        Add("UiLauncherColorMode", 0);
+        Add("UiPanelOpacity", 960);
         Add("UiLauncherTransparent", 600);
         Add("UiLauncherHue", hostDefault("UiLauncherHue"));
         Add("UiLauncherSat", hostDefault("UiLauncherSat"));

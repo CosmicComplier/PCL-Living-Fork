@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -28,6 +29,9 @@ public partial class MyHintView : Border {
         MouseLeftButtonUp += MouseUpHint;
         MouseLeftButtonDown += (_, _) => isMouseDown = true;
         MouseLeave += (_, _) => isMouseDown = false;
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, UpdateUI);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, UpdateUI);
     }
     public bool HasBorder {
         get => BorderThickness.Top > 0;
@@ -38,14 +42,11 @@ public partial class MyHintView : Border {
     public Themes Theme { get => colorType; set { colorType = value; UpdateUI(); } }
     private static SolidColorBrush Brush(string color) => new((Color)ColorConverter.ConvertFromString(color));
     private void UpdateUI() {
-        switch (Theme) {
-            case Themes.Blue:
-                Background = Brush("#d9ecff"); BorderBrush = Brush("#1172D4"); LabText.Foreground = Brush("#0F64B8"); BtnClose.Foreground = Brush("#0F64B8"); break;
-            case Themes.Red:
-                Background = Brush("#ffdddf"); BorderBrush = Brush("#d82929"); LabText.Foreground = Brush("#bf0b0b"); BtnClose.Foreground = Brush("#bf0b0b"); break;
-            case Themes.Yellow:
-                Background = Brush("#ffebd7"); BorderBrush = Brush("#f57a00"); LabText.Foreground = Brush("#d86c00"); BtnClose.Foreground = Brush("#d86c00"); break;
-        }
+        string role = Theme == Themes.Blue ? "Info" : Theme == Themes.Yellow ? "Warning" : "Danger";
+        SetResourceReference(BackgroundProperty, "ColorBrush" + role + "Back");
+        SetResourceReference(BorderBrushProperty, "ColorBrush" + role + "Border");
+        LabText.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush" + role + "Text");
+        BtnClose.Foreground = LegacyThemePalette.Brush("ColorBrush" + role + "Text");
     }
     [Obsolete("IsWarn 已过时。请换用 Theme 属性。")]
     public bool IsWarn { get => Theme == Themes.Red; set => Theme = value ? Themes.Red : Themes.Blue; }

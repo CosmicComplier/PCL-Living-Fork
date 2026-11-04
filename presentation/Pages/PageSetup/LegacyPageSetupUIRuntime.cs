@@ -39,7 +39,7 @@ public sealed class LegacyPageSetupUIRuntime {
             }
             if (!pictures.Any()) {
                 if (refresh) {
-                    Host.MainBackground().Background = Common.LoadBitmap(Common.ImageRoot() + "Branding/DefaultBackground.png").ToImageBrush();
+                    Host.UseDefaultBackground(Host.MainBackground());
                     Host.ApplyBackground(Host.MainPanel(), Host.MainBackground()); Host.UpdateBackgroundAndTitle();
                     if (isHint) Common.Hint("已恢复默认角色背景！", LegacySetupHint.Green, true);
                 }
@@ -49,6 +49,7 @@ public sealed class LegacyPageSetupUIRuntime {
                     string address = Host.RandomPicture(pictures);
                     try {
                         Logger.Info("加载背景图片：" + address);
+                        Host.MarkCustomBackground(Host.MainBackground());
                         Host.MainBackground().Background = Common.LoadBitmap(address).ToImageBrush();
                         Host.ApplyBackground(Host.MainPanel(), Host.MainBackground()); Host.UpdateBackgroundAndTitle();
                         if (isHint) Common.Hint("背景图片已刷新：" + PathUtils.GetLastPart(address), LegacySetupHint.Green, false);

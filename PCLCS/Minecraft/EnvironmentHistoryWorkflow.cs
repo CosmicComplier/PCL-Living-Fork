@@ -26,9 +26,12 @@ public sealed class EnvironmentHistoryWorkflow<TInstance> where TInstance : clas
         if (Interlocked.CompareExchange(ref BusyCount, 1, 0) != 0) return;
         bool removing = deleteIds is not null;
         List<string>? ids = deleteIds?.ToList();
-        EnvironmentHistoryWork work = new() {
+        EnvironmentHistoryWork work = null!;
+        work = new() {
+            SnapshotReservation = () => !restore && (removing || !host.HasPending(host.VersionPath(instance))),
             StepName = removing ? "删除还原点" : restore ? "恢复游戏环境" : "创建环境还原点",
             Execute = (token, setOutput) => {
+                Action<double>? progress = work.Progress;
                 if (removing) {
                     if (host.Confirm($"删除选中的 {ids!.Count} 个还原点？\r\n不会删除游戏文件或其他还原点。删除记录将保留在还原点文件夹的 deleted 目录中。", "删除还原点", "删除", "取消", true) != 1) throw new OperationCanceledException();
                     token.ThrowIfCancellationRequested();
@@ -40,7 +43,7 @@ public sealed class EnvironmentHistoryWorkflow<TInstance> where TInstance : clas
                     instance = host.RecoverInstance(instance);
                 }
                 if (!restore) {
-                    setOutput(engine.CaptureInstance(instance, "手动还原点", token));
+                    setOutput(engine.CaptureInstanceWithProgress(instance, "手动还原点", token, progress));
                     return;
                 }
                 List<JObject> points = engine.Points(host.VersionPath(instance)).OrderByDescending(item => (bool)item["healthy"]!).ThenByDescending(item => (DateTime)item["created"]!).ToList();
@@ -63,8 +66,8 @@ public sealed class EnvironmentHistoryWorkflow<TInstance> where TInstance : clas
                     (host.SamePath(host.VersionPath(instance), host.GameFolder(instance)) ? "" : "此版本未使用独立目录，恢复模组和配置也会影响共用目录的其他版本。\r\n\r\n") +
                     "恢复前会自动保存当前环境。\r\n" + point["description"]?.ToString(), "恢复游戏环境", "恢复", "取消", true) != 1) throw new OperationCanceledException();
                 string mcRoot = Path.GetDirectoryName(Path.GetDirectoryName(host.VersionPath(instance).TrimEnd('\\'))) + "\\";
-                string output = engine.Restore(host.VersionPath(instance), host.GameFolder(instance), mcRoot, point["id"]!.ToString(), token,
-                    captureBefore: () => engine.CaptureInstance(instance, "恢复前自动保存", token));
+                string output = engine.RestoreWithProgress(host.VersionPath(instance), host.GameFolder(instance), mcRoot, point["id"]!.ToString(), token, progress,
+                    captureBefore: () => engine.CaptureInstanceWithProgress(instance, "恢复前自动保存", token, FileTaskProgress.Slice(progress, 0.32, 0.62)));
                 setOutput(output);
                 engine.ApplyRetention(instance, output, token);
                 host.DispatchWait(() => {

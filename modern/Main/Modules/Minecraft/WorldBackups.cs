@@ -139,6 +139,26 @@ namespace PCL
         {
             return Service.Restore(GameFolder, Id, Retention, Token, BeforeCommit);
         }
+        internal static string CaptureWorldWithProgress(string GameFolder, string Identifier, string Reason, int Retention, CancellationToken Token, Action<double> Progress, Process ExitedProcess = null)
+        {
+            return Service.CaptureWorldWithProgress(GameFolder, Identifier, Reason, Retention, Token, Progress, ExitedProcess);
+        }
+        internal static List<string> CaptureAllWithProgress(ModMinecraft.McInstance Instance, string Reason, CancellationToken Token, Action<double> Progress)
+        {
+            return Service.CaptureAllWithProgress(Instance, Reason, Token, Progress);
+        }
+        internal static List<string> CaptureFolderWithProgress(string GameFolder, string Reason, int Retention, CancellationToken Token, Action<double> Progress, Process ExitedProcess = null)
+        {
+            return Service.CaptureFolderWithProgress(GameFolder, Reason, Retention, Token, Progress, ExitedProcess);
+        }
+        internal static string RestoreWithProgress(string GameFolder, string Id, int Retention, CancellationToken Token, Action<double> Progress, Action<int> BeforeCommit = null)
+        {
+            return Service.RestoreWithProgress(GameFolder, Id, Retention, Token, Progress, BeforeCommit);
+        }
+        internal static bool HasPendingRecovery(string GameFolder)
+        {
+            return Service.HasPendingRecovery(GameFolder);
+        }
         internal static string DeletePoints(string GameFolder, IEnumerable<string> Ids)
         {
             return Service.DeletePoints(GameFolder, Ids);
@@ -212,10 +232,15 @@ namespace PCL
         // 原 Loader/Worker、版本锁、停止事件和任务栏生命周期仍由 LF 平台管理。
         private static bool StartWork(ModMinecraft.McInstance Instance, WorldBackupWork Work)
         {
-            var StepLoader = new ModLoader.LoaderTask<string, string>(Work.StepName, Task => Work.Execute(Task.CreateCancellationToken(), Output => Task.Output = Output));
+            var StepLoader = new ModLoader.LoaderTask<string, string>(Work.StepName, Task => {
+                var Token = Task.CreateCancellationToken();
+                Work.Progress = global::PCLCS.FileTaskProgress.ForTask(() => Task.Progress, Value => Task.Progress = Value);
+                Work.Execute(Token, Output => Task.Output = Output);
+            });
             var Loader = new ModLoader.LoaderCombo<string>(Work.Title, new[] { StepLoader }) { OnStateChanged = ModDownloadLib.LoaderStateChangedHintOnly };
             var Worker = new RedoableWorker(LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion));
-            if (!ModMinecraft.McInstanceLock.TryAcquire(Worker, Instance.PathVersion))
+            bool BrowseOnly = Work.SnapshotReservation();
+            if (!(BrowseOnly ? ModMinecraft.McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion) : ModMinecraft.McInstanceLock.TryAcquire(Worker, Instance.PathVersion)))
                 return false;
             Worker.Stopped += () => Work.Stopped();
             Worker.Start();

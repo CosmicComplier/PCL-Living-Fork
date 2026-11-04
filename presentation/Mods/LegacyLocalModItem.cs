@@ -20,6 +20,7 @@ namespace PCLLF.Presentation.Mods;
 // LF remains the behavior/data source; CE comp models/localization/update decisions not imported.
 public sealed class LegacyLocalModItemView {
     public Func<Grid> Root = null!;
+    public Func<FrameworkElement> LoaderWarningBorder = null!;
     public Func<TextBlock> Title = null!, Description = null!;
     public Func<TextBlock?> Subtitle = null!;
     public Func<Panel> Tags = null!;
@@ -66,6 +67,18 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     private readonly ControlAnimations animation;
     private TInfo? resourceInfo;
     private string? title;
+    private string loaderWarning = "";
+    private object? loaderWarningOriginalTip;
+    public string LoaderWarning => loaderWarning;
+    public void RefreshLoaderWarning(Func<string> readMessage) => SetLoaderWarning(host.Entry() is null || !host.Entry()!.IsEnabled ? "" : readMessage());
+    public void SetLoaderWarning(string? message) {
+        message ??= "";
+        if (message == loaderWarning) return;
+        if (loaderWarning == "") loaderWarningOriginalTip = view.Root().ToolTip;
+        loaderWarning = message;
+        view.LoaderWarningBorder().Visibility = message == "" ? Visibility.Collapsed : Visibility.Visible;
+        view.Root().ToolTip = message == "" ? loaderWarningOriginalTip : message;
+    }
     private bool mouseDown, isChecked, enteredViewport;
     private Border? back, check;
     private Image? stateImage;
@@ -87,8 +100,8 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
             tag.Child=new TextBlock{Text=text,Foreground=new SolidColorBrush(Color.FromRgb(176,176,176)),FontSize=11};view.Tags().Children.Add(tag);
         }
     }
-    public void BindRestorePoint(JObject value) => EnvironmentHistoryPagePointPresenter.Bind(value,()=>host.SetResource(null),()=>host.SetEntry(null),point=>host.SetPoint(point),Refresh);
-    public void BindResource(TEntry value,TInfo info) {host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshResource();}
+    public void BindRestorePoint(JObject value) { SetLoaderWarning(""); EnvironmentHistoryPagePointPresenter.Bind(value,()=>host.SetResource(null),()=>host.SetEntry(null),point=>host.SetPoint(point),Refresh); }
+    public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshResource();}
     private void RefreshResource() {
         TEntry resource=host.Resource()!;string? localName=resource.IsDirectory?resource.Name:System.IO.Path.GetFileNameWithoutExtension(resource.Name);
         Title=string.IsNullOrWhiteSpace(resourceInfo?.ProjectName)?localName:resourceInfo!.ProjectName;
@@ -154,6 +167,7 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     public string GetUpdateCompareDescription()=>LegacyLocalModText.Compare<TMod,TProject,TVersion>(host.Entry()!,host.FormatTime);
     public void FirstViewport(){enteredViewport=true;Refresh();}
     public void Refresh(){
+        if(host.Entry() is null || !host.Entry()!.IsEnabled)SetLoaderWarning("");
         if(host.Point() is not null){EnvironmentHistoryPagePointPresenter.Refresh(host.PointView());return;}
         if(host.Resource() is not null){RefreshResource();return;}
         if(!enteredViewport)return;

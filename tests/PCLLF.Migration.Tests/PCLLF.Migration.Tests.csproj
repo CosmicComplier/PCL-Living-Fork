@@ -35,6 +35,14 @@
     <Compile Include="../../PCLCS/Minecraft/ResourceRecycleFiles.cs" Link="Production/ResourceRecycleFiles.cs" />
     <Compile Include="../../PCLCS/Minecraft/MapDownloadFiles.cs" Link="Production/MapDownloadFiles.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourceOnlineFiles.cs" Link="Production/InstanceResourceOnlineFiles.cs" />
+    <Compile Include="../../PCLCS/Minecraft/FileTaskProgress.cs" Link="Production/FileTaskProgress.cs" />
+    <!-- Actual transaction/model and lease implementations exercised by file-task regressions. -->
+    <Compile Include="../../PCLCS/Minecraft/LegacyMinecraftContracts.cs" Link="Production/Minecraft/LegacyMinecraftContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateContracts.cs" Link="Production/Minecraft/PackUpdateContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Package.cs" Link="Production/Minecraft/PackUpdateEngine.Package.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Plan.cs" Link="Production/Minecraft/PackUpdateEngine.Plan.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Transactions.cs" Link="Production/Minecraft/PackUpdateEngine.Transactions.cs" />
+    <Compile Include="../../PCLCS/Resources/ResourceVersionModels.cs" Link="Production/Resources/ResourceVersionModels.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupContracts.cs" Link="Production/WorldBackupContracts.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.cs" Link="Production/WorldBackupEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.Restore.cs" Link="Production/WorldBackupEngine.Restore.cs" />
@@ -51,6 +59,7 @@
     <Compile Include="../../PCLCS/Minecraft/InstanceCloneGroupsEngine.cs" Link="Production/InstanceCloneGroupsEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceCloneExportIsolation.cs" Link="Production/InstanceCloneExportIsolation.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Contracts.cs" Link="Production/ModDependencyInspection.Contracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Index.cs" Link="Production/ModDependencyInspection.Index.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Archives.cs" Link="Production/ModDependencyInspection.Archives.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Resolution.cs" Link="Production/ModDependencyInspection.Resolution.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyVersions.cs" Link="Production/ModDependencyVersions.cs" />

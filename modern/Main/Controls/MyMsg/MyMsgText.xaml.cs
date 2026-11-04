@@ -44,6 +44,7 @@ internal static class MessageDialogPlatform {
         NewUuid = ModBase.GetUuid, MessagePanel = () => ModMain.FrmMain?.PanMsg, HasWaiting = () => ModMain.WaitingMyMsgBox.Any(),
         DragMove = () => ModMain.FrmMain.DragMove(), PixelToWpf = ModBase.GetWPFSize,
         Animations = () => ControlServices.Current.Animations,
+        UpdateWidth = body => (body as ModLauncherUpdate.UpdatePromptView)?.PreferredWidth,
         ModpackWidth = body => (body as ModpackDialogView)?.PreferredWidth,
         DependenciesWidth = body => (body as ModDependencyCheckView)?.PreferredWidth,
         GraphWidth = body => (body as ModDependencyGraphView)?.PreferredWidth,

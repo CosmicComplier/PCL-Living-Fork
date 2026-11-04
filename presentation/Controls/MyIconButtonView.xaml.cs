@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Collections.Generic;
 using System.Windows;
@@ -35,6 +36,9 @@ public partial class MyIconButtonView : Border {
         MouseLeave += (_, _) => RefreshAnim();
         Loaded += (_, _) => RefreshAnim();
         IsEnabledChanged += (_, _) => RefreshAnim();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshAnim);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshAnim);
     }
     public string Logo {
         get => Path.Data!.ToString();
@@ -47,7 +51,7 @@ public partial class MyIconButtonView : Border {
     }
     public enum Themes { Color, White, Black, Red, Custom }
     public Themes Theme { get; set; } = Themes.Color;
-    private SolidColorBrush foreground = new(Color.FromRgb(128, 128, 128));
+    private SolidColorBrush foreground = LegacyThemePalette.Brush("ColorBrushGray3");
     public SolidColorBrush Foreground {
         get => foreground;
         set { foreground = value; WithAnimationSuppressed(RefreshAnim); }
@@ -95,8 +99,9 @@ public partial class MyIconButtonView : Border {
                 PanBack.Background ??= new ControlColor(0, 255, 255, 255).ToBrush();
                 if (Path.Fill is null) {
                     switch (Theme) {
+                        case Themes.White: Path.SetResourceReference(Shape.FillProperty, "ColorBrushTitleForeground"); break;
                         case Themes.Red: Path.Fill = new ControlColor(160, 255, 76, 76).ToBrush(); break;
-                        case Themes.Black: Path.Fill = new ControlColor(160, 0, 0, 0).ToBrush(); break;
+                        case Themes.Black: Path.Fill = LegacyThemePalette.Color("ColorBrushGray1").WithAlpha(160).ToBrush(); break;
                         case Themes.Custom: Path.Fill = Custom(160).ToBrush(); break;
                     }
                 }
@@ -107,7 +112,7 @@ public partial class MyIconButtonView : Border {
                         case Themes.Color: animations.Add(Animations.ColorResource(Path, Shape.FillProperty, "ColorBrush2", new(120))); break;
                         case Themes.White: animations.Add(Animations.ColorTo(PanBack, BackgroundProperty, new(50, 255, 255, 255), new(120))); break;
                         case Themes.Red: animations.Add(Animations.ColorTo(Path, Shape.FillProperty, new(255, 76, 76), new(120))); break;
-                        case Themes.Black: animations.Add(Animations.ColorTo(Path, Shape.FillProperty, new(230, 0, 0, 0), new(120))); break;
+                        case Themes.Black: animations.Add(Animations.ColorTo(Path, Shape.FillProperty, LegacyThemePalette.Color("ColorBrushGray1").WithAlpha(230), new(120))); break;
                         case Themes.Custom: animations.Add(Animations.ColorTo(Path, Shape.FillProperty, Custom(255), new(120))); break;
                     }
                 } else {
@@ -116,13 +121,13 @@ public partial class MyIconButtonView : Border {
                             animations.Add(Animations.ColorResource(Path, Shape.FillProperty, "ColorBrush4", new(150)));
                             PanBack.Background = new ControlColor(0, 255, 255, 255).ToBrush(); break;
                         case Themes.White:
-                            animations.Add(Animations.ColorResource(Path, Shape.FillProperty, "ColorBrush8", new(150)));
+                            animations.Add(Animations.ColorResource(Path, Shape.FillProperty, "ColorBrushTitleForeground", new(150)));
                             animations.Add(Animations.ColorTo(PanBack, BackgroundProperty, new(0, 255, 255, 255), new(150))); break;
                         case Themes.Red:
                             animations.Add(Animations.ColorTo(Path, Shape.FillProperty, new(160, 255, 76, 76), new(150)));
                             PanBack.Background = new ControlColor(0, 255, 255, 255).ToBrush(); break;
                         case Themes.Black:
-                            animations.Add(Animations.ColorTo(Path, Shape.FillProperty, new(160, 0, 0, 0), new(150)));
+                            animations.Add(Animations.ColorTo(Path, Shape.FillProperty, LegacyThemePalette.Color("ColorBrushGray1").WithAlpha(160), new(150)));
                             PanBack.Background = new ControlColor(0, 255, 255, 255).ToBrush(); break;
                         case Themes.Custom:
                             animations.Add(Animations.ColorTo(Path, Shape.FillProperty, Custom(160), new(150)));
@@ -135,9 +140,9 @@ public partial class MyIconButtonView : Border {
                 if (IsEnabled) {
                     switch (Theme) {
                         case Themes.Color: Path.SetResourceReference(Shape.FillProperty, "ColorBrush5"); break;
-                        case Themes.White: Path.SetResourceReference(Shape.FillProperty, "ColorBrush8"); break;
+                        case Themes.White: Path.SetResourceReference(Shape.FillProperty, "ColorBrushTitleForeground"); break;
                         case Themes.Red: Path.Fill = new ControlColor(160, 255, 76, 76).ToBrush(); break;
-                        case Themes.Black: Path.Fill = new ControlColor(160, 0, 0, 0).ToBrush(); break;
+                        case Themes.Black: Path.Fill = LegacyThemePalette.Color("ColorBrushGray1").WithAlpha(160).ToBrush(); break;
                         case Themes.Custom: Path.Fill = Custom(160).ToBrush(); break;
                     }
                 } else Path.SetResourceReference(Shape.FillProperty, "ColorBrushGray5");

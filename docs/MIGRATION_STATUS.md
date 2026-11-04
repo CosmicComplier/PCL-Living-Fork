@@ -89,6 +89,8 @@ C014本地集成：四C#完整pipeline／hash／匹配／HTTP与原50行typed VB
 
 6eef06b实际精确Windows复验：[Build41888366238](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41888366238) Debug126778940921／Release126778940793均success；真实资源bulk（含原MapDetails三断言）、凭据与旧桥通过，其余未选择步骤为skipped，不记全量通过。Migration41888366118为success。N003正式Main首次真实完整跨编0错误/80警告（Linux SDK10.0.403、win-x64 self-contained两阶段），只证明编译，Windows Native运行待新独立门禁。
 
+8ff80de正式完整C#工程检查点已推送，旧[Build41894581233](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41894581233)、[Modern41894581388](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41894581388)、[Migration41894581414](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41894581414)均success。这些仍是原门禁，没有执行完整Native Main。随后U001原生真实联图初轮仅新下载上下文object.FindName未late绑定错误，修为原VB/既有Search同样dynamic后，最终两阶段0E/80W；Root核固定main120文件差分补两处只读导航BlocksNavigation接线及RAM三处Gray1角色。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -247,7 +249,7 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | G003 | done | 固定 LF 来源 | 初始 Windows Debug／Release 构建与既有自动化回归；证据为 run `41656492901`，GUI 对照仍归 R003 |
 | G004 | done | G001 | 迁移 CI 已在双平台通过：固定源码清单重现和 27 组纯 C# 生产解析器测试；见 run 41696728492 |
 | G005 | done | G004 | `093ba7d`选择执行与双平台实际成功；旧Test-ReviewFixes字面断言失败保留，`0bee590`改成真实glob／路由检查并Windows通过。`b1357f7` Build41791636627 Debug126446183687／Release126446183725成功（各18步成功／23跳过），Migration41791636538只选择job成功、验证job按范围skipped；9组、42原脚本与常驻发布门禁保持 |
-| U001 | in_progress | G005、固定LF main50b028d | 用户提醒的6提交/120变更文件按功能适配：CNB稳定/预览镜像与幂等receipt工具已按原源导入，合成HTTP/Git测试20+13通过，单独Python CI与精确选择路由已接，不实际发布；主题/设置/微软隔离、依赖Index后端与UI、文件进度/导航、更新器/原生发布分别并行，完整同步未完成，不以merge覆盖旧迁移代码 |
+| U001 | in_progress | G005、固定LF main50b028d | 1.3.5-pre-3主要生产增量已适配进正式Native Main与唯一Core/PF：Light0/Dark1、主题/提示/tooltip/设置/570弹窗、微软13物理_LF键隔离、Index/嵌套JAR/loader警告与6参数资源目标、真实字节进度/worker锁/返回导航、CNB/GitHub与稳定/预览更新。实际完整Native win-x64 Release 0E/80W，两net48库strict0W0E；原依赖/在线16例、含6新I/O故障链的三文件族22例、设置15例含77隔离断言均通过。4旧设置fixture按新LF规则修且保故障/非MS兼容断言。Windows Native主题/设置/导航/进度/更新仍待验；旧VB System通道UI未适配，不以旧图替代Native验收。CNB合成33已验，未真实发布 |
 | B001 | done | G002 | 模块映射已固定实例／组件／依赖／启动／文件计划与适配边界，存档流接口已有生产调用与样本验证；其余模型生产实现随各功能任务完成，不声称整个 PCLCS 已无 WPF |
 | C001 | done | G001、G003 | WorldMetadata NBT 引擎已进入 C# 生产类，保留 VB 兼容外壳；27 组真实样本与边界通过，Windows Debug／Release 原消费者完整回归通过 |
 | C002 | done | B001、C001 | 文件／gzip／详情文案已迁入 C#，原三个消费者经兼容入口接通；42 组双平台样本与 Windows Debug／Release 完整回归通过。最终删除类型映射／路径日志 VB 门面仍由 C006／C010／C029／C031、R001 验收，不声称页面后台已转换 |
@@ -317,7 +319,7 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 正式modern/Main完整LF C#/.NET10 WPF工程已接入：实际主窗/页面/原资源与780 typed WithEvents，当前a1薄门面收敛为单一Core/PF业务实现。正式命令build -c Release --no-restore -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -m:1 -nodeReuse:false跨编0E/80W；构建工具修真实CLI宿主/RID继承与投影#line/checksum基准，保原g文件与拒绝保护。独立嵌套pass2回归0W0E、Windows/UNC/Unicode指令9/9、原g不变/空map与手写冲突拒绝。未执行Windows完整Main；资源生成暂读旧VB designer/vbproj作为schema，待独立原生schema替换；U001/main50、发布/升级/数据与R001仍待完成，不据编译验收 |
+| N003 | in_progress | N002、C031 | 正式modern/Main完整LF C#/.NET10 WPF工程已接入：实际主窗/页面/原资源与780 typed WithEvents，当前LF50薄门面收敛为单一Core/PF业务实现。正式命令build -c Release --no-restore -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -m:1 -nodeReuse:false跨编0E/80W；构建工具修真实CLI宿主/RID继承与投影#line/checksum基准，保原g文件与拒绝保护。独立嵌套pass2回归0W0E、Windows/UNC/Unicode指令9/9、原g不变/空map与手写冲突拒绝。未执行Windows完整Main；资源生成暂读旧VB designer/vbproj作为schema，待独立原生schema替换；U001/main50运行、发布/升级/数据与R001仍待完成，不据编译验收 |
 | N004 | todo | N003、C022 | 验证旧账号和配置数据、共享目录、版本隔离、备份／还原点与旧格式写回，保留脱敏样本和实际结果 |
 | N005 | todo | N003、N004 | 完整现代产品凭据/资源/发布脚本/命名/单实例/旧更新桥仍待验；N003并行准备已测必要vendor依赖/实际资源bytes，但不是正式产品加载。旧managed识别无法直接验native apphost：仅设计并准备有界bundle入口元数据适配和原4参桥，不改旧客户端选择/回滚策略，未发布或计验收 |
 | R001 | todo | N003、N005 | 逐项处理初始清单中所有 VB／生成／条件源码，检查当前产品 VB 数为零、项目声明完整及许可来源齐全 |

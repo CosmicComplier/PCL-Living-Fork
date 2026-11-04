@@ -49,6 +49,10 @@ namespace PCL
                 UpdatingFolders = new Func<global::System.Collections.Generic.List<global::System.String>>(() => global::PCL.PageInstanceMod.UpdatingInstanceModFolders),
                 Instance = new Func<global::PCL.ModMinecraft.McInstance>(() => global::PCL.PageInstanceLeft.Instance),
                 GlobalInstance = new Func<global::PCL.ModMinecraft.McInstance>(() => global::PCL.ModMinecraft.McInstanceSelected),
+                AnyLocked = () => ModMinecraft.McInstanceLock.IsAnyLocked,
+                ResetIndexLookups = ModDependencyAutoFill.ResetIndexLookups,
+                RebuildIndex = RebuildIndex,
+                RefreshLoaderWarning = (Item,Target) => Item.RefreshLoaderWarning(System.IO.Path.Combine(Target.PathIndie,"mods"),ModDependencyInspector.ContextForInstance(Target)),
                 GameFolder = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Value => Value.PathIndie),
                 InstanceName = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Value => Value.Name),
                 Modable = new Func<global::PCL.ModMinecraft.McInstance, global::System.Boolean>(Value => Value.Modable),
@@ -116,6 +120,10 @@ namespace PCL
                 RibbleDownloadButton = new Action(() => global::PCL.ModMain.FrmMain.BtnExtraDownload.Ribble()),
                 FormatSize = global::MeloongCore.StringUtils.FormatByteSize
             };
+        }
+        private static LegacyModDependencyIndexResult RebuildIndex(ModMinecraft.McInstance Target, Action<int,int> Progress) {
+            var report = ModDependencyOnline.RebuildWithOnline(System.IO.Path.Combine(Target.PathIndie,"mods"),ModDependencyInspector.ContextForInstance(Target),Options:new ModDependencyOnline.LookupOptions {Progress=Progress});
+            return new LegacyModDependencyIndexResult {IndexReadFailed=()=>report.IndexReadFailed,IndexPersisted=()=>report.IndexPersisted,OnlineIncomplete=()=>report.OnlineIncomplete};
         }
         private static void ShowHint(global::System.String Text, global::System.Int32 Kind, global::System.Boolean WriteLog)
         {

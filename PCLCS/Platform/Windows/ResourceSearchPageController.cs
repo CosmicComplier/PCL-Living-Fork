@@ -26,6 +26,7 @@ public sealed class ResourceSearchPageController<TInstance, TState, TCard, TProj
     private string? typeName = "", typeNameSpaced = "";
     private ResourceTypes pageType = (ResourceTypes)(-1);
     private bool firstLoaded;
+    public TInstance? DownloadTargetInstance { get; set; }
     public ResourceSearchPageController(ResourceSearchPageHost<TInstance, TProject, TResult, TRequest> host) { this.host = host; }
     private static bool Same(string? a, string? b) => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
     private static object? Tag(ComboBox combo) => ((FrameworkElement)combo.SelectedItem).Tag;
@@ -43,7 +44,7 @@ public sealed class ResourceSearchPageController<TInstance, TState, TCard, TProj
     public void Loaded() {
         ResourceSearchPageView view = host.View();
         if (host.TargetInstance() is not null) {
-            ResetFilter(); view.Version.Text = host.TargetInstance()!.Version.VanillaName;
+            ResetFilter(); DownloadTargetInstance = host.TargetInstance(); view.Version.Text = host.TargetInstance()!.Version.VanillaName;
             ComboBoxItem Find(string name) => view.Loader.Items.Cast<ComboBoxItem>().FirstOrDefault(item => Operators.ConditionalCompareObjectEqual(item.Content, name, false)) ?? (ComboBoxItem)view.Loader.Items[0];
             if (host.TargetInstance()!.Version.ModLoaders.HasFlagF(ModLoaders.Forge)) view.Loader.SelectedItem = Find("Forge");
             else if (host.TargetInstance()!.Version.ModLoaders.HasFlagF(ModLoaders.Fabric)) view.Loader.SelectedItem = Find("Fabric");
@@ -98,6 +99,7 @@ public sealed class ResourceSearchPageController<TInstance, TState, TCard, TProj
     public void KeyDown(Key key) { if (key == Key.Enter) StartNewSearch(); }
     public void StartNewSearch() { host.SetPage(0); if (host.ShouldStart(LoaderInput())) host.SetStorage(new TResult()); host.Start(); }
     public void ResetFilter() {
+        DownloadTargetInstance = null;
         ResourceSearchPageView view = host.View(); view.Name.Text = ""; view.Version.Text = "全部 (也可自行输入)"; view.Version.SelectedIndex = 0;
         view.Source.SelectedIndex = 0; view.Tag.SelectedIndex = 0; view.Loader.SelectedIndex = 0; host.ResetFinishedTime();
     }

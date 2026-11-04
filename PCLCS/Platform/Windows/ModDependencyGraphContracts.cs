@@ -11,7 +11,7 @@ namespace PCLCS;
 // equivalent graph view. No CE implementation or graph policy is copied.
 public class ModDependencyGraphNodeData {
     public string? Identity, Title, Condition, Details;
-    public bool IsConflict, IsCandidate, IsPlatformRequirement, NeedsAttention;
+    public bool IsConflict, IsCandidate, IsPlatformRequirement, IsEmbedded, NeedsAttention, NeedsVersionReview;
     public string? FileName, IconPath;
     public double Height = 50;
 }
@@ -20,4 +20,9 @@ public class ModDependencyGraphNodeData {
 public sealed class ModDependencyGraphHost {
     public Func<string, ImageSource> DefaultIcon = null!;
     public Func<string, string, ImageSource?> ReadIcon = null!;
+}
+
+// The LF ModTheme.ThemeBrush primitive, kept here to avoid a Core -> Presentation reference.
+internal static class ModDependencyVisualTheme {
+    internal static SolidColorBrush Brush(string key) => System.Windows.Application.Current?.TryFindResource(key) as SolidColorBrush ?? new SolidColorBrush(Colors.Gray);
 }

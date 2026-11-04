@@ -52,7 +52,7 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
         value.SetResourceReference(TextBlock.ForegroundProperty, color); return value;
     }
     public static Border Frame(UIElement child) {
-        Border box = new() { Child = child, CornerRadius = new CornerRadius(5), BorderThickness = new Thickness(1), Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(3, 0, 7, 8), Background = Brushes.White };
+        Border box = new() { Child = child, CornerRadius = new CornerRadius(5), BorderThickness = new Thickness(1), Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(3, 0, 7, 8), Background = System.Windows.Application.Current?.TryFindResource("ColorBrushWhite") as SolidColorBrush ?? new SolidColorBrush(Colors.Gray) };
         box.SetResourceReference(Border.BorderBrushProperty, "ColorBrushGray5"); return box;
     }
 }

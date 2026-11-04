@@ -35,6 +35,7 @@ public sealed class LegacyMainLeftPage {
     public Func<int> PageId = null!;
     public Func<int, MyPageRightView> PageGet = null!;
     public Func<int, MyListItemView> Item = null!;
+    public Action<int> SyncSelection = null!;
 }
 public sealed class LegacyMainLogoSettings {
     public FrameworkElement CheckLeft = null!, Text = null!, Change = null!;
@@ -146,6 +147,7 @@ public sealed class LegacyMainWindowHost<TStack, TInstance, TAnimation>
     public Func<TInstance?> SettingsInstance = null!, SelectedInstance = null!;
     public Func<TInstance, string> InstanceName = null!;
     public Func<TInstance, bool> InstanceLocked = null!;
+    public Func<TInstance?, bool> InstanceBlocksNavigation = null!;
     public Action<string, object?, TInstance> WriteInstanceSetting = null!;
     public Func<string, string?> ValidateHttp = null!;
     public Action ReloadInstanceSetup = null!, RefreshLaunchPage = null!, RefreshCustomHome = null!;

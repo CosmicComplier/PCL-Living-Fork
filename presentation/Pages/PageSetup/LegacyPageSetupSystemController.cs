@@ -22,8 +22,30 @@ public sealed class LegacyPageSetupSystemController {
     private readonly LegacySetupSystemHost host;
     public readonly LegacyPageSetupSystemView View;
     private bool loaded;
+    private bool refreshingUpdateChannel = true;
     private LegacySetupPageHost Common => host.Common;
     public LegacyPageSetupSystemController(LegacySetupSystemHost host, LegacyPageSetupSystemView view) { this.host = host; View = view; }
+    public void InitializeLauncherUpdates() {
+        Common.AddAnimationSuppression(1);
+        try {
+            Common.RefreshSettings(View.ComboLauncherUpdateSource());
+            RefreshUpdateChannel();
+        } finally { Common.AddAnimationSuppression(-1); }
+    }
+    public void RefreshUpdateChannel() {
+        refreshingUpdateChannel = true;
+        try { View.ComboLauncherUpdateChannel().SelectedIndex = host.PreferredUpdateChannel(); }
+        finally { refreshingUpdateChannel = false; }
+    }
+    public void UpdateChannelChanged() {
+        if (refreshingUpdateChannel || Common.AnimationSuppression() != 0 || View.ComboLauncherUpdateChannel().SelectedIndex < 0) return;
+        try {
+            if (!host.ChangeUpdateChannel(View.ComboLauncherUpdateChannel().SelectedIndex, View.ConfirmPrereleaseUpdates())) RefreshUpdateChannel();
+        } catch (Exception error) {
+            RefreshUpdateChannel();
+            Logger.Error(error, "切换启动器更新通道失败", LogBehavior.Toast);
+        }
+    }
     public void Loaded() {
         View.PanBack().ScrollToHome();
         RefreshModpackSwitch();
@@ -35,7 +57,7 @@ public sealed class LegacyPageSetupSystemController {
         Common.AddAnimationSuppression(-1);
     }
     public void Reload() {
-        Common.RefreshSettings(View.Page()); RefreshModpackSwitch();
+        Common.RefreshSettings(View.Page()); RefreshUpdateChannel(); RefreshModpackSwitch();
         View.LabLauncherVersion().Text = host.LauncherDisplayName() + " " + host.LauncherVersion();
     }
     public void RefreshModpackSwitch() {
@@ -47,6 +69,7 @@ public sealed class LegacyPageSetupSystemController {
     public void Reset() {
         try {
             Common.ResetSettings(View.Page());
+            Common.Reset("ToolLauncherUpdateChannel");
             Logger.Info("已初始化启动器页设置"); Common.Hint("已初始化启动器页设置！", LegacySetupHint.Green, false);
         } catch (Exception error) { Logger.Error(error, "初始化启动器页设置失败", LogBehavior.Alert); }
         Reload();

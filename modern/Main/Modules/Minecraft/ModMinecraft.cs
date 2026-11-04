@@ -255,7 +255,7 @@ namespace PCL
 
         public sealed class McInstanceLock
         {
-            private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::MeloongCore.IWorker> LockedPaths = new global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::MeloongCore.IWorker>(global::System.StringComparer.OrdinalIgnoreCase);
+            private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::PCLCS.LegacyMinecraftInstanceLease> LockedPaths = new global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::PCLCS.LegacyMinecraftInstanceLease>(global::System.StringComparer.OrdinalIgnoreCase);
             private static readonly global::PCLCS.LegacyMinecraftInstanceLocks Native = new global::PCLCS.LegacyMinecraftInstanceLocks(global::PCL.ModMinecraft.McInstanceLock.LockedPaths);
             internal static bool IsAnyLocked
             {
@@ -267,6 +267,14 @@ namespace PCL
             public static global::System.Boolean TryAcquire(global::MeloongCore.IWorker Worker, global::System.String InstancePath)
             {
                 return global::PCL.ModMinecraft.McInstanceLock.Native.TryAcquire(Worker, InstancePath);
+            }
+            internal static bool TryAcquireSnapshot(IWorker Worker, string InstancePath)
+            {
+                return Native.TryAcquireSnapshot(Worker, InstancePath);
+            }
+            internal static bool BlocksNavigation(McInstance Instance)
+            {
+                return Native.BlocksNavigation(Instance?.PathVersion);
             }
             public static global::System.Boolean IsLocked(global::PCL.ModMinecraft.McInstance Instance)
             {

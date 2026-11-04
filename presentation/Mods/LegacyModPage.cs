@@ -27,7 +27,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     private LegacyModFilter filter;
     private List<TMod>? searchResult;
     public LegacyModPage(LegacyModPageView view,LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){this.view=view;this.host=host;}
-    public void Loaded(){host.ApplyMode();if(!host.LastWasDetails())view.ScrollHome();host.ChangeAnimationControl(1);host.Selected().Clear();ReloadModList();ChangeAllSelected(false);host.ChangeAnimationControl(-1);if(loaded)return;loaded=true;host.BindMainKey();host.AdjustFilterMargins();}
+    public void Loaded(){host.ApplyMode();if(!host.LastWasDetails())view.ScrollHome();host.ChangeAnimationControl(1);host.Selected().Clear();ReloadModList();ApplyLoaderWarnings();ChangeAllSelected(false);host.ChangeAnimationControl(-1);if(loaded)return;loaded=true;host.BindMainKey();host.AdjustFilterMargins();}
     public void ReloadModList(bool ForceReload=false){if(!host.LoaderRun(ForceReload?1:0))return;Logger.Info("已刷新 Mod 列表");Filter=LegacyModFilter.All;view.ScrollHome();view.SetSearch("");}
     public static void Refresh(LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){
         try{host.ClearProjectCache();host.ClearVersionCache();FileUtils.Delete(host.TempPath()+@"Cache\LocalMod.json");Logger.Info("由于点击刷新按钮，清理本地 Mod 信息缓存");}catch(Exception error){Logger.Warn(error,"强制刷新时清理本地 Mod 信息缓存失败");}
@@ -43,9 +43,34 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
             Filter=LegacyModFilter.All;view.SetSearch("");RefreshUI();
         }catch(Exception error){Logger.Error(error,"加载 Mod 列表 UI 失败");}
     }
-    private TItem MakeItem(TMod entry){host.ChangeAnimationControl(1);TItem item=host.NewItem(entry,host.Selected().Contains(entry.EnabledName));host.BindUpdate(entry,item);host.ChangeAnimationControl(-1);return item;}
+    private TItem MakeItem(TMod entry){host.ChangeAnimationControl(1);TItem item=host.NewItem(entry,host.Selected().Contains(entry.EnabledName));host.BindUpdate(entry,item);TInstance? target=host.Instance();if(target is not null)host.RefreshLoaderWarning(item,target);host.ChangeAnimationControl(-1);return item;}
+    public void ApplyLoaderWarnings(){TInstance? target=host.Instance();if(target is null)return;foreach(TItem item in host.Items().Values)host.RefreshLoaderWarning(item,target);}
+    public void RebuildDependencyIndex(){
+        TInstance? target=host.Instance();if(target is null)return;
+        if(Interlocked.CompareExchange(ref dependencyChecking,1,0)!=0){host.Hint("正在检查模组依赖，请稍候。",0,true);return;}
+        view.EnableIndex(false);view.IndexText("正在更新索引");host.Hint("正在更新依赖索引并获取模组依赖声明……",0,true);
+        host.Background(()=>{
+            try{
+                host.ResetIndexLookups();
+                LegacyModDependencyIndexResult report=host.RebuildIndex(target,(done,total)=>{
+                    if(done%10!=0&&done!=total)return;
+                    host.Dispatch(()=>view.IndexText(done==total?"正在获取声明":"读取声明 "+done+"/"+total));
+                });
+                host.Dispatch(()=>{
+                    if(ReferenceEquals(host.Instance(),target))ApplyLoaderWarnings();
+                    if(report.IndexReadFailed())host.Hint("部分模组暂时无法读取，请解除文件占用后重新更新索引。",1,true);
+                    else if(!report.IndexPersisted())host.Hint("依赖索引已更新，但未能保存到磁盘。",1,true);
+                    else if(report.OnlineIncomplete())host.Hint("依赖索引已更新，部分平台声明未能获取；已保留本地声明。",0,true);
+                    else host.Hint("模组依赖索引与声明已更新。",2,true);
+                });
+            }catch(Exception error){Logger.Error(error,"更新模组依赖树索引失败",LogBehavior.Toast);}
+            finally{host.Dispatch(()=>{Interlocked.Exchange(ref dependencyChecking,0);view.EnableIndex(true);view.IndexText("更新依赖索引");});}
+        },"Rebuild Mod Dependency Index",ThreadPriority.BelowNormal);
+    }
+    private static bool AllowModWrite(LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){if(!host.AnyLocked())return true;host.Hint("文件任务进行中，请稍后再修改 Mod。",1,true);return false;}
     private static string DependencyStamp(string folder){folder=Path.Combine(folder,"mods");if(!Directory.Exists(folder))return "";return string.Join("|",new DirectoryInfo(folder).GetFiles().OrderBy(item=>item.Name,StringComparer.OrdinalIgnoreCase).Select(item=>item.Name+":"+item.Length+":"+item.LastWriteTimeUtc.Ticks));}
     private void BeginDependencyMutation(IEnumerable<string> paths,string actionName,Action continuation){
+        if(!AllowModWrite(host))return;
         TInstance? target=host.Instance();string[] candidates=paths.ToArray();if(target is null||candidates.Length==0){continuation();return;}
         if(Interlocked.CompareExchange(ref dependencyChecking,1,0)!=0){host.Hint("正在检查模组依赖，请稍候。",0,true);return;}
         host.Hint("正在获取模组依赖影响声明……",0,true);
@@ -55,6 +80,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
             host.Dispatch(()=>{try{
                 if(failure is not null){Logger.Error(failure,"检查模组依赖失败，本次操作已停止",LogBehavior.Toast);return;}
                 if(!ReferenceEquals(host.Instance(),target)||host.Locked(target))return;
+                ApplyLoaderWarnings();
                 if(!string.IsNullOrEmpty(caption)&&host.ImpactConfirm(caption!,actionName,impacts!)!=1)return;
                 if(DependencyStamp(host.GameFolder(target))!=stamp){host.Hint("Mod 列表已变化，请重新执行操作以检查依赖。",1,true);return;}
                 continuation();
@@ -62,8 +88,8 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
         },"Mod Dependency Impact",ThreadPriority.Normal);
     }
     public void ShowDependencyDetails(TMod? entry){
-        TInstance? target=host.Instance();if(target is null||entry is null)return;host.Hint("正在获取模组依赖声明……",0,true);
-        host.Background(()=>{try{LegacyModDependencyDetails result=host.InspectDetails(target,entry);host.Dispatch(()=>{if(result.HasMod())host.ContentMessage(result.Caption,"模组依赖关系",result.CreateView);else host.Message(result.Caption,"模组依赖关系","确定","",false);});}catch(Exception error){Logger.Error(error,"读取模组依赖关系失败",LogBehavior.Toast);}},"Mod Dependency Details",ThreadPriority.Normal);
+        TInstance? target=host.Instance();if(target is null||entry is null)return;host.Hint("正在读取模组依赖关系……",0,true);
+        host.Background(()=>{try{LegacyModDependencyDetails result=host.InspectDetails(target,entry);host.Dispatch(()=>{if(!ReferenceEquals(host.Instance(),target))return;ApplyLoaderWarnings();if(result.HasMod())host.ContentMessage(result.Caption,"模组依赖关系",result.CreateView);else host.Message(result.Caption,"模组依赖关系","确定","",false);});}catch(Exception error){Logger.Error(error,"读取模组依赖关系失败",LogBehavior.Toast);}},"Mod Dependency Details",ThreadPriority.Normal);
     }
     public void ItemContent(TItem item){
         host.BindRowEvents(item);
@@ -95,6 +121,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void InstallClick(){if(!host.ConfirmMode("从文件安装 Mod"))return;IEnumerable<string> files=host.SelectInstallFiles();if(!files.Any())return;Install(host,files,true);}
     public static bool Install(LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host,IEnumerable<string> files,bool modeConfirmed){
         string extension=PathUtils.GetExtension(files.First());if(!new[]{"jar","litemod","disabled","old"}.Any(t=>t==extension))return false;
+        if(!AllowModWrite(host))return true;
         if(!modeConfirmed&&!host.ConfirmMode("安装 Mod"))return true;Logger.Info("文件为 jar/litemod 格式，尝试作为 Mod 安装");
         if(files.First().Contains(@":\$RECYCLE.BIN\")){host.Hint("请先将文件从回收站还原，再尝试安装！",1,true);return true;}
         TInstance? instance=host.GlobalInstance();if(host.IsInstanceSetup())instance=host.Instance();
@@ -120,6 +147,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void SelectED(bool enable){EDMods(host.Output()!.Where(mod=>host.Selected().Contains(mod.EnabledName)),enable);ChangeAllSelected(false);}
     private void EDMods(IEnumerable<TMod> mods,bool enable){List<TMod> frozen=mods.ToList();if(enable)ApplyModState(frozen,true);else BeginDependencyMutation(frozen.Where(mod=>mod.IsEnabled).Select(mod=>mod.File.FullName!),"禁用",()=>ApplyModState(frozen,false));}
     private void ApplyModState(IEnumerable<TMod> mods,bool enable){
+        if(!AllowModWrite(host))return;
         bool success=true;foreach(TMod mod in mods.ToList()){
             string target;if(mod.IsEnabled&&!enable)target=PathUtils.RemoveExtendedPrefix(mod.File.FullName!)+(FileUtils.Exists(mod.File.FullName+".old")?".old":".disabled");else if(!mod.IsEnabled&&enable)target=mod.EnabledFullName;else continue;
             try{

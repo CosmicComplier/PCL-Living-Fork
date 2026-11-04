@@ -5,6 +5,7 @@ Public Module LocalResourceLoaders
     Public LocalResourceLoader As New LoaderTask(Of String, List(Of LocalResourceFile))("LocalResourceLoader", AddressOf LocalResourceFileLoad)
     Public LocalResourceOnlineLoader As New LoaderTask(Of (ModList As List(Of LocalResourceFile), Cache As JObject, Target As McVersion), Integer)("LocalResourceOnlineLoader", AddressOf LocalResourceOnlineLoad)
     Private ReadOnly Engine As New FileEngine(New PCLCS.LocalResourceLoaderHost(Of LocalResourceFile, ResourceProject, ResourceVersion) With {
+        .ReadCompatibility = AddressOf ReadCompatibility,
         .CreateLocal = Function(Path) New LocalResourceFile(Path),
         .CreateProject = Function(Data) New ResourceProject(Data),
         .ReadVersion = AddressOf ResourceVersion.FromPlatformJson,
@@ -28,6 +29,13 @@ Public Module LocalResourceLoaders
         .WarnQuiet = Sub(Message) Logger.Warn(Message, LogBehavior.None),
         .Trace = Sub(Message) Logger.Trace(Message),
         .Warn = Sub(ErrorValue, Message) Logger.Warn(ErrorValue, Message)})
+    Private Function ReadCompatibility() As PCLCS.LocalResourceCompatibilityContext
+        Dim Target = PageInstanceLeft.Instance
+        If Target Is Nothing Then Return Nothing
+        Return New PCLCS.LocalResourceCompatibilityContext With {
+            .Folder = IO.Path.Combine(Target.PathIndie, "mods"),
+            .Inspect = Sub(Folder, Token) ModDependencyInspector.Inspect(Folder, ModDependencyInspector.ContextForInstance(Target), Token)}
+    End Function
     Private Sub SetShowProgress(Value As Boolean)
         RunInUiWait(Sub() If FrmInstanceMod IsNot Nothing Then FrmInstanceMod.Load.ShowProgress = Value)
     End Sub
@@ -36,6 +44,7 @@ Public Module LocalResourceLoaders
     End Sub
     Private Sub LocalResourceFileLoad(Loader As LoaderTask(Of String, List(Of LocalResourceFile)))
         Engine.LoadFiles(New PCLCS.LocalResourceFileTask(Of LocalResourceFile) With {
+            .CreateCancellationToken = AddressOf Loader.CreateCancellationToken,
             .Input = Function() Loader.Input,
             .IsCanceled = Function() Loader.IsCanceled,
             .SetOutput = Sub(Value) Loader.Output = Value})

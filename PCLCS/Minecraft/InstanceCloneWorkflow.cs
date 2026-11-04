@@ -32,8 +32,9 @@ public sealed class InstanceCloneWorkflow<TInstance, TOptions, TResult, TChange,
     };
     public void Start(TInstance? instance, string newName, TOptions? options) {
         if (!CanStart(instance)) return;
-        InstanceCloneWork work = Work("复制为独立测试版本", "克隆版本：" + host.Name(instance!), false, (token, setOutput) => {
-            TResult result = engine.CloneInstance(instance!, newName, options, token);
+        InstanceCloneWork work = null!;
+        work = Work("复制为独立测试版本", "克隆版本：" + host.Name(instance!), false, (token, setOutput) => {
+            TResult result = engine.CloneInstanceWithProgress(instance!, newName, options, token, work.Progress);
             setOutput(result.VersionFolder);
             host.Dispatch(() => host.Hint("已创建测试副本：" + result.Name, true));
         });

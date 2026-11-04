@@ -48,12 +48,13 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
         plan.CurrentIdentify = currentIdentify;
         var nativePlain = new Dictionary<string, string>(StringComparer.Ordinal);
         var legacyPlain = new Dictionary<string, string>(StringComparer.Ordinal);
+        bool hasMicrosoft = official.Keys.Any(key => entries().ContainsKey(key) && IsMicrosoftAccountSetting(entries()[key]));
         foreach (TEntry entry in entries().Values.Where(IsAccountSetting)) {
             if (official.ContainsKey(entry.Key)) {
                 string? value = DecodeAccountWithKeys(entry, official[entry.Key], officialKeys);
                 if (value is not null) nativePlain[entry.Key] = value;
             }
-            if (legacy.ContainsKey(entry.Key)) {
+            if (legacy.ContainsKey(entry.Key) && !(hasMicrosoft && IsMicrosoftAccountSetting(entry))) {
                 string? value = DecodeAccountWithKeys(entry, legacy[entry.Key], legacyKeys);
                 if (value is not null) legacyPlain[entry.Key] = value;
             }
@@ -110,9 +111,10 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
         var oldKinds = new Dictionary<string, RegistryValueKind>(StringComparer.Ordinal);
 #pragma warning restore CA1416
         foreach (string key in plan.Values.Keys) {
-            original[key] = official.GetValue(key, null);
+            string storedKey = RegistryValueName(entries()[key]);
+            original[storedKey] = official.GetValue(storedKey, null);
 #pragma warning disable CA1416 // Inert RegistryValueKind metadata only.
-            if (original[key] is not null) originalKinds[key] = official.GetValueKind(key);
+            if (original[storedKey] is not null) originalKinds[storedKey] = official.GetValueKind(storedKey);
 #pragma warning restore CA1416
         }
         foreach (string key in plan.DeleteLegacy) {
@@ -123,10 +125,11 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
         }
         try {
             foreach (KeyValuePair<string, string> item in plan.Values.OrderBy(value => value.Key == "CacheMsV2Migrated" ? 1 : 0)) {
+                string storedKey = RegistryValueName(entries()[item.Key]);
 #pragma warning disable CA1416 // Inert RegistryValueKind metadata only.
-                official.SetValue(item.Key, item.Value, RegistryValueKind.String);
+                official.SetValue(storedKey, item.Value, RegistryValueKind.String);
 #pragma warning restore CA1416
-                if (!VbStringEqual(Convert.ToString(official.GetValue(item.Key), CultureInfo.InvariantCulture), item.Value) ||
+                if (!VbStringEqual(Convert.ToString(official.GetValue(storedKey), CultureInfo.InvariantCulture), item.Value) ||
                     DecodeAccountValue(entries()[item.Key], item.Value, plan.CurrentIdentify) is null) throw new InvalidOperationException("账号格式转换校验失败");
             }
             foreach (string key in plan.DeleteLegacy) {
@@ -154,22 +157,29 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
         }
     }
 
+    // Only the LF physical namespace is read. Old private MS caches have no client-origin
+    // proof and are left untouched; other account/Identify migration keeps LF's rules.
+    public Dictionary<string, string> ReadAccountRegistrySnapshot(ILegacySettingsStore? store, bool legacy = false) {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (store is null) return result;
+        foreach (TEntry entry in entries().Values.Where(item => IsAccountSetting(item) || item.Key == "Identify")) {
+            if (legacy && IsMicrosoftAccountSetting(entry)) continue;
+            object? value = store.GetValue(legacy ? entry.Key : RegistryValueName(entry), null);
+            if (value is not null) result[entry.Key] = Convert.ToString(value, CultureInfo.InvariantCulture)!;
+        }
+        return result;
+    }
+
     public void ImportCompatibleAccounts() {
         lock (accountSync()) ImportCompatibleAccountsCore();
     }
     public void ImportCompatibleAccountsCore() {
         if (VbStringEqual(host.RegistryFolder(), "PCL")) return;
         try {
-            var native = new Dictionary<string, string>(StringComparer.Ordinal);
-            var old = new Dictionary<string, string>(StringComparer.Ordinal);
             using ILegacySettingsStore? official = host.OpenRegistry("PCL", true, true);
             using ILegacySettingsStore? legacy = host.OpenRegistry(host.RegistryFolder(), true, false);
-            foreach (TEntry entry in entries().Values.Where(item => IsAccountSetting(item) || item.Key == "Identify")) {
-                object? value = official!.GetValue(entry.Key, null);
-                if (value is not null) native[entry.Key] = Convert.ToString(value, CultureInfo.InvariantCulture)!;
-                value = legacy?.GetValue(entry.Key, null);
-                if (value is not null) old[entry.Key] = Convert.ToString(value, CultureInfo.InvariantCulture)!;
-            }
+            Dictionary<string, string> native = ReadAccountRegistrySnapshot(official);
+            Dictionary<string, string> old = ReadAccountRegistrySnapshot(legacy, true);
             if (!native.ContainsKey("Identify")) return;
             List<string> officialKeys = host.IdentifyCandidates(native["Identify"]);
             List<string> legacyKeys = old.ContainsKey("Identify") ? host.IdentifyCandidates(old["Identify"]) : new List<string>();
@@ -217,7 +227,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
             using ILegacySettingsStore? store = host.OpenRegistry("PCL", true, true);
             var raw = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (string key in entries().Keys.Where(name => name.StartsWith("CacheMs", StringComparison.Ordinal))) {
-                object? value = store!.GetValue(key, null);
+                object? value = store!.GetValue(RegistryValueName(entries()[key]), null);
                 if (value is not null) raw[key] = Convert.ToString(value, CultureInfo.InvariantCulture)!;
             }
             TPlan plan = createPlan();

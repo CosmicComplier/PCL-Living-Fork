@@ -35,9 +35,9 @@ internal static class Program {
             ("world-backups", WorldBackupPipelineTests.Cases),
             ("environment-history", EnvironmentHistoryPipelineTests.Cases),
             ("instance-clone", InstanceClonePipelineTests.Cases),
-            ("mod-dependencies", ModDependencyInspectorPipelineTests.Cases),
-            ("mod-dependency-online", ModDependencyOnlinePipelineTests.Cases),
-            ("settings", LegacySettingsTests.Cases),
+            ("mod-dependencies", () => ModDependencyInspectorPipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.LocalCases())),
+            ("mod-dependency-online", () => ModDependencyOnlinePipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.OnlineCases())),
+            ("settings", () => LegacySettingsTests.Cases().Concat(SettingsMicrosoftIsolationTests.Cases())),
             ("validation-loaders", LegacyValidationLoaderTests.Cases),
             ("legacy-java", LegacyJavaTests.Cases),
             ("foundation", LegacyFoundationTests.Cases)

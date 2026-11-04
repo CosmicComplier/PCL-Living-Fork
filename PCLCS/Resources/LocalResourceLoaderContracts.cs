@@ -6,6 +6,11 @@ using Newtonsoft.Json.Linq;
 
 namespace PCLCS;
 
+// Captures the selected original LF instance once; Core owns when/how the inspection runs.
+public sealed class LocalResourceCompatibilityContext {
+    public string Folder = null!;
+    public Action<string, CancellationToken> Inspect = null!;
+}
 public sealed class LocalResourceLoaderHost<TLocal, TProject, TVersion>
     where TLocal : LocalResourceFileData<TProject, TVersion>
     where TProject : ResourceProjectModelData where TVersion : ResourceVersionModelData {
@@ -17,6 +22,7 @@ public sealed class LocalResourceLoaderHost<TLocal, TProject, TVersion>
     public Func<Action, string, Thread> StartThread = null!;
     public Func<string> TempPath = null!;
     public Func<bool> DebugMode = null!;
+    public Func<LocalResourceCompatibilityContext?> ReadCompatibility = null!;
     public Func<int> CacheVersion = null!;
     public Func<McVersion?> CurrentVersion = null!;
     public Func<string, bool> IsUpdatingFolder = null!;
@@ -32,6 +38,7 @@ public sealed class LocalResourceLoaderHost<TLocal, TProject, TVersion>
     public Action<Exception, string> Warn = null!;
 }
 public sealed class LocalResourceFileTask<TLocal> {
+    public Func<CancellationToken> CreateCancellationToken = null!;
     public Func<string> Input = null!;
     public Func<bool> IsCanceled = null!;
     public Action<List<TLocal>> SetOutput = null!;

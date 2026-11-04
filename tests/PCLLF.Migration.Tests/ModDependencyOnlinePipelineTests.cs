@@ -222,14 +222,23 @@ internal static class ModDependencyOnlinePipelineTests {
     }
     private sealed class Fixture : IDisposable {
         private readonly string root = Path.Combine(Path.GetTempPath(), "PclModOnline-" + Guid.NewGuid().ToString("N"));
-        internal Fixture() => Directory.CreateDirectory(root);
+        private readonly string previousIndexCache = Local.Index.CacheDirectory;
+        internal Fixture() {
+            Directory.CreateDirectory(root);
+            Local.Index.CacheDirectory = Path.Combine(root, "dependency-index");
+            Local.Index.ClearMemory();
+        }
         internal string Folder(string name) { string path = Path.Combine(root, name); Directory.CreateDirectory(path); return path; }
         internal string Jar(string folder, string name, string? id = null) {
             string path = Path.Combine(folder, name); using ZipArchive archive = ZipFile.Open(path, ZipArchiveMode.Create);
             using StreamWriter writer = new(archive.CreateEntry(id is null ? "fixture.txt" : "fabric.mod.json").Open(), new UTF8Encoding(false));
             writer.Write(id is null ? "unrecognized fixture " + name : new JObject { ["schemaVersion"] = 1, ["id"] = id, ["version"] = "1.0" }.ToString(Formatting.None)); return path;
         }
-        public void Dispose() => Directory.Delete(root, true);
+        public void Dispose() {
+            Local.Index.ClearMemory();
+            Local.Index.CacheDirectory = previousIndexCache;
+            Directory.Delete(root, true);
+        }
     }
     internal sealed class Cache : ModDependencyLookupCache { public Cache() { } }
     internal sealed class Options : ModDependencyLookupOptions<Cache> { public Options() { } }

@@ -15,6 +15,7 @@ internal static class WorldBackupPipelineTests {
         yield return ("world backup workflow keeps confirmation output stopped and rejected-worker boundaries", WorkflowLifecycle);
         if (OperatingSystem.IsWindows())
             yield return ("world backup Windows session lock prevents capture and restore until the holder releases it", WindowsSessionLock);
+        foreach (var check in FileTaskProgressTests.WorldCases()) yield return check;
     }
 
     private static void CaptureRestoreRoundTrip() {

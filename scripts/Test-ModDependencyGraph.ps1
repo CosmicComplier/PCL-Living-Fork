@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$ExecutablePath,[string]$PreviewDirectory,[string]$ModFile,[string]$PlatformSnapshot)
+﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath,[string]$PreviewDirectory,[string]$ModFile,[string]$PlatformSnapshot,[int]$ColorMode=0)
 # Native WPF controls and isolated metadata; optional real JARs are read only. No launcher entry point or HTTP.
 $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
@@ -11,8 +11,10 @@ $app.remove_Startup([Delegate]::CreateDelegate([Windows.StartupEventHandler],$ap
 $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Threading.DispatcherUnhandledExceptionEventHandler],$app,$asm.GetType('PCL.Application').GetMethod('Application_DispatcherUnhandledException',$flags)))
 [Windows.Application]::ResourceAssembly=$asm
 $entries=$asm.GetType('PCL.Settings').GetField('Entries').GetValue($null);foreach($entry in $entries.Values){$entry.ValueCache['']=$entry.DefaultValue};$entries['Identify'].ValueCache['']='dependency-graph-fixture'
+$entries['UiLauncherColorMode'].ValueCache['']=$ColorMode
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclDependencyGraph-'+[Guid]::NewGuid().ToString('N'))
 $graphType=$asm.GetType('PCL.ModDependencyGraphView',$true);$inspector=$asm.GetType('PCL.ModDependencyInspector',$true)
+$asm.GetType('PCL.ModDependencyIndex').GetProperty('CacheDirectory',$flags).SetValue($null,(Join-Path $fixture 'dependency-index'),$null)
 function Jar([string]$id,[string]$name,[string]$version,[hashtable]$extra=@{}){
  $path=Join-Path $fixture ($id+'.jar');$zip=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
  try{
@@ -35,7 +37,7 @@ function Graph($report,[string]$file){$ctor=$graphType.GetConstructors($flags)|W
 function Canvas($graph){return $graphType.GetField('GraphCanvas',$flags).GetValue($graph)}
 function Nodes($graph){return @((Canvas $graph).Children|Where-Object {$_ -is [Windows.Controls.Border]})}
 function Render($element,[string]$path,[int]$width=1000,[int]$height=690){
- $previewHost=[Windows.Controls.Grid]::new();$previewHost.Background=[Windows.Media.BrushConverter]::new().ConvertFromString('#e7effb');$previewHost.Children.Add($element)|Out-Null
+ $previewHost=[Windows.Controls.Grid]::new();$previewHost.Background=if($ColorMode -eq 1){$app.Resources['ColorBrushBackground']}else{[Windows.Media.BrushConverter]::new().ConvertFromString('#e7effb')};$previewHost.Children.Add($element)|Out-Null
  $previewHost.Measure([Windows.Size]::new($width,$height));$previewHost.Arrange([Windows.Rect]::new(0,0,$width,$height));$previewHost.UpdateLayout()
  $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new($width,$height,96,96,[Windows.Media.PixelFormats]::Pbgra32);$bitmap.Render($previewHost)
  $encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap));$output=[IO.File]::Create($path)
@@ -135,6 +137,37 @@ try{
  foreach($platform in @('Modrinth','CurseForge')){$d=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$d.Platform=$platform;$d.Kind='required';$d.ProjectId=$platform+'Config';$d.ProjectName='Disabled config';$d.MatchedPaths.Add($disabledPath);$match.Dependencies.Add($d)}
  $attention=@((Nodes (Graph $report $selected))|Where-Object {$_.Tag.Title -eq 'Disabled config'})
  if($attention.Count -ne 1 -or -not $attention[0].Tag.NeedsAttention -or -not $attention[0].Tag.Details.Contains('Modrinth') -or -not $attention[0].Tag.Details.Contains('CurseForge')){throw 'Disabled dual-platform declarations were not merged and highlighted'}
+ # Iris pins an older Modrinth version, while both platforms identify the installed Sodium JAR.
+ # This is one installed project with a version declaration to review, not a second missing mod.
+ $pinned=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionReport'));$pinned.Context=$report.Context;$pinned.OnlineAttempted=$true
+ foreach($pair in @(@('iris','Iris','1.10.7'),@('sodium','Sodium','0.8.12'))){
+  $m=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+ModInfo'));$m.Id=$pair[0];$m.Name=$pair[1];$m.Version=$pair[2];$m.RootPath=Join-Path $fixture ($pair[0]+'.jar');$m.Enabled=$true;$pinned.Mods.Add($m)
+  $f=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineFileInfo'));$f.FullPath=$m.RootPath;$f.Enabled=$true;$f.IsSupplementTarget=$true;$pinned.OnlineFiles.Add($f)
+ }
+ foreach($platform in @('Modrinth','CurseForge')){
+  $ownerMatch=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$ownerMatch.Platform=$platform;$ownerMatch.ProjectId=$platform+'Iris';$ownerMatch.VersionId='IrisVersion';$ownerMatch.IsExact=$true
+  $sodiumMatch=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$sodiumMatch.Platform=$platform;$sodiumMatch.ProjectId=$platform+'Sodium';$sodiumMatch.VersionId='InstalledVersion';$sodiumMatch.IsExact=$true
+  $d=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$d.Platform=$platform;$d.Kind='required';$d.ProjectId=$sodiumMatch.ProjectId;$d.ProjectName='Sodium';$d.VersionId=if($platform -eq 'Modrinth'){'PinnedOlderVersion'}else{''};$ownerMatch.Dependencies.Add($d)
+  $pinned.OnlineFiles[0].Matches.Add($ownerMatch);$pinned.OnlineFiles[1].Matches.Add($sodiumMatch)
+ }
+ $asm.GetType('PCL.ModDependencyOnline').GetMethod('MapRelations',$flags).Invoke($null,@($pinned))|Out-Null
+ $pinnedNodes=Nodes (Graph $pinned $pinned.Mods[0].RootPath);$sodiumNodes=@($pinnedNodes|Where-Object {$_.Tag.Title -eq 'Sodium'})
+ if($sodiumNodes.Count -ne 1 -or $pinnedNodes.Count -ne 2){throw 'A pinned platform version duplicated the installed Sodium project as a missing mod'}
+ if($sodiumNodes[0].Tag.NeedsAttention -or -not $sodiumNodes[0].Tag.Condition.Contains('0.8.12') -or -not $sodiumNodes[0].Tag.Details.Contains('PinnedOlderVersion') -or -not $sodiumNodes[0].Tag.Details.Contains('CurseForge')){throw 'A platform version difference became a missing-mod error or lost either source declaration'}
+ if($pinned.OnlineFiles[0].Matches[0].Dependencies[0].EnabledPaths.Count -ne 0){throw 'An installed different version incorrectly satisfied a pinned platform version'}
+ $incomingPinned=Nodes (Graph $pinned $pinned.Mods[1].RootPath)
+ if(@($incomingPinned|Where-Object {$_.Tag.Title -eq 'Iris' -and $_.Tag.IsCandidate}).Count -ne 1){throw 'Reverse relationships lost a known project when its pinned version differed'}
+ foreach($platform in @('Modrinth','CurseForge')){
+  $unknown=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$unknown.Platform=$platform;$unknown.Kind='required';$unknown.ProjectId=$platform+'Unrelated';$unknown.ProjectName='Same display title';$pinned.OnlineFiles[0].Matches[0].Dependencies.Add($unknown)
+ }
+ $unknownNodes=@((Nodes (Graph $pinned $pinned.Mods[0].RootPath))|Where-Object {$_.Tag.Title -eq 'Same display title'})
+ if($unknownNodes.Count -ne 2 -or @($unknownNodes|Where-Object {$_.Tag.NeedsAttention -or -not $_.Tag.IsCandidate}).Count){throw 'Unverified same-name platform projects were merged or falsely highlighted as definite missing mods'}
+ foreach($name in @('external-one.jar','external-two.jar')){
+  $externalRequirement=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$externalRequirement.Platform='Modrinth';$externalRequirement.Kind='required';$externalRequirement.ProjectId='';$externalRequirement.FileName=$name;$pinned.OnlineFiles[0].Matches[0].Dependencies.Add($externalRequirement)
+ }
+ $externalNodes=Nodes (Graph $pinned $pinned.Mods[0].RootPath)
+ if(@($externalNodes|Where-Object {$_.Tag.Title -in @('external-one.jar','external-two.jar')}).Count -ne 2){throw 'External dependencies without project IDs were blank or incorrectly merged'}
+ if($PreviewDirectory){[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null;Render (Graph $pinned $pinned.Mods[0].RootPath) (Join-Path $PreviewDirectory 'platform-version-review.png') 760 480}
  # Two bundles carry a selectable copy of the same library. Neither bundle requires the other.
  $bundles=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionReport'));$bundles.Context=$report.Context
  foreach($name in @('api_bundle','menu_bundle')){
@@ -160,6 +193,49 @@ try{
  $large=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionReport'));$large.Context=$report.Context
  function Model([string]$id,[string]$name){$m=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+ModInfo'));$m.Id=$id;$m.Name=$name;$m.Version='1';$m.Enabled=$true;$m.RootPath=Join-Path $fixture ($id+'.jar');$m.MetadataPath='fabric.mod.json';return $m}
  function Required([string]$id){$d=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+Dependency'));$d.Id=$id;return $d}
+ # Exact platform files can identify a disabled standalone library while the loader uses a nested copy.
+ $nestedReport=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+InspectionReport'));$nestedReport.Context=$report.Context;$nestedReport.OnlineAttempted=$true
+ $hostMod=Model 'controller_host' 'Controller host';$hostMod.Format='Fabric';$hostNeed=Required 'shared_config';$hostNeed.Versions=[Newtonsoft.Json.Linq.JValue]::new('>=3.8.0');$hostMod.Dependencies.Add($hostNeed)
+ $config=Model 'shared_config' 'Config library';$config.Format='Fabric';$config.Version='3.8.1';$config.RootPath=$hostMod.RootPath;$config.MetadataPath='nested/shared-config';$config.IsNested=$true
+ $disabledConfig=Model 'shared_config' 'Config library';$disabledConfig.Format='Fabric';$disabledConfig.Version='3.8.2';$disabledConfig.RootPath=Join-Path $fixture 'config.jar.disabled';$disabledConfig.Enabled=$false
+ $consumer=Model 'zoom_consumer' 'Zoom consumer';$consumer.Format='Fabric';$consumerNeed=Required 'shared_config';$consumerNeed.Versions=[Newtonsoft.Json.Linq.JValue]::new('>=3.6.6');$consumer.Dependencies.Add($consumerNeed)
+ foreach($mod in @($hostMod,$config,$disabledConfig,$consumer)){$nestedReport.Mods.Add($mod)}
+ $inspector.GetMethod('BuildReport',$flags).Invoke($null,@($nestedReport,[Threading.CancellationToken]::None))|Out-Null
+ foreach($mod in @($hostMod,$disabledConfig,$consumer)){
+  $file=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineFileInfo'));$file.FullPath=$mod.RootPath;$file.Enabled=$mod.Enabled;$file.IsSupplementTarget=$true
+  $project=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineProjectInfo'));$project.Platform='Modrinth';$project.ProjectId=if($mod -eq $disabledConfig){'config01'}else{$mod.Id.Replace('_','')};$project.IsExact=$true;$project.ProjectName=$mod.Name
+  if($mod -ne $disabledConfig){$dependency=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$dependency.Platform='Modrinth';$dependency.ProjectId='config01';$dependency.Kind='required';$dependency.ProjectName='Config library';$project.Dependencies.Add($dependency)}
+  $file.Matches.Add($project);$nestedReport.OnlineFiles.Add($file)
+ }
+ $asm.GetType('PCL.ModDependencyOnline').GetMethod('MapRelations',$flags).Invoke($null,@($nestedReport))|Out-Null
+ if($nestedReport.HasErrors){throw 'A compatible nested config library did not satisfy other mods'}
+ $hostGraph=Graph $nestedReport $hostMod.RootPath;$hostNodes=Nodes $hostGraph
+ $hostCenter=@($hostNodes|Where-Object {$_.Tag.Title -eq 'Controller host'});$embedded=@($hostNodes|Where-Object {$_.Tag.IsEmbedded})
+ if($hostNodes.Count -ne 2 -or $embedded.Count -ne 1 -or $embedded[0].Tag.Title -ne 'Config library' -or $embedded[0].Tag.Condition -ne '3.8.1' -or $embedded[0].Tag.NeedsAttention){throw 'A selected bundled library was not shown as its own embedded node'}
+ if([Windows.Controls.Canvas]::GetTop($embedded[0]) -le [Windows.Controls.Canvas]::GetTop($hostCenter[0])+$hostCenter[0].Height){throw 'Embedded mods are not below the current mod'}
+ $hostCanvas=Canvas $hostGraph
+ $embeddedHeader=@($hostCanvas.Children|Where-Object {$_ -is [Windows.Controls.TextBlock] -and $_.Text -eq '已内嵌模组（1）'})
+ $downArrows=@($hostCanvas.Children|Where-Object {$_ -is [Windows.Shapes.Path] -and $_.Data.Figures[0].Segments[0] -is [Windows.Media.LineSegment]})
+ if($embeddedHeader.Count -ne 1 -or $downArrows.Count -ne 1){throw 'The embedded group lost its title or downward arrow'}
+ $line=$downArrows[0].Data.Figures[0];$end=$line.Segments[0].Point
+ if($line.StartPoint.X -ne $end.X -or $end.Y -le $line.StartPoint.Y -or [Math]::Abs($line.StartPoint.Y-([Windows.Controls.Canvas]::GetTop($hostCenter[0])+$hostCenter[0].Height)) -gt 1 -or $end.Y -ge [Windows.Controls.Canvas]::GetTop($embeddedHeader[0])){throw 'The embedded arrow does not point down from the current node to its embedded group'}
+ $consumerNodes=Nodes (Graph $nestedReport $consumer.RootPath);$provider=@($consumerNodes|Where-Object {$_.Tag.Title -eq 'Controller host'})
+ if($provider.Count -ne 1 -or $provider[0].Tag.NeedsAttention -or -not $provider[0].Tag.Condition.Contains('Config library')){throw 'Another mod did not show the selected nested-library container as its satisfied provider'}
+ $disabledNodes=Nodes (Graph $nestedReport $disabledConfig.RootPath);$disabledCenter=@($disabledNodes|Where-Object {$_.Tag.Title -eq 'Config library'})
+ if($disabledCenter.Count -ne 1 -or -not $disabledCenter[0].Tag.Condition.Contains('已禁用') -or -not $disabledCenter[0].Tag.Details.Contains('Controller host')){throw 'Disabled standalone detail did not explain its available nested alternative'}
+ if($PreviewDirectory){Render (Graph $nestedReport $hostMod.RootPath) (Join-Path $PreviewDirectory 'nested-self-provider.png') 760 400;Render (Graph $nestedReport $consumer.RootPath) (Join-Path $PreviewDirectory 'nested-shared-provider.png') 760 400}
+ # The local/offline graph uses the same embedded ownership and keeps conflicts below it.
+ $nestedReport.OnlineAttempted=$false
+ $clash=Model 'host_clash' 'Host conflict';$nestedReport.Mods.Add($clash);$clashNeed=Required $clash.Id;$clashNeed.Kind=[Enum]::Parse($asm.GetType('PCL.ModDependencyInspector+DependencyKind'),'Incompatible');$hostMod.Dependencies.Add($clashNeed)
+ $nestedReport.Edges.Clear();$nestedReport.Issues.Clear();$nestedReport.ReverseDependencies.Clear();$inspector.GetMethod('BuildReport',$flags).Invoke($null,@($nestedReport,[Threading.CancellationToken]::None))|Out-Null
+ $mixedGraph=Graph $nestedReport $hostMod.RootPath;$mixedNodes=Nodes $mixedGraph;$bundledBox=@($mixedNodes|Where-Object {$_.Tag.IsEmbedded});$conflictBox=@($mixedNodes|Where-Object {$_.Tag.IsConflict})
+ if($bundledBox.Count -ne 1 -or $conflictBox.Count -ne 1 -or [Windows.Controls.Canvas]::GetTop($conflictBox[0]) -le [Windows.Controls.Canvas]::GetTop($bundledBox[0])+$bundledBox[0].Height){throw 'The offline embedded group is missing or overlaps conflicts'}
+ if($PreviewDirectory){Render $mixedGraph (Join-Path $PreviewDirectory 'nested-with-conflict.png') 760 560}
+ $hostMod.Dependencies.Remove($clashNeed)|Out-Null;$nestedReport.Mods.Remove($clash)|Out-Null
+ $config.Version='3.0.0';$nestedReport.Edges.Clear();$nestedReport.Issues.Clear();$nestedReport.ReverseDependencies.Clear();$inspector.GetMethod('BuildReport',$flags).Invoke($null,@($nestedReport,[Threading.CancellationToken]::None))|Out-Null
+ if(-not $nestedReport.HasErrors){throw 'An incompatible nested version incorrectly suppressed startup dependency errors'}
+ $hostMod.Enabled=$false;$config.Enabled=$false;$nestedReport.Edges.Clear();$nestedReport.Issues.Clear();$nestedReport.ReverseDependencies.Clear();$inspector.GetMethod('BuildReport',$flags).Invoke($null,@($nestedReport,[Threading.CancellationToken]::None))|Out-Null
+ if(-not $nestedReport.HasErrors){throw 'Removing all enabled providers incorrectly suppressed startup errors'}
  $longName='A very long installed mod name that must wrap completely rather than disappear behind an ellipsis'
  $largeFocus=Model 'large_focus' $longName;$large.Mods.Add($largeFocus)
  for($i=0;$i -lt 40;$i++){$m=Model ('need_'+$i) ('Needed '+$i);$large.Mods.Add($m);$largeFocus.Dependencies.Add((Required $m.Id))}
@@ -176,7 +252,6 @@ try{
  $last=$largeNodes|Where-Object {$_.Tag.Title -eq 'Needed 39'}|Select-Object -First 1
  if([Windows.Controls.Canvas]::GetTop($last)+$last.Height -gt $largeScroll.VerticalOffset+$largeScroll.ViewportHeight+1){throw 'The last required node cannot be reached by scrolling'}
  $impactFixtureReport=$report
- if($ModFile){$report=Scan ([IO.Path]::GetDirectoryName($ModFile));$selected=$ModFile}
  $impactType=$asm.GetType('PCL.ModDependencyImpactView',$true)
  $platformPeer.IsSupplementTarget=$true
  $requiresOwner=[Activator]::CreateInstance($asm.GetType('PCL.ModDependencyInspector+OnlineDependency'));$requiresOwner.Platform='Modrinth';$requiresOwner.Kind='required';$requiresOwner.ProjectName='Selected mod';$requiresOwner.EnabledPaths.Add($selected);$peerMatch.Dependencies.Add($requiresOwner)
@@ -190,6 +265,7 @@ try{
  $cards=$impactType.GetField('Cards',$flags).GetValue($impactView)
  if($cards.ColumnDefinitions.Count -ne 2 -or $cards.Children.Count -ne 32){throw 'Impact warning is not a complete two-column card layout'}
  for($i=0;$i -lt $cards.Children.Count;$i++){if([Windows.Controls.Grid]::GetColumn($cards.Children[$i]) -ne ($i%2) -or $cards.Children[$i].BorderThickness.Left -le 0){throw 'Impact cards lost their border or two-column placement'}}
+ if($ModFile){$report=Scan ([IO.Path]::GetDirectoryName($ModFile));$selected=$ModFile}
  if($PreviewDirectory -and $ModFile){
   [IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null
   $actualImpacts=$impactType.GetMethod('Collect',$flags).Invoke($null,@($report,[string[]]@($selected)))
@@ -206,6 +282,9 @@ try{
   $listType=$report.GetType().GetField('OnlineFiles',$flags).FieldType
   $report.OnlineFiles=[Newtonsoft.Json.JsonConvert]::DeserializeObject([IO.File]::ReadAllText([IO.Path]::GetFullPath($PlatformSnapshot)),$listType)
   $report.OnlineAttempted=$true
+  $asm.GetType('PCL.ModDependencyOnline').GetMethod('MapRelations',$flags).Invoke($null,@($report))|Out-Null
+  $replayedNodes=Nodes (Graph $report $selected)
+  Write-Output ('Read-only snapshot nodes: '+(($replayedNodes|ForEach-Object {$_.Tag.Title+' ['+$_.Tag.Condition+']'}) -join '; '))
  }
  $converter=[Activator]::CreateInstance($asm.GetType('PCL.ModMain+MyMsgBoxConverter'))
  $converter.Title=-join ([char[]]@(0x6A21,0x7EC4,0x4F9D,0x8D56,0x5173,0x7CFB));$converter.Text=$report.DescribeFile($selected)
@@ -238,7 +317,7 @@ try{
   $extent=Canvas $modal.FindName('PanCaption').Content
   if(($extent.Width -gt $scroll.ViewportWidth+1 -and $scroll.ScrollableWidth -le 0) -or ($extent.Height -gt $scroll.ViewportHeight+1 -and $scroll.ScrollableHeight -le 0)){throw 'Small-window graph cannot scroll to all nodes'}
  }finally{$mainField.SetValue($null,$oldMain)}
- Write-Output 'Dependency graph passed: loader/container ownership, required/candidate relations, all 100 long-list nodes reachable, wrapped text, frozen local icons and safe fallback, matched conflicts and native dialog bounds.'
+ Write-Output 'Dependency graph passed: embedded group and downward arrow, offline/conflict layout, loader/container ownership, required/candidate relations, all 100 long-list nodes reachable, wrapped text, frozen local icons and safe fallback, matched conflicts and native dialog bounds.'
 }finally{
  $app.Shutdown();$full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\APclDependencyGraph-[a-f0-9]{32}\z'){throw 'Unsafe graph fixture cleanup'}

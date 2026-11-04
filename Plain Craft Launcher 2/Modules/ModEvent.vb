@@ -146,7 +146,7 @@ Public Class CustomEvent
             .MemoryOptimize = Sub() PageOtherTest.MemoryOptimize(True), .RubbishClear = Sub() PageOtherTest.RubbishClear(),
             .InstallModpack = Sub() ModpackInstall(), .CheckUpdates = AddressOf UpdateCheckByButton,
             .HintCustomCommand = Function() Settings.Get(Of Boolean)("HintCustomCommand"), .RememberCustomCommand = Sub() Settings.Set("HintCustomCommand", True),
-            .Locked = AddressOf McInstanceLock.IsLocked, .SetEditedInstance = Sub(Target) PageInstanceLeft.Instance = Target,
+            .Locked = AddressOf McInstanceLock.BlocksNavigation, .SetEditedInstance = Sub(Target) PageInstanceLeft.Instance = Target,
             .InstanceSetup = PageType.InstanceSetup, .DefaultSubPage = PageSubType.Default, .ChangePage = Sub(Page, SubPage) FrmMain.PageChange(Page, SubPage),
             .Download = Sub(Url, Name, Folder) PageOtherTest.StartCustomDownload(Url, Name, Folder),
             .SetSetting = Sub(Key, Value, Target) Settings.SetSafe(Key, Value, Target), .RegistryFolder = Function() RegFolder,

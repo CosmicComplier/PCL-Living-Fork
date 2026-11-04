@@ -205,6 +205,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("world-metadata",), (), build=False)
             elif stem == "LocalGameData":
                 include(("local-data",), (), build=False)
+            elif stem == "FileTaskProgress":
+                include(("world-backups", "environment-history", "instance-clone"), (), build=False)
             elif stem == "WorldBackupPipeline":
                 include(("world-backups",), (), build=False)
             elif stem == "EnvironmentHistoryPipeline":
@@ -215,7 +217,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mod-dependencies",), (), build=False)
             elif stem == "ModDependencyOnlinePipeline":
                 include(("mod-dependency-online",), (), build=False)
-            elif stem == "LegacySettings":
+            elif stem in {"LegacySettings", "SettingsMicrosoftIsolation"}:
                 include(("settings",), (), build=False)
             elif stem == "LegacyValidationLoader":
                 include(("validation-loaders",), (), build=False)

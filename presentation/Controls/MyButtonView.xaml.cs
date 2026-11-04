@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -42,6 +43,9 @@ public partial class MyButtonView : Border {
         MouseEnter += (_, _) => ButtonMouseEnter();
         MouseLeftButtonUp += (_, _) => ButtonMouseUpScale();
         MouseLeave += (_, _) => ButtonMouseLeave();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, () => RefreshColor());
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, () => RefreshColor());
     }
 
     public InlineCollection Inlines => LabText.Inlines;

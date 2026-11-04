@@ -65,7 +65,7 @@ public static class ModDependencyImpactViewController<TContext, TMod, TDependenc
         view.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         view.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         view.Children.Add(new TextBlock { Text = "以下 " + items.Count + " 个模组可能受影响。仍然" + actionName + "所选模组吗？", TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(4, 0, 4, 10), FontSize = 13, Foreground = Brushes.DimGray });
+            Margin = new Thickness(4, 0, 4, 10), FontSize = 13, Foreground = ModDependencyVisualTheme.Brush("ColorBrushTextSecondary") });
         cards.ColumnDefinitions.Add(new ColumnDefinition()); cards.ColumnDefinitions.Add(new ColumnDefinition());
         ScrollViewer scroll = new() { Content = cards, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetRow(scroll, 1); view.Children.Add(scroll);
@@ -79,11 +79,13 @@ public static class ModDependencyImpactViewController<TContext, TMod, TDependenc
             content.Children.Add(new Image { Source = entry.Icon ?? defaultIcon(), Width = 28, Height = 28, Stretch = Stretch.Uniform,
                 VerticalAlignment = VerticalAlignment.Top, Clip = new RectangleGeometry(new Rect(0, 0, 28, 28), 5, 5) });
             StackPanel text = new();
-            text.Children.Add(new TextBlock { Text = entry.Name, TextWrapping = TextWrapping.Wrap, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = Brushes.DimGray });
-            text.Children.Add(new TextBlock { Text = string.Join("\r\n", entry.Reasons), TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = Brushes.Firebrick, Margin = new Thickness(0, 5, 0, 0) });
+            text.Children.Add(new TextBlock { Text = entry.Name, TextWrapping = TextWrapping.Wrap, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = ModDependencyVisualTheme.Brush("ColorBrushTextSecondary") });
+            TextBlock reason = new() { Text = string.Join("\r\n", entry.Reasons), TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new Thickness(0, 5, 0, 0) };
+            reason.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushRedDark"); text.Children.Add(reason);
             Grid.SetColumn(text, 2); content.Children.Add(text);
-            Border box = new() { Child = content, BorderBrush = Brushes.LightCoral, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
-                Background = Brushes.White, Padding = new Thickness(9), Margin = new Thickness(4), MinHeight = 64, Tag = entry, ToolTip = entry.FileName };
+            Border box = new() { Child = content, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+                Background = ModDependencyVisualTheme.Brush("ColorBrushWhite"), Padding = new Thickness(9), Margin = new Thickness(4), MinHeight = 64, Tag = entry, ToolTip = entry.FileName };
+            box.SetResourceReference(Border.BorderBrushProperty, "ColorBrushRedLight");
             Grid.SetColumn(box, index % 2); Grid.SetRow(box, index / 2); cards.Children.Add(box);
         }
     }

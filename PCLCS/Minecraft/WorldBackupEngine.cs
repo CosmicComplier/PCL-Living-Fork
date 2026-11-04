@@ -195,7 +195,7 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
         return result;
     }
 
-    private static Tuple<long, string> CopyHash(Stream input, Stream? output, CancellationToken token, long expectedLength = -1) {
+    private static Tuple<long, string> CopyHash(Stream input, Stream? output, CancellationToken token, long expectedLength = -1, Action<long>? copied = null) {
         byte[] buffer = new byte[131072];
         long total = 0;
         using SHA256 algorithm = SHA256.Create();
@@ -207,13 +207,14 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
             if (expectedLength >= 0 && total > expectedLength) throw new IOException("备份文件长度与记录不一致。");
             algorithm.TransformBlock(buffer, 0, count, buffer, 0);
             output?.Write(buffer, 0, count);
+            copied?.Invoke(count);
         }
         algorithm.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
         if (expectedLength >= 0 && total != expectedLength) throw new IOException("备份文件长度与记录不一致。");
         return Tuple.Create(total, Convert.ToBase64String(algorithm.Hash!));
     }
 
-    private string CaptureCore(string gameFolder, string identifier, string reason, CancellationToken token) {
+    private string CaptureCore(string gameFolder, string identifier, string reason, CancellationToken token, Action<double>? progress = null) {
         string world = WorldFolder(gameFolder, identifier);
         if (!Directory.Exists(world)) throw new IOException("该存档已移动或删除，请刷新列表。");
         string root = Store(gameFolder), id = Guid.NewGuid().ToString("N");
@@ -226,6 +227,8 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
             List<string> directories = new();
             using (FileStream? held = SessionLock(world)) {
                 Dictionary<string, FileInfo> before = ScanTree(world, token, directories);
+                progress?.Invoke(0.03);
+                Action<long>? copied = FileTaskProgress.Bytes(before.Values.Sum(item => item.Length), FileTaskProgress.Slice(progress, 0.03, 0.7));
                 using (FileStream stream = new(Safe(stage, "world.zip"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None)) {
                     using (ZipArchive archive = new(stream, ZipArchiveMode.Create, true)) {
                         foreach (KeyValuePair<string, FileInfo> pair in before.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)) {
@@ -236,7 +239,7 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
                             ZipArchiveEntry entry = archive.CreateEntry(pair.Key, CompressionLevel.Optimal);
                             using (FileStream input = new(fileName, FileMode.Open, FileAccess.Read, FileShare.Read))
                             using (Stream output = entry.Open()) {
-                                Tuple<long, string> actual = CopyHash(input, output, token, length);
+                                Tuple<long, string> actual = CopyHash(input, output, token, length, copied);
                                 files.Add(pair.Key, new JObject(new JProperty("length", actual.Item1), new JProperty("sha256", actual.Item2), new JProperty("writeUtc", stamp)));
                                 total = checked(total + actual.Item1);
                             }
@@ -263,12 +266,13 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
                 new JProperty("label", label), new JProperty("created", DateTime.UtcNow), new JProperty("reason", reason), new JProperty("manual", ManualReason(reason)),
                 new JProperty("bytes", total), new JProperty("archiveBytes", new FileInfo(Safe(stage, "world.zip")).Length), new JProperty("files", files), new JProperty("directories", new JArray(directories)));
             WriteJson(Safe(stage, "manifest.json"), point);
-            ReadArchive(stage, point, token);
+            ReadArchive(stage, point, token, progress: FileTaskProgress.Slice(progress, 0.72, 0.97));
             token.ThrowIfCancellationRequested();
             RequireStopped(gameFolder);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             NoLinks(destination);
             Directory.Move(stage, destination);
+            progress?.Invoke(1);
             return id;
         } finally {
             if (Directory.Exists(stage)) DeleteTree(root, stage);
@@ -299,15 +303,19 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
         }
     }
 
-    public string CaptureWorld(string gameFolder, string identifier, string reason, int retention, CancellationToken token, Process? exitedProcess = null) {
+    public string CaptureWorld(string gameFolder, string identifier, string reason, int retention, CancellationToken token, Process? exitedProcess = null) =>
+        CaptureWorldWithProgress(gameFolder, identifier, reason, retention, token, null, exitedProcess);
+
+    public string CaptureWorldWithProgress(string gameFolder, string identifier, string reason, int retention, CancellationToken token, Action<double>? progress, Process? exitedProcess = null) {
         lock (Gate) {
             using BusyScope scope = new(this);
             Retain(retention);
             RequireStopped(gameFolder, exitedProcess);
             RecoverCore(gameFolder, token);
-            string id = CaptureCore(gameFolder, identifier, reason, token);
+            string id = CaptureCore(gameFolder, identifier, reason, token, FileTaskProgress.Slice(progress, 0, 0.98));
             Prune(gameFolder, identifier, retention);
             NotifyChanged();
+            progress?.Invoke(1);
             return id;
         }
     }
@@ -317,7 +325,15 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
         return CaptureFolder(host.GameFolder(instance), reason, host.Retention(instance), token, exitedProcess);
     }
 
-    public List<string> CaptureFolder(string gameFolder, string reason, int retention, CancellationToken token, Process? exitedProcess = null) {
+    public List<string> CaptureAllWithProgress(TInstance? instance, string reason, CancellationToken token, Action<double>? progress) {
+        if (instance is null) throw new IOException("请先选择游戏版本。");
+        return CaptureFolderWithProgress(host.GameFolder(instance), reason, host.Retention(instance), token, progress);
+    }
+
+    public List<string> CaptureFolder(string gameFolder, string reason, int retention, CancellationToken token, Process? exitedProcess = null) =>
+        CaptureFolderWithProgress(gameFolder, reason, retention, token, null, exitedProcess);
+
+    public List<string> CaptureFolderWithProgress(string gameFolder, string reason, int retention, CancellationToken token, Action<double>? progress, Process? exitedProcess = null) {
         lock (Gate) {
             using BusyScope scope = new(this);
             Retain(retention);
@@ -326,17 +342,24 @@ public sealed partial class WorldBackupEngine<TInstance> where TInstance : class
             string root = Safe(gameFolder, "saves");
             List<string> result = new();
             if (!Directory.Exists(root)) return result;
+            List<string> folders = new();
             foreach (string folder in Directory.EnumerateDirectories(root).OrderBy(value => value, StringComparer.OrdinalIgnoreCase)) {
                 token.ThrowIfCancellationRequested();
                 string identifier = Path.GetFileName(folder);
                 if (identifier.StartsWith(".pcl-", StringComparison.OrdinalIgnoreCase)) continue;
                 NoLinks(folder);
                 if (!File.Exists(Safe(folder, "level.dat"))) continue;
+                folders.Add(folder);
+            }
+            for (int index = 0; index < folders.Count; index++) {
+                token.ThrowIfCancellationRequested();
+                string folder = folders[index], identifier = Path.GetFileName(folder); int count = Math.Max(1, folders.Count);
                 RequireStopped(gameFolder, exitedProcess);
-                result.Add(CaptureCore(gameFolder, identifier, reason, token));
+                result.Add(CaptureCore(gameFolder, identifier, reason, token, FileTaskProgress.Slice(progress, (double)index / count, (index + 0.98) / count)));
                 Prune(gameFolder, identifier, retention);
             }
             NotifyChanged();
+            progress?.Invoke(1);
             return result;
         }
     }

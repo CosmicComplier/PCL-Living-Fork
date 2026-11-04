@@ -507,6 +507,7 @@ Public Class FormMain
             .AprilScale = Function() FrmLaunchLeft.AprilScaleTrans,
             .SettingsInstance = Function() PageInstanceLeft.Instance, .SelectedInstance = Function() McInstanceSelected,
             .InstanceName = Function(Value) Value.Name, .InstanceLocked = Function(Value) McInstanceLock.IsLocked(Value),
+            .InstanceBlocksNavigation = Function(Value) McInstanceLock.BlocksNavigation(Value),
             .WriteInstanceSetting = Sub(Key, Value, Target) Settings.Set(Key, Value, Instance:=Target),
             .ValidateHttp = Function(Value) New ValidateHttp().Validate(Value), .ReloadInstanceSetup = Sub() FrmInstanceSetup.Reload(),
             .RefreshLaunchPage = Sub() FrmLaunchLeft.RefreshPage(True, False), .RefreshCustomHome = Sub() FrmLaunchRight.ForceRefresh(),
@@ -621,6 +622,7 @@ Public Class FormMain
             Case PageType.TaskManager : Return New LegacyMainLeftPage With {.Element = FrmSpeedLeft}
             Case PageType.InstanceSetup
                 Return New LegacyMainLeftPage With {.Element = FrmInstanceLeft, .PageId = Function() CInt(FrmInstanceLeft.PageID),
+                    .SyncSelection = Sub(SubType) FrmInstanceLeft.SyncSelection(CType(SubType, PageSubType)),
                     .PageGet = Function(SubType) FrmInstanceLeft.PageGet(CType(SubType, PageSubType)), .Item = Function(SubType) FrmInstanceLeft.NavigationItem(CType(SubType, PageSubType))}
             Case Else : Throw New InvalidOperationException("未知主窗左页：" & Page)
         End Select

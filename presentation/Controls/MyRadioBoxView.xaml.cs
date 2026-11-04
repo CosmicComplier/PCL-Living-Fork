@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Collections.Generic;
 using System.Windows;
@@ -26,6 +27,9 @@ public partial class MyRadioBoxView : Grid {
         else if (!_contentLoaded) { _contentLoaded = true; CompiledControlLoader.Load(this, typeof(MyRadioBoxView), "controls/myradioboxview.xaml"); }
         MouseLeftButtonUp += (_, _) => MouseUpRadio(); MouseLeftButtonDown += (_, _) => MouseDownRadio(); MouseLeave += (_, _) => MouseLeaveRadio();
         IsEnabledChanged += (_, _) => EnabledChanged(); MouseEnter += (_, _) => MouseEnterAnimation(); MouseLeave += (_, _) => MouseLeaveAnimation();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, EnabledChanged);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, EnabledChanged);
     }
     public bool Checked { get => (bool)GetValue(CheckedProperty); set => SetChecked(value, false); }
     public static readonly DependencyProperty CheckedProperty = DependencyProperty.Register(nameof(Checked), typeof(bool), typeof(MyRadioBoxView),

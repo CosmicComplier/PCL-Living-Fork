@@ -47,4 +47,14 @@ Friend NotInheritable Class ModDependencyOnline
         Dim SignedRequest = Request
         SecretHeadersSign(Url, SignedRequest)
     End Sub
+    Friend Shared Sub ResetIndexLookups()
+        Pipeline.ResetIndexLookups()
+    End Sub
+    Friend Shared Function RebuildWithOnline(ModsFolder As String, Context As ModDependencyInspector.InspectionContext, Optional Token As CancellationToken = Nothing, Optional Options As LookupOptions = Nothing) As ModDependencyInspector.InspectionReport
+        Return Pipeline.RebuildWithOnline(ModsFolder, Context, Token, Options)
+    End Function
+    'Preserve the original private reflection entry; one relation algorithm remains in Core.
+    Private Shared Sub MapRelations(Report As ModDependencyInspector.InspectionReport)
+        OnlineCore.MapRelations(Report)
+    End Sub
 End Class

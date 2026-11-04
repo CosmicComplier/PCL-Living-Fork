@@ -32,6 +32,7 @@ public sealed class InstanceCloneWork {
     public string StepName = null!, Title = null!;
     public bool LockSource;
     public Action<CancellationToken, Action<string?>> Execute = null!;
+    public Action<double>? Progress;
     public Action ReleaseBusy = null!, Stopped = null!;
     public Action<Exception> SourceError = null!;
 }

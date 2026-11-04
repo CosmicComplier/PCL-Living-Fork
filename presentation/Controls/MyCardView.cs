@@ -45,9 +45,10 @@ public class MyCardView : Grid {
         MainChrome = CreateChrome();
         MainChrome.Margin = new Thickness(-3, -3, -3, -3 - WpfSize(1));
         MainChrome.ShadowRadius = 3; MainChrome.Opacity = DropShadowIdleOpacity; MainChrome.CornerRadius = new CornerRadius(5);
-        MainChrome.SetResourceReference(MyDropShadowView.ColorProperty, "ColorObject1");
+        MainChrome.SetResourceReference(MyDropShadowView.ColorProperty, "ColorObjectShadow");
         Children.Insert(0, MainChrome);
-        mainBorder = new Border { Background = new SolidColorBrush(Color.FromArgb(245, 255, 255, 255)), CornerRadius = new CornerRadius(5), IsHitTestVisible = false };
+        mainBorder = new Border { CornerRadius = new CornerRadius(5), IsHitTestVisible = false };
+        mainBorder.SetResourceReference(Border.BackgroundProperty, "ColorBrushCard");
         Children.Insert(1, mainBorder);
         mainGrid = new Grid(); Children.Add(mainGrid);
         Loaded += (_, _) => Init();
@@ -114,7 +115,7 @@ public class MyCardView : Grid {
         List<ControlAnimation> animations = new();
         if (MainTextBlock is not null) animations.Add(Animations.ColorResource(MainTextBlock, TextBlock.ForegroundProperty, "ColorBrush1", new(90)));
         if (MainSwap is not null) animations.Add(Animations.ColorResource(MainSwap, Path.FillProperty, "ColorBrush1", new(90)));
-        animations.Add(Animations.ColorResource(MainChrome, MyDropShadowView.ColorProperty, "ColorObject1", new(90)));
+        animations.Add(Animations.ColorResource(MainChrome, MyDropShadowView.ColorProperty, "ColorObjectShadow", new(90)));
         animations.Add(Animations.Opacity(MainChrome, DropShadowIdleOpacity - MainChrome.Opacity, new(90)));
         Animations.Start(animations, "MyCard Mouse " + Uuid);
     }

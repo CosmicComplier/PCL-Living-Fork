@@ -36,6 +36,7 @@ Friend NotInheritable Class ModDependencyInspector
         VersionMismatch
         Incompatible
         Recommendation
+        LoaderMismatch
     End Enum
 
     Friend Class InspectionContext
@@ -162,5 +163,41 @@ Friend NotInheritable Class ModDependencyInspector
     End Function
     Friend Shared Function MatchVersion(Actual As String, Requirement As String, Optional Syntax As String = "fabric") As MatchState
         Return CType(CInt(InspectionCore.MatchVersion(Actual, Requirement, Syntax)), MatchState)
+    End Function
+    Friend Shared Function RebuildIndex(ModsFolder As String, Optional Context As InspectionContext = Nothing, Optional Token As CancellationToken = Nothing) As InspectionReport
+        Return InspectionCore.RebuildIndex(ModsFolder, Context, Token)
+    End Function
+    Friend Shared Function ScanRaw(ModsFolder As String, Context As InspectionContext, Token As CancellationToken, Optional ForceFresh As Boolean = False) As InspectionReport
+        Return InspectionCore.ScanRaw(ModsFolder, Context, Token, ForceFresh)
+    End Function
+    Friend Shared Sub Reevaluate(Report As InspectionReport, Context As InspectionContext, Token As CancellationToken)
+        InspectionCore.Reevaluate(Report, Context, Token)
+    End Sub
+    Friend Shared Function LoaderWarningFor(Folder As String, FullPath As String, Context As InspectionContext) As String
+        Return InspectionCore.LoaderWarningFor(Folder, FullPath, Context)
+    End Function
+    Friend Shared Function IsModFile(FullPath As String) As Boolean
+        Return InspectionCore.IsModFile(FullPath)
+    End Function
+    Friend Shared Function EmbeddedModsForDisplay(Report As InspectionReport, FullPath As String) As List(Of ModInfo)
+        Return InspectionCore.EmbeddedModsForDisplay(Report, FullPath)
+    End Function
+    Friend Shared Function IsLegacyForge(Context As InspectionContext) As Boolean
+        Return InspectionCore.IsLegacyForge(Context)
+    End Function
+    Friend Shared Function RuntimeOwnerId(Id As String, Context As InspectionContext) As String
+        Return InspectionCore.RuntimeOwnerId(Id, Context)
+    End Function
+    Friend Shared Function IsInternalLoaderId(Id As String) As Boolean
+        Return InspectionCore.IsInternalLoaderId(Id)
+    End Function
+    Friend Shared Function RuntimeDisplayName(Id As String) As String
+        Return InspectionCore.RuntimeDisplayName(Id)
+    End Function
+    Friend Shared Function RequirementDisplay(Requirement As Dependency, Context As InspectionContext) As String
+        Return InspectionCore.RequirementDisplay(Requirement, Context)
+    End Function
+    Friend Shared Function RuntimeProvidersForPlatformDependency(Report As InspectionReport, OwnerPath As String, Requirement As OnlineDependency) As List(Of ModInfo)
+        Return InspectionCore.RuntimeProvidersForPlatformDependency(Report, OwnerPath, Requirement)
     End Function
 End Class

@@ -113,7 +113,12 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
         return result;
     }
     public string Capture(string versionFolder, string gameRoot, string label, CancellationToken token,
+        Dictionary<string, string>? dependencies = null, string description = "") =>
+        CaptureWithProgress(versionFolder, gameRoot, label, token, null, dependencies, description);
+
+    public string CaptureWithProgress(string versionFolder, string gameRoot, string label, CancellationToken token, Action<double>? progress,
         Dictionary<string, string>? dependencies = null, string description = "") {
+        token.ThrowIfCancellationRequested();
         lock (Gate) {
             using (new StoreLease(this, versionFolder)) {
                 string storeRoot = Store(versionFolder), id = Guid.NewGuid().ToString("N");
@@ -122,40 +127,52 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
                 if (dependencies is not null) {
                     foreach (KeyValuePair<string, string> pair in dependencies) entries.Add("m/" + host.RelativePath(pair.Key), pair.Value);
                 }
+                long total = Math.Max(1L, FileTaskProgress.Size(entries.Values)), completed = 0;
+                progress?.Invoke(0.02);
                 foreach (KeyValuePair<string, string> pair in entries) {
                     token.ThrowIfCancellationRequested();
-                    string? hash = host.Digest(pair.Value);
+                    long weight = File.Exists(pair.Value) ? Math.Max(1L, new FileInfo(pair.Value).Length) : 1L;
+                    Action<double>? fileProgress = FileTaskProgress.Slice(progress, 0.02 + 0.8 * completed / total, 0.02 + 0.8 * checked(completed + weight) / total);
+                    string? hash = FileTaskProgress.Digest(pair.Value, token, FileTaskProgress.Slice(fileProgress, 0, 0.25));
                     if (hash is null) throw new IOException("创建还原点期间文件被移走：" + pair.Key);
                     string blob = ObjectPath(storeRoot, hash);
                     if (!File.Exists(blob)) {
                         Directory.CreateDirectory(Path.GetDirectoryName(blob)!);
                         string temporary = blob + ".tmp-" + Guid.NewGuid().ToString("N");
                         try {
-                            File.Copy(pair.Value, temporary, false);
-                            if (!SameText(host.Digest(temporary), hash)) throw new IOException("创建还原点期间文件发生变化。");
+                            FileTaskProgress.Copy(pair.Value, temporary, token, FileTaskProgress.Slice(fileProgress, 0.25, 0.5));
+                            if (!SameText(FileTaskProgress.Digest(temporary, token, FileTaskProgress.Slice(fileProgress, 0.5, 0.75)), hash)) throw new IOException("创建还原点期间文件发生变化。");
                             File.Move(temporary, blob);
                         } finally {
                             if (File.Exists(temporary)) File.Delete(temporary);
                         }
-                    } else if (!SameText(host.Digest(blob), hash)) {
+                    } else if (!SameText(FileTaskProgress.Digest(blob, token, FileTaskProgress.Slice(fileProgress, 0.25, 0.75)), hash)) {
                         throw new IOException("已有还原点内容校验失败，请保留备份并检查磁盘。");
                     }
-                    if (!SameText(host.Digest(pair.Value), hash)) throw new IOException("创建还原点期间文件发生变化。");
+                    if (!SameText(FileTaskProgress.Digest(pair.Value, token, FileTaskProgress.Slice(fileProgress, 0.75, 1)), hash)) throw new IOException("创建还原点期间文件发生变化。");
                     content[pair.Key] = hash;
+                    completed = checked(completed + weight);
                 }
                 Dictionary<string, string> latest = Files(versionFolder, gameRoot);
                 if (!new HashSet<string>(entries.Keys.Where(key => !key.StartsWith("m/")), StringComparer.OrdinalIgnoreCase).SetEquals(latest.Keys)) throw new IOException("创建还原点期间目录内容发生变化。");
+                total = Math.Max(1L, FileTaskProgress.Size(latest.Values)); completed = 0;
                 foreach (KeyValuePair<string, string> pair in latest) {
-                    if (!SameText(host.Digest(pair.Value), content[pair.Key]!.ToString())) throw new IOException("创建还原点期间配置发生变化。");
+                    long weight = Math.Max(1L, new FileInfo(pair.Value).Length);
+                    if (!SameText(FileTaskProgress.Digest(pair.Value, token, FileTaskProgress.Slice(progress, 0.82 + 0.16 * completed / total, 0.82 + 0.16 * checked(completed + weight) / total)), content[pair.Key]!.ToString())) throw new IOException("创建还原点期间配置发生变化。");
+                    completed = checked(completed + weight);
                 }
                 JObject data = new(new JProperty("schema", 1), new JProperty("coverageVersion", EnvironmentHistoryRules.CurrentCoverageVersion), new JProperty("id", id), new JProperty("created", DateTime.UtcNow), new JProperty("label", label),
                     new JProperty("description", description), new JProperty("gameRoot", Path.GetFullPath(gameRoot)), new JProperty("healthy", false), new JProperty("manual", !EnvironmentHistoryRules.AutomaticLabels.Contains(label)), new JProperty("files", content));
+                token.ThrowIfCancellationRequested();
                 host.AtomicWrite(Safe(storeRoot, "points/" + id + ".json"), Encoding.UTF8.GetBytes(data.ToString()));
+                progress?.Invoke(1);
                 return id;
             }
         }
     }
-    public string CaptureInstance(TInstance instance, string label, CancellationToken token) {
+    public string CaptureInstance(TInstance instance, string label, CancellationToken token) => CaptureInstanceWithProgress(instance, label, token, null);
+
+    public string CaptureInstanceWithProgress(TInstance instance, string label, CancellationToken token, Action<double>? progress) {
         string mcRoot = Path.GetDirectoryName(Path.GetDirectoryName(host.VersionPath(instance).TrimEnd('\\'))) + "\\";
         Dictionary<string, string> dependencies = new(StringComparer.OrdinalIgnoreCase);
         foreach (string libraryPath in host.LibraryPaths(instance)) {
@@ -175,28 +192,32 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
             dependencies[relative] = address;
             json = JObject.Parse(File.ReadAllText(address));
         }
-        string id = Capture(host.VersionPath(instance), host.GameFolder(instance), label, token, dependencies,
+        string id = CaptureWithProgress(host.VersionPath(instance), host.GameFolder(instance), label, token, FileTaskProgress.Slice(progress, 0, 0.98), dependencies,
             host.VanillaName(instance) + " · " + string.Join("、", host.ModLoaderVersions(instance)));
         ApplyRetention(instance, id, token);
+        progress?.Invoke(1);
         return id;
     }
     public List<JObject> Points(string versionFolder) {
-        lock (Gate) {
-            using (new StoreLease(this, versionFolder)) {
-                string storeRoot = Store(versionFolder), folder = Path.Combine(storeRoot, "points");
-                List<JObject> result = new();
-                host.EnsureWithin(storeRoot, folder);
-                if (!Directory.Exists(folder)) return result;
-                foreach (string fileName in Directory.GetFiles(folder, "*.json")) {
-                    host.EnsureWithin(storeRoot, fileName);
-                    if (new FileInfo(fileName).Length > 32 * 1024 * 1024) throw new IOException("还原点清单过大。");
-                    JObject value = JObject.Parse(File.ReadAllText(fileName));
-                    if ((int)value["schema"]! != 1) throw new IOException("不支持此版本的环境还原点。");
-                    result.Add(value);
-                }
-                return result.OrderByDescending(item => (DateTime)item["created"]!).ToList();
+        // LF atomically publishes manifests; published-list readers do not take snapshot leases.
+        string storeRoot = Store(versionFolder), folder = Path.Combine(storeRoot, "points");
+        List<JObject> result = new();
+        host.EnsureWithin(storeRoot, folder);
+        if (!Directory.Exists(folder)) return result;
+        foreach (string fileName in Directory.GetFiles(folder, "*.json")) {
+            try {
+                host.EnsureWithin(storeRoot, fileName);
+                if (new FileInfo(fileName).Length > 32 * 1024 * 1024) throw new IOException("还原点清单过大。");
+                JObject value;
+                using (FileStream input = new(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (StreamReader reader = new(input)) value = JObject.Parse(reader.ReadToEnd());
+                if ((int)value["schema"]! != 1) throw new IOException("不支持此版本的环境还原点。");
+                result.Add(value);
+            } catch (FileNotFoundException) {
+                // An atomic cleanup removed a manifest after enumeration; refresh sees the new list.
             }
         }
+        return result.OrderByDescending(item => (DateTime)item["created"]!).ToList();
     }
     public bool IsManualPoint(JObject point) {
         JToken? value = point["manual"];

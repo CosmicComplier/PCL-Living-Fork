@@ -26,7 +26,7 @@ public sealed class InstanceSelectionPageHost<TInstance, TCard> where TInstance 
     public Action<TInstance?> SetSelectedInstance = null!, SetInstancePage = null!;
     public Func<string> MinecraftFolder = null!;
     public Func<string, TInstance> NewInstance = null!;
-    public Func<TInstance, bool> Locked = null!;
+    public Func<TInstance, bool> Locked = null!, BlocksNavigation = null!;
     public Func<string, bool> AllowsInstance = null!;
     public Action ForceRefresh = null!, PageBack = null!, OpenDownload = null!;
     public Action<TInstance> OpenInstanceFolder = null!, OpenInstanceSetup = null!;
@@ -106,7 +106,7 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
     public static void ItemClick(FrameworkElement row, InstanceSelectionPageHost<TInstance, TCard> host) {
         TInstance instance = (TInstance)row.Tag;
         if (!host.AllowsInstance(instance.PathVersion)) return;
-        if (host.Locked(instance)) { host.Hint("该版本正在被修改，请稍后再选择！", SelectionPageHint.Red); return; }
+        if (host.BlocksNavigation(instance)) { host.Hint("该版本正在被修改，请稍后再选择！", SelectionPageHint.Red); return; }
         if (host.NewInstance(instance.PathVersion).Check()) { host.SetSelectedInstance(instance); host.PageBack(); }
         else host.OpenInstanceFolder(instance);
     }

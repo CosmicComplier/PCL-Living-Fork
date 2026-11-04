@@ -9,7 +9,7 @@ using Newtonsoft.Json.Linq;
 
 namespace PCLCS;
 
-// LF LocalResourceLoaders.vb f4aa0fae62c3ee8af24c81e61844c8fdd13c8983, identical
+// LF LocalResourceLoaders.vb at 50b028da5fcad2226d74d901a41d8c43a249bfb2; base matches
 // PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8, LF LICENCE. Fixed CE stable
 // 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModLocalComp.cs reviewed only:
 // retain LF's two worker threads, Loader thread-identity cancellation and cache schema.
@@ -71,6 +71,12 @@ public sealed partial class LocalResourceLoaderEngine<TLocal, TProject, TVersion
             }
             host.Info($"共发现 {mods.Count} 个 Mod");
             mods = mods.OrderBy(m => m.File.Name).ToList();
+            LocalResourceCompatibilityContext? compatibility = host.ReadCompatibility();
+            if (compatibility is not null && PathUtils.IsSame(task.Input(), compatibility.Folder)) {
+                try { compatibility.Inspect(task.Input(), task.CreateCancellationToken()); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { host.Warn(ex, "检查 Mod 列表的加载器兼容性失败，仍显示本地文件"); }
+            }
             if (task.IsCanceled()) return;
             task.SetOutput(mods);
             host.StartOnline(mods, cache, host.CurrentVersion() ?? throw new NullReferenceException());

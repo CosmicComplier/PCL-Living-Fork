@@ -31,8 +31,15 @@ public sealed class InstanceNavigationController<TInstance, TId, TItem, TButton,
         bool modable = host.Instance() is not null && host.Modable(host.Instance()!);
         view.Mod.Visibility = modable ? Visibility.Visible : Visibility.Collapsed; view.ModDisabled.Visibility = modable ? Visibility.Collapsed : Visibility.Visible;
     }
-    public void Check(FrameworkElement sender) { if (sender.Tag is not null) PageChange(Id(Conversions.ToInteger(Conversion.Val(sender.Tag)))); }
+    public void Check(FrameworkElement sender) { if (!host.IsSyncingSelection() && sender.Tag is not null) PageChange(Id(Conversions.ToInteger(Conversion.Val(sender.Tag)))); }
     public TItem NavigationItem(TId id) { id = host.Normalize(id); return view.Items.Children.OfType<TItem>().First(item => Conversions.ToInteger(item.Tag) == Code(id)); }
+    public void SyncSelection(TId id) {
+        id = host.Normalize(id);
+        TItem item = NavigationItem(id);
+        host.SetSyncingSelection(true);
+        try { host.SetPageId(id); host.SetCheckedState(item, true, false, false); }
+        finally { host.SetSyncingSelection(false); }
+    }
     public TPage PageGet(TId id) {
         if (Code(id) == -1) id = host.PageId(); id = host.Normalize(id); int code = Code(id);
         if (code >= 6 && code <= 10) {
@@ -45,9 +52,10 @@ public sealed class InstanceNavigationController<TInstance, TId, TItem, TButton,
     }
     public void PageChange(TId id) {
         id = host.Normalize(id); if (Code(host.PageId()) == Code(id)) return;
-        if (host.Instance() is not null && host.Locked(host.Instance()!)) { host.HintRed("该版本正在被修改，请稍后再切换页面！"); return; }
+        if (host.Instance() is not null && host.BlocksNavigation(host.Instance()!)) { SyncSelection(host.PageId()); host.HintRed("该版本正在被修改，请稍后再切换页面！"); return; }
+        if (host.Locked(host.Instance()!) && InstanceNavigationRules.IsEditingPage(Code(id))) { SyncSelection(host.PageId()); host.HintRed("文件任务进行中，可浏览版本内容，请稍后再修改版本设置。"); return; }
         host.AdjustAnimation(1);
-        try { PageChangeRun(PageGet(id)); host.SetPageId(id); }
+        try { PageChangeRun(PageGet(id)); SyncSelection(id); }
         catch (Exception ex) { host.Error(ex, $"切换分页面失败（ID {id}）"); }
         finally { host.AdjustAnimation(-1); }
     }
@@ -56,7 +64,7 @@ public sealed class InstanceNavigationController<TInstance, TId, TItem, TButton,
     public void Refresh() => Refresh(host.CurrentSubPage());
     public void Refresh(TId id) {
         int code = Code(id); if (host.ModpackEnabled() && code == 5) return;
-        if (host.Instance() is not null && host.Locked(host.Instance()!)) { host.HintRed("该版本正在被修改，请稍后再刷新！"); return; }
+        if (host.Instance() is not null && host.BlocksNavigation(host.Instance()!)) { host.HintRed("该版本正在被修改，请稍后再刷新！"); return; }
         switch (code) {
             case 3: host.RefreshMods(); host.SetChecked(view.Mod, true); break;
             case 5: host.RefreshExport(); host.SetChecked(view.Export, true); break;

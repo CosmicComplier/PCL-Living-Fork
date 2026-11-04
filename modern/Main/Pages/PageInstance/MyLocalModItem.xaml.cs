@@ -40,7 +40,7 @@ namespace PCL
         {
             return new LegacyLocalModItemView()
             {
-                Root = new Func<Grid>(() => this),
+                LoaderWarningBorder = () => this.LoaderWarningBorder, Root = new Func<Grid>(() => this),
                 Title = new Func<TextBlock>(() => this.LabTitle),
                 Subtitle = new Func<TextBlock>(() => this.LabSubtitle),
                 Description = new Func<TextBlock>(() => this.LabInfo),
@@ -90,6 +90,9 @@ namespace PCL
             return RestorePointDisplay;
         }
 
+        internal string LoaderWarning => Controller.LoaderWarning;
+        internal void RefreshLoaderWarning(string Folder, ModDependencyInspector.InspectionContext Context) => Controller.RefreshLoaderWarning(() => ModDependencyInspector.LoaderWarningFor(Folder, Entry.File.FullName, Context));
+        private void SetLoaderWarning(string Message) => Controller.SetLoaderWarning(Message);
         internal void BindRestorePoint(JObject Value)
         {
             Controller.BindRestorePoint(Value);

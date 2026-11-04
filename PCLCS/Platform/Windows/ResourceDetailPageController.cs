@@ -24,6 +24,7 @@ public sealed partial class ResourceDetailPageController<TProject, TVersion, TCa
     private readonly ResourceDetailDownloadHost<TLoader, TNetFile, TVersion, TInstance> download;
     private readonly DownloadPageAnimationHost<TAnimation> animation;
     public TResourceItem? ResourceItem;
+    public TInstance? DownloadTargetInstance;
     public ResourceTypes TargetResourceType;
     public TProject Project = null!;
     public string? TargetVersion, VersionFilter;
@@ -32,10 +33,16 @@ public sealed partial class ResourceDetailPageController<TProject, TVersion, TCa
     private bool firstInit = true;
     public ResourceDetailPageController(ResourceDetailPageHost<TProject, TVersion, TCard, TResourceItem> host, ResourceDetailDownloadHost<TLoader, TNetFile, TVersion, TInstance> download, DownloadPageAnimationHost<TAnimation> animation) { this.host = host; this.download = download; this.animation = animation; }
     private static bool Same(string? a, string? b) => string.Equals(a ?? "", b ?? "", StringComparison.Ordinal);
+    public static string? ChooseModDownloadFolder(TInstance? target, TInstance? selected, string? cached, Func<TInstance,bool> suitable) {
+        foreach (TInstance? instance in new[] { target, selected }) if (instance is not null && suitable(instance)) return System.IO.Path.Combine(instance.PathIndie,"mods") + System.IO.Path.DirectorySeparatorChar;
+        return string.IsNullOrWhiteSpace(cached) ? null : cached;
+    }
     public void LoadPageArguments() {
         Project = (TProject)host.Argument(0)!; TargetVersion = Conversions.ToString(host.Argument(2)); TargetLoaders = (ModLoaders)Conversions.ToInteger(host.Argument(3));
         if (TargetLoaders != ModLoaders.None && TargetLoaders.Flags().Count() != 1) TargetLoaders = TargetLoaders.Flags().First();
         TargetResourceType = (ResourceTypes)Conversions.ToInteger(host.Argument(4));
+        object[]? arguments = host.Arguments();
+        DownloadTargetInstance = arguments is not null && arguments.Length > 5 ? arguments[5] as TInstance : null;
     }
     public void LoadFiles(Func<bool> canceled, Action<List<TVersion>> output) { LoadPageArguments(); List<TVersion> result = host.ProjectFiles(Project.Id, Project.Platform); if (!canceled()) output(result); }
     public void Initialized() { LoadPageArguments(); host.Initialize(); }

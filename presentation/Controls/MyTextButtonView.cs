@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,6 +22,9 @@ public class MyTextButtonView : Label {
         };
         MouseEnter += (_, _) => RefreshColor(); MouseLeave += (_, _) => RefreshColor(); IsEnabledChanged += (_, _) => RefreshColor();
         MouseLeftButtonDown += (_, _) => RefreshColor(); MouseLeftButtonUp += (_, _) => RefreshColor();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     public string Text { get => (string)GetValue(TextProperty); set => SetValue(TextProperty, value); }
     public static readonly DependencyProperty TextProperty = DependencyProperty.Register(nameof(Text), typeof(string), typeof(MyTextButtonView), new PropertyMetadata("", (sender, args) => {

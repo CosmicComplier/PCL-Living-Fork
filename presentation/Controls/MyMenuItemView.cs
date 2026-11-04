@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -20,6 +21,9 @@ public class MyMenuItemView : MenuItem {
         };
         MouseEnter += (_, _) => RefreshColor(); MouseLeave += (_, _) => RefreshColor(); IsEnabledChanged += (_, _) => RefreshColor();
         Click += (_, _) => ControlServices.Current.RaiseCustomEvent(this);
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     private void RefreshColor() {
         string back, fore; int time;

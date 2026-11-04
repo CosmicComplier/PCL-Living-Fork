@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Linq;
 using Microsoft.VisualBasic;
@@ -29,6 +30,9 @@ public class MyComboBoxView : ComboBox {
         PreviewMouseLeftButtonDown += (_, _) => RefreshColor(); PreviewMouseLeftButtonUp += (_, _) => RefreshColor(); GotKeyboardFocus += (_, _) => RefreshColor();
         DropDownOpened += (_, _) => OpenDropDown(); DropDownClosed += (_, _) => Width = realWidth;
         SelectionChanged += (_, _) => { if (IsLoaded && Services.AnimationEnabled()) Services.RaiseCustomEvent(this); };
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     public override void OnApplyTemplate() {
         base.OnApplyTemplate(); if (!IsEditable) return;

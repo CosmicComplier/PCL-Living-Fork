@@ -24,7 +24,7 @@ Public Class PageSelectRight
             .SelectedInstance = Function() McInstanceSelected, .SetSelectedInstance = Sub(Value) McInstanceSelected = Value,
             .InstancePage = Function() PageInstanceLeft.Instance, .SetInstancePage = Sub(Value) PageInstanceLeft.Instance = Value,
             .MinecraftFolder = Function() McFolderSelected, .NewInstance = Function(Path) New McInstance(Path),
-            .Locked = Function(Instance) McInstanceLock.IsLocked(Instance), .AllowsInstance = AddressOf ModModpackMode.AllowsInstance,
+            .Locked = Function(Instance) McInstanceLock.IsLocked(Instance), .BlocksNavigation = Function(Instance) McInstanceLock.BlocksNavigation(Instance), .AllowsInstance = AddressOf ModModpackMode.AllowsInstance,
             .ForceRefresh = Sub() McInstanceListForceRefresh = True, .PageBack = Sub() FrmMain.PageBack(),
             .OpenDownload = Sub() FrmMain.PageChange(FormMain.PageType.Download, FormMain.PageSubType.DownloadInstall),
             .OpenInstanceFolder = AddressOf PageInstanceOverall.OpenInstanceFolder,
@@ -80,7 +80,7 @@ Public Class PageSelectRight
         Return New CloneSelectionHost With {
             .HiddenCategory = McInstanceCardType.Hidden, .StarCategory = McInstanceCardType.Star,
             .IsCollapsedCategory = Function(Kind) Kind = McInstanceCardType.Rubbish OrElse Kind = McInstanceCardType.Error OrElse Kind = McInstanceCardType.Fool,
-            .IsLocked = Function(Instance) McInstanceLock.IsLocked(Instance),
+            .IsLocked = Function(Instance) McInstanceLock.BlocksNavigation(Instance),
             .AllowsInstance = Function(Instance) ModModpackMode.AllowsInstance(Instance.PathVersion),
             .VersionPath = Function(Instance) Instance.PathVersion, .Name = Function(Instance) Instance.Name,
             .Info = Function(Instance) Instance.Info, .SelectedPath = Function() McInstanceSelected?.PathVersion,

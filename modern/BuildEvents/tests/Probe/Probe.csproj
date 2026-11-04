@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting><OutputType>WinExe</OutputType><Nullable>disable</Nullable><EmbedAllSources>true</EmbedAllSources><LfWithEventsMap>$(MSBuildThisFileDirectory)Probe.map</LfWithEventsMap></PropertyGroup>
+  <Import Project="../../LfWithEvents.targets" />
+  <!-- Capture before the actual task, including genuine temporary/final compiler invocations. -->
+  <Target Name="ProbeCaptureSdkSource" BeforeTargets="LfProjectTypedWithEvents" Condition="Exists('$(IntermediateOutputPath)Pages/Deep/EventRoot.g.cs')">
+    <GetFileHash Files="$(IntermediateOutputPath)Pages/Deep/EventRoot.g.cs"><Output TaskParameter="Items" ItemName="_ProbeSdkHash" /></GetFileHash>
+    <WriteLinesToFile File="$(IntermediateOutputPath)OriginalSdkGeneratedHashes.txt" Lines="@(_ProbeSdkHash->'%(FileHash)')" Overwrite="false" />
+    <ItemGroup><_ProbeSdkHash Remove="@(_ProbeSdkHash)" /></ItemGroup>
+  </Target>
+</Project>

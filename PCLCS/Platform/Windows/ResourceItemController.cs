@@ -61,18 +61,19 @@ public sealed class ResourceItemController<TProject, TResult, TRequest, TInstanc
             Logger.Info("记录当前已展开的卡片：" + string.Join("、", titles));
         }
         TRequest? search = null;
-        if (host.CurrentPage() == host.DownloadPage && host.DownloadAvailable()) search = host.CurrentSearch();
-        object[] arguments = BuildDetailArguments(sender.Tag as TProject, host.CurrentPage(), search, host.CurrentArguments(), host.CurrentInstance(), host.DownloadPage, host.ResourceDetailPage, host.InstanceSetupPage);
+        TInstance? downloadTarget = host.CurrentInstance();
+        if (host.CurrentPage() == host.DownloadPage && host.DownloadAvailable()) { var context = host.CurrentDownloadContext(); search = context.Search; downloadTarget = context.Instance; }
+        object[] arguments = BuildDetailArguments(sender.Tag as TProject, host.CurrentPage(), search, host.CurrentArguments(), downloadTarget, host.DownloadPage, host.ResourceDetailPage, host.InstanceSetupPage);
         arguments[1] = titles; host.OpenDetail(arguments);
     }
     public static object[] BuildDetailArguments(TProject? project, int page, TRequest? search, object[]? existing, TInstance? instance, int downloadPage, int detailPage, int instancePage) {
         ResourceTypes type = project is null ? ResourceTypes.Any : project.Types;
-        string? version = null; ModLoaders loader = ModLoaders.None;
-        if (page == downloadPage && search is not null) { type = search.Type; version = search.GameVersion; if (type == ResourceTypes.Mod) loader = search.ModLoaders; }
-        else if (page == detailPage) { type = ResourceTypes.Any; if (existing is not null && existing.Length > 2) version = existing[2] as string; if (existing is not null && existing.Length > 3 && existing[3] is ModLoaders value) loader = value; }
-        else if (page == instancePage && instance is not null) { version = instance.Version.VanillaName; if (type.HasFlagF(ResourceTypes.Mod)) loader = instance.Version.ModLoaders; }
+        string? version = null; ModLoaders loader = ModLoaders.None; TInstance? downloadTarget = null;
+        if (page == downloadPage && search is not null) { type = search.Type; version = search.GameVersion; if (type == ResourceTypes.Mod) loader = search.ModLoaders; if(instance is not null && Same(search.GameVersion,instance.Version.VanillaName)) downloadTarget = instance; }
+        else if (page == detailPage) { type = ResourceTypes.Any; if (existing is not null && existing.Length > 2) version = existing[2] as string; if (existing is not null && existing.Length > 3 && existing[3] is ModLoaders value) loader = value; if (existing is not null && existing.Length > 5) downloadTarget = existing[5] as TInstance; }
+        else if (page == instancePage && instance is not null) { version = instance.Version.VanillaName; if (type.HasFlagF(ResourceTypes.Mod)) loader = instance.Version.ModLoaders; downloadTarget = instance; }
         if (type == 0) type = ResourceTypes.Any;
-        return new object[] { project!, new List<string>(), version!, loader, type };
+        return new object[] { project!, new List<string>(), version!, loader, type, downloadTarget! };
     }
     public void MouseDown() { if (host.View().Root.IsMouseOver && CanInteraction) mouseDown = true; }
     public void MouseLeave() => mouseDown = false;

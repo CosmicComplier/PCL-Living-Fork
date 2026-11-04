@@ -17,6 +17,7 @@ public sealed class EnvironmentHistoryHost<TInstance> where TInstance : class {
     public Action<string, string> EnsureWithin = null!;
     public Func<string, string, bool> IsParentOf = null!, SamePath = null!;
     public Action<string, string, List<Tuple<string, string?, string?>>, CancellationToken, Action<int>?> ApplyTransaction = null!;
+    public Action<string, string, List<Tuple<string, string?, string?>>, CancellationToken, Action<double>?, Action<int>?>? ApplyTransactionWithProgress;
     public Func<TInstance, string> VersionPath = null!, GameFolder = null!, VanillaName = null!;
     public Func<TInstance, IEnumerable<string>> LibraryPaths = null!, ModLoaderVersions = null!;
     public Func<TInstance, JObject> JsonObject = null!;
@@ -32,8 +33,10 @@ public sealed class EnvironmentHistoryChoice {
 }
 
 public sealed class EnvironmentHistoryWork {
+    public Func<bool> SnapshotReservation = null!;
     public string StepName = null!, Title = null!;
     public Action<CancellationToken, Action<string?>> Execute = null!;
+    public Action<double>? Progress;
     public Action Stopped = null!;
 }
 

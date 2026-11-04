@@ -54,7 +54,20 @@ namespace PCL
         private static void SignRequest(string Url, HttpRequestMessage Request)
         {
             var SignedRequest = Request;
-            ModSecret.SecretHeadersSign(Url, ref SignedRequest);
+            PCL.ModSecret.SecretHeadersSign(Url, ref SignedRequest);
+        }
+        internal static void ResetIndexLookups()
+        {
+            Pipeline.ResetIndexLookups();
+        }
+        internal static ModDependencyInspector.InspectionReport RebuildWithOnline(string ModsFolder, ModDependencyInspector.InspectionContext Context, CancellationToken Token = default, LookupOptions Options = null)
+        {
+            return Pipeline.RebuildWithOnline(ModsFolder, Context, Token, Options);
+        }
+        // Original LF private reflection entry; the same Core operation is used by Enrich.
+        private static void MapRelations(ModDependencyInspector.InspectionReport Report)
+        {
+            OnlineCore.MapRelations(Report);
         }
     }
 }

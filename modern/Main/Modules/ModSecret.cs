@@ -121,7 +121,7 @@ namespace PCL
             SourceIdentify = global::PCL.Settings.GetPclSourceIdentify,
             Warn = new Action<global::System.String>(Text => global::MeloongCore.Logger.Warn(Text))
         });
-        private readonly static global::PCLLF.Presentation.Foundation.LegacyThemeService<global::PCL.ModBase.MyColor> PaletteService = new global::PCLLF.Presentation.Foundation.LegacyThemeService<global::PCL.ModBase.MyColor>(global::PCL.ModSecret.CreateThemeHost());
+        internal readonly static global::PCLLF.Presentation.Foundation.LegacyThemeService<global::PCL.ModBase.MyColor> PaletteService = new global::PCLLF.Presentation.Foundation.LegacyThemeService<global::PCL.ModBase.MyColor>(global::PCL.ModSecret.CreateThemeHost());
         private static global::PCLLF.Presentation.Foundation.LegacyThemeColorSlot<global::PCL.ModBase.MyColor> ThemeField(global::System.Func<global::PCL.ModBase.MyColor> Read, global::System.Action<global::PCL.ModBase.MyColor> Write)
         {
             return new global::PCLLF.Presentation.Foundation.LegacyThemeColorSlot<global::PCL.ModBase.MyColor>() { Read = Read, Write = Write };
@@ -140,6 +140,13 @@ namespace PCL
                 Color8 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.Color8, Value => global::PCL.ModSecret.Color8 = Value),
                 Bg0 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorBg0, Value => global::PCL.ModSecret.ColorBg0 = Value),
                 Bg1 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorBg1, Value => global::PCL.ModSecret.ColorBg1 = Value),
+                Gray1 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray1, value => global::PCL.ModSecret.ColorGray1 = value),
+                Gray2 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray2, value => global::PCL.ModSecret.ColorGray2 = value),
+                Gray3 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray3, value => global::PCL.ModSecret.ColorGray3 = value),
+                Gray5 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray5, value => global::PCL.ModSecret.ColorGray5 = value),
+                Gray6 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray6, value => global::PCL.ModSecret.ColorGray6 = value),
+                Gray7 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray7, value => global::PCL.ModSecret.ColorGray7 = value),
+                Gray8 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray8, value => global::PCL.ModSecret.ColorGray8 = value),
                 Gray4 = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorGray4, Value => global::PCL.ModSecret.ColorGray4 = Value),
                 SemiTransparent = global::PCL.ModSecret.ThemeField(() => global::PCL.ModSecret.ColorSemiTransparent, Value => global::PCL.ModSecret.ColorSemiTransparent = Value),
                 DefaultHue = DefaultThemeHue,
@@ -160,6 +167,13 @@ namespace PCL
                 Channels = new Func<global::PCLLF.Presentation.Controls.ControlColor, global::PCL.ModBase.MyColor>(Color => new global::PCL.ModBase.MyColor(Color.A, Color.R, Color.G, Color.B)),
                 Resources = new Func<global::System.Windows.ResourceDictionary>(() => global::System.Windows.Application.Current.Resources),
                 RunInUi = new Action<global::System.Action>(Work => global::PCL.ModBase.RunInUi(Work)),
+                RunInUiWait = work => global::PCL.ModBase.RunInUiWait(work),
+                ColorMode = () => global::PCL.Settings.Get<int>("UiLauncherColorMode"),
+                PanelOpacity = () => global::PCL.Settings.Get<int>("UiPanelOpacity"),
+                BackgroundOpacity = () => global::PCL.Settings.Get<int>("UiBackgroundOpacity"),
+                AddAnimationSuppression = delta => global::PCL.ModAnimation.AniControlEnabled += delta,
+                LoadBackgroundResource = resource => (global::System.Windows.Media.ImageBrush)new global::PCL.MyBitmap(global::PCL.ModBase.PathImage + resource),
+                InstallTooltipTheme = global::PCL.ModernTooltipTheme.Install,
                 MainLoaded = new Func<global::System.Boolean>(() => (global::PCL.ModMain.FrmMain is not null && (global::PCL.ModMain.FrmMain.IsLoaded))),
                 Colorful = new Func<global::System.Boolean>(() => global::PCL.Settings.Get<bool>("UiBackgroundColorful")),
                 BackgroundMode = new Func<global::System.Int32>(() => global::PCL.Settings.Get<int>("UiBackgroundMode")),
@@ -174,6 +188,7 @@ namespace PCL
         {
             global::PCL.ModSecret.PaletteService.Refresh(NewTheme);
         }
+        internal static global::System.Windows.Media.Brush CreateTitleBackground() => PaletteService.CreateTitleBackground();
         public static void ThemeRefreshMain()
         {
             global::PCL.ModSecret.PaletteService.RefreshMain();

@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows.Controls.Primitives;
 
@@ -10,6 +11,9 @@ public class MyScrollBarView : ScrollBar {
         Uuid = ControlServices.Current.NewUuid();
         IsEnabledChanged += (_, _) => RefreshColor(); GotMouseCapture += (_, _) => RefreshColor(); LostMouseCapture += (_, _) => RefreshColor();
         MouseEnter += (_, _) => RefreshColor(); MouseLeave += (_, _) => RefreshColor(); IsVisibleChanged += (_, _) => RefreshColor();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     private void RefreshColor() {
         try {

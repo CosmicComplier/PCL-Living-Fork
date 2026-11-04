@@ -37,6 +37,8 @@ namespace PCL
     public partial class PageDownloadResourceDetail
     {
         public static global::System.Collections.Generic.Dictionary<global::PCLCS.ResourceTypes, global::System.String> CachedFolder = new global::System.Collections.Generic.Dictionary<global::PCLCS.ResourceTypes, global::System.String>();
+        internal static string ChooseModDownloadFolder(ModMinecraft.McInstance Target, ModMinecraft.McInstance Selected, string Cached, Func<ModMinecraft.McInstance,bool> Suitable) => DetailCore.ChooseModDownloadFolder(Target,Selected,Cached,Suitable);
+        private ModMinecraft.McInstance DownloadTargetInstance { get => Service.DownloadTargetInstance; set => Service.DownloadTargetInstance = value; }
         private static readonly global::PCL.PageDownloadResourceDetail.ResourceDetailLoaders NativeLoaders = new global::PCL.PageDownloadResourceDetail.ResourceDetailLoaders();
         private global::PCL.ModLoader.LoaderTask<global::System.Int32, global::System.Collections.Generic.List<global::PCL.ResourceVersion>> ResourceFileLoader;
         private global::PCLCS.ResourceDetailPageController<global::PCL.ResourceProject, global::PCL.ResourceVersion, global::PCL.MyCard, global::PCL.MyResourceItem, global::PCL.ModMinecraft.McInstance, global::PCL.ModMinecraft.McInstance.McInstanceState, global::PCL.ModMinecraft.McInstanceCardType, global::PCL.ModLoader.LoaderBase, global::PCL.ModNet.NetFile, global::PCL.ModAnimation.AniData> Controller;
@@ -63,6 +65,7 @@ namespace PCL
             {
                 View = new Func<global::PCLCS.ResourceDetailPageView>(() => new global::PCLCS.ResourceDetailPageView() { Filter = PanFilter, Results = PanResults, Intro = PanIntro, FilterCard = CardFilter, Alternative = HintAlternative, Wiki = BtnIntroWiki, AlternativeText = new Action<global::System.String>(Value => this.HintAlternative.Text = Value), WebText = new Action<global::System.String>(Value => this.BtnIntroWeb.Text = Value), ScrollHome = new Action(() => this.PanBack.ScrollToHome()) }),
                 Argument = new Func<global::System.Int32, global::System.Object>(Index => ((global::System.Object[])global::PCL.ModMain.FrmMain.PageCurrent.Additional)[Index]),
+                Arguments = () => ModMain.FrmMain.PageCurrent.Additional as object[],
                 SetArgument = new Action<global::System.Int32, global::System.Object>((Index, Value) => ((global::System.Object[])global::PCL.ModMain.FrmMain.PageCurrent.Additional)[Index] = Value),
                 HasArguments = new Func<global::System.Boolean>(() => global::PCL.ModMain.FrmMain.PageCurrent.Additional is not null),
                 Failed = new Func<global::System.Boolean>(() => (this.ResourceFileLoader.State == global::PCL.ModBase.LoadState.Failed)),

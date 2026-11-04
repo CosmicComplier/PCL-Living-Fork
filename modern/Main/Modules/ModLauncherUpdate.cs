@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using MeloongCore;
 using MeloongCore.Extensions;
 using Microsoft.VisualBasic;
@@ -13,45 +15,118 @@ using Newtonsoft.Json.Linq;
 
 namespace PCL
 {
-
+    // LF 50b028da5fcad2226d74d901a41d8c43a249bfb2 complete updater behavior.
+    // The native-only N005 bundle identity and actual process path adaptations
+    // remain in the original four-argument replacement/rollback transaction.
     public static class ModLauncherUpdate
     {
         private const string Repository = ModBase.LauncherRepository;
         private const string CompatibilityRepository = "DDZmumo/LivingPCL2-Re";
         private const string ReleasePage = ModBase.LauncherReleasesUrl + "/latest";
+        internal const string CnbManifestUrl = ModBase.LauncherCnbUrl + "/-/git/raw/updates/latest.json";
+        internal const string CnbPreviewManifestUrl = ModBase.LauncherCnbUrl + "/-/git/raw/updates/latest-preview.json";
+        internal const string GitHubLatestUrl = "https://api.github.com/repos/" + Repository + "/releases/latest";
+        internal const string GitHubReleaseListUrl = "https://api.github.com/repos/" + Repository + "/releases?per_page=30";
         private static int CheckRunning;
 
-        internal static bool NewerRelease(string Tag, string Current)
+        internal enum UpdateSource { Cnb = 0, GitHub = 1 }
+        internal enum UpdateChannel { Stable = 0, StableAndPrerelease = 1 }
+
+        internal static UpdateChannel PreferredUpdateChannel()
+            => Settings.Get<int>("ToolLauncherUpdateChannel") == 1 ? UpdateChannel.StableAndPrerelease : UpdateChannel.Stable;
+        internal static bool ChangeUpdateChannel(int Value, Func<bool> Confirm)
         {
-            Version LatestVersion = null;
-            Version CurrentVersion = null;
-            if (!Version.TryParse(Tag?.TrimStart('v', 'V'), out LatestVersion) || !Version.TryParse(Current, out CurrentVersion))
-                return false;
-            LatestVersion = new Version(LatestVersion.Major, LatestVersion.Minor, Math.Max(0, LatestVersion.Build), Math.Max(0, LatestVersion.Revision));
-            CurrentVersion = new Version(CurrentVersion.Major, CurrentVersion.Minor, Math.Max(0, CurrentVersion.Build), Math.Max(0, CurrentVersion.Revision));
-            return LatestVersion > CurrentVersion;
+            if (Value != 0 && Value != 1) return false;
+            if (Value == (int)PreferredUpdateChannel()) return true;
+            if (Value == 1 && (Confirm is null || !Confirm())) return false;
+            Settings.Set("ToolLauncherUpdateChannel", Value);
+            return true;
+        }
+        internal static UpdateSource PreferredUpdateSource()
+            => Settings.Get<int>("ToolLauncherUpdateSource") == (int)UpdateSource.GitHub ? UpdateSource.GitHub : UpdateSource.Cnb;
+        private static string UpdateSourceName(UpdateSource Source) => Source == UpdateSource.GitHub ? "GitHub" : "CNB";
+
+        internal sealed class UpdatePromptView : StackPanel
+        {
+            internal double PreferredWidth => 570;
+            internal readonly MyComboBox SourcePicker = new MyComboBox { Width = 240, Height = 30, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(18, 0, 0, 0) };
+            internal UpdateSource SelectedSource => SourcePicker.SelectedIndex == 1 ? UpdateSource.GitHub : UpdateSource.Cnb;
+            internal UpdatePromptView(string Tag, UpdateSource Source)
+            {
+                Children.Add(new TextBlock { Text = "当前版本：" + ModBase.VersionBaseName + Constants.vbCrLf + (Tag.Contains("-") ? "最新预发布版：" : "最新正式版：") + Tag, Margin = new Thickness(2, 0, 2, 18), LineHeight = 24 });
+                SourcePicker.Items.Add(new MyComboBoxItem { Content = "CNB（国内）" });
+                SourcePicker.Items.Add(new MyComboBoxItem { Content = "GitHub Releases" });
+                SourcePicker.SelectedIndex = (int)Source;
+                DockPanel Row = new DockPanel { Margin = new Thickness(2, 0, 2, 16) };
+                Row.Children.Add(new TextBlock { Text = "本次下载源", VerticalAlignment = VerticalAlignment.Center });
+                Row.Children.Add(SourcePicker); Children.Add(Row);
+                TextBlock Note = new TextBlock { Text = "下载源选择仅本次生效。下载并校验完成后，启动器将自动替换并重新启动。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 0, 2, 0) };
+                Note.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3"); Children.Add(Note);
+            }
+        }
+        internal sealed class UpdateTransport
+        {
+            internal Func<string, JObject> ReadJson = Url => JObject.Parse(ModNet.NetRequestByClient(Url, Accept: "application/json", Timeout: 5000, RequireJson: true));
+            internal Func<string, JArray> ReadReleaseList = Url => JArray.Parse(ModNet.NetRequestByClient(Url, Accept: "application/json", Timeout: 5000, RequireJson: true));
+            internal Func<string, string> ReadText = Url => ModNet.NetRequestByClient(Url, Timeout: 8000);
+            internal Action<string, string, FileChecker> Download = DownloadWithTask;
         }
 
+        internal static bool NewerRelease(string Tag, string Current) => NewerReleaseForChannel(Tag, Current, UpdateChannel.Stable);
+        private static bool ParseReleaseVersion(string Value, ref Version Core, ref string Preview)
+        {
+            var Match = System.Text.RegularExpressions.Regex.Match(Value ?? "", @"\A[vV]?(\d+\.\d+\.\d+(?:\.\d+)?)(?:-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*))?\z");
+            if (!Match.Success || !Version.TryParse(Match.Groups[1].Value, out Core)) return false;
+            Core = new Version(Core.Major, Core.Minor, Math.Max(0, Core.Build), Math.Max(0, Core.Revision));
+            Preview = Match.Groups[2].Value;
+            return true;
+        }
+        internal static int CompareReleaseVersions(string First, string Second)
+        {
+            Version A = null, B = null; string AP = null, BP = null;
+            if (!ParseReleaseVersion(First, ref A, ref AP) || !ParseReleaseVersion(Second, ref B, ref BP)) throw new ArgumentException("发布版本号无效。");
+            int Result = A.CompareTo(B);
+            if (Result != 0) return Result;
+            if (AP == "" || BP == "") return AP == BP ? 0 : AP == "" ? 1 : -1;
+            var AT = System.Text.RegularExpressions.Regex.Matches(AP.ToLowerInvariant(), "[0-9]+|[a-z]+").Cast<System.Text.RegularExpressions.Match>().Select(Item => Item.Value).ToArray();
+            var BT = System.Text.RegularExpressions.Regex.Matches(BP.ToLowerInvariant(), "[0-9]+|[a-z]+").Cast<System.Text.RegularExpressions.Match>().Select(Item => Item.Value).ToArray();
+            for (int Index = 0; Index <= Math.Min(AT.Length, BT.Length) - 1; Index++)
+            {
+                bool AN = char.IsDigit(AT[Index][0]), BN = char.IsDigit(BT[Index][0]);
+                if (AN && BN)
+                {
+                    string AV = AT[Index].TrimStart('0'), BV = BT[Index].TrimStart('0');
+                    Result = AV.Length.CompareTo(BV.Length);
+                    if (Result == 0) Result = string.CompareOrdinal(AV, BV);
+                }
+                else if (AN != BN) Result = AN ? -1 : 1;
+                else Result = string.CompareOrdinal(AT[Index], BT[Index]);
+                if (Result != 0) return Result;
+            }
+            return AT.Length.CompareTo(BT.Length);
+        }
+        internal static bool NewerReleaseForChannel(string Tag, string Current, UpdateChannel Channel)
+        {
+            Version Core = null; string Preview = null;
+            if (!ParseReleaseVersion(Tag, ref Core, ref Preview) || (Preview != "" && Channel == UpdateChannel.Stable)) return false;
+            if (!ParseReleaseVersion(Current, ref Core, ref Preview)) return false;
+            return CompareReleaseVersions(Tag, Current) > 0;
+        }
         internal static bool ValidAssetUrl(string Value)
         {
-            Uri Url = null;
-            return Uri.TryCreate(Value, UriKind.Absolute, out Url) && Url.Scheme == "https" && Url.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && (Url.AbsolutePath.StartsWith("/" + Repository + "/releases/download/", StringComparison.OrdinalIgnoreCase) || Url.AbsolutePath.StartsWith("/" + CompatibilityRepository + "/releases/download/", StringComparison.OrdinalIgnoreCase)) && string.IsNullOrEmpty(Url.UserInfo) && Url.IsDefaultPort;
+            if (!Uri.TryCreate(Value, UriKind.Absolute, out Uri Url) || Url.Scheme != "https" || Url.UserInfo != "" || !Url.IsDefaultPort || Url.Fragment != "") return false;
+            if (Url.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+                return Url.AbsolutePath.StartsWith("/" + Repository + "/releases/download/", StringComparison.OrdinalIgnoreCase) || Url.AbsolutePath.StartsWith("/" + CompatibilityRepository + "/releases/download/", StringComparison.OrdinalIgnoreCase);
+            return Url.Host.Equals("cnb.cool", StringComparison.OrdinalIgnoreCase) && Url.AbsolutePath.StartsWith("/" + ModBase.LauncherCnbRepository + "/-/releases/download/", StringComparison.OrdinalIgnoreCase);
         }
-
         internal static bool ShouldPromptForUpdate(string Tag, string Current, string IgnoredTag)
-        {
-            return NewerRelease(Tag, Current) && !string.Equals(Tag, IgnoredTag, StringComparison.Ordinal);
-        }
-
+            => NewerReleaseForChannel(Tag, Current, PreferredUpdateChannel()) && !string.Equals(Tag, IgnoredTag, StringComparison.Ordinal);
         internal static string IgnoreTagAfterChoice(string IgnoredTag, string Tag, int Choice)
         {
-            if (Choice == 2)
-                return Tag;
-            if (Choice == 1 && string.Equals(IgnoredTag, Tag, StringComparison.Ordinal))
-                return "";
+            if (Choice == 2) return Tag;
+            if (Choice == 1 && string.Equals(IgnoredTag, Tag, StringComparison.Ordinal)) return "";
             return IgnoredTag;
         }
-
         internal static JObject ReleaseExecutable(JObject Info)
         {
             JArray Assets = Info["assets"] as JArray;
@@ -85,58 +160,222 @@ namespace PCL
             throw new Exception("发布附件缺少对应的 SHA256 校验值。");
         }
 
+
+        private static JObject HashAsset(JObject Info)
+        {
+            JObject Asset = ((JArray)Info["assets"]).OfType<JObject>().SingleOrDefault(Item => Item["name"]?.ToString() == "SHA256SUMS.txt");
+            if (Asset is null || !ValidAssetUrl(Asset["browser_download_url"]?.ToString())) throw new Exception("发布中没有可信的校验文件。");
+            return Asset;
+        }
+        private static void ValidateReleaseInfo(JObject Info, bool Cnb, UpdateChannel Channel)
+        {
+            Version Parsed = null; string Preview = null;
+            if (Info is null || !ParseReleaseVersion(Info["tag_name"]?.ToString(), ref Parsed, ref Preview)) throw new Exception("发布标签不是可识别的版本号。");
+            foreach (string Field in new[] { "draft", "prerelease" })
+                if (Info[Field] is null || Info[Field].Type != JTokenType.Boolean) throw new Exception("更新源的发布状态无效。");
+            if ((bool)Info["draft"] || (Channel == UpdateChannel.Stable && (bool)Info["prerelease"])) throw new Exception("更新源尚无符合当前通道的发布。");
+            if ((bool)Info["prerelease"] != (Preview != "")) throw new Exception("发布标记与版本号不一致。");
+            JObject Executable = ReleaseExecutable(Info), Manifest = HashAsset(Info);
+            if (Executable["size"]?.Type != JTokenType.Integer || (long)Executable["size"] <= 0 || (long)Executable["size"] > 1024L * 1024 * 1024) throw new Exception("更新附件大小无效。");
+            foreach (JObject Asset in new[] { Executable, Manifest })
+            {
+                Uri Url = new Uri(Asset["browser_download_url"].ToString()); string Name = Asset["name"].ToString();
+                if (Path.GetFileName(Name) != Name || Url.Host != (Cnb ? "cnb.cool" : "github.com")) throw new Exception("更新附件与所选更新源不一致。");
+                string Prefix = Cnb ? "/" + ModBase.LauncherCnbRepository + "/-/releases/download/" : "/" + Repository + "/releases/download/";
+                string Expected = Prefix + Uri.EscapeDataString(Info["tag_name"].ToString()) + "/" + Uri.EscapeDataString(Name);
+                if (!string.Equals(Url.AbsolutePath, Expected, StringComparison.Ordinal)) throw new Exception("更新附件不属于所选发布版本。");
+            }
+        }
+        internal static JObject FindLatestRelease(string Current, UpdateTransport Transport = null)
+            => FindLatestReleaseForSource(Current, PreferredUpdateSource(), Transport);
+        internal static JObject FindLatestReleaseForSource(string Current, UpdateSource Source, UpdateTransport Transport = null)
+            => FindLatestReleaseForChannel(Current, Source, PreferredUpdateChannel(), Transport);
+        internal static JObject FindLatestReleaseForChannel(string Current, UpdateSource Source, UpdateChannel Channel, UpdateTransport Transport = null)
+        {
+            if (Transport is null) Transport = new UpdateTransport();
+            JObject Best = null; Exception Failure = null;
+            string[] Endpoints = Channel == UpdateChannel.Stable
+                ? Source == UpdateSource.GitHub ? new[] { GitHubLatestUrl, CnbManifestUrl } : new[] { CnbManifestUrl, GitHubLatestUrl }
+                : Source == UpdateSource.GitHub ? new[] { GitHubReleaseListUrl, CnbPreviewManifestUrl, GitHubLatestUrl, CnbManifestUrl } : new[] { CnbPreviewManifestUrl, GitHubReleaseListUrl, CnbManifestUrl, GitHubLatestUrl };
+            foreach (string Endpoint in Endpoints)
+            {
+                try
+                {
+                    bool Cnb = Endpoint == CnbManifestUrl || Endpoint == CnbPreviewManifestUrl;
+                    JObject Info = null;
+                    if (Endpoint == GitHubReleaseListUrl)
+                    {
+                        foreach (JObject Candidate in Transport.ReadReleaseList(Endpoint).OfType<JObject>().Take(30))
+                        {
+                            try
+                            {
+                                ValidateReleaseInfo(Candidate, false, Channel);
+                                if (Info is null || CompareReleaseVersions(Candidate["tag_name"].ToString(), Info["tag_name"].ToString()) > 0) Info = Candidate;
+                            }
+                            catch (Exception ex) { ex.ThrowIfCanceled(); }
+                        }
+                        if (Info is null) throw new Exception("GitHub 尚无符合当前通道的完整发布。");
+                    }
+                    else
+                    {
+                        Info = Transport.ReadJson(Endpoint);
+                        ValidateReleaseInfo(Info, Cnb, Channel);
+                    }
+                    if (Best is null || CompareReleaseVersions(Info["tag_name"].ToString(), Best["tag_name"].ToString()) > 0) Best = Info;
+                    if (Source == UpdateSource.GitHub && !Cnb) return Info;
+                    if (NewerReleaseForChannel(Info["tag_name"].ToString(), Current, Channel)) return Info;
+                }
+                catch (Exception ex)
+                {
+                    ex.ThrowIfCanceled(); Failure = ex;
+                    Logger.Info("更新源暂不可用：" + (Endpoint == CnbManifestUrl || Endpoint == CnbPreviewManifestUrl ? "CNB" : "GitHub"));
+                }
+            }
+            if (Best is not null) return Best;
+            throw new Exception("CNB 与 GitHub 更新源均未返回可用发布。", Failure);
+        }
+        internal static string DownloadUpdate(JObject Info, string Staged, UpdateTransport Transport = null)
+        {
+            if (Transport is null) Transport = new UpdateTransport();
+            bool Cnb = new Uri(ReleaseExecutable(Info)["browser_download_url"].ToString()).Host == "cnb.cool";
+            ValidateReleaseInfo(Info, Cnb, UpdateChannel.StableAndPrerelease);
+            string ExpectedHash = null;
+            try
+            {
+                ExpectedHash = ManifestHash(Transport.ReadText(HashAsset(Info)["browser_download_url"].ToString()), ReleaseExecutable(Info)["name"].ToString());
+                DownloadCandidate(Info, Staged, ExpectedHash, Transport);
+                return ExpectedHash;
+            }
+            catch (Exception ex)
+            {
+                ex.ThrowIfCanceled();
+                Logger.Info((Cnb ? "CNB" : "GitHub") + " 下载未完成，尝试备用源的同版本附件。");
+            }
+            JObject Fallback = ReleaseForDownloadSource(Info, Cnb ? UpdateSource.GitHub : UpdateSource.Cnb, Transport);
+            string FallbackHash = ManifestHash(Transport.ReadText(HashAsset(Fallback)["browser_download_url"].ToString()), ReleaseExecutable(Fallback)["name"].ToString());
+            if (ExpectedHash is not null && !string.Equals(ExpectedHash, FallbackHash, StringComparison.OrdinalIgnoreCase)) throw new Exception("CNB 与 GitHub 的更新校验值不一致，已停止更新。");
+            DownloadCandidate(Fallback, Staged, FallbackHash, Transport);
+            return FallbackHash;
+        }
+        internal static JObject ReleaseForDownloadSource(JObject Info, UpdateSource Source, UpdateTransport Transport = null)
+        {
+            if (Transport is null) Transport = new UpdateTransport();
+            bool Cnb = new Uri(ReleaseExecutable(Info)["browser_download_url"].ToString()).Host == "cnb.cool";
+            ValidateReleaseInfo(Info, Cnb, UpdateChannel.StableAndPrerelease);
+            if (Cnb == (Source == UpdateSource.Cnb)) return (JObject)Info.DeepClone();
+            JObject Selected;
+            if (Source == UpdateSource.GitHub)
+                Selected = Transport.ReadJson("https://api.github.com/repos/" + Repository + "/releases/tags/" + Uri.EscapeDataString(Info["tag_name"].ToString()));
+            else
+            {
+                Selected = (JObject)Info.DeepClone();
+                foreach (JObject Asset in ((JArray)Selected["assets"]).OfType<JObject>())
+                {
+                    string Name = Asset["name"]?.ToString();
+                    if (Name is null || Path.GetFileName(Name) != Name) throw new Exception("备用附件名称无效。");
+                    Asset["browser_download_url"] = ModBase.LauncherCnbUrl + "/-/releases/download/" + Uri.EscapeDataString(Selected["tag_name"].ToString()) + "/" + Uri.EscapeDataString(Name);
+                }
+            }
+            ValidateReleaseInfo(Selected, Source == UpdateSource.Cnb, UpdateChannel.StableAndPrerelease);
+            if (Selected["tag_name"].ToString() != Info["tag_name"].ToString()) throw new Exception("所选源的发布版本与已确认版本不一致。");
+            return Selected;
+        }
+        internal static ModLoader.LoaderCombo<int> CreateUpdateDownloadTask(string Url, string Target, FileChecker Check)
+        {
+            string Source = new Uri(Url).Host == "cnb.cool" ? "CNB" : "GitHub";
+            string Version = System.Text.RegularExpressions.Regex.Match(Url, @"/(v[0-9.]+(?:-[0-9A-Za-z.-]+)?)/", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups[1].Value;
+            ModNet.LoaderDownload Download = new ModNet.LoaderDownload("下载启动器更新", new[] { new ModNet.NetFile(new[] { Url }, Target, Check) }) { ProgressWeight = 1 };
+            return new ModLoader.LoaderCombo<int>("下载启动器更新：" + Version + "（" + Source + "）", new List<ModLoader.LoaderBase> { Download }) { OnStateChanged = ModDownloadLib.LoaderStateChangedHintOnly };
+        }
+        private static void DownloadWithTask(string Url, string Target, FileChecker Check)
+        {
+            var Work = CreateUpdateDownloadTask(Url, Target, Check);
+            if (ModMain.FrmMain is null) Work.WaitForExit();
+            else
+            {
+                ModBase.RunInUiWait(() =>
+                {
+                    Work.Start(1); ModLoader.LoaderTaskbarAdd(Work);
+                    ModMain.FrmMain.BtnExtraDownload.ShowRefresh(); ModMain.FrmMain.BtnExtraDownload.Ribble();
+                });
+                Work.WaitForExit(StartIfNeeded: false);
+            }
+        }
+        private static void DownloadCandidate(JObject Info, string Staged, string Hash, UpdateTransport Transport)
+        {
+            JObject Asset = ReleaseExecutable(Info);
+            Transport.Download(Asset["browser_download_url"].ToString(), Staged, new FileChecker { Hash = Hash, ActualSize = (long)Asset["size"] });
+            ValidateExecutable(Staged, Hash);
+        }
         internal static void CheckForUpdates(bool Startup)
         {
             if (Interlocked.CompareExchange(ref CheckRunning, 1, 0) != 0)
             {
-                if (!Startup)
-                    ModMain.Hint("正在检查更新，请稍候……");
+                if (!Startup) ModMain.Hint("正在检查更新，请稍候……");
                 return;
             }
-            if (!Startup)
-                ModMain.Hint("正在检查 PCL Living Fork 的 GitHub Releases……");
-            ModBase.RunInNewThread(() => { try { JObject Info = (JObject)ModNet.NetRequestByClientRetry("https://api.github.com/repos/" + Repository + "/releases/latest", Accept: "application/vnd.github+json", RequireJson: true).DeserializeJson(); string Tag = Info["tag_name"]?.ToString(); Version ParsedVersion = null; if (string.IsNullOrWhiteSpace(Tag) || !Version.TryParse(Tag.TrimStart('v', 'V'), out ParsedVersion)) throw new Exception("发布标签不是可识别的版本号。"); if ((bool)(Info["draft"] ?? false) || (bool)(Info["prerelease"] ?? false)) return; if (!NewerRelease(Tag, ModBase.VersionBaseName)) { if (!Startup) ModMain.MyMsgBox($"当前版本：{ModBase.VersionBaseName}{Constants.vbCrLf}最新正式版：{Tag}{Constants.vbCrLf}{Constants.vbCrLf}当前没有更新的正式版本。", "PCL Living Fork 更新"); return; } string IgnoredTag = Settings.Get<string>("ToolLauncherUpdateIgnoredTag"); if (Startup && !ShouldPromptForUpdate(Tag, ModBase.VersionBaseName, IgnoredTag)) return; int Choice = ModMain.MyMsgBox($"当前版本：{ModBase.VersionBaseName}{Constants.vbCrLf}最新正式版：{Tag}{Constants.vbCrLf}{Constants.vbCrLf}下载并校验更新后，启动器将自动替换并重新启动。", "发现 PCL Living Fork 新版本", "下载并更新", "暂不更新"); if (Choice == 1) { Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice)); DownloadAndUpdate(Info); } else if (Choice == 2) { Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice)); } } catch (Exception ex) { if (Startup) { Logger.Info("启动更新检查未完成，将在下次启动时重试。"); } else { UpdateFailure(ex.Message); } } finally { Interlocked.Exchange(ref CheckRunning, 0); } }, "PCL Living Fork 更新检查", ThreadPriority.BelowNormal);
+            UpdateSource Source = PreferredUpdateSource();
+            if (!Startup) ModMain.Hint("正在通过 " + UpdateSourceName(Source) + " 检查 PCL Living Fork 更新……");
+            ModBase.RunInNewThread(() =>
+            {
+                try
+                {
+                    JObject Info = FindLatestReleaseForSource(ModBase.VersionBaseName, Source);
+                    string Tag = Info["tag_name"]?.ToString();
+                    if (!NewerReleaseForChannel(Tag, ModBase.VersionBaseName, PreferredUpdateChannel()))
+                    {
+                        if (!Startup) ModMain.MyMsgBox($"当前版本：{ModBase.VersionBaseName}{Constants.vbCrLf}当前通道最新版本：{Tag}{Constants.vbCrLf}{Constants.vbCrLf}当前没有更新的版本。", "PCL Living Fork 更新");
+                        return;
+                    }
+                    string IgnoredTag = Settings.Get<string>("ToolLauncherUpdateIgnoredTag");
+                    if (Startup && !ShouldPromptForUpdate(Tag, ModBase.VersionBaseName, IgnoredTag)) return;
+                    UpdatePromptView View = null; UpdateSource DownloadSource = Source;
+                    int Choice = ModMain.MyMsgBoxConfirmContent("请选择本次更新的下载源。", "发现 PCL Living Fork 新版本", "下载并更新", () => { View = new UpdatePromptView(Tag, Source); return View; }, "暂不更新", IsWarn: false);
+                    if (Choice == 1)
+                    {
+                        ModBase.RunInUiWait(() => DownloadSource = View.SelectedSource);
+                        Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice));
+                        DownloadAndUpdate(Info, DownloadSource);
+                    }
+                    else if (Choice == 2) Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice));
+                }
+                catch (Exception ex)
+                {
+                    if (Startup) Logger.Info("启动更新检查未完成，将在下次启动时重试。");
+                    else UpdateFailure(ex.Message);
+                }
+                finally { Interlocked.Exchange(ref CheckRunning, 0); }
+            }, "PCL Living Fork 更新检查", ThreadPriority.BelowNormal);
         }
-
-        private static void DownloadAndUpdate(JObject Info)
+        private static void DownloadAndUpdate(JObject Info, UpdateSource Source)
         {
             try
             {
-                var Asset = ReleaseExecutable(Info);
-                var HashAsset = (Info["assets"] as JArray).OfType<JObject>().SingleOrDefault(Item => Item["name"]?.ToString() == "SHA256SUMS.txt");
-                if (HashAsset is null || !ValidAssetUrl(HashAsset["browser_download_url"]?.ToString()))
-                    throw new Exception("发布中没有可信的校验文件。");
-                string Manifest = ModNet.NetRequestByClientRetry(HashAsset["browser_download_url"].ToString());
-                string ExpectedHash = ManifestHash(Manifest, Asset["name"].ToString());
-                string Folder = Path.Combine(Paths.Base, "PCL", "Updates");
-                Directory.CreateDirectory(Folder);
+                string Folder = Path.Combine(Paths.Base, "PCL", "Updates"); Directory.CreateDirectory(Folder);
                 string Staged = Path.Combine(Folder, ModBase.LauncherExecutableName);
                 ModMain.Hint("正在下载 PCL Living Fork 更新……");
-                ModNet.NetDownloadByLoader(Asset["browser_download_url"].ToString(), Staged, Check: new FileChecker() { Hash = ExpectedHash, ActualSize = (long)Asset["size"] });
-                ValidateExecutable(Staged, ExpectedHash);
-                if (ModNet.HasDownloadingTask())
-                    throw new Exception("仍有下载任务正在进行。请等待任务结束后重试更新。");
+                string ExpectedHash = DownloadUpdate(ReleaseForDownloadSource(Info, Source), Staged);
+                if (ModNet.HasDownloadingTask()) throw new Exception("仍有下载任务正在进行。请等待任务结束后重试更新。");
                 string Target = Process.GetCurrentProcess().MainModule.FileName;
                 string Arguments = $"--livingpcl-update {Process.GetCurrentProcess().Id} \"{Path.GetFileName(Target)}\" {ExpectedHash}";
                 var Helper = Process.Start(new ProcessStartInfo(Staged, Arguments) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Folder });
-                if (Helper is null)
-                    throw new Exception("无法启动更新替换程序。");
-                if (Helper.WaitForExit(500))
-                    throw new Exception("更新替换程序未能正常启动。");
+                if (Helper is null) throw new Exception("无法启动更新替换程序。");
+                if (Helper.WaitForExit(500)) throw new Exception("更新替换程序未能正常启动。");
                 ModBase.RunInUi(() => ModMain.FrmMain.EndProgram(SendWarning: false));
             }
-            catch (Exception ex)
-            {
-                UpdateFailure(ex.Message);
-            }
+            catch (OperationCanceledException) { ModMain.Hint("已取消启动器更新。"); }
+            catch (ThreadInterruptedException) { ModMain.Hint("已取消启动器更新。"); }
+            catch (Exception ex) { UpdateFailure(ex.Message); }
         }
-
         private static void UpdateFailure(string Reason)
         {
-            if (ModMain.MyMsgBox("更新未完成，现有启动器已保留。" + Constants.vbCrLf + Constants.vbCrLf + Reason, "PCL Living Fork 更新失败", "打开发布页", "取消", IsWarn: true) == 1)
-                ModBase.OpenWebsite(ReleasePage);
+            bool GitHubFirst = PreferredUpdateSource() == UpdateSource.GitHub;
+            switch (ModMain.MyMsgBox("更新未完成，现有启动器已保留。" + Constants.vbCrLf + Constants.vbCrLf + Reason, "PCL Living Fork 更新失败", GitHubFirst ? "GitHub 下载页" : "国内下载页", GitHubFirst ? "CNB 备用" : "GitHub 备用", "取消", IsWarn: true))
+            {
+                case 1: ModBase.OpenWebsite(GitHubFirst ? ReleasePage : ModBase.LauncherCnbUrl + "/-/releases"); break;
+                case 2: ModBase.OpenWebsite(GitHubFirst ? ModBase.LauncherCnbUrl + "/-/releases" : ReleasePage); break;
+            }
         }
-
         internal static void ValidateExecutable(string FileName, string ExpectedHash)
         {
             if (!System.Text.RegularExpressions.Regex.IsMatch(ExpectedHash ?? "", @"\A[0-9a-fA-F]{64}\z"))

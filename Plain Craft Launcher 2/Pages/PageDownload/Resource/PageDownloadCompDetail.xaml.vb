@@ -18,7 +18,7 @@ Public Class PageDownloadResourceDetail
             .View = Function() New PCLCS.ResourceDetailPageView With {.Filter = PanFilter, .Results = PanResults, .Intro = PanIntro,
                 .FilterCard = CardFilter, .Alternative = HintAlternative, .Wiki = BtnIntroWiki,
                 .AlternativeText = Sub(Value) HintAlternative.Text = Value, .WebText = Sub(Value) BtnIntroWeb.Text = Value, .ScrollHome = Sub() PanBack.ScrollToHome()},
-            .Argument = Function(Index) FrmMain.PageCurrent.Additional(Index),
+            .Argument = Function(Index) FrmMain.PageCurrent.Additional(Index), .Arguments = Function() TryCast(FrmMain.PageCurrent.Additional, Object()),
             .SetArgument = Sub(Index, Value) FrmMain.PageCurrent.Additional(Index) = Value,
             .HasArguments = Function() FrmMain.PageCurrent.Additional IsNot Nothing,
             .Failed = Function() ResourceFileLoader.State = LoadState.Failed, .Error = Function() ResourceFileLoader.Error,
@@ -62,6 +62,17 @@ Public Class PageDownloadResourceDetail
             .Explorer = Sub(Target) OpenExplorer(Target),
             .RunInNewThread = Sub(Work, Name) RunInNewThread(Work, Name), .RunInUi = Sub(Work) RunInUi(Work)}
     End Function
+    Friend Shared Function ChooseModDownloadFolder(Target As McInstance, Selected As McInstance, Cached As String, Suitable As Func(Of McInstance, Boolean)) As String
+        Return DetailCore.ChooseModDownloadFolder(Target, Selected, Cached, Suitable)
+    End Function
+    Private Property DownloadTargetInstance As McInstance
+        Get
+            Return Service.DownloadTargetInstance
+        End Get
+        Set(value As McInstance)
+            Service.DownloadTargetInstance = value
+        End Set
+    End Property
     Private Shared Sub DownloadHint(Text As String, Kind As Integer)
         Hint(Text, If(Kind = 1, HintType.Red, If(Kind = 2, HintType.Green, HintType.Blue)))
     End Sub

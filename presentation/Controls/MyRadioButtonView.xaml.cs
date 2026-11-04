@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Collections.Generic;
 using System.Windows;
@@ -33,6 +34,9 @@ public partial class MyRadioButtonView : Border {
         MouseEnter += RefreshColor;
         MouseLeave += RefreshColor;
         Loaded += RefreshColor;
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, () => RefreshColor());
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, () => RefreshColor());
     }
 
     public string Logo {
@@ -140,7 +144,7 @@ public partial class MyRadioButtonView : Border {
         try {
             ControlServiceHost services = ControlServices.Current;
             ControlAnimations animations = services.Animations;
-            ControlColor white = new(255, 255, 255);
+            ControlColor titleForeground = LegacyThemePalette.Color("ColorBrushTitleForeground");
             if (IsLoaded && services.AnimationEnabled() && !false.Equals(e)) {
                 switch (ColorType) {
                     case ColorState.White:
@@ -149,19 +153,19 @@ public partial class MyRadioButtonView : Border {
                                 animations.ColorResource(ShapeLogo, Path.FillProperty, "ColorBrush3", new(AnimationTimeOfCheck)),
                                 animations.ColorResource(LabText, TextBlock.ForegroundProperty, "ColorBrush3", new(AnimationTimeOfCheck))
                             }, "MyRadioButton Checked " + Uuid);
-                            animations.Start(animations.ColorTo(this, BackgroundProperty, white, new(AnimationTimeOfCheck)), "MyRadioButton Color " + Uuid);
+                            animations.Start(animations.ColorTo(this, BackgroundProperty, LegacyThemePalette.Color("ColorBrushTitleSelected"), new(AnimationTimeOfCheck)), "MyRadioButton Color " + Uuid);
                         } else if (IsMouseDown) {
-                            animations.Start(animations.ColorTo(this, BackgroundProperty, services.ThemeColor(ControlThemeColor.Accent8).WithAlpha(120), new(60)), "MyRadioButton Color " + Uuid);
+                            animations.Start(animations.ColorTo(this, BackgroundProperty, titleForeground.WithAlpha(120), new(60)), "MyRadioButton Color " + Uuid);
                         } else if (IsMouseOver) {
                             animations.Start(new[] {
-                                animations.ColorTo(ShapeLogo, Path.FillProperty, white, new(AnimationTimeOfMouseIn)),
-                                animations.ColorTo(LabText, TextBlock.ForegroundProperty, white, new(AnimationTimeOfMouseIn))
+                                animations.ColorTo(ShapeLogo, Path.FillProperty, titleForeground, new(AnimationTimeOfMouseIn)),
+                                animations.ColorTo(LabText, TextBlock.ForegroundProperty, titleForeground, new(AnimationTimeOfMouseIn))
                             }, "MyRadioButton Checked " + Uuid);
-                            animations.Start(animations.ColorTo(this, BackgroundProperty, services.ThemeColor(ControlThemeColor.Accent8).WithAlpha(50), new(AnimationTimeOfMouseIn)), "MyRadioButton Color " + Uuid);
+                            animations.Start(animations.ColorTo(this, BackgroundProperty, titleForeground.WithAlpha(50), new(AnimationTimeOfMouseIn)), "MyRadioButton Color " + Uuid);
                         } else {
                             animations.Start(new[] {
-                                animations.ColorTo(ShapeLogo, Path.FillProperty, white, new(AnimationTimeOfMouseOut)),
-                                animations.ColorTo(LabText, TextBlock.ForegroundProperty, white, new(AnimationTimeOfMouseOut))
+                                animations.ColorTo(ShapeLogo, Path.FillProperty, titleForeground, new(AnimationTimeOfMouseOut)),
+                                animations.ColorTo(LabText, TextBlock.ForegroundProperty, titleForeground, new(AnimationTimeOfMouseOut))
                             }, "MyRadioButton Checked " + Uuid);
                             animations.Start(animations.ColorTo(this, BackgroundProperty, services.ThemeColor(ControlThemeColor.SemiTransparent), new(AnimationTimeOfMouseOut)), "MyRadioButton Color " + Uuid);
                         }
@@ -169,8 +173,8 @@ public partial class MyRadioButtonView : Border {
                     case ColorState.Highlight:
                         if (Checked) {
                             animations.Start(new[] {
-                                animations.ColorTo(ShapeLogo, Path.FillProperty, white, new(AnimationTimeOfCheck)),
-                                animations.ColorTo(LabText, TextBlock.ForegroundProperty, white, new(AnimationTimeOfCheck))
+                                animations.ColorTo(ShapeLogo, Path.FillProperty, LegacyThemePalette.Color("ColorBrushOnAccent"), new(AnimationTimeOfCheck)),
+                                animations.ColorTo(LabText, TextBlock.ForegroundProperty, LegacyThemePalette.Color("ColorBrushOnAccent"), new(AnimationTimeOfCheck))
                             }, "MyRadioButton Checked " + Uuid);
                             animations.Start(animations.ColorResource(this, BackgroundProperty, "ColorBrush3", new(AnimationTimeOfCheck)), "MyRadioButton Color " + Uuid);
                         } else if (IsMouseDown) {
@@ -196,20 +200,20 @@ public partial class MyRadioButtonView : Border {
                 switch (ColorType) {
                     case ColorState.White:
                         if (Checked) {
-                            Background = white.ToBrush();
+                            SetResourceReference(BackgroundProperty, "ColorBrushTitleSelected");
                             ShapeLogo.SetResourceReference(Path.FillProperty, "ColorBrush3");
                             LabText.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush3");
                         } else {
                             Background = services.ThemeColor(ControlThemeColor.SemiTransparent).ToBrush();
-                            ShapeLogo.Fill = white.ToBrush();
-                            LabText.Foreground = white.ToBrush();
+                            ShapeLogo.SetResourceReference(Path.FillProperty, "ColorBrushTitleForeground");
+                            LabText.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushTitleForeground");
                         }
                         break;
                     case ColorState.Highlight:
                         if (Checked) {
                             SetResourceReference(BackgroundProperty, "ColorBrush3");
-                            ShapeLogo.Fill = white.ToBrush();
-                            LabText.Foreground = white.ToBrush();
+                            ShapeLogo.SetResourceReference(Path.FillProperty, "ColorBrushOnAccent");
+                            LabText.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushOnAccent");
                         } else {
                             Background = services.ThemeColor(ControlThemeColor.SemiTransparent).ToBrush();
                             ShapeLogo.SetResourceReference(Path.FillProperty, "ColorBrush3");

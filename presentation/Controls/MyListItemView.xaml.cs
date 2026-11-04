@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -42,6 +43,9 @@ public partial class MyListItemView : Grid {
         MouseEnter += RefreshColor; MouseLeave += RefreshColor;
         PreviewMouseLeftButtonDown += RefreshColor; PreviewMouseLeftButtonUp += RefreshColor;
         Loaded += ItemLoaded;
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, () => RefreshColor(null, EventArgs.Empty));
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, () => RefreshColor(null, EventArgs.Empty));
     }
     protected virtual double WpfSize(double pixels) => pixels / (PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 1);
     protected virtual FrameworkElement CreateOnlineImage(string address) => throw new InvalidOperationException("The product image loader is required for online list-item logos.");

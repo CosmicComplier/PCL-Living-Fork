@@ -8,6 +8,7 @@ using MeloongCore;
 using MeloongCore.Extensions;
 using Microsoft.VisualBasic.CompilerServices;
 using PCLLF.Presentation.Controls;
+using PCLLF.Presentation.Foundation;
 
 namespace PCLLF.Presentation.Shell;
 
@@ -110,9 +111,13 @@ public sealed class MainHintRuntime<TKind> {
         }, "Hint Hide " + Id(next));
     }
     private static string Id(Border control) => Conversions.ToString(((object[])control.Tag)[1])!;
-    private static Color Blend(ControlColor color, double percent) => Color.FromArgb(
-        ControlColor.Byte(color.A * percent + 255 * (1 - percent)), ControlColor.Byte(color.R * percent + 255 * (1 - percent)),
-        ControlColor.Byte(color.G * percent + 255 * (1 - percent)), ControlColor.Byte(color.B * percent + 255 * (1 - percent)));
+    private static Color Blend(ControlColor color, double percent) {
+        ControlColor background = LegacyThemePalette.Color("ColorBrushWhite");
+        return Color.FromArgb(ControlColor.Byte(color.A * percent + background.A * (1 - percent)),
+            ControlColor.Byte(color.R * percent + background.R * (1 - percent)),
+            ControlColor.Byte(color.G * percent + background.G * (1 - percent)),
+            ControlColor.Byte(color.B * percent + background.B * (1 - percent)));
+    }
     private static void Recolor(Border control, ControlColor first, ControlColor second, double percent) {
         LinearGradientBrush brush = (LinearGradientBrush)control.Background;
         brush.GradientStops[0].Color = Blend(first, percent);

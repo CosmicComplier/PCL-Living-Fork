@@ -217,7 +217,7 @@ Public Module ModMinecraft
     End Class
 
     Public NotInheritable Class McInstanceLock
-        Private Shared ReadOnly LockedPaths As New ConcurrentDictionary(Of String, IWorker)(StringComparer.OrdinalIgnoreCase)
+        Private Shared ReadOnly LockedPaths As New ConcurrentDictionary(Of String, PCLCS.LegacyMinecraftInstanceLease)(StringComparer.OrdinalIgnoreCase)
         Private Shared ReadOnly Native As New PCLCS.LegacyMinecraftInstanceLocks(LockedPaths)
         Friend Shared ReadOnly Property IsAnyLocked As Boolean
             Get
@@ -226,6 +226,12 @@ Public Module ModMinecraft
         End Property
         Public Shared Function TryAcquire(Worker As IWorker, InstancePath As String) As Boolean
             Return Native.TryAcquire(Worker, InstancePath)
+        End Function
+        Friend Shared Function TryAcquireSnapshot(Worker As IWorker, InstancePath As String) As Boolean
+            Return Native.TryAcquireSnapshot(Worker, InstancePath)
+        End Function
+        Friend Shared Function BlocksNavigation(Instance As McInstance) As Boolean
+            Return Native.BlocksNavigation(Instance?.PathVersion)
         End Function
         Public Shared Function IsLocked(Instance As McInstance) As Boolean
             Return Native.IsLocked(Instance?.PathVersion)

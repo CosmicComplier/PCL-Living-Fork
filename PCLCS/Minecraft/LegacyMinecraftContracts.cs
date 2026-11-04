@@ -127,16 +127,24 @@ public class LegacyMinecraftLibrary {
     public override string ToString() => (IsNatives ? "[Native] " : "") + StringUtils.FormatByteSize(Size) + " | " + LocalPath;
 }
 
-/// <summary>The original LF lock dictionary is passed directly; Stopped remains the release boundary.</summary>
-public sealed class LegacyMinecraftInstanceLocks(ConcurrentDictionary<string, IWorker> lockedPaths) {
+/// <summary>LF snapshot/write reservation stored in the one original owner dictionary.</summary>
+public sealed class LegacyMinecraftInstanceLease {
+    public IWorker Worker = null!;
+    public bool BlocksNavigation;
+}
+public sealed class LegacyMinecraftInstanceLocks(ConcurrentDictionary<string, LegacyMinecraftInstanceLease> lockedPaths) {
     public bool IsAnyLocked => !lockedPaths.IsEmpty;
-    public bool TryAcquire(IWorker worker, string instancePath) {
+    public bool TryAcquire(IWorker worker, string instancePath) => Acquire(worker, instancePath, true);
+    public bool TryAcquireSnapshot(IWorker worker, string instancePath) => Acquire(worker, instancePath, false);
+    private bool Acquire(IWorker worker, string instancePath, bool blocksNavigation) {
         instancePath = PathUtils.ForCompare(instancePath);
-        if (!lockedPaths.TryAdd(instancePath, worker)) return false;
-        worker.Stopped += () => lockedPaths.TryRemove(instancePath, out _);
+        LegacyMinecraftInstanceLease held = new() { Worker = worker, BlocksNavigation = blocksNavigation };
+        if (!lockedPaths.TryAdd(instancePath, held)) return false;
+        worker.Stopped += () => ((ICollection<KeyValuePair<string, LegacyMinecraftInstanceLease>>)lockedPaths).Remove(new KeyValuePair<string, LegacyMinecraftInstanceLease>(instancePath, held));
         return true;
     }
     public bool IsLocked(string? instancePath) => instancePath != null && lockedPaths.ContainsKey(PathUtils.ForCompare(instancePath));
+    public bool BlocksNavigation(string? instancePath) => instancePath != null && lockedPaths.TryGetValue(PathUtils.ForCompare(instancePath), out LegacyMinecraftInstanceLease? held) && held.BlocksNavigation;
 }
 
 internal static class LegacyMinecraftCodes {

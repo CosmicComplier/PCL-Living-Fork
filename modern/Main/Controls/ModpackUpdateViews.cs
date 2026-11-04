@@ -91,7 +91,7 @@ namespace PCL
             Item.MinPaddingRight = 12;
             Item.Margin = new Thickness(3d, 0d, 7d, 8d);
             Item.Tag = Version;
-            Item.Background = Brushes.White;
+            Item.Background = PCLLF.Presentation.Foundation.LegacyThemePalette.Brush("ColorBrushWhite");
             Item.ToolTip = ToolTip;
         }
         private static ResourceVersion.ReleaseTypes ChannelOf(ResourceVersion Version)

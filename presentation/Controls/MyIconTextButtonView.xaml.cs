@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -27,6 +28,9 @@ public partial class MyIconTextButtonView : Border {
         MouseLeftButtonUp += (_, _) => { if (!isMouseDown) return; Services.Info("按下带图标按钮：" + Text); isMouseDown = false; OnClick(); Services.RaiseCustomEvent(this); RefreshColor(); };
         MouseLeftButtonDown += (_, _) => { isMouseDown = true; RefreshColor(); }; MouseLeave += (_, _) => { isMouseDown = false; RefreshColor(); };
         MouseEnter += (_, _) => RefreshColor(); Loaded += (_, _) => RefreshColor(); IsEnabledChanged += (_, _) => RefreshColor();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, () => RefreshColor());
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, () => RefreshColor());
     }
     public string Logo { get => ShapeLogo.Data!.ToString(); set => ShapeLogo.Data = (Geometry)new GeometryConverter().ConvertFromString(value)!; }
     private double logoScale = 1;

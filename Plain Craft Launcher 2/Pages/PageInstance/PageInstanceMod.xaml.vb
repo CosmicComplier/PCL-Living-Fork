@@ -17,7 +17,8 @@ Public Class PageInstanceMod
             .Search = Function() SearchBox.Text, .SetSearch = Sub(Value) SearchBox.Text = Value, .SetSelectionText = Sub(Value) LabSelect.Text = Value,
             .ScrollHome = Sub() PanBack.ScrollToHome(), .FocusBack = Sub() PanBack.Focus(), .Filters = AddressOf ReadFilterViews,
             .EnableDisable = Sub(Value) BtnSelectDisable.IsEnabled = Value, .EnableEnable = Sub(Value) BtnSelectEnable.IsEnabled = Value, .EnableUpdate = Sub(Value) BtnSelectUpdate.IsEnabled = Value,
-            .SelectionBar = AddressOf RefreshNativeSelectionBar}
+            .SelectionBar = AddressOf RefreshNativeSelectionBar,
+            .EnableIndex = Sub(Value) BtnManageIndex.IsEnabled = Value, .IndexText = Sub(Value) BtnManageIndex.Text = Value}
     End Function
     Private Function ReadFilterViews() As PCLCS.ResourcePageFilter()
         Return {New PCLCS.ResourcePageFilter(BtnFilterAll, 0, Function() BtnFilterAll.Checked, Sub(Value) BtnFilterAll.Checked = Value, Sub(Value) BtnFilterAll.Text = Value),
@@ -53,6 +54,12 @@ Public Class PageInstanceMod
     End Sub
     Public Sub ReloadModList(Optional ForceReload As Boolean = False)
         Native.ReloadModList(ForceReload)
+    End Sub
+    Friend Sub ApplyLoaderWarnings()
+        Native.ApplyLoaderWarnings()
+    End Sub
+    Private Sub RebuildDependencyIndex() Handles BtnManageIndex.Click
+        Native.RebuildDependencyIndex()
     End Sub
     Private Sub RefreshSelf() Implements IRefreshable.Refresh
         Refresh()

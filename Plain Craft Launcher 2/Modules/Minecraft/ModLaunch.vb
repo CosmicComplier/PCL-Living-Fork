@@ -568,6 +568,7 @@ Public Module ModLaunch
         }
     End Function
     Private Function DependencyReport(Folder As String, Report As ModDependencyInspector.InspectionReport) As PCLCS.LegacyLaunchDependencyReport
+        RunInUi(Sub() FrmInstanceMod?.ApplyLoaderWarnings())
         Return New PCLCS.LegacyLaunchDependencyReport With {
             .Source = Report, .ReadHasErrors = Function() Report.HasErrors,
             .WasAccepted = Function() LaunchDependencyCheck.WasAccepted(Folder, Report),

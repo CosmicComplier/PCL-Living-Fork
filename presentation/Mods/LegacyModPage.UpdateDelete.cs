@@ -14,6 +14,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     where TMod : LocalResourceFileData<TProject,TVersion> where TProject : ResourceProjectModelData where TVersion : ResourceVersionModelData
     where TItem : FrameworkElement where TInstance : class where TDownload : class where TButton : FrameworkElement where TImpact : ModDependencyImpactItemData {
     public void UpdateMods(IEnumerable<TMod> mods,bool ModeConfirmed=false){
+        if(!AllowModWrite(host))return;
         if(host.HistoryBusy()){host.Hint("请等待环境还原操作完成。",0,true);return;}
         TInstance? snapshot=host.Instance();
         if(host.ModpackMode()){if(!ModeConfirmed&&!host.ConfirmMode("更新 Mod"))return;}
@@ -44,6 +45,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
         BeginDependencyMutation(frozen.SelectMany(item=>new[]{item.File.FullName,item.EnabledFullName}),"删除",()=>DeleteModsCore(frozen,permanent));
     }
     private void DeleteModsCore(IEnumerable<TMod> mods,bool permanent){
+        if(!AllowModWrite(host))return;
         try{
             bool success=true;List<TMod> list=mods.SelectMany(target=>target.IsEnabled?new[]{target.File.FullName,target.File.FullName+(FileUtils.Exists(target.File.FullName+".old")?".old":".disabled")}:new[]{target.File.FullName,target.EnabledFullName}).Distinct().Where(FileUtils.Exists).Select(host.NewMod).ToList();
             foreach(TMod mod in list){

@@ -17,6 +17,8 @@ public sealed class LegacyModPageView {
     public Func<string> Search = null!;
     public Action<string> SetSearch = null!, SetSelectionText = null!;
     public Action ScrollHome = null!, FocusBack = null!;
+    public Action<bool> EnableIndex = null!;
+    public Action<string> IndexText = null!;
     public Func<ResourcePageFilter[]> Filters = null!;
     public Action<bool> EnableDisable = null!, EnableEnable = null!, EnableUpdate = null!;
     public LegacyModSelectionBar SelectionBar = null!;
@@ -25,6 +27,10 @@ public sealed class LegacyModDependencyDetails {
     public string Caption = null!;
     public Func<bool> HasMod = null!;
     public Func<FrameworkElement> CreateView = null!;
+}
+// Read-only live access to the original C# report, not a second report/model.
+public sealed class LegacyModDependencyIndexResult {
+    public Func<bool> IndexReadFailed = null!, IndexPersisted = null!, OnlineIncomplete = null!;
 }
 public sealed class LegacyModUpdateJob {
     public Func<int> State = null!;
@@ -42,6 +48,10 @@ public sealed class LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDo
     public Func<TInstance?> Instance = null!, GlobalInstance = null!;
     public Func<TInstance,string> GameFolder = null!, InstanceName = null!;
     public Func<TInstance,bool> Modable = null!, Locked = null!;
+    public Func<bool> AnyLocked = null!;
+    public Action ResetIndexLookups = null!;
+    public Func<TInstance,Action<int,int>,LegacyModDependencyIndexResult> RebuildIndex = null!;
+    public Action<TItem,TInstance> RefreshLoaderWarning = null!;
     public Func<bool> LastWasDetails = null!, IsCurrentPage = null!, CtrlDown = null!, ShiftDown = null!, IsInstanceSetup = null!, IsInstanceSelect = null!, IsModPage = null!, ModpackMode = null!, HistoryBusy = null!;
     public Func<int> AnimationControl = null!;
     public Action<int> SetAnimationControl = null!, ChangeAnimationControl = null!;

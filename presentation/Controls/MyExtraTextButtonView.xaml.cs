@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows;
 using System.Windows.Controls;
@@ -34,6 +35,9 @@ public partial class MyExtraTextButtonView : Grid {
         PanClick.MouseLeftButtonDown += (_, _) => LeftDown(); PanClick.MouseLeftButtonUp += (_, _) => LeftUp(); PanClick.MouseRightButtonUp += (_, _) => RightUp();
         PanClick.MouseLeave += (_, _) => { leftHeld = false; ResetScale(500, ControlEase.OutFluent); RefreshColor(); };
         PanClick.MouseEnter += (_, _) => RefreshColor(); PanClick.MouseLeave += (_, _) => RefreshColor(); Loaded += (_, _) => RefreshColor(); IsEnabledChanged += (_, _) => RefreshColor();
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     public bool Show {
         get => show;

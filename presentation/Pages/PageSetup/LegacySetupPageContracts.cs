@@ -76,6 +76,7 @@ public sealed class LegacySetupUiHost {
     public Func<Panel> MainBackground = null!;
     public Func<MyImageView> TitleLogo = null!;
     public Action<Panel, Panel> ApplyBackground = null!;
+    public Action<Panel> UseDefaultBackground = null!, MarkCustomBackground = null!;
     public Action UpdateBackgroundAndTitle = null!;
     public Func<IList<string>, string> RandomPicture = null!;
     public Func<List<string>> MusicAll = null!;
@@ -124,6 +125,8 @@ public sealed class LegacySetupSystemHost {
     public Action<MyCheckBoxView, bool> ToggleModpack = null!;
     public Func<string> LauncherDisplayName = null!, LauncherVersion = null!;
     public Action CheckLauncherUpdate = null!;
+    public Func<int> PreferredUpdateChannel = null!;
+    public Func<int, Func<bool>, bool> ChangeUpdateChannel = null!;
 }
 internal static class LegacySetupText {
     internal static string? String(object? value) {
@@ -140,7 +143,7 @@ public sealed class LegacyPageSetupUIView {
     public Func<ScrollViewer> PanBack = null!;
     public Func<StackPanel> PanMain = null!;
     public Func<MyCardView> CardLauncher = null!;
-    public Func<MySliderView> SliderLauncherTransparent = null!;
+    public Func<MySliderView> SliderLauncherTransparent = null!, SliderPanelOpacity = null!;
     public Func<Border> PanOfficialTheme = null!;
     public Func<MyButtonView> BtnOfficialTheme = null!;
     public Func<MyCardView> CardBackground = null!;
@@ -267,6 +270,8 @@ public sealed class LegacyPageSetupLaunchView {
 }
 
 public sealed class LegacyPageSetupSystemView {
+    public Func<MyComboBoxView> ComboLauncherUpdateSource = null!, ComboLauncherUpdateChannel = null!;
+    public Func<Func<bool>> ConfirmPrereleaseUpdates = null!;
     public Func<DependencyObject> Page = null!;
     public Func<ScrollViewer> PanBack = null!;
     public Func<StackPanel> PanMain = null!;

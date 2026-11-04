@@ -10,9 +10,10 @@ namespace PCLCS;
 public enum ModDependencyMatchState { Unknown, Satisfied, Unsatisfied }
 public enum ModDependencyFileProviderKind { None, Required, Possible }
 public enum ModDependencyKind { Required, Optional, Recommended, Suggested, Incompatible, Conflict }
-public enum ModDependencyIssueKind { MissingRequired, DuplicateId, VersionMismatch, Incompatible, Recommendation }
+public enum ModDependencyIssueKind { MissingRequired, DuplicateId, VersionMismatch, Incompatible, Recommendation, LoaderMismatch }
 
-// LF Modules/Minecraft/ModDependencyInspector.vb (LF LICENCE) is the behavior source.
+// LF Modules/Minecraft/ModDependencyInspector.vb at 50b028da5fcad2226d74d901a41d8c43a249bfb2
+// (LF LICENCE) is the behavior source; the existing migrated LF DTO storage remains unique.
 // This LF-specific inspector is absent from PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8.
 // CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModJarInJar.cs,
 // ModJarInJarDependency.cs and ModLocalComp.cs are C# reference only (CE LICENSE
@@ -43,7 +44,8 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
         public string Id = null!, Group = null!, Name = null!, RootPath = null!, MetadataPath = null!, IconPath = null!, Format = null!;
         public string? Version;
         public string Side = "*";
-        public bool Enabled, IsNested, IsBuiltin, IsCandidate;
+        public string? DisplayParentId, SourceProject, LoaderMismatchDetail;
+        public bool Enabled, IsNested, IsBuiltin, IsCandidate, IsGeneratedLibrary, IsMetadataOnly, IsRuntimeCandidate, IncompatibleLoader;
         public Dictionary<string, string?> Provides = new(StringComparer.Ordinal);
         public List<TDependency> Dependencies = new();
         public string Key => (RootPath ?? "") + "!" + (MetadataPath ?? "") + ":" + Id;
@@ -104,9 +106,11 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
         public List<TOnlineDependency> Dependencies = new();
     }
     public class OnlineDependencyData {
-        public string Platform = null!, ProjectId = null!, VersionId = null!, ProjectName = null!, Website = null!, FileName = null!, Kind = null!;
-        public List<string> MatchedPaths = new(), EnabledPaths = new();
+        public string Platform = null!, ProjectId = null!, VersionId = null!, VersionName = null!, ProjectName = null!, Website = null!, FileName = null!, Kind = null!;
+        public List<string> ProjectPaths = new(), MatchedPaths = new(), EnabledPaths = new();
         public string Status = "尚未映射到本地文件，需核对";
+        [JsonIgnore]
+        public string DisplayName => new[] { ProjectName, ProjectId, FileName, VersionName, VersionId }.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "未命名依赖";
     }
     public class OnlineFileData {
         public string FullPath = null!, Sha1 = null!;
@@ -115,12 +119,16 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
         public string Status = null!;
     }
     public class ReportData {
+        // The original LF Friend index status is not part of the persisted JSON document.
+        [JsonIgnore] public bool IndexHit, IndexReevaluated, IndexPersisted, IndexReadFailed;
+        [JsonIgnore] public string? IndexFile, IndexFingerprint, IndexGeneration;
         public TContext Context = null!;
         public List<TMod> Mods = new(), Builtins = new();
         public List<TEdge> Edges = new();
         public List<TIssue> Issues = new();
         public List<string> Notices = new();
-        public bool MetadataIncomplete, OnlineAttempted, OnlineCancelled, OnlineTimedOut;
+        public bool MetadataIncomplete, OnlineAttempted, OnlineCancelled, OnlineTimedOut, OnlineIncomplete;
+        public string? OnlineIndexScope;
         public int OnlineRequests;
         public DateTime OnlineCheckedAtUtc;
         public List<TOnlineFile> OnlineFiles = new();
@@ -165,7 +173,7 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
                     if (!string.IsNullOrEmpty(match.Website)) lines.Add("  " + match.Website);
                     if (match.Dependencies.Count == 0) lines.Add("  该平台版本没有声明项目依赖。");
                     foreach (TOnlineDependency requirement in match.Dependencies.Take(40)) {
-                        string caption = requirement.ProjectName ?? requirement.ProjectId ?? requirement.FileName ?? "未提供项目 ID";
+                        string caption = requirement.DisplayName;
                         lines.Add("  • [" + OnlineKind(requirement.Kind) + "] " + caption + "：" + requirement.Status);
                         if (!string.IsNullOrEmpty(requirement.Website)) lines.Add("    " + requirement.Website);
                     }

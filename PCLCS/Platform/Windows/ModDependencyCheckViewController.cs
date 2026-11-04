@@ -43,7 +43,12 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
         List<string> actions = new();
         if (plan.Enables.Count > 0) actions.Add(plan.Enables.Count + " 个前置已安装但禁用");
         if (plan.Items.Count > 0) actions.Add(plan.Items.Count + " 个必需前置待补全");
-        if (actions.Count == 0) actions.Add(report.Issues.Count(item => item.IsError) + " 项需要处理");
+        if (actions.Count == 0) {
+            int environmentCount = report.Issues.Where(item => item.IsError && item.Requirement is not null).Select(item => RuntimeOwnerId(item.Requirement!.Id, report.Context)).Where(id => id != "").Distinct().Count();
+            int modCount = report.Issues.Count(item => item.IsError && (item.Requirement is null || RuntimeOwnerId(item.Requirement.Id, report.Context) == ""));
+            if (environmentCount > 0) actions.Add(environmentCount + " 项运行环境要求未满足");
+            if (modCount > 0 || environmentCount == 0) actions.Add(modCount + " 项模组问题需要处理");
+        }
         TextBlock summary = new() { Text = "已检查 " + files + " 个启用文件 · " + string.Join(" · ", actions),
             Margin = new Thickness(3, 0, 3, 12), TextWrapping = TextWrapping.Wrap, FontSize = 13 };
         summary.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1");
@@ -57,9 +62,8 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
             groups.Children.Add(host.CreateWarningHint("暂不能自动补全：" + reason, new Thickness(3, 3, 7, 10)));
         }
         if (plan.Enables.Count > 0) {
-            List<Tuple<string?, string?, TMod?>> entries = plan.Enables.Select(item => Tuple.Create<string?, string?, TMod?>(item.Name + "（已禁用）",
-                "将启用：" + Path.GetFileName(item.Destination) + "\r\n需要它：" + Referrers(item.RequiredBy) +
-                "\r\n提供 " + item.Requirements.Count + " 项依赖（含内嵌组件）", item.Owner)).ToList();
+            List<Tuple<string?, string?, TMod?>> entries = plan.Enables.Select(item => Tuple.Create<string?, string?, TMod?>(item.Name + "（已安装，当前禁用）",
+                "这些模组需要它：" + Referrers(item.RequiredBy) + "\r\n点击「启用并启动」即可恢复使用。", item.Owner)).ToList();
             AddGroup(groups, "可启用的必需前置（" + entries.Count + " 个文件）", entries, false, host);
         }
         if (plan.Items.Count > 0) {
@@ -68,10 +72,25 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
                 (item.Alternatives.Count > 0 ? "\r\n将校验实际兼容性，必要时尝试较早版本" : ""), null)).ToList();
             AddGroup(groups, "可补全的必需前置（" + entries.Count + "）", entries, false, host);
         }
-        foreach (ModDependencyIssueKind kind in new[] { ModDependencyIssueKind.MissingRequired, ModDependencyIssueKind.VersionMismatch, ModDependencyIssueKind.DuplicateId, ModDependencyIssueKind.Incompatible }) {
-            List<TIssue> issues = report.Issues.Where(item => item.KindValue == kind && !covered.Contains(host.IssueKey(item))).ToList();
+        List<TIssue> runtimeIssues = report.Issues.Where(item => item.Requirement is not null &&
+            (item.KindValue == ModDependencyIssueKind.MissingRequired || item.KindValue == ModDependencyIssueKind.VersionMismatch) &&
+            RuntimeOwnerId(item.Requirement.Id, report.Context) != "").ToList();
+        if (runtimeIssues.Count > 0) {
+            List<Tuple<string?, string?, TMod?>> entries = runtimeIssues.GroupBy(item => RuntimeOwnerId(item.Requirement!.Id, report.Context)).Select(group => {
+                string name = RuntimeDisplayName(group.Key);
+                string text = "相关模组：" + string.Join("、", group.Select(item => item.Owner.Name).Distinct());
+                if (group.Any(item => IsInternalLoaderId(item.Requirement!.Id))) text += "\r\n" + name + " 内置支持不满足这些模组的要求。";
+                IEnumerable<string> direct = group.Where(item => !IsInternalLoaderId(item.Requirement!.Id)).Select(item => RequirementDisplay(item.Requirement!, report.Context)).Distinct();
+                if (direct.Any()) text += "\r\n需要：" + string.Join("；", direct);
+                text += "\r\n" + (group.Key == "java" ? "处理：在版本设置中选择符合要求的 Java。" : group.Key == "minecraft" ? "处理：选择匹配的 Minecraft 版本，或更换适用的模组。" : "处理：在版本设置中更新或重装 " + name + "，或更换适用的模组。");
+                return Tuple.Create<string?, string?, TMod?>(name, text, null);
+            }).ToList();
+            AddGroup(groups, "运行环境要求不满足（" + entries.Count + "）", entries, true, host, true);
+        }
+        foreach (ModDependencyIssueKind kind in new[] { ModDependencyIssueKind.LoaderMismatch, ModDependencyIssueKind.MissingRequired, ModDependencyIssueKind.VersionMismatch, ModDependencyIssueKind.DuplicateId, ModDependencyIssueKind.Incompatible }) {
+            List<TIssue> issues = report.Issues.Where(item => item.KindValue == kind && !runtimeIssues.Contains(item) && !covered.Contains(host.IssueKey(item))).ToList();
             if (issues.Count == 0) continue;
-            string title = kind == ModDependencyIssueKind.MissingRequired ? "缺少依赖" : kind == ModDependencyIssueKind.VersionMismatch ? "版本不匹配" : kind == ModDependencyIssueKind.DuplicateId ? "重复模组" : "模组冲突";
+            string title = kind == ModDependencyIssueKind.LoaderMismatch ? "加载器不匹配" : kind == ModDependencyIssueKind.MissingRequired ? "缺少依赖" : kind == ModDependencyIssueKind.VersionMismatch ? "版本不匹配" : kind == ModDependencyIssueKind.DuplicateId ? "重复模组" : "模组冲突";
             List<Tuple<string?, string?, TMod?>> entries = issues.GroupBy(item => (item.Owner?.RootPath ?? "") + "|" + (item.Owner?.Id ?? "")).Select(group => {
                 TMod? owner = group.First().Owner;
                 return Tuple.Create<string?, string?, TMod?>(owner?.Name ?? owner?.Id ?? "模组问题", string.Join("\r\n", group.Select(Describe)), owner);
@@ -83,7 +102,7 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
         if (notes.Count > 0 || report.MetadataIncomplete || report.OnlineNotes.Count > 0) {
             notes.AddRange(report.OnlineNotes);
             if (report.MetadataIncomplete) notes.Insert(0, "部分模组声明未读完整，无法确认的项目不会自动安装。");
-            details = host.CreateCard("读取说明（" + notes.Count + "）", new Thickness(3, 3, 7, 8));
+            details = host.CreateCard("检查说明（" + notes.Count + "）", new Thickness(3, 3, 7, 8));
             TextBlock text = new() { Text = string.Join("\r\n\r\n", notes), Margin = new Thickness(15, 40, 15, 15), TextWrapping = TextWrapping.Wrap, FontSize = 12 };
             text.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3");
             host.CollapseDetails(details, text);
@@ -94,6 +113,11 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
         view.Height = Math.Min(430, Math.Max(110, groups.DesiredSize.Height + 36));
         return details;
     }
+
+    private static string RuntimeOwnerId(string? id, TContext context) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.RuntimeOwnerId(id!, context);
+    private static string RuntimeDisplayName(string id) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.RuntimeDisplayName(id);
+    private static bool IsInternalLoaderId(string? id) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.IsInternalLoaderId(id!);
+    private static string RequirementDisplay(TDependency requirement, TContext context) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.RequirementDisplay(requirement, context);
 
     private static string Referrers(List<string> names) => string.Join("、", names.Take(3)) + (names.Count > 3 ? " 等 " + names.Count + " 个模组" : "");
 
@@ -111,10 +135,10 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
     }
 
     private static void AddGroup(StackPanel groups, string title, List<Tuple<string?, string?, TMod?>> entries, bool warning,
-        ModDependencyCheckViewHost<TVersion, TIssue, TCard> host) {
+        ModDependencyCheckViewHost<TVersion, TIssue, TCard> host, bool wide = false) {
         TCard card = host.CreateCard(title, new Thickness(3, 3, 7, 10));
-        UniformGrid rows = new() { Columns = 2, Margin = new Thickness(9, 38, 9, 10) };
-        rows.SizeChanged += (_, _) => rows.Columns = rows.ActualWidth < 510 ? 1 : 2;
+        UniformGrid rows = new() { Columns = wide ? 1 : 2, Margin = new Thickness(9, 38, 9, 10) };
+        rows.SizeChanged += (_, _) => rows.Columns = wide || rows.ActualWidth < 510 ? 1 : 2;
         foreach (Tuple<string?, string?, TMod?> entry in entries) {
             Grid content = new();
             content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
@@ -129,7 +153,7 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
             reason.SetResourceReference(TextBlock.ForegroundProperty, warning ? "ColorBrushRedLight" : "ColorBrush3"); text.Children.Add(reason);
             Grid.SetColumn(text, 1); content.Children.Add(text);
             Border box = new() { Child = content, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(5), Padding = new Thickness(10),
-                Margin = new Thickness(4), Background = Brushes.White, ToolTip = entry.Item3?.RootPath };
+                Margin = new Thickness(4), Background = ModDependencyVisualTheme.Brush("ColorBrushWhite"), ToolTip = entry.Item3?.RootPath };
             box.SetResourceReference(Border.BorderBrushProperty, warning ? "ColorBrushRedLight" : "ColorBrush5");
             rows.Children.Add(box);
         }

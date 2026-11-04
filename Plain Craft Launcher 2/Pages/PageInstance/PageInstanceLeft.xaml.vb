@@ -5,6 +5,7 @@ Public Class PageInstanceLeft
     Implements IRefreshable
     Public Shared Instance As McInstance = Nothing
     Public PageID As FormMain.PageSubType = FormMain.PageSubType.Default
+    Private IsSyncingSelection As Boolean
     Private ReadOnly ResourcePages As New Dictionary(Of FormMain.PageSubType, PageInstanceResources)
     Private KeybindingsPage As PageInstanceKeybindings
     Private RestorePointsPage As PageInstanceRestorePoints
@@ -32,7 +33,8 @@ Public Class PageInstanceLeft
     Private Function CreateHost() As NavigationHost
         Return New NavigationHost With {
             .Instance = Function() Instance,
-            .Locked = Function(Target) McInstanceLock.IsLocked(Target),
+            .Locked = Function(Target) McInstanceLock.IsLocked(Target), .BlocksNavigation = Function(Target) McInstanceLock.BlocksNavigation(Target),
+            .IsSyncingSelection = Function() IsSyncingSelection, .SetSyncingSelection = Sub(Value) IsSyncingSelection = Value,
             .Modable = Function(Target) Target.Modable,
             .PageId = Function() PageID, .SetPageId = Sub(Value) PageID = Value,
             .CurrentSubPage = Function() FrmMain.PageCurrentSub,
@@ -77,6 +79,7 @@ Public Class PageInstanceLeft
             .SetButtonScale = Sub(Button, Value) Button.LogoScale = Value,
             .OnClick = Sub(Button, Work) AddHandler Button.Click, Sub() Work(),
             .SetChecked = Sub(Item, Value) Item.Checked = Value,
+            .SetCheckedState = Sub(Item, Value, User, Anime) Item.SetChecked(Value, User, Anime),
             .RestoreLogo = Function() Logo.IconButtonRefresh,
             .ModpackEnabled = Function() ModModpackMode.Enabled}
     End Function
@@ -103,6 +106,12 @@ Public Class PageInstanceLeft
     End Sub
     Friend Function NavigationItem(ID As FormMain.PageSubType) As MyListItem
         Return Controller.NavigationItem(ID)
+    End Function
+    Friend Sub SyncSelection(ID As FormMain.PageSubType)
+        Controller.SyncSelection(ID)
+    End Sub
+    Friend Shared Function IsEditingPage(ID As FormMain.PageSubType) As Boolean
+        Return PCLCS.InstanceNavigationRules.IsEditingPage(CInt(ID))
     End Function
     Public Function PageGet(Optional ID As FormMain.PageSubType = -1)
         Return Controller.PageGet(ID)

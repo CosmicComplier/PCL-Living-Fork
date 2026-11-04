@@ -11,8 +11,8 @@ using Newtonsoft.Json.Linq;
 
 namespace PCLCS;
 
-// LF LaunchDependencyCheck.vb and ModDependencyAutoFill.vb, unchanged from
-// f4aa0fae62c3ee8af24c81e61844c8fdd13c8983, under the LF LICENCE.
+// LF ModDependencyAutoFill.vb at 50b028da5fcad2226d74d901a41d8c43a249bfb2 and
+// original LaunchDependencyCheck.vb, under the LF LICENCE.
 // PCL 5ef81e490ae46b1100d61e33d0183094c7a80ca8 has neither module.
 // Reviewed CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5
 // Plain Craft Launcher 2/Modules/Minecraft/ModCompDependency.cs and
@@ -98,9 +98,23 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
         string text = value.ToString();
         return Regex.IsMatch(text, @"[<>~^*]|(?:^|\.)[xX](?:$|\.)") || (text.Contains(",") && (text.StartsWith("[") || text.StartsWith("(")));
     }
+    public void ResetIndexLookups() => cached.Clear();
     public TPlan BuildPlan(string root, TReport report, CancellationToken token, TOptions? options = null) {
         TPlan result = Prepare(root, report, token);
         if (!report.Mods.Any(value => value.Enabled)) return result;
+        if (report.Issues.Any(value => value.KindValue == ModDependencyIssueKind.LoaderMismatch)) {
+            result.Items.Clear(); result.Enables.Clear();
+            result.Notes.Add("请先在 Mod 管理中处理加载器不匹配的文件，再检查和补全依赖。"); return result;
+        }
+        if (report.Issues.Any(value => value.Requirement is not null && (value.KindValue == ModDependencyIssueKind.MissingRequired || value.KindValue == ModDependencyIssueKind.VersionMismatch) && ModDependencyInspection<TContext,TMod,TDependency,TEdge,TIssue,TImpact,TReport,TOnlineProject,TOnlineDependency,TOnlineFile>.RuntimeOwnerId(value.Requirement.Id, report.Context) != "")) {
+            result.Items.Clear(); result.Enables.Clear();
+            result.Notes.Add("请先调整游戏、Java 或加载器版本；加载器的内置支持随加载器一起提供，不会作为独立 Mod 下载。"); return result;
+        }
+        bool legacy = ModDependencyInspection<TContext,TMod,TDependency,TEdge,TIssue,TImpact,TReport,TOnlineProject,TOnlineDependency,TOnlineFile>.IsLegacyForge(report.Context);
+        if (legacy && !report.Issues.Any(value => value.KindValue == ModDependencyIssueKind.MissingRequired && value.IsError && value.Requirement is not null && !value.Requirement.IsUnknown)) {
+            if (report.Issues.Any(value => value.KindValue == ModDependencyIssueKind.MissingRequired)) result.Notes.Add("旧版核心插件的运行时声明尚未确认，未自动选择可能重复的前置文件。");
+            return result;
+        }
         if (Loader(report.Context) == ModLoaders.None || string.IsNullOrEmpty(report.Context.MinecraftVersion)) {
             result.Notes.Add("尚未确认当前 Minecraft 版本或加载器，未选择自动补全文件。"); return result;
         }
@@ -121,9 +135,12 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
             if (matches.Count == 0) continue;
             TOnlineProject match = matches[0];
             List<TIssue> missing = report.Issues.Where(issue => issue.KindValue == ModDependencyIssueKind.MissingRequired && SameFilePath(issue.Owner.RootPath, file.FullPath)).ToList();
+            if (legacy && !missing.Any(value => value.IsError)) continue;
             bool localRanges = missing.Count > 0 && missing.All(issue => issue.Requirement is not null && !issue.Requirement.IsUnknown && issue.Requirement.Children.Count == 0 && IsRange(issue.Requirement.Versions));
             foreach (TOnlineDependency dependency in match.Dependencies.Where(value => SameText(value.Kind, "required"))) {
-                pending.Enqueue(new Requirement { Platform = dependency.Platform, Project = dependency.ProjectId, Version = dependency.VersionId, Owner = match.ProjectName });
+                if (ModDependencyInspection<TContext,TMod,TDependency,TEdge,TIssue,TImpact,TReport,TOnlineProject,TOnlineDependency,TOnlineFile>.RuntimeProvidersForPlatformDependency(report, file.FullPath, dependency).Count > 0) continue;
+                TMod? owner = report.Mods.FirstOrDefault(value => !value.IsNested && SameFilePath(value.RootPath, file.FullPath));
+                pending.Enqueue(new Requirement { Platform = dependency.Platform, Project = dependency.ProjectId, Version = dependency.VersionId, Owner = owner?.Name ?? match.ProjectName });
                 if (localRanges || string.IsNullOrEmpty(dependency.VersionId)) flexibleProjects.Add(Key(dependency.Platform, dependency.ProjectId));
             }
         }
@@ -152,7 +169,16 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
                 string identity = Key(need.Platform, need.Project);
                 string? fixedVersion = flexibleProjects.Contains(identity) ? "" : need.Version;
                 if (existing.Contains(identity)) continue;
-                if (disabled.Contains(identity)) { result.Notes.Add(need.Project + " 已安装但被禁用，请在模组管理中启用。"); continue; }
+                if (disabled.Contains(identity)) {
+                    List<TOnlineFile> disabledFiles = report.OnlineFiles.Where(value => !value.Enabled && value.Matches.Any(match => match.IsExact && SameText(match.Platform, need.Platform) && SameText(match.ProjectId, need.Project))).ToList();
+                    if (disabledFiles.Any(value => result.Enables.Any(enableItem => SameFilePath(enableItem.Source, value.FullPath)))) continue;
+                    TMod? owner = report.Mods.FirstOrDefault(value => !value.IsNested && disabledFiles.Any(file => SameFilePath(file.FullPath, value.RootPath)));
+                    string? name = owner is not null && !SameText(owner.Name, owner.Id) ? owner.Name : null;
+                    if (string.IsNullOrWhiteSpace(name)) name = disabledFiles.SelectMany(file => file.Matches).Select(value => value.ProjectName).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value) && !SameText(value, need.Project));
+                    if (string.IsNullOrWhiteSpace(name)) name = owner?.Name;
+                    if (string.IsNullOrWhiteSpace(name)) name = disabledFiles.FirstOrDefault() is null ? "前置模组" : Path.GetFileName(disabledFiles[0].FullPath);
+                    result.Notes.Add(name + " 已安装但被禁用，请在模组管理中选择兼容版本后启用。"); continue;
+                }
                 if (selected.TryGetValue(identity, out TItem? entry)) {
                     if (!SameText(fixedVersion, "") && !SameText(host.Id(entry.Version), fixedVersion)) throw new IOException("不同模组要求不同的固定依赖版本，需手动处理：" + entry.Name);
                     if (SameText(fixedVersion, "") && !SameText(need.Version, "") && !SameText(host.Id(entry.Version), need.Version))

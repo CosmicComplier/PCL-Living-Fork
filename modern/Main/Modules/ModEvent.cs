@@ -231,7 +231,7 @@ namespace PCL
                 CheckUpdates = global::PCL.ModSecret.UpdateCheckByButton,
                 HintCustomCommand = new Func<global::System.Boolean>(() => global::PCL.Settings.Get<bool>("HintCustomCommand")),
                 RememberCustomCommand = new Action(() => global::PCL.Settings.Set("HintCustomCommand", true)),
-                Locked = global::PCL.ModMinecraft.McInstanceLock.IsLocked,
+                Locked = global::PCL.ModMinecraft.McInstanceLock.BlocksNavigation,
                 SetEditedInstance = new Action<global::PCL.ModMinecraft.McInstance>(Target => global::PCL.PageInstanceLeft.Instance = Target),
                 InstanceSetup = global::PCL.FormMain.PageType.InstanceSetup,
                 DefaultSubPage = global::PCL.FormMain.PageSubType.Default,

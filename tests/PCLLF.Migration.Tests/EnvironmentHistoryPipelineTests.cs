@@ -13,6 +13,7 @@ internal static class EnvironmentHistoryPipelineTests {
         yield return ("environment history pipeline restore rejects isolation cancellation and corrupt payloads before its retained transaction host", RestoreGuards);
         yield return ("environment history pipeline plans legacy and current coverage without simulating the retained VB transaction", CoveragePlans);
         yield return ("environment history pipeline canceled capture and unstable or canceled comparisons release owned temporary files", ScanAndCancellation);
+        foreach (var check in FileTaskProgressTests.EnvironmentCases()) yield return check;
     }
 
     private static void CaptureAndHealthyChanges() {
@@ -182,12 +183,9 @@ internal static class EnvironmentHistoryPipelineTests {
         string target = context.GamePath("config/pack.toml");
         using (CancellationTokenSource canceled = new()) {
             bool triggered = false;
-            context.Host.Digest = path => {
-                string? hash = Digest(path);
-                if (!triggered && path == target) { triggered = true; canceled.Cancel(); }
-                return hash;
-            };
-            Throws<OperationCanceledException>(() => context.Engine.Capture(context.Owner.VersionPath, context.Owner.GameFolder, "canceled capture", canceled.Token));
+            Throws<OperationCanceledException>(() => context.Engine.CaptureWithProgress(context.Owner.VersionPath, context.Owner.GameFolder, "canceled capture", canceled.Token, value => {
+                if (!triggered && value > 0.02) { triggered = true; canceled.Cancel(); }
+            }));
             Equal(true, triggered);
             Equal(0, context.Points().Count);
         }

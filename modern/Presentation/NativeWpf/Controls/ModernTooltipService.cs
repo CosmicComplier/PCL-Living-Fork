@@ -73,6 +73,8 @@ public static class ModernTooltipService {
     private static Point lastMousePoint;
     private static Popup? popup;
     private static Border? popupCard;
+    // Actual LF palette adapter in this same Presentation assembly; no popup replacement.
+    internal static Border? ThemeCard => popupCard;
     private static ScaleTransform? popupScale;
     private static FrameworkElement? currentOwner;
     private static FrameworkElement? observedToolTipOwner;

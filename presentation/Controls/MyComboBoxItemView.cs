@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Windows.Controls;
 
@@ -13,6 +14,9 @@ public class MyComboBoxItemView : ComboBoxItem {
         Unselected += (_, _) => RefreshColor(); MouseMove += (_, _) => RefreshColor(); MouseLeave += (_, _) => RefreshColor();
         Selected += (_, _) => RefreshColor(); IsEnabledChanged += (_, _) => RefreshColor();
         MouseLeftButtonUp += (_, _) => ControlServices.Current.Info("选择下拉列表项：" + ToString());
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     private void RefreshColor() {
         string color; double opacity; int time;

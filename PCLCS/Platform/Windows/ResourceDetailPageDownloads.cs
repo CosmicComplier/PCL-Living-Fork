@@ -68,7 +68,12 @@ public sealed partial class ResourceDetailPageController<TProject, TVersion, TCa
                     string? subFolder = file.ResourceType switch { ResourceTypes.Mod => "mods\\", ResourceTypes.ResourcePack => "resourcepacks\\", ResourceTypes.Shader => "shaderpacks\\", ResourceTypes.DataPack => "", ResourceTypes.Map => "saves\\", _ => null };
                     ModLoaders allowed = file.ModLoaders != ModLoaders.None ? file.ModLoaders : Project.ModLoaders != ModLoaders.None ? Project.ModLoaders : ModLoaders.None;
                     Logger.Info(description + "要求的加载器种类：" + allowed);
-                    if (file.ResourceType != ResourceTypes.Map && download.CachedFolders.ContainsKey(file.ResourceType)) {
+                    if (file.ResourceType == ResourceTypes.Mod) {
+                        defaultFolder = ChooseModDownloadFolder(DownloadTargetInstance, download.SelectedInstance(), download.CachedFolders.ContainsKey(ResourceTypes.Mod) ? download.CachedFolders[ResourceTypes.Mod] : null, instance => InstanceSuitable(file, instance, allowed));
+                        if (defaultFolder is not null) DirectoryUtils.Create(defaultFolder);
+                    }
+                    if (defaultFolder is not null) Logger.Info("使用目标版本的 Mod 文件夹：" + defaultFolder);
+                    else if (file.ResourceType != ResourceTypes.Map && download.CachedFolders.ContainsKey(file.ResourceType)) {
                         defaultFolder = download.CachedFolders[file.ResourceType]; Logger.Info("使用上次下载时的文件夹作为默认下载位置：" + defaultFolder);
                     } else if (download.SelectedInstance() is not null && InstanceSuitable(file, download.SelectedInstance()!, allowed)) {
                         defaultFolder = download.SelectedInstance()!.PathIndie + subFolder; DirectoryUtils.Create(defaultFolder); Logger.Info("使用当前版本作为默认下载位置：" + defaultFolder);

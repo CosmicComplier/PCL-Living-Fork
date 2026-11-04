@@ -309,4 +309,11 @@
   <LFResourceGeneratorAssembly>$(MSBuildThisFileDirectory)../BuildResources/bin/$(Configuration)/net10.0/ResourceGenerator.dll</LFResourceGeneratorAssembly>
 </PropertyGroup><Import Project="MainResources.targets" />
 <PropertyGroup><LfWithEventsMap>$(MSBuildThisFileDirectory)../BuildEvents/WithEvents.map</LfWithEventsMap></PropertyGroup>
-<Import Project="../BuildEvents/LfWithEvents.targets" /></Project>
+<Import Project="../BuildEvents/LfWithEvents.targets" /><ItemGroup>
+  <Compile Include="Modules/Base/FileTaskProgress.cs" />
+  <Compile Include="Modules/ModTheme.cs" />
+  <Compile Include="Controls/ModernTooltipTheme.cs" />
+  <Resource Include="Images/Branding/DefaultBackgroundNight.png" />
+  <Compile Include="Modules/Minecraft/ModDependencyIndex.cs" />
+</ItemGroup>
+</Project>

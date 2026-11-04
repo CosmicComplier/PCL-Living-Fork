@@ -28,9 +28,12 @@ public sealed class WorldBackupWorkflow<TInstance> where TInstance : class {
         bool removing = deleteIds is not null;
         string[]? ids = deleteIds?.ToArray();
         bool restoring = restoreId is not null;
-        WorldBackupWork work = new() {
+        WorldBackupWork work = null!;
+        work = new() {
+            SnapshotReservation = () => !restoring && (removing || !_engine.HasPendingRecovery(_host.GameFolder(instance))),
             StepName = removing ? "移除存档备份" : restoring ? "恢复世界" : "备份世界",
             Execute = (token, setOutput) => {
+                Action<double>? progress = work.Progress;
                 if (removing) {
                     if (_host.Confirm($"移除选中的 {ids!.Length} 份存档备份？\r\n备份将移动到本机备份目录的 deleted 文件夹。",
                         "移除存档备份", "移除") != 1) throw new OperationCanceledException();
@@ -46,15 +49,15 @@ public sealed class WorldBackupWorkflow<TInstance> where TInstance : class {
                     if (!_host.SamePath(_host.VersionPath(instance), _host.GameFolder(instance)))
                         text += "\r\n此版本使用共用目录，恢复结果也会影响使用该存档目录的其他版本。";
                     if (_host.Confirm(text, "恢复存档备份", "恢复") != 1) throw new OperationCanceledException();
-                    setOutput(_engine.Restore(_host.GameFolder(instance), restoreId!, _host.Retention(instance), token));
+                    setOutput(_engine.RestoreWithProgress(_host.GameFolder(instance), restoreId!, _host.Retention(instance), token, progress));
                     return;
                 }
                 List<string> saved;
                 if (worldIdentifier is null) {
-                    saved = _engine.CaptureAll(instance, "手动备份", token);
+                    saved = _engine.CaptureAllWithProgress(instance, "手动备份", token, progress);
                 } else {
                     saved = new List<string> {
-                        _engine.CaptureWorld(_host.GameFolder(instance), worldIdentifier, "手动备份", _host.Retention(instance), token)
+                        _engine.CaptureWorldWithProgress(_host.GameFolder(instance), worldIdentifier, "手动备份", _host.Retention(instance), token, progress)
                     };
                 }
                 setOutput(saved.Count.ToString());

@@ -33,6 +33,7 @@ Friend NotInheritable Class EnvironmentHistory
             .IsParentOf = Function(Parent, Child) PathUtils.IsParentOf(Parent, Child),
             .SamePath = Function(Left, Right) PathUtils.IsSame(Left, Right),
             .ApplyTransaction = Sub(GameRoot, VersionFolder, Operations, Token, BeforeApply) ModpackUpdate.ApplyTransaction(GameRoot, VersionFolder, Operations, Token, BeforeApply),
+            .ApplyTransactionWithProgress = Sub(GameRoot, VersionFolder, Operations, Token, Progress, BeforeApply) ModpackUpdate.ApplyTransactionWithProgress(GameRoot, VersionFolder, Operations, Token, Progress, BeforeApply),
             .VersionPath = Function(Instance) Instance.PathVersion, .GameFolder = Function(Instance) Instance.PathIndie,
             .VanillaName = Function(Instance) Instance.Version.VanillaName,
             .LibraryPaths = Function(Instance) McLibListGet(Instance, True).Select(Function(Library) Library.LocalPath),
@@ -68,8 +69,15 @@ Friend NotInheritable Class EnvironmentHistory
         Optional Dependencies As Dictionary(Of String, String) = Nothing, Optional Description As String = "") As String
         Return Service.Capture(VersionFolder, GameRoot, Label, Token, Dependencies, Description)
     End Function
+    Friend Shared Function CaptureWithProgress(VersionFolder As String, GameRoot As String, Label As String, Token As CancellationToken, Progress As Action(Of Double),
+        Optional Dependencies As Dictionary(Of String, String) = Nothing, Optional Description As String = "") As String
+        Return Service.CaptureWithProgress(VersionFolder, GameRoot, Label, Token, Progress, Dependencies, Description)
+    End Function
     Friend Shared Function CaptureInstance(Instance As McInstance, Label As String, Token As CancellationToken) As String
         Return Service.CaptureInstance(Instance, Label, Token)
+    End Function
+    Friend Shared Function CaptureInstanceWithProgress(Instance As McInstance, Label As String, Token As CancellationToken, Progress As Action(Of Double)) As String
+        Return Service.CaptureInstanceWithProgress(Instance, Label, Token, Progress)
     End Function
     Friend Shared Function Points(VersionFolder As String) As List(Of JObject)
         Return Service.Points(VersionFolder)
@@ -89,6 +97,10 @@ Friend NotInheritable Class EnvironmentHistory
     Friend Shared Function Restore(VersionFolder As String, GameRoot As String, McRoot As String, Id As String, Token As CancellationToken,
         Optional BeforeApply As Action(Of Integer) = Nothing, Optional CaptureBefore As Func(Of String) = Nothing) As String
         Return Service.Restore(VersionFolder, GameRoot, McRoot, Id, Token, BeforeApply, CaptureBefore)
+    End Function
+    Friend Shared Function RestoreWithProgress(VersionFolder As String, GameRoot As String, McRoot As String, Id As String, Token As CancellationToken, Progress As Action(Of Double),
+        Optional BeforeApply As Action(Of Integer) = Nothing, Optional CaptureBefore As Func(Of String) = Nothing) As String
+        Return Service.RestoreWithProgress(VersionFolder, GameRoot, McRoot, Id, Token, Progress, BeforeApply, CaptureBefore)
     End Function
     Friend Shared Sub OpenFolder(VersionFolder As String)
         Service.OpenFolder(VersionFolder)
@@ -148,11 +160,14 @@ Friend NotInheritable Class EnvironmentHistoryUi
     Private Shared Function StartWork(Instance As McInstance, Work As PCLCS.EnvironmentHistoryWork) As Boolean
         Dim StepLoader As New LoaderTask(Of String, String)(Work.StepName,
             Sub(Task)
-                Work.Execute(Task.CreateCancellationToken(), Sub(Output) Task.Output = Output)
+                Dim Token = Task.CreateCancellationToken()
+                Work.Progress = PCLCS.FileTaskProgress.ForTask(Function() Task.Progress, Sub(Value) Task.Progress = Value)
+                Work.Execute(Token, Sub(Output) Task.Output = Output)
             End Sub)
         Dim Loader As New LoaderCombo(Of String)(Work.Title, {StepLoader}) With {.OnStateChanged = AddressOf LoaderStateChangedHintOnly}
         Dim Worker As New RedoableWorker(LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion))
-        If Not McInstanceLock.TryAcquire(Worker, Instance.PathVersion) Then Return False
+        Dim BrowseOnly = Work.SnapshotReservation()
+        If Not If(BrowseOnly, McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion), McInstanceLock.TryAcquire(Worker, Instance.PathVersion)) Then Return False
         AddHandler Worker.Stopped, Sub() Work.Stopped()
         Worker.Start()
         LoaderTaskbarAdd(Loader)

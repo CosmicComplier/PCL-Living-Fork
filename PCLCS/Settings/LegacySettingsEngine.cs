@@ -43,6 +43,10 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
             entry.Key.StartsWith("CacheMs", StringComparison.Ordinal) || entry.Key.StartsWith("CacheNide", StringComparison.Ordinal) ||
             entry.Key.StartsWith("CacheAuth", StringComparison.Ordinal));
     }
+    // LF main50 isolates Microsoft-client credentials while preserving logical setting names.
+    public static bool IsMicrosoftAccountSetting(TEntry entry) => entry.GetSourceCode() == LegacySettingSource.Registry &&
+        (entry.Key == "LoginMsJson" || entry.Key.StartsWith("CacheMs", StringComparison.Ordinal));
+    public static string RegistryValueName(TEntry entry) => entry.Key + (IsMicrosoftAccountSetting(entry) ? "_LF" : "");
     public static bool IsCompatibleSetting(TEntry entry) {
         if (entry.GetSourceCode() != LegacySettingSource.Registry || entry.Encrypted) return false;
         if (entry.Key == "ToolLauncherUpdateIgnoredTag") return false;
@@ -51,7 +55,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     }
     public string RegistryFolderFor(TEntry entry) => IsAccountSetting(entry) || entry.Key == "Identify" || IsCompatibleSetting(entry) ? "PCL" : host.RegistryFolder();
     public string? ReadRegistrySetting(TEntry entry, string? defaultValue) =>
-        host.ReadRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), entry.Key, null) ?? defaultValue;
+        host.ReadRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), RegistryValueName(entry), null) ?? defaultValue;
 
     public void SaveEntry(TEntry entry, TInstance? instance = null) {
         string? value = VbString(entry.GetCache(instance));
@@ -65,7 +69,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
                 host.WriteIni("Setup", entry.Key, value);
                 break;
             case LegacySettingSource.Registry:
-                try { host.WriteRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), entry.Key, value); }
+                try { host.WriteRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), RegistryValueName(entry), value); }
                 catch (Exception error) { Log(error, $"写入注册表失败（{entry.Key} → {value}）", LegacySettingsLogLevel.Warning, true); }
                 break;
             case LegacySettingSource.Instance:
@@ -187,7 +191,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
             case LegacySettingSource.Normal: return host.HasIni("Setup", key);
             case LegacySettingSource.Registry:
                 try {
-                    if (host.HasRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), key)) return true;
+                    if (host.HasRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), RegistryValueName(entry))) return true;
                     return ReadRegistrySetting(entry, null) is not null;
                 } catch (Exception error) {
                     Log(error, $"判断注册表 {key} 是否存在时出错", LegacySettingsLogLevel.Warning);

@@ -16,12 +16,16 @@ Public Class MyResourceItem
             .DownloadPage = CInt(FormMain.PageType.Download), .ResourceDetailPage = CInt(FormMain.PageType.ResourceDetail), .InstanceSetupPage = CInt(FormMain.PageType.InstanceSetup),
             .DetailAvailable = Function() FrmDownloadResourceDetail IsNot Nothing, .DownloadAvailable = Function() FrmDownloadLeft IsNot Nothing,
             .ExpandedCards = Function() FrmDownloadResourceDetail.PanResults.Children.Cast(Of MyCard)().Select(Function(Card) (Card.Title, Card.IsSwapped)),
-            .CurrentSearch = AddressOf ReadCurrentSearch,
+            .CurrentSearch = AddressOf ReadCurrentSearch, .CurrentDownloadContext = AddressOf ReadCurrentDownloadContext,
             .CurrentArguments = Function() TryCast(FrmMain.PageCurrent.Additional, Object()),
             .CurrentInstance = Function() PageInstanceLeft.Instance,
             .OpenDetail = Sub(Arguments) FrmMain.PageChange(New FormMain.PageStackData With {.Page = FormMain.PageType.ResourceDetail, .Additional = Arguments}),
             .RaiseClick = AddressOf RaiseNativeClick, .TextTrimmed = AddressOf IsTextTrimmed,
             .Brush = Function(Color) New MyColor(Color), .PixelSize = Function(Value) GetWPFSize(Value)}
+    End Function
+    Private Shared Function ReadCurrentDownloadContext() As (Search As ResourceSearcher.SearchRequest, Instance As McInstance)
+        Dim ResourcePage = TryCast(FrmDownloadLeft.PageGet(FrmMain.PageCurrentSub).FindName("Content"), PageResource)
+        Return (ResourcePage?.Loader?.Input, ResourcePage?.DownloadTargetInstance)
     End Function
     Private Function ReadCurrentSearch() As ResourceSearcher.SearchRequest
         Dim ResourcePage = TryCast(FrmDownloadLeft.PageGet(FrmMain.PageCurrentSub).FindName("Content"), PageResource)

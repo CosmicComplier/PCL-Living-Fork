@@ -24,7 +24,16 @@ internal static class LegacySettingsTests {
     }
     private static void Definitions() {
         var fixture = new Fixture();
-        Equal(205, fixture.Entries.Count);
+        // LF main50 adds source/channel/color-mode/panel-opacity; no baseline key is removed.
+        Equal(209, fixture.Entries.Count);
+        foreach (string key in new[] { "ToolLauncherUpdateSource", "ToolLauncherUpdateChannel", "UiLauncherColorMode" }) {
+            Equal(0, fixture.Entries[key].DefaultValue);
+            Equal(typeof(int), fixture.Entries[key].Type);
+            Equal(LegacySettingSource.Normal, fixture.Entries[key].Source);
+        }
+        Equal(960, fixture.Entries["UiPanelOpacity"].DefaultValue);
+        Equal(typeof(int), fixture.Entries["UiPanelOpacity"].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries["UiPanelOpacity"].Source);
         Equal(typeof(LoginKind), fixture.Entries["LoginType"].Type);
         Equal(typeof(long), fixture.Entries["CacheMsV2Expires"].Type);
         Equal(LegacySettingSource.Instance, fixture.Entries["VersionWorldBackupRetention"].Source);
@@ -136,20 +145,20 @@ internal static class LegacySettingsTests {
         Throws<OperationCanceledException>(() => fixture.Engine.SaveAccountGroup(batch, () => true));
         Equal(0, fixture.OpenCount);
         fixture.Engine.SaveMicrosoftSession(batch, null);
-        Equal("CacheMsV2Migrated", fixture.Pcl.Writes.Last());
-        Equal("True", fixture.Pcl.GetValue("CacheMsV2Migrated"));
-        string raw = (string)fixture.Pcl.GetValue("LoginMsJson")!;
+        Equal("CacheMsV2Migrated_LF", fixture.Pcl.Writes.Last());
+        Equal("True", fixture.Pcl.GetValue("CacheMsV2Migrated_LF"));
+        string raw = (string)fixture.Pcl.GetValue("LoginMsJson_LF")!;
         Equal("synthetic-token", (string?)JObject.Parse(LegacySettingsCrypto.Decrypt(raw, "PCLsynthetic-device"))["synthetic-user"]);
     }
     private static void MarkerRollback() {
         var fixture = new Fixture();
         string originalName = Encrypt("previous-name");
 #pragma warning disable CA1416 // Inert RegistryValueKind metadata only.
-        fixture.Pcl.Values["CacheMsV2Name"] = (originalName, RegistryValueKind.ExpandString);
-        fixture.Pcl.Values["CacheMsV2Migrated"] = ("False", RegistryValueKind.String);
+        fixture.Pcl.Values["CacheMsV2Name_LF"] = (originalName, RegistryValueKind.ExpandString);
+        fixture.Pcl.Values["CacheMsV2Migrated_LF"] = ("False", RegistryValueKind.String);
 #pragma warning restore CA1416
         fixture.Entries["CacheMsV2Name"].ValueCache[""] = "old-cached-name";
-        fixture.Pcl.FailAfterSetOnce = "CacheMsV2Migrated";
+        fixture.Pcl.FailAfterSetOnce = "CacheMsV2Migrated_LF";
         var batch = new Dictionary<string, object?> {
             // Deliberately enumerate the completion marker first. The production
             // transaction must move it after every account-data write.
@@ -158,19 +167,19 @@ internal static class LegacySettingsTests {
             ["CacheMsV2OAuthRefresh"] = "synthetic-refresh"
         };
         Throws<InvalidOperationException>(() => fixture.Engine.SaveAccountGroup(batch));
-        Sequence(new[] { "CacheMsV2Name", "CacheMsV2OAuthRefresh", "CacheMsV2Migrated" }, fixture.Pcl.WritesBeforeFailure!);
+        Sequence(new[] { "CacheMsV2Name_LF", "CacheMsV2OAuthRefresh_LF", "CacheMsV2Migrated_LF" }, fixture.Pcl.WritesBeforeFailure!);
 #pragma warning disable CA1416 // Inert RegistryValueKind metadata only.
         Equal(2, fixture.Pcl.Values.Count);
 #pragma warning restore CA1416
-        Equal(originalName, fixture.Pcl.GetValue("CacheMsV2Name"));
+        Equal(originalName, fixture.Pcl.GetValue("CacheMsV2Name_LF"));
 #pragma warning disable CA1416 // Inert RegistryValueKind metadata only.
-        Equal(RegistryValueKind.ExpandString, fixture.Pcl.GetValueKind("CacheMsV2Name"));
+        Equal(RegistryValueKind.ExpandString, fixture.Pcl.GetValueKind("CacheMsV2Name_LF"));
 #pragma warning restore CA1416
-        Equal("False", fixture.Pcl.GetValue("CacheMsV2Migrated"));
+        Equal("False", fixture.Pcl.GetValue("CacheMsV2Migrated_LF"));
         Equal("old-cached-name", fixture.Entries["CacheMsV2Name"].ValueCache[""]);
         fixture.Pcl.Writes.Clear();
         fixture.Engine.SaveAccountGroup(batch);
-        Equal("CacheMsV2Migrated", fixture.Pcl.Writes.Last());
+        Equal("CacheMsV2Migrated_LF", fixture.Pcl.Writes.Last());
         Equal(false, fixture.Entries["CacheMsV2Name"].ValueCache.ContainsKey(""));
         Equal("new-name", fixture.Engine.Get("CacheMsV2Name"));
     }
@@ -178,29 +187,48 @@ internal static class LegacySettingsTests {
         var fixture = new Fixture();
         const string oldIdentify = "old-synthetic-device";
         const string legacyIdentify = "legacy-synthetic-device";
+        // The plan consumes logical snapshots: physical _LF selection and exclusion
+        // of unattributed private Microsoft records are separately tested through IO.
         var official = new Dictionary<string, string>(StringComparer.Ordinal) {
             ["LoginMsJson"] = Encrypt("{\"Native\":\"native-token\",\"Shared\":\"official-old\"}", oldIdentify),
-            ["CacheMsV2Name"] = Encrypt("official-active", oldIdentify)
+            ["CacheMsV2Name"] = Encrypt("official-active", oldIdentify),
+            ["CacheAuthName"] = Encrypt("official-auth-active", oldIdentify),
+            ["CacheAuthAccess"] = Encrypt("official-auth-access", oldIdentify),
+            ["LoginLegacyName"] = Encrypt("shared¨Native", oldIdentify)
         };
         var legacy = new Dictionary<string, string>(StringComparer.Ordinal) {
             ["LoginMsJson"] = Encrypt("{\"shared\":\"legacy-new\",\"Local\":\"local-token\"}", legacyIdentify),
             ["CacheMsV2Name"] = Encrypt("must-not-mix", legacyIdentify),
             ["CacheMsV2OAuthRefresh"] = "invalid-ciphertext",
+            ["CacheAuthName"] = Encrypt("must-not-mix-auth", legacyIdentify),
+            ["CacheAuthAccess"] = "invalid-auth-ciphertext",
+            ["LoginLegacyName"] = Encrypt("Alpha¨Shared", legacyIdentify),
             ["UiLauncherThemeHide"] = Encrypt("0|1|2|3|4|7", legacyIdentify)
         };
         Plan plan = fixture.Engine.PlanAccountMigration(official, legacy, new[] { oldIdentify }, new[] { legacyIdentify }, "synthetic-device");
         JObject accounts = JObject.Parse(Decrypt(plan.Values["LoginMsJson"]));
-        Equal(3, accounts.Count);
-        Equal("legacy-new", (string?)accounts["shared"]);
+        // main50 deliberately preserves existing LF Microsoft identities/logout;
+        // old private client credentials are not merged over this namespace.
+        Equal(2, accounts.Count);
+        Equal("official-old", (string?)accounts["Shared"]);
         Equal("native-token", (string?)accounts["Native"]);
+        Equal<JToken?>(null, accounts["Local"]);
         Equal("official-active", Decrypt(plan.Values["CacheMsV2Name"]));
         Equal(false, plan.Values.ContainsKey("CacheMsV2OAuthRefresh"));
-        Sequence(new[] { "LoginMsJson" }, plan.DeleteLegacy);
+        // Keep the original corruption/group-atomicity and valid-account merge
+        // golds in the non-MS namespace that still supports private migration.
+        Equal("official-auth-active", Decrypt(plan.Values["CacheAuthName"]));
+        Equal("official-auth-access", Decrypt(plan.Values["CacheAuthAccess"]));
+        Equal("Alpha¨Shared¨Native", Decrypt(plan.Values["LoginLegacyName"]));
+        Sequence(new[] { "LoginLegacyName" }, plan.DeleteLegacy);
         Equal(false, plan.Values.ContainsKey("UiLauncherThemeHide"));
         legacy["LoginMsJson"] = Encrypt("{\"corrupt-shape\":42}", legacyIdentify);
         Plan invalid = fixture.Engine.PlanAccountMigration(official, legacy, new[] { oldIdentify }, new[] { legacyIdentify }, "synthetic-device");
         Equal(false, invalid.DeleteLegacy.Contains("LoginMsJson"));
         Equal("official-old", (string?)JObject.Parse(Decrypt(invalid.Values["LoginMsJson"]))["Shared"]);
+        Equal("official-auth-active", Decrypt(invalid.Values["CacheAuthName"]));
+        Equal(false, invalid.DeleteLegacy.Contains("CacheAuthName"));
+        Equal(false, invalid.DeleteLegacy.Contains("CacheAuthAccess"));
     }
     private static void LegacyMicrosoftUpgrade() {
         var fixture = new Fixture();

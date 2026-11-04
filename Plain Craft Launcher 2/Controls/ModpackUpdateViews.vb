@@ -64,7 +64,7 @@ Friend NotInheritable Class ModpackVersionSelectView
     Private Shared Sub ConfigureItem(Item As MyListItem, Version As ResourceVersion, Info As String, ToolTip As String)
         Item.Title = Version.Display : Item.Info = Info : Item.Type = MyListItem.CheckType.RadioBox
         Item.Height = 64 : Item.PaddingLeft = 14 : Item.MinPaddingRight = 12 : Item.Margin = New Thickness(3, 0, 7, 8)
-        Item.Tag = Version : Item.Background = Brushes.White : Item.ToolTip = ToolTip
+        Item.Tag = Version : Item.Background = PCLLF.Presentation.Foundation.LegacyThemePalette.Brush("ColorBrushWhite") : Item.ToolTip = ToolTip
     End Sub
     Private Shared Function ChannelOf(Version As ResourceVersion) As ResourceVersion.ReleaseTypes
         Return CType(VersionController.ChannelOf(Version), ResourceVersion.ReleaseTypes)

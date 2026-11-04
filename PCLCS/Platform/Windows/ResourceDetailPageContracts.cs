@@ -22,6 +22,7 @@ public sealed class ResourceDetailPageHost<TProject, TVersion, TCard, TResourceI
     where TCard : FrameworkElement where TResourceItem : FrameworkElement {
     public Func<ResourceDetailPageView> View = null!;
     public Func<int, object?> Argument = null!;
+    public Func<object[]?> Arguments = null!;
     public Action<int, object> SetArgument = null!;
     public Func<bool> HasArguments = null!, Failed = null!;
     public Func<Exception?> Error = null!;

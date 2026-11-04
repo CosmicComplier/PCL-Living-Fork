@@ -54,7 +54,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
     public void Minimize() => Window.WindowState = WindowState.Minimized;
     public void UpdateBackgroundAndTitleBar() {
         Logger.Info("从设置更新背景图片与标题栏样式");
-        view.ImgBack().Opacity = host.ReadInteger("UiBackgroundOpacity") / 1000d;
+        view.ImgBack().Opacity = host.ReadInteger("UiBackgroundOpacity") / 1000d * PCLLF.Presentation.Foundation.LegacyThemePalette.BackgroundThemeOpacityFactor(view.ImgBack());
         double radius = checked(host.ReadInteger("UiBackgroundBlur") + 1);
         if (radius == 1) view.ImgBack().Effect = null; else view.ImgBack().Effect = new BlurEffect { Radius = radius };
         view.ImgBack().Margin = new Thickness(-radius / 1.8);

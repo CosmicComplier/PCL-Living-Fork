@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Threading;
 using System.Windows;
@@ -32,6 +33,9 @@ public partial class MySliderView : Border {
         SizeChanged += RefreshWidth; MouseLeftButtonDown += DragStart;
         IsEnabledChanged += (_, _) => RefreshColor(); MouseEnter += (_, _) => RefreshColor(); MouseLeave += (_, _) => RefreshColor();
         MouseEnter += (_, _) => Focus(); KeyDown += SliderKeyDown;
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, RefreshColor);
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, RefreshColor);
     }
     private int maxValue = 100;
     public int MaxValue { get => maxValue; set { if (value == maxValue) return; maxValue = value; RefreshWidth(null, null); } }

@@ -20,6 +20,7 @@ public sealed class ResourceItemHost<TProject, TRequest, TInstance> {
     public Func<bool> DetailAvailable = null!, DownloadAvailable = null!;
     public Func<IEnumerable<(string Title, bool IsSwapped)>> ExpandedCards = null!;
     public Func<TRequest?> CurrentSearch = null!;
+    public Func<(TRequest? Search,TInstance? Instance)> CurrentDownloadContext = null!;
     public Func<object[]?> CurrentArguments = null!;
     public Func<TInstance?> CurrentInstance = null!;
     public Action<object[]> OpenDetail = null!;

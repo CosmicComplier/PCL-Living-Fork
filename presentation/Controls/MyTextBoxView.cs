@@ -1,3 +1,4 @@
+using PCLLF.Presentation.Foundation;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -54,6 +55,9 @@ public class MyTextBoxView : TextBox {
         IsEnabledChanged += (_, _) => RefreshColor(); MouseEnter += (_, _) => RefreshColor(); MouseLeave += (_, _) => RefreshColor();
         GotFocus += (_, _) => RefreshColor(); LostFocus += (_, _) => RefreshColor(); IsEnabledChanged += (_, _) => RefreshTextColor();
         KeyUp += (_, args) => { if (args.Key == Key.Enter) Services.RaiseCustomEvent(this); };
+    
+        if (IsInitialized) LegacyThemePalette.Watch(this, () => { RefreshColor(); RefreshTextColor(); });
+        else Initialized += (_, _) => LegacyThemePalette.Watch(this, () => { RefreshColor(); RefreshTextColor(); });
     }
     public string ValidateResult { get => (string)GetValue(ValidateResultProperty); set => SetValue(ValidateResultProperty, value); }
     public static readonly DependencyProperty ValidateResultProperty = DependencyProperty.Register(nameof(ValidateResult), typeof(string), typeof(MyTextBoxView),

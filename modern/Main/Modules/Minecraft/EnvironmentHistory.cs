@@ -76,6 +76,7 @@ namespace PCL
                 IsParentOf = new Func<global::System.String, global::System.String, global::System.Boolean>((Parent, Child) => global::MeloongCore.PathUtils.IsParentOf(Parent, Child)),
                 SamePath = new Func<global::System.String, global::System.String, global::System.Boolean>((Left, Right) => global::MeloongCore.PathUtils.IsSame(Left, Right)),
                 ApplyTransaction = new Action<global::System.String, global::System.String, global::System.Collections.Generic.List<global::System.Tuple<global::System.String, global::System.String, global::System.String>>, global::System.Threading.CancellationToken, global::System.Action<global::System.Int32>>((GameRoot, VersionFolder, Operations, Token, BeforeApply) => global::PCL.ModpackUpdate.ApplyTransaction(GameRoot, VersionFolder, Operations, Token, BeforeApply)),
+                ApplyTransactionWithProgress = (GameRoot, VersionFolder, Operations, Token, Progress, BeforeApply) => global::PCL.ModpackUpdate.ApplyTransactionWithProgress(GameRoot, VersionFolder, Operations, Token, Progress, BeforeApply),
                 VersionPath = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Instance => Instance.PathVersion),
                 GameFolder = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Instance => Instance.PathIndie),
                 VanillaName = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Instance => Instance.Version.VanillaName),
@@ -125,6 +126,18 @@ namespace PCL
         internal static global::System.String CaptureInstance(global::PCL.ModMinecraft.McInstance Instance, global::System.String Label, global::System.Threading.CancellationToken Token)
         {
             return global::PCL.EnvironmentHistory.Service.CaptureInstance(Instance, Label, Token);
+        }
+        internal static string CaptureWithProgress(string VersionFolder, string GameRoot, string Label, CancellationToken Token, Action<double> Progress, Dictionary<string, string> Dependencies = null, string Description = "")
+        {
+            return Service.CaptureWithProgress(VersionFolder, GameRoot, Label, Token, Progress, Dependencies, Description);
+        }
+        internal static string CaptureInstanceWithProgress(ModMinecraft.McInstance Instance, string Label, CancellationToken Token, Action<double> Progress)
+        {
+            return Service.CaptureInstanceWithProgress(Instance, Label, Token, Progress);
+        }
+        internal static string RestoreWithProgress(string VersionFolder, string GameRoot, string McRoot, string Id, CancellationToken Token, Action<double> Progress, Action<int> BeforeApply = null, Func<string> CaptureBefore = null)
+        {
+            return Service.RestoreWithProgress(VersionFolder, GameRoot, McRoot, Id, Token, Progress, BeforeApply, CaptureBefore);
         }
         internal static global::System.Collections.Generic.List<global::Newtonsoft.Json.Linq.JObject> Points(global::System.String VersionFolder)
         {
@@ -229,10 +242,15 @@ namespace PCL
         }
         private static global::System.Boolean StartWork(global::PCL.ModMinecraft.McInstance Instance, global::PCLCS.EnvironmentHistoryWork Work)
         {
-            var StepLoader = new global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>(Work.StepName, Task => Work.Execute(Task.CreateCancellationToken(), Output => Task.Output = Output));
+            var StepLoader = new global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>(Work.StepName, Task => {
+                var Token = Task.CreateCancellationToken();
+                Work.Progress = global::PCLCS.FileTaskProgress.ForTask(() => Task.Progress, Value => Task.Progress = Value);
+                Work.Execute(Token, Output => Task.Output = Output);
+            });
             var Loader = new global::PCL.ModLoader.LoaderCombo<global::System.String>(Work.Title, new[] { StepLoader }) { OnStateChanged = global::PCL.ModDownloadLib.LoaderStateChangedHintOnly };
             var Worker = new global::MeloongCore.RedoableWorker(global::PCL.LoaderFileOperation.CreateWorkload(Loader, Instance.PathVersion));
-            if (!(global::PCL.ModMinecraft.McInstanceLock.TryAcquire(Worker, Instance.PathVersion)))
+            bool BrowseOnly = Work.SnapshotReservation();
+            if (!(BrowseOnly ? global::PCL.ModMinecraft.McInstanceLock.TryAcquireSnapshot(Worker, Instance.PathVersion) : global::PCL.ModMinecraft.McInstanceLock.TryAcquire(Worker, Instance.PathVersion)))
                 return false;
             Worker.Stopped += () => Work.Stopped();
             Worker.Start();

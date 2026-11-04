@@ -10,7 +10,7 @@ public sealed class LegacyThemeColorSlot<TColor> where TColor : LegacyColor {
     public Action<TColor> Write=null!;
 }
 public sealed class LegacyThemeHost<TColor> where TColor : LegacyColor {
-    public LegacyThemeColorSlot<TColor> Color1=null!,Color2=null!,Color3=null!,Color4=null!,Color5=null!,Color6=null!,Color7=null!,Color8=null!,Bg0=null!,Bg1=null!,Gray4=null!,SemiTransparent=null!;
+    public LegacyThemeColorSlot<TColor> Color1=null!,Color2=null!,Color3=null!,Color4=null!,Color5=null!,Color6=null!,Color7=null!,Color8=null!,Bg0=null!,Bg1=null!,Gray1=null!,Gray2=null!,Gray3=null!,Gray4=null!,Gray5=null!,Gray6=null!,Gray7=null!,Gray8=null!,SemiTransparent=null!;
     public int DefaultHue,DefaultSaturation,DefaultLight,DefaultDelta;
     public Func<int> Hue=null!,Saturation=null!,Light=null!;
     public Action<int> SetHue=null!,SetSaturation=null!,SetLight=null!;
@@ -22,7 +22,11 @@ public sealed class LegacyThemeHost<TColor> where TColor : LegacyColor {
     public Func<ResourceDictionary> Resources=null!;
     public Action<Action> RunInUi=null!;
     public Func<bool> MainLoaded=null!,Colorful=null!;
-    public Func<int> BackgroundMode=null!;
+    public Func<int> BackgroundMode=null!,BackgroundOpacity=null!,ColorMode=null!,PanelOpacity=null!;
+    public Action<Action> RunInUiWait=null!;
+    public Action<int> AddAnimationSuppression=null!;
+    public Func<string,ImageBrush> LoadBackgroundResource=null!;
+    public Action InstallTooltipTheme=null!;
     public Action<Brush> SetTitleBackground=null!;
     public Func<Brush> TitleBackground=null!;
     public Func<Panel> MainPanel=null!;

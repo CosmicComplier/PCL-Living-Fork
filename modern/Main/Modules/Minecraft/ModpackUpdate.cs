@@ -169,6 +169,10 @@ namespace PCL
         {
             global::PCLCS.PackUpdateEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile>.ReplaceFrom(Source, Destination);
         }
+        internal static string ApplyTransactionWithProgress(string GameRoot, string VersionFolder, List<Tuple<string, string, string>> Operations, CancellationToken Token, Action<double> Progress, Action<int> BeforeApply = null, string Box = null)
+        {
+            return Engine.ApplyTransactionWithProgress(GameRoot, VersionFolder, Operations, Token, Progress, BeforeApply, Box);
+        }
         internal static global::System.Collections.Generic.List<global::System.String> Pending(global::System.String VersionFolder)
         {
             return global::PCL.ModpackUpdate.Engine.Pending(VersionFolder);

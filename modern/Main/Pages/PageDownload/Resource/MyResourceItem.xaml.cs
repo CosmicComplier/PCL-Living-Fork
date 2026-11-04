@@ -32,6 +32,10 @@ namespace PCL
             this.InitializeComponent();
         }
 
+        private static (ResourceSearcher.SearchRequest Search, ModMinecraft.McInstance Instance) ReadCurrentDownloadContext() {
+            var page = ((dynamic)ModMain.FrmDownloadLeft.PageGet(ModMain.FrmMain.PageCurrentSub)).FindName("Content") as PageResource;
+            return (page?.Loader?.Input, page?.DownloadTargetInstance);
+        }
         private ResourceItemHost<ResourceProject, ResourceSearcher.SearchRequest, ModMinecraft.McInstance> CreateHost()
         {
             return new ResourceItemHost<ResourceProject, ResourceSearcher.SearchRequest, ModMinecraft.McInstance>()
@@ -45,7 +49,7 @@ namespace PCL
                 DetailAvailable = new Func<bool>(() => ModMain.FrmDownloadResourceDetail is not null),
                 DownloadAvailable = new Func<bool>(() => ModMain.FrmDownloadLeft is not null),
                 ExpandedCards = new Func<IEnumerable<(string Title, bool IsSwapped)>>(() => ModMain.FrmDownloadResourceDetail.PanResults.Children.Cast<MyCard>().Select(Card => (Card.Title, Card.IsSwapped))),
-                CurrentSearch = ReadCurrentSearch,
+                CurrentSearch = ReadCurrentSearch, CurrentDownloadContext = ReadCurrentDownloadContext,
                 CurrentArguments = new Func<object[]>(() => ModMain.FrmMain.PageCurrent.Additional as object[]),
                 CurrentInstance = new Func<ModMinecraft.McInstance>(() => PageInstanceLeft.Instance),
                 OpenDetail = new Action<object[]>(Arguments => ModMain.FrmMain.PageChange(new FormMain.PageStackData() { Page = FormMain.PageType.ResourceDetail, Additional = Arguments })),

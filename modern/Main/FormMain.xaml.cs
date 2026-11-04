@@ -240,6 +240,7 @@ namespace PCL
                 AprilScale = () => ModMain.FrmLaunchLeft.AprilScaleTrans,
                 SettingsInstance = () => PageInstanceLeft.Instance, SelectedInstance = () => ModMinecraft.McInstanceSelected,
                 InstanceName = value => value.Name, InstanceLocked = value => ModMinecraft.McInstanceLock.IsLocked(value),
+                InstanceBlocksNavigation = value => ModMinecraft.McInstanceLock.BlocksNavigation(value),
                 WriteInstanceSetting = (key, value, target) => Settings.Set(key, value, Instance: target),
                 ValidateHttp = value => new ValidateHttp().Validate(value), ReloadInstanceSetup = () => ModMain.FrmInstanceSetup.Reload(),
                 RefreshLaunchPage = () => ModMain.FrmLaunchLeft.RefreshPage(true, false), RefreshCustomHome = () => ModMain.FrmLaunchRight.ForceRefresh(),
@@ -375,7 +376,8 @@ namespace PCL
                 case PageType.InstanceSetup: return new LegacyMainLeftPage
                 {
                     Element = ModMain.FrmInstanceLeft, PageId = () => (int)ModMain.FrmInstanceLeft.PageID,
-                    PageGet = subType => (MyPageRightView)ModMain.FrmInstanceLeft.PageGet((PageSubType)subType), Item = subType => ModMain.FrmInstanceLeft.NavigationItem((PageSubType)subType)
+                    PageGet = subType => (MyPageRightView)ModMain.FrmInstanceLeft.PageGet((PageSubType)subType), Item = subType => ModMain.FrmInstanceLeft.NavigationItem((PageSubType)subType),
+                    SyncSelection = subType => ModMain.FrmInstanceLeft.SyncSelection((PageSubType)subType)
                 };
                 default: throw new InvalidOperationException("未知主窗左页：" + Page);
             }
