@@ -255,7 +255,7 @@ try {
  if($PreviewDirectory){[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null;Render-Png $panel (Join-Path $PreviewDirectory 'screenshot-gallery.png') 780 720}
  $type.GetMethod('ScreenshotClick',$flags).Invoke($page,[object[]]@($items[0],1,$open))|Out-Null
  if($script:opened -ne 1){throw 'Selection unexpectedly launched another viewer'}
- Add-Type -TypeDefinition $controllerChecks -ReferencedAssemblies @('System.dll','System.Core.dll',
+ Add-Type -TypeDefinition $controllerChecks -ReferencedAssemblies @('System.dll','System.Core.dll','System.Xaml.dll',
   [Windows.FrameworkElement].Assembly.Location,[Windows.UIElement].Assembly.Location,
   [Windows.Point].Assembly.Location,[PCLCS.ResourceThumbnailController].Assembly.Location)
  [PclScreenshotControllerChecks]::Run()
