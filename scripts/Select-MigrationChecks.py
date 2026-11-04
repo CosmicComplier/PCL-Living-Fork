@@ -16,7 +16,7 @@ import sys
 
 BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Exact existing scripts; workflows keep their original static invocations/options.
@@ -94,6 +94,25 @@ ENVIRONMENT_HISTORY_CHECKS = {
     "Test-EnvironmentHistory", "Test-RecentEnvironmentChanges", "Test-EnvironmentCoverage", "Test-BackupRetention",
     "Test-ModpackUpdate", "Test-ModpackUpdateUx", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-LaunchDependencies",
 }
+# Clone's exact backend/adapters also provide the path/link/hash/isolation
+# primitives used by the existing history and recent-change Windows hosts.
+# The clone check runs the retained real transaction, including rollback;
+# unrelated resource/dependency suites are not required by these exact paths.
+INSTANCE_CLONE_PATHS = {
+    "PCLCS/Minecraft/InstanceCloneContracts.cs",
+    "PCLCS/Minecraft/InstanceCloneEngine.cs",
+    "PCLCS/Minecraft/InstanceCloneEngine.Migration.cs",
+    "PCLCS/Minecraft/InstanceCloneGroupsEngine.cs",
+    "PCLCS/Minecraft/InstanceCloneExportIsolation.cs",
+    "PCLCS/Minecraft/InstanceCloneWorkflow.cs",
+    "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloner.vb",
+    "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloneGroups.vb",
+    "Plain Craft Launcher 2/Modules/Minecraft/ExportedVersionIsolation.vb",
+}
+INSTANCE_CLONE_CHECKS = {
+    "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-ExportVersionIsolation",
+    "Test-EnvironmentHistory", "Test-RecentEnvironmentChanges", "Test-EnvironmentCoverage", "Test-BackupRetention",
+}
 # Store is the shared path/transaction facade consumed by these existing chains.
 STORE_CHECKS = RESOURCE_CHECKS | WORLD_CHECKS | LOCAL_CHECKS | {
     "Test-ReviewFixes", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-RecentEnvironmentChanges",
@@ -150,6 +169,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("world-backups",), (), build=False)
             elif stem == "EnvironmentHistoryPipeline":
                 include(("environment-history",), (), build=False)
+            elif stem == "InstanceClonePipeline":
+                include(("instance-clone",), (), build=False)
             elif stem.startswith("PersonalOptions"):
                 include(("personal-options",), (), build=False)
             elif stem.startswith("InstanceKeybinding"):
@@ -174,6 +195,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(("world-backups",), WORLD_BACKUP_CHECKS)
         elif name in ENVIRONMENT_HISTORY_PATHS:
             include(("environment-history",), ENVIRONMENT_HISTORY_CHECKS)
+        elif name in INSTANCE_CLONE_PATHS:
+            include(("instance-clone",), INSTANCE_CLONE_CHECKS)
         elif name == "PCLCS/Platform/Windows/KeybindingPageController.cs":
             include(("keybindings",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-KeybindingGroups"})
         elif name in {"PCLCS/Platform/Windows/RecentWorldPageController.cs", "PCLCS/Platform/Windows/RecentWorldQuickPlay.cs"}:

@@ -44,6 +44,16 @@
     <Compile Include="../../PCLCS/Minecraft/EnvironmentHistoryEngine.Restore.cs" Link="Production/EnvironmentHistoryEngine.Restore.cs" />
     <Compile Include="../../PCLCS/Minecraft/EnvironmentHistoryWorkflow.cs" Link="Production/EnvironmentHistoryWorkflow.cs" />
     <Compile Include="../../PCLCS/Minecraft/RecentEnvironmentChanges.cs" Link="Production/RecentEnvironmentChanges.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceCloneContracts.cs" Link="Production/InstanceCloneContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceCloneEngine.cs" Link="Production/InstanceCloneEngine.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceCloneEngine.Migration.cs" Link="Production/InstanceCloneEngine.Migration.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceCloneWorkflow.cs" Link="Production/InstanceCloneWorkflow.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceCloneGroupsEngine.cs" Link="Production/InstanceCloneGroupsEngine.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceCloneExportIsolation.cs" Link="Production/InstanceCloneExportIsolation.cs" />
+    <!-- Keep the real Minecraft/component/loader models and pinned Shared helpers. -->
+    <Compile Include="../../PCLCS/Constants.cs" Link="Production/Constants.cs" />
+    <Compile Include="../../PCLCS/Minecraft/McVersion.cs" Link="Production/McVersion.cs" />
+    <Compile Include="../../PCLCS/Minecraft/McInstallManifest.cs" Link="Production/McInstallManifest.cs" />
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
@@ -51,5 +61,16 @@
       <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
       <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>
     </Reference>
+    <ProjectReference Include="../../MeloongCore/Shared/MeloongCore.csproj" />
+    <!-- Suppress Shared's transitive JSON assets here so the original LF DLL
+         remains the compile and CopyLocal input instead of NuGet's net6 build. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" ExcludeAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Newtonsoft.Json" />
+    <Using Include="Newtonsoft.Json.Linq" />
+    <Using Include="MeloongCore" />
+    <Using Include="MeloongCore.Extensions" />
+    <Using Include="System.Text.RegularExpressions" />
   </ItemGroup>
 </Project>
