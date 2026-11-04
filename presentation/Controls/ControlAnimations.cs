@@ -5,7 +5,7 @@ using System.Windows;
 
 namespace PCLLF.Presentation.Controls;
 
-public enum ControlEase { Linear, OutFluent, InFluent, OutBack }
+public enum ControlEase { Linear, OutFluent, InFluent, OutBack, OutFluentWithInitial }
 public enum ControlEasePower { Weak, Middle, Strong, ExtraStrong }
 
 public readonly struct ControlAnimationSpec {
@@ -13,10 +13,22 @@ public readonly struct ControlAnimationSpec {
     public readonly ControlEase Ease;
     public readonly ControlEasePower Power;
     public readonly bool After;
+    public readonly double InitialSpeed, TotalSeconds, TotalDistance;
     public ControlAnimationSpec(int duration, int delay = 0, ControlEase ease = ControlEase.Linear,
         ControlEasePower power = ControlEasePower.Middle, bool after = false) {
         Duration = duration; Delay = delay; Ease = ease; Power = power; After = after;
+        InitialSpeed = 0; TotalSeconds = 0; TotalDistance = 0;
     }
+    private ControlAnimationSpec(int duration, double initialSpeed, double totalSeconds, double totalDistance, bool after)
+        : this(duration, 0, ControlEase.OutFluentWithInitial, ControlEasePower.Middle, after) {
+        InitialSpeed = initialSpeed; TotalSeconds = totalSeconds; TotalDistance = totalDistance;
+    }
+    public static ControlAnimationSpec FluentWithInitial(int duration, double initialSpeed, double totalSeconds, double totalDistance, bool after = true) =>
+        new(duration, initialSpeed, totalSeconds, totalDistance, after);
+    // Original VB animation parameters round floating durations and delays to even.
+    public ControlAnimationSpec(double duration, double delay = 0, ControlEase ease = ControlEase.Linear,
+        ControlEasePower power = ControlEasePower.Middle, bool after = false)
+        : this(Convert.ToInt32(Math.Round(duration)), Convert.ToInt32(Math.Round(delay)), ease, power, after) { }
 }
 
 public abstract class ControlAnimation { internal ControlAnimation() { } }
@@ -27,6 +39,10 @@ public abstract class ControlAnimations {
     public abstract ControlAnimation ColorTo(FrameworkElement target, DependencyProperty property, ControlColor value, ControlAnimationSpec spec);
     public abstract ControlAnimation Scale(FrameworkElement target, double value, ControlAnimationSpec spec, bool absolute = false);
     public abstract ControlAnimation ScaleTransform(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation Height(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation Opacity(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation RotateTransform(FrameworkElement target, double value, ControlAnimationSpec spec);
+    public abstract ControlAnimation Double(Action<double> work, double value, ControlAnimationSpec spec);
     public abstract ControlAnimation Code(Action work, int delay = 0, bool after = false);
     public abstract void Start(IEnumerable<ControlAnimation> animations, string name, bool refreshTime = false);
     public void Start(ControlAnimation animation, string name, bool refreshTime = false) => Start(new[] { animation }, name, refreshTime);
@@ -43,6 +59,10 @@ public sealed class ControlAnimationHost<TAnimation> : ControlAnimations where T
     public Func<FrameworkElement, DependencyProperty, ControlColor, ControlAnimationSpec, TAnimation> CreateColorTo = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, bool, TAnimation> CreateScale = null!;
     public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateScaleTransform = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateHeight = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateOpacity = null!;
+    public Func<FrameworkElement, double, ControlAnimationSpec, TAnimation> CreateRotateTransform = null!;
+    public Func<Action<double>, double, ControlAnimationSpec, TAnimation> CreateDouble = null!;
     public Func<Action, int, bool, TAnimation> CreateCode = null!;
     public Action<TAnimation[], string, bool> StartFrames = null!;
     public Action<string> StopFrames = null!;
@@ -51,6 +71,10 @@ public sealed class ControlAnimationHost<TAnimation> : ControlAnimations where T
     public override ControlAnimation ColorTo(FrameworkElement target, DependencyProperty property, ControlColor value, ControlAnimationSpec spec) => new Frame(CreateColorTo(target, property, value, spec));
     public override ControlAnimation Scale(FrameworkElement target, double value, ControlAnimationSpec spec, bool absolute = false) => new Frame(CreateScale(target, value, spec, absolute));
     public override ControlAnimation ScaleTransform(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateScaleTransform(target, value, spec));
+    public override ControlAnimation Height(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateHeight(target, value, spec));
+    public override ControlAnimation Opacity(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateOpacity(target, value, spec));
+    public override ControlAnimation RotateTransform(FrameworkElement target, double value, ControlAnimationSpec spec) => new Frame(CreateRotateTransform(target, value, spec));
+    public override ControlAnimation Double(Action<double> work, double value, ControlAnimationSpec spec) => new Frame(CreateDouble(work, value, spec));
     public override ControlAnimation Code(Action work, int delay = 0, bool after = false) => new Frame(CreateCode(work, delay, after));
     public override void Start(IEnumerable<ControlAnimation> animations, string name, bool refreshTime = false) =>
         StartFrames(animations.Select(animation => ((Frame)animation).Value).ToArray(), name, refreshTime);

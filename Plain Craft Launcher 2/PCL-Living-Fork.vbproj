@@ -482,18 +482,9 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\MyHint.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Controls\MyListItem.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Controls\MyIconButton.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
+    <None Include="Controls\MyHint.xaml" />
+    <None Include="Controls\MyListItem.xaml" />
+    <None Include="Controls\MyIconButton.xaml" />
     <Page Include="Controls\MyLoading.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

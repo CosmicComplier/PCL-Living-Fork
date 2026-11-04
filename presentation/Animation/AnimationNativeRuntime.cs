@@ -42,6 +42,14 @@ public sealed class AnimationNativeRuntime {
                 spec.Duration, spec.Delay, ToEase(spec), spec.After, absolute),
             CreateScaleTransform = (target, value, spec) => Factories.AaScaleTransform(target, value,
                 spec.Duration, spec.Delay, ToEase(spec), spec.After),
+            CreateHeight = (target, value, spec) => Factories.AaHeight(target, value,
+                spec.Duration, spec.Delay, ToEase(spec), spec.After),
+            CreateOpacity = (target, value, spec) => Factories.AaOpacity(target, value,
+                spec.Duration, spec.Delay, ToEase(spec), spec.After),
+            CreateRotateTransform = (target, value, spec) => Factories.AaRotateTransform(target, value,
+                spec.Duration, spec.Delay, ToEase(spec), spec.After),
+            CreateDouble = (work, value, spec) => Factories.AaDouble(new ParameterizedThreadStart(delta => work(Convert.ToDouble(delta))), value,
+                spec.Duration, spec.Delay, ToEase(spec), spec.After),
             CreateCode = (work, delay, after) => Factories.AaCode(new ThreadStart(() => work()), delay, after),
             StartFrames = (frames, name, refreshTime) => Engine.AniStart(frames, name, refreshTime),
             StopFrames = Engine.AniStop
@@ -61,6 +69,7 @@ public sealed class AnimationNativeRuntime {
             ControlEase.OutFluent => new AnimationEaseOutFluent(power),
             ControlEase.InFluent => new AnimationEaseInFluent(power),
             ControlEase.OutBack => new AnimationEaseOutBack(power),
+            ControlEase.OutFluentWithInitial => new AnimationEaseOutFluentWithInitial(spec.InitialSpeed, spec.TotalSeconds, spec.TotalDistance),
             _ => throw new ArgumentOutOfRangeException(nameof(spec))
         };
     }
