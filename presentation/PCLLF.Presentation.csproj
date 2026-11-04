@@ -20,6 +20,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Numerics" />
+    <Compile Include="../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Foundation/LegacyPackMetadataNumberFormatting.cs" />
     <PackageReference Include="PolySharp" Version="1.15.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

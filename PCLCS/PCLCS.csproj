@@ -63,6 +63,11 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <Reference Include="Microsoft.VisualBasic" />
+	  <Reference Include="System.Drawing" />
+	  <Reference Include="Imazen.WebP">
+	    <HintPath>../Plain Craft Launcher 2/Resources/Imazen.WebP.dll</HintPath>
+	    <Private>false</Private>
+	  </Reference>
 	  <Reference Include="WindowsBase" />
 	  <Reference Include="PresentationCore" />
 	  <Reference Include="PresentationFramework" />

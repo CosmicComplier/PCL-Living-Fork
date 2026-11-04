@@ -14,7 +14,7 @@ public readonly struct ControlColor {
     public ControlColor(double alpha, double red, double green, double blue) { A = alpha; R = red; G = green; B = blue; }
     public ControlColor WithAlpha(double alpha) => new(alpha, R, G, B);
     public SolidColorBrush ToBrush() => new(Color.FromArgb(Byte(A), Byte(R), Byte(G), Byte(B)));
-    private static byte Byte(double value) {
+    internal static byte Byte(double value) {
         if (value < 0) value = 0;
         if (value > 255) value = 255;
         return Convert.ToByte(Math.Round(value));

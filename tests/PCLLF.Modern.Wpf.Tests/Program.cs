@@ -73,6 +73,7 @@ internal static class Program {
             CheckImageDecoding(Path.Combine(fixture, "images"));
             AnimationTests.Run();
             AnimationTests.RunThreadDriverProcess(repositoryRoot);
+            BitmapFoundationAcceptance.Run(repositoryRoot, Path.Combine(fixture, "bitmap-foundation"));
             Require(!AppDomain.CurrentDomain.GetAssemblies().Any(assembly => IsLegacyWpf(assembly.GetName())),
                 "The modern runtime loaded the historical Meloong WPF assembly.");
         } finally {
