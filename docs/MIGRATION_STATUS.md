@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-- 目标状态：`in_progress`。当前仅推进既有 LF 的 C#／.NET 10／WPF 与等价回归。
+- 目标状态：`paused`。2026-11-04按用户要求暂停goal与自动续跑；尚未完成整个迁移目标。保留全部已验进度，等待用户明确恢复后再从C007d2继续。
 - 集成分支：`migration/csharp-modern-dotnet`。工作起点为 `f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`；`main` 不参与提交或合并。
-- 最新已验收检查点 `745f0b845139bad953a03eed70288506c5bcc1c3`：Windows 各 41 步、Ubuntu 345／Windows 377 组与 **RequireEquivalent** 190／56 全通过，含原 f4 完整 FormatSize 的 40 个文化数值样本，C007d1a 完成；C007c4 首次失败／修复证据保留。主产品仍 net48，非全部 BCL／现代 WPF 验收。
-- 当前 C007d1b 进行中：`93c51e2` 的366／398单元及Windows各41步通过，原18个差异消除，但新增极值／舍入探针实际仍4差异；严格291／56未过。已按固定MIT来源移植局部旧数值转换，独立实现15／17位文本并恢复旧R缓冲选择，本地367／367及三工程零警告、VB预编译通过；v6扩至397／56，后继Windows待验。IO／Icon与捕获仍原宿主，界面母项保持blocked。
+- 最新已验收检查点 `476eb42bb00e85b7cf8d4f800d1264740b8373c6`：Windows各41步、Ubuntu367／Windows399组及 **RequireEquivalent** 397／56全通过（metadata101／解析位值34／格式72），C007d1b与d1完成；前两轮18／4差异及修复证据保留。主产品仍net48，非全部BCL／CRT／现代WPF验收。
+- 当前最早ready为C007d2：迁移ReadPackInfo的目录／ZIP I/O与同步Icon派发，保1MiB／4MiB、ZIP Share.ReadWrite|Delete、五类catch、Icon先于JSON/ref更新、原WPF LoadImage／DecodeImage继续宿主；扫描／取消／图片解码另批，不以本项关闭Store。C005c2／C006d界面母项仍blocked。
 - 续跑原则：先收尾 `in_progress` 中依赖满足的最早任务，再选择任务表中最早可执行项。被阻塞项保留原编号与原因，独立任务继续推进。
 
 ## 证据与基线
@@ -36,6 +36,7 @@
 | C007c4 当前清单 | `--ref a89bc041412b4382eb68e1ea4053127ec973874a`：292 个源文件，其中产品 269、测试 22、工具 1；产品 VB 仍为 168 文件／55,245 行 | 原历史测试驱动只计测试，C#／测试增量不作为完成率；主工程／界面与其余业务仍待转换 |
 | C007d1a 当前清单 | `--ref 745f0b845139bad953a03eed70288506c5bcc1c3`：294 个源文件，其中产品 270、测试 23、工具 1；产品 VB 仍为 168 文件／55,242 行 | 私有门面仍计产品；源码基线与真实 GUI／现代主工程待办不变，非完成率 |
 | C007d1b 首批当前清单 | `--ref 4eb50fbbc884fb284aac7377a897aaef4176f8d2`：295 个源文件，其中产品270、测试24、工具1；产品VB仍168文件／55,236行 | 原控制流提取与新测试不作为完成率；原固定基线不改，真实现代主工程／UI仍待 |
+| C007d1b 已验当前清单 | `--ref 476eb42bb00e85b7cf8d4f800d1264740b8373c6`：299源文件，产品273／测试25／工具1；产品VB仍168文件／55,236行 | 历史驱动只计测试；局部numeric适配与测试增量不是完成率，固定基线不改 |
 
 本轮已推送的实现与验证检查点：
 
@@ -76,6 +77,9 @@
 | `745f0b8` | C007d1a 原大小显示／当前culture／GB上限与原private入口、6组金值和v4三原方法注入已推送；345／377、严格190／56和Windows各41步全通过，d1a完成，JSON规则仍由d1b继续 |
 | `4eb50fb` | C007d1b 原 JSON 末段／ref 桥、13组测试和原片段v5已推送；Ubuntu358／Windows390及Windows各41步全通过，严格280／56实际18个metadata数值差异，母项不关闭；见下列真实失败与artifact证据 |
 | `93c51e2` | 初次数值适配／8组回归／291例已推送；366／398单元、Windows各41步成功，原18个差异归零，但新增epsilon／normal边界／R／G15中点4差异使严格检查继续失败；不隐去首次失败或提前关闭d1b |
+| `476eb42` | C007d1b局部MIT旧数值转换／独立15／17格式／旧R尾零缓冲与v6已推送；367／399、严格397／56、Windows各41步全通过。原两轮失败保留，母项d1纯显示范围完成，IO／Icon／Scan待后继 |
+| [C007d1b v6 Migration validation 41754149284](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149284) | `476eb42`：Ubuntu job `126326151285` 367／367、Windows job `126326151418` 399／399均success，严格397／56（metadata101、parse34、format72）四失败数组空、equivalent=true；artifact `13286793149` 已下载核对，ZIP SHA256 `a17d0bcd04bae63a819debe49a224400472c9cdf99ef62899d82dd8b2461b7f5` |
+| [C007d1b v6 Windows Build 41754149252](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149252) | `476eb42`：Release job `126326151610`、Debug job `126326151708`各41步success，实际原pack-description／ref／UTF16／error和完整资源／事务／旧桥通过；原net48产品，不替代现代WPF／全域CRT验收 |
 | [C007d1b 第二次 Migration validation 41751706901](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706901) | `93c51e2`：Ubuntu job `126318081169` 366／366 success；Windows job `126318080583` 398／398单元通过，严格291／56仍4差异，contract／native／text失败全0。artifact `13286565797` 已下载校验，ZIP SHA256 `205d99158a44c148bb37eb29b95d7cd16ed1c73797e5cecf74e21574a7855ffc` |
 | [C007d1b 第二次 Windows Build 41751706759](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41751706759) | `93c51e2`：Debug job `126318080530`、Release job `126318080805`各41步success；原net48消费链继续通过，不抵销现代数值差异 |
 | [C007d1b 首次 Migration validation 41750296482](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41750296482) | `4eb50fb`：Ubuntu job `126313430696` 358／358 success；Windows job `126313431272` 390／390单元通过，但RequireEquivalent的280／56有18个path差异（均pack-metadata），contract／native／text失败均0，严格退出2。artifact `13285062521` 已下载校验，ZIP SHA256 `347ec6f0351850429fc10d3a6b0f1eaabad55a012c3c7dfe787d7f746f8f9bbd` |
@@ -254,9 +258,10 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c2 | done | C007c1 | `2d111e1`：SafeName 原顺序／三文案／平台规则，8 组新增令 Ubuntu 319／Windows 347、严格 137／52、Windows 各 41 步及原消费者全通过；独立终审／零警告编译通过，不扩大保留名策略 |
 | C007c3 | done | C007c2 | `70f2545`：原 AcceptFile／9 白名单／null 先后、原 C6 字符共享与消费者接通，8 Unix／9 Windows 组令 327／356、严格 137／52、Windows 各 41 步全通过；独立终审／零警告编译通过，ZIP 内容校验未在本批迁 |
 | C007c4 | done | C007c3、C007b2 | `dfb81b8`／`a89bc04`：原包校验／Using／原两文案与 Shader 前缀、真实 ZIP／惰性／句柄／共享只读及原消费者接通；339／371、严格 150／56、Windows 各 41 步全通过；首次编码与测试解包失败保留，不扩大扫描／导入策略 |
-| C007d1 | in_progress | C007c4 | 大小显示与 pack JSON→Detail 拆成独立 a／b；保 CurrentCulture／GB上限／ref Detail部分更新／原Meloong换行两次调用，IO／Icon和精确Catch仍在原VB，不以a完成关闭b |
+| C007d1 | done | C007c4 | a大小／b JSON纯显示已真实验收：保CurrentCulture／GB上限／ref部分更新／两次Meloong调用，v6严格397／56与Windows原消费者通过；done仅指纯显示，IO／Icon／catch由d2后继，不关闭整个Store |
 | C007d1a | done | C007c4 | `745f0b8`：原 FormatSize／私有桥／6组金值、20 long×两culture的原方法对照；345／377、严格190／56、Windows各41步与原消费者全通过，保CurrentCulture／GB cap／原舍入，不外推d1b |
-| C007d1b | in_progress | C007d1a | `93c51e2`：366／398单元和Windows各41步通过；原18项已消除，严格291／56新增4项位值／R／中点差异。局部MIT旧转换及独立15／17格式已接线，本地367／367通过，v6真实397／56待验；原IO／Icon／filter／ref顺序保持 |
+| C007d1b | done | C007d1a | `4eb50fb`／`93c51e2`／`476eb42`：两轮差异及修复保留，局部旧数字转换／15／17格式／R尾零与原ref桥完成；367／399、严格397／56和Windows各41步通过，实际源片段与隔离数值API验证，不外推所有CRT／现代WPF |
+| C007d2 | todo | C007d1b | 迁ReadPackInfo目录／ZIP I/O与两个同步Icon回调；保metadata1MiB、ZIP icon4MiB、Share.ReadWrite|Delete、流生命周期／顺序／五类filter及ref部分更新，WPF decode与LoadImage64MiB文件门面暂宿主。真实文件／ZIP／句柄／锁／原消费者回归后验收 |
 
 ## 当前批次与下一步
 
@@ -285,7 +290,8 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007c3 | `70f2545` 已推送；327／356、严格 137／52、Windows 各 41 步与原私有桥／null-device／资源和 Quick Play 消费者全通过；独立终审／零警告编译通过 | 本批完成，筛选不做 SafeName／完整路径归约；更多 ZIP 和扫描语义仍属后继 |
 | C007c4 | `dfb81b8`／`a89bc04` 已推送；首次失败及修复记录齐全，339／371、严格 150／56／12 ZIP API、Windows 各 41 步和真实原消费者全通过；独立终审／零警告编译通过，未全局注册编码 | 本批完成，OpenRead 快照与未知 kind 业务惰性分别验收，不外推所有 raw BCL I/O 或现代 WPF；包名/条件/数据/事务范围保留 |
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
+| C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：收尾 C007d1b JSON→Detail 的 Windows／真实 Frame 片段对照；前两轮真实报告和修复保留，当前367／367已覆盖新4项金值，待实跑v6的397／56（原291＋34解析位值＋72格式API），以原Frame确认旧数字转换／R尾零缓冲／CRT边界；不以同源移植或本地成功替代严格门禁。d1a／c4／c3／c2／c1／b2 已全通过，不重复前批或重建基线。保持原 IO／Icon／捕获位置，再按依赖迁扫描；C005／C006 的界面母项仍 blocked，不以小规则完成关闭 Store。
+下次入口：C007d2 ReadPackInfo目录／ZIP I/O，使用原Entry对象上的两个同步Icon动作保持WPF归属及单向依赖；不复用c4仅Share.Read的OpenRead替代原Share.ReadWrite|Delete。保metadata完整读取／icon先更新／最后JSON及原五类filter，目录LoadImage自吞FormatException与ZIP直DecodeImage外漏的区别保持。d1b／d1a／c4／c3／c2／c1／b2已通过，不重复前批或重建基线；后续再拆LoadImage／Scan及取消。C005／C006界面母项仍blocked。
 
 当前仍需完成：剩余产品源码迁移、现代项目和第三方／子模块兼容实现、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

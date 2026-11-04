@@ -149,3 +149,9 @@ v5 保留原 190 例／56 比较，新增 90 个 `pack-metadata` 请求，总 28
 v6保原291例／56比较和所有旧gold／严格门禁，再加34个原始JSON十进制lexeme→Double.TryParse成功位／IEEE结果位值，以及36个有限rawbits×en-US／fr-FR的72例默认G／G15／G17／R文本，共 **397／56**（metadata101、parse34、format72）。旧端是原Frame真实API，现代端是上述实际生产parser／formatter／R选择入口；这些API探针不冒称完整ReadPackInfo片段。输入文本和位模式不由新port生成gold，观察型合同后仍逐对象严格比较。
 
 解析覆盖次正规邻界、最大值、正负零／上溢／下溢、49／50／51有效位、长尾零及指数饱和；格式覆盖24个固定边界rawbits和12个固定种子LCG的唯一有限位模式，双文化finally恢复。schema强制bool／16位hex／四字符串，不允许格式结果掩盖解析位值。脚本记录两新生产源哈希，固定原片段、LF配置／manifest／Shared／Json与清理边界继续保持。本地367／367、三工程零警告编译和v6旧VB预编译通过；本批真实397／56及Windows消费者尚待执行，d1b不关闭。
+
+`476eb42bb00e85b7cf8d4f800d1264740b8373c6` 的 [v6 Migration validation 41754149284](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149284)：Ubuntu job `126326151285` 367／367、Windows job `126326151418` 399／399均success，真实 **397／56／metadata101／parse34／format72在RequireEquivalent全无差异**，四失败数组均空、equivalent=true。原291和新增106项均实际运行，旧JSON片段SHA仍`0c5ab4d057edbeb8d198cee49d69929b36d259ea71a22c34a078021db38bc760`。
+
+[完整v6 artifact 13286793149](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149284/artifacts/13286793149) 已下载逐项核对，ZIP SHA256 `a17d0bcd04bae63a819debe49a224400472c9cdf99ef62899d82dd8b2461b7f5`；实际modern metadata／parser／formatter源哈希分别`296eddfd079847d5a601fc66323ff88747351cd334d791681b1ac56ed8c002c2`／`b695f0e1d9c1cfe1320100335f59e0a720650efea51d4d71f75f4a15b0130aea`／`744b3584b27385c312fe43ae7b193e2a18b9759aae3c189c116c93e6b4f4443a`。
+
+同提交 [v6 Windows Build 41754149252](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41754149252)：Release job `126326151610`、Debug job `126326151708`各41步success，实际原pack-description／ref／UTF16／error和完整资源／事务／旧桥消费者通过。C007d1b与d1纯显示范围完成；前两次真实失败／artifact不删除。397例并不证明全部CRT位模式／文化／架构或未来现代WPF，数字兼容仅留在本metadata，不向全局推广。ReadPackInfo磁盘／图标／catch继续由C007d2迁，整个Store与长期目标未完成。
