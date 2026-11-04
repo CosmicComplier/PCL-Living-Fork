@@ -404,6 +404,7 @@
     "scripts/Build-NativeRelease.ps1",
     "scripts/Build-ModernRelease.ps1",
     ".github/workflows/native-main.yml",
-    "PCL-Living-Fork.Modern.slnx"
+    "PCL-Living-Fork.Modern.slnx",
+    "scripts/tests/Test-NativeUpgradeQualification.py"
   ]
 }

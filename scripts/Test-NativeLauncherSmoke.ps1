@@ -53,6 +53,10 @@ function Check-Log([string]$text,[string]$expectedNotice){
  foreach($title in $titles){if($title -cne $expectedNotice){Pending ('Unexpected actual product dialog, never auto-clicked: '+$title)}}
  if($text -match '主窗体加载完成前出现意料外的等待弹窗|处理等待中的弹窗失败|弹窗初始化失败|弹窗加载失败'){throw 'Actual product modal/initialization failed.'}
 }
+function Assert-OwnedProcessImage([object]$image,[string]$expectedPath){
+ if(-not $image.QuerySucceeded){throw ('QueryFullProcessImageNameW failed for the actual process handle: Win32='+$image.Win32Error+'; '+$image.QueryErrorType+'; '+$image.QueryError)}
+ if([string]::IsNullOrEmpty($image.Path) -or -not [string]::Equals($image.Path,$expectedPath,[StringComparison]::OrdinalIgnoreCase)){throw ('Actual process image differs from owned target. Expected='+$expectedPath+'; QueryFullProcessImageNameW='+$image.Path+'; MainModule(diagnostic only)='+$image.LegacyMainModulePath)}
+}
 function Assert-LfNormalClose([int]$exitCode,[string]$text,[string]$expectedNotice){
  # LF50 EndProgramForce(Success=0) flushes and self-Kill()s. The fixed Windows
  # runtime10.0.14 Process.Kill calls TerminateProcess(handle,-1), not Exit(0).
@@ -120,7 +124,16 @@ try{
   $watch=[Diagnostics.Stopwatch]::StartNew();$readyAt=-1;$mainWindow=$null
   while($watch.Elapsed.TotalSeconds -lt $StartupTimeoutSeconds){
    $nativeProcess.Refresh();if($nativeProcess.HasExited){throw ('Actual Main exited before ready: '+$nativeProcess.ExitCode)}
-   if(-not [string]::Equals($nativeProcess.MainModule.FileName,$installed,[StringComparison]::OrdinalIgnoreCase)){throw 'Observed process is not the copied actual native Main.'}
+   $firstImage=-not $run.Contains('ImageIdentityFirst')
+   $image=[PclLfNativeSmoke.Win32]::ObserveProcessImage($nativeProcess,$firstImage)
+   $run.ImageIdentityLast=$image
+   if($firstImage){$run.ImageIdentityFirst=$image}
+   if($firstImage -or -not $image.QuerySucceeded -or -not [string]::Equals($image.Path,$installed,[StringComparison]::OrdinalIgnoreCase)){
+    $imageDiagnostic=[ordered]@{Source='QueryFullProcessImageNameW/process.Handle/flags0';ExpectedPath=$installed;ProcessId=$nativeProcess.Id;ElapsedMilliseconds=$watch.ElapsedMilliseconds;FirstSample=$run.ImageIdentityFirst;CurrentSample=$image}
+    [IO.File]::WriteAllText((Join-Path $fixture ('process-image-'+$pass+'-diagnostics.json')),($imageDiagnostic|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+    Write-Output ('Actual Native process image diagnostic: '+($imageDiagnostic|ConvertTo-Json -Depth 5 -Compress))
+   }
+   Assert-OwnedProcessImage $image $installed
    $windows=@([PclLfNativeSmoke.Win32]::Windows($nativeProcess.Id))
    foreach($window in $windows){if($window.Title.Length -gt 0 -and ($window.ClassName -notlike 'HwndWrapper*' -or $window.Title.Trim() -cne 'LivingPCL')){Pending ('Unexpected native product window: '+$window.Title+' / '+$window.ClassName)}}
    $mainWindow=@($windows|Where-Object {$_.Title.Trim() -ceq 'LivingPCL' -and $_.ClassName -like 'HwndWrapper*' -and $_.Right -gt $_.Left -and $_.Bottom -gt $_.Top})|Select-Object -First 1

@@ -16,7 +16,13 @@ internal static class Program
         ["file-tasks"] = FileTaskScenarios.Run,
         ["mod-dependencies"] = NativeDependencyChecks.Local,
         ["mod-dependency-online"] = NativeDependencyChecks.Online,
-        ["updater"] = NativeUpdateChecks.Run
+        ["updater"] = NativeUpdateChecks.Run,
+        ["backup-resources"] = BackupResourceChecks.Run,
+        ["instance-clone"] = CloneNativeChecks.Run,
+        ["modpack-update"] = ModpackUpdateChecks.Run,
+        ["environment-history"] = EnvironmentHistoryChecks.Run,
+        ["local-features"] = LocalFeatureChecks.Run,
+        ["launch-dependencies"] = LaunchDependencyChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)
@@ -25,6 +31,8 @@ internal static class Program
         {
             if (!OperatingSystem.IsWindows())
                 throw new PlatformNotSupportedException("This host requires a real Windows .NET10/WPF runtime.");
+            if (BackupResourceChecks.TryRunIdleChild(args, out int backupIdleExit))
+                return backupIdleExit;
             string[] selected = ReadGroups(args);
             bool isolated = args.Contains("--isolated", StringComparer.Ordinal);
             if (!isolated)

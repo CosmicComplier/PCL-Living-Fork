@@ -41,6 +41,7 @@ NATIVE_ONLY_PATHS = {
     ".github/workflows/native-main.yml",
     "scripts/Build-NativeRelease.ps1", "scripts/Build-ModernRelease.ps1",
     "scripts/Test-NativeLauncherSmoke.ps1",
+    "scripts/tests/Test-NativeUpgradeQualification.py",
 }
 
 NATIVE_ONLY_PATHS.update({"scripts/Test-NativeUpdateBridge.ps1", "scripts/tests/Test-BridgePayloadIdentity.ps1"})
