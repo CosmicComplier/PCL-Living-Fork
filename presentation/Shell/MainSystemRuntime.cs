@@ -87,27 +87,30 @@ public sealed class MainFeedbackRuntime {
     private readonly MainFeedbackHost host;
     public MainFeedbackRuntime(MainFeedbackHost host) { this.host = host; }
     public void Feedback(bool showMsgbox = true, bool forceOpenLog = false) {
+        ProjectData.ClearProjectError(); // Original On Error Resume Next declaration resets prior Err.
         // LF On Error Resume Next isolates these statements: opening logs must not prevent opening issues.
-        try { Info(); } catch { }
+        try { Info(); } catch (Exception error) { ProjectData.SetProjectError(error); }
         bool openLog;
         try {
             openLog = forceOpenLog || showMsgbox && host.Message("若你在汇报一个 Bug，请点击 打开文件夹 按钮，并上传 Log(1~5).txt 中包含错误信息的文件。\r\n游戏崩溃一般与启动器无关，请不要因为游戏崩溃而提交反馈。", "反馈提交提醒", "打开文件夹", "不需要") == 1;
-        } catch {
+        } catch (Exception error) {
+            ProjectData.SetProjectError(error);
             // VB Resume Next after a failing If condition enters its first body statement.
             // Verified by the separate original-language fault sample; do not skip the log action.
             openLog = true;
         }
-        try { if (openLog) host.Explorer(host.BasePath() + "PCL\\Log1.txt"); } catch { }
-        try { host.Website(host.IssuesUrl()); } catch { }
+        try { if (openLog) host.Explorer(host.BasePath() + "PCL\\Log1.txt"); } catch (Exception error) { ProjectData.SetProjectError(error); }
+        try { host.Website(host.IssuesUrl()); } catch (Exception error) { ProjectData.SetProjectError(error); }
     }
     public void Info() {
+        ProjectData.ClearProjectError();
         try {
             Logger.Warn("诊断信息：\r\n" + "操作系统：" + host.OsFullName() + "\r\n" +
                 "剩余内存：" + Number(Math.Floor(host.AvailablePhysicalMemory() / 1024.0 / 1024)) + " M / " +
                 Number(Math.Floor(host.TotalPhysicalMemory() / 1024.0 / 1024)) + " M\r\n" +
                 "DPI：" + Conversions.ToString(host.Dpi()) + "（" + Number(Math.Round(host.Dpi() / 96.0, 2) * 100) + "%）\r\n" +
                 "MC 文件夹：" + (host.MinecraftFolder() ?? "Nothing") + "\r\n" + "文件位置：" + host.BasePath());
-        } catch { }
+        } catch (Exception error) { ProjectData.SetProjectError(error); }
     }
     private static string Number(double value) {
 #if NETFRAMEWORK

@@ -1,146 +1,72 @@
-Public Class MyMsgText
+Option Strict On
+Imports PCLLF.Presentation.Dialogs
 
+Public Class MyMsgText
+    Inherits Grid
     Private ReadOnly MyConverter As MyMsgBoxConverter
     Private ReadOnly Uuid As Integer = GetUuid()
-
+    Private ReadOnly Native As IMessageTextController
     Public Sub New(Converter As MyMsgBoxConverter)
+        Native = New MessageTextController(Of MyMsgBoxType, Validate)(New MessageTextParts With {
+            .Root = Me, .Button1 = Function() Btn1, .Button2 = Function() Btn2, .Button3 = Function() Btn3,
+            .Title = Function() LabTitle, .Line = Function() ShapeLine, .Position = Function() TransformPos, .Rotation = Function() TransformRotate,
+            .Caption = Function() PanCaption, .CaptionText = Function() LabCaption}, Function() MyConverter, MessageDialogPlatform.CreateHost(), Function() Uuid)
         Try
-
             InitializeComponent()
-            Btn1.Name = Btn1.Name & GetUuid()
-            Btn2.Name = Btn2.Name & GetUuid()
-            Btn3.Name = Btn3.Name & GetUuid()
+            Native.RenameButtons()
             MyConverter = Converter
-            LabTitle.Text = Converter.Title
-            LabCaption.Text = Converter.Text
-            If Converter.ContentFactory IsNot Nothing Then
-                PanCaption.Content = Converter.ContentFactory()
-                PanCaption.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
-                PanCaption.Padding = New Thickness(0)
-                MinWidth = 0
-                RefreshContentBounds()
-                Dim Versions = TryCast(PanCaption.Content, ModpackVersionSelectView)
-                If Versions IsNot Nothing Then
-                    Btn1.IsEnabled = Versions.Selected IsNot Nothing
-                    AddHandler Versions.SelectionChanged, Sub() Btn1.IsEnabled = Versions.Selected IsNot Nothing
-                End If
-            End If
-            Btn1.Text = Converter.Button1
-            If Converter.IsWarn Then
-                Dim Warning = If(Converter.WarningButton = 3, Btn3, If(Converter.WarningButton = 2, Btn2, Btn1))
-                Warning.ColorType = MyButton.ColorState.Red
-                LabTitle.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushRedLight")
-            End If
-            Btn2.Text = Converter.Button2
-            Btn3.Text = Converter.Button3
-            Btn2.Visibility = If(Converter.Button2 = "", Visibility.Collapsed, Visibility.Visible)
-            Btn3.Visibility = If(Converter.Button3 = "", Visibility.Collapsed, Visibility.Visible)
-            ShapeLine.StrokeThickness = GetWPFSize(1)
-
+            Native.Initialize()
         Catch ex As Exception
-            Logger.Error(ex, "普通弹窗初始化失败", LogBehavior.Toast)
+            Native.InitializationFailed(ex)
         End Try
     End Sub
-
     Private Sub RefreshContentBounds() Handles Me.SizeChanged
-        If MyConverter Is Nothing OrElse MyConverter.ContentFactory Is Nothing Then Return
-        Dim Host = FrmMain?.PanMsg
-        Dim Body = TryCast(PanCaption.Content, FrameworkElement)
-        Dim Graph = TryCast(Body, ModDependencyGraphView)
-        Dim Impacts = TryCast(Body, ModDependencyImpactView)
-        Dim Dependencies = TryCast(Body, ModDependencyCheckView)
-        Dim Modpack = TryCast(Body, ModpackDialogView)
-        Width = Math.Min(If(Modpack IsNot Nothing, Modpack.PreferredWidth, If(Dependencies IsNot Nothing, Dependencies.PreferredWidth, If(Graph IsNot Nothing, Graph.PreferredWidth, If(Impacts IsNot Nothing, Impacts.PreferredWidth, 980)))), Math.Max(0, If(Host Is Nothing, 1000, Host.ActualWidth) - 50))
-        MaxHeight = Math.Max(0, If(Host Is Nothing, 740, Host.ActualHeight) - 50)
-        If Body IsNot Nothing Then Body.MaxHeight = Math.Max(0, MaxHeight - 156)
+        Native.RefreshContentBounds()
     End Sub
-
     Private Sub ContentHostLoaded() Handles Me.Loaded
-        If MyConverter Is Nothing OrElse MyConverter.ContentFactory Is Nothing Then Return
-        If FrmMain?.PanMsg IsNot Nothing Then AddHandler FrmMain.PanMsg.SizeChanged, AddressOf ContentHostResized
-        RefreshContentBounds()
-    End Sub
-    Private Sub ContentHostResized(Sender As Object, e As SizeChangedEventArgs)
-        RefreshContentBounds()
+        Native.ContentHostLoaded()
     End Sub
     Private Sub ContentHostUnloaded() Handles Me.Unloaded
-        If MyConverter IsNot Nothing AndAlso MyConverter.ContentFactory IsNot Nothing AndAlso FrmMain?.PanMsg IsNot Nothing Then RemoveHandler FrmMain.PanMsg.SizeChanged, AddressOf ContentHostResized
+        Native.ContentHostUnloaded()
     End Sub
-
     Private Sub Load(sender As Object, e As EventArgs) Handles MyBase.Loaded
-        Try
-
-            'UI 初始化
-            If Btn2.IsVisible AndAlso Not Btn1.ColorType = MyButton.ColorState.Red Then Btn1.ColorType = MyButton.ColorState.Highlight
-            Btn1.Focus()
-            '动画
-            Opacity = 0
-            AniStart(AaColor(FrmMain.PanMsg, Grid.BackgroundProperty, If(MyConverter.IsWarn, New MyColor(140, 80, 0, 0), New MyColor(90, 0, 0, 0)) - FrmMain.PanMsg.Background, 200), "PanMsg Background")
-            AniStart({
-                AaOpacity(Me, 1, 120, 60),
-                AaDouble(Sub(i) TransformPos.Y += i, -TransformPos.Y, 300, 60, New AniEaseOutBack(AniEasePower.Weak)),
-                AaDouble(Sub(i) TransformRotate.Angle += i, -TransformRotate.Angle, 300, 60, New AniEaseOutFluent(AniEasePower.Weak))
-            }, "MyMsgBox " & Uuid)
-            '记录日志
-            Logger.Info($"普通弹窗：{LabTitle.Text}{vbCrLf}{LabCaption.Text}")
-
-        Catch ex As Exception
-            Logger.Error(ex, "普通弹窗加载失败", LogBehavior.Toast)
-        End Try
+        Native.Load()
     End Sub
-    Private Sub Close()
-        '结束线程阻塞
-        If MyConverter.ForceWait OrElse Not MyConverter.Button2 = "" Then MyConverter.WaitFrame.Continue = False
-        Interop.ComponentDispatcher.PopModal()
-        '动画
-        AniStart({
-            AaCode(
-            Sub()
-                If Not WaitingMyMsgBox.Any() Then
-                    AniStart(AaColor(FrmMain.PanMsg, Grid.BackgroundProperty, New MyColor(0, 0, 0, 0) - FrmMain.PanMsg.Background, 200, Ease:=New AniEaseOutFluent(AniEasePower.Weak)))
-                End If
-            End Sub, 30),
-            AaOpacity(Me, -Opacity, 80, 20),
-            AaDouble(Sub(i) TransformPos.Y += i, 20 - TransformPos.Y, 150, 0, New AniEaseOutFluent),
-            AaDouble(Sub(i) TransformRotate.Angle += i, 6 - TransformRotate.Angle, 150, 0, New AniEaseInFluent(AniEasePower.Weak)),
-            AaCode(Sub() CType(Parent, Grid).Children.Remove(Me), , True)
-        }, "MyMsgBox " & Uuid)
-    End Sub
-
     Public Sub Btn1_Click() Handles Btn1.Click
-        If MyConverter.IsExited Then Return
-        If MyConverter.Button1Action IsNot Nothing Then
-            MyConverter.Button1Action()
-        Else
-            MyConverter.IsExited = True
-            MyConverter.Result = 1
-            Close()
-        End If
+        Native.Button1Click()
     End Sub
     Public Sub Btn2_Click() Handles Btn2.Click
-        If MyConverter.IsExited Then Return
-        If MyConverter.Button2Action IsNot Nothing Then
-            MyConverter.Button2Action()
-        Else
-            MyConverter.IsExited = True
-            MyConverter.Result = 2
-            Close()
-        End If
+        Native.Button2Click()
     End Sub
     Public Sub Btn3_Click() Handles Btn3.Click
-        If MyConverter.IsExited Then Return
-        If MyConverter.Button3Action IsNot Nothing Then
-            MyConverter.Button3Action()
-        Else
-            MyConverter.IsExited = True
-            MyConverter.Result = 3
-            Close()
-        End If
+        Native.Button3Click()
     End Sub
-
     Private Sub Drag(sender As Object, e As MouseButtonEventArgs) Handles PanBorder.MouseLeftButtonDown, LabTitle.MouseLeftButtonDown
-        On Error Resume Next
-        If e.GetPosition(ShapeLine).Y <= 2 Then FrmMain.DragMove()
+        Native.Drag(e)
     End Sub
+End Class
 
+'仅原真实LF平台、旧自定义正文类型及接口事件投影；无布局/选择/按钮策略或状态副本。
+Friend NotInheritable Class MessageDialogPlatform
+    Friend Shared Function CreateHost() As MessageDialogHost
+        Return New MessageDialogHost With {
+            .NewUuid = AddressOf GetUuid, .MessagePanel = Function() FrmMain?.PanMsg, .HasWaiting = Function() WaitingMyMsgBox.Any(),
+            .DragMove = Sub() FrmMain.DragMove(), .PixelToWpf = AddressOf GetWPFSize,
+            .Animations = Function() PCLLF.Presentation.Controls.ControlServices.Current.Animations,
+            .ModpackWidth = Function(Body) TryCast(Body, ModpackDialogView)?.PreferredWidth,
+            .DependenciesWidth = Function(Body) TryCast(Body, ModDependencyCheckView)?.PreferredWidth,
+            .GraphWidth = Function(Body) TryCast(Body, ModDependencyGraphView)?.PreferredWidth,
+            .ImpactsWidth = Function(Body) TryCast(Body, ModDependencyImpactView)?.PreferredWidth,
+            .VersionSelection = AddressOf VersionSelection, .Radio = AddressOf Radio}
+    End Function
+    Private Shared Function VersionSelection(Body As Object) As ModalSelectionPort
+        Dim Actual = TryCast(Body, ModpackVersionSelectView)
+        If Actual Is Nothing Then Return Nothing
+        Return New ModalSelectionPort(Function() Actual.Selected IsNot Nothing,
+            Sub(Handler) AddHandler Actual.SelectionChanged, Sub() Handler())
+    End Function
+    Private Shared Function Radio(Element As FrameworkElement) As ModalRadioPort
+        Dim Actual = DirectCast(Element, IMyRadio)
+        Return New ModalRadioPort(Element, Sub(Handler) AddHandler Actual.Check, Sub(Sender, Args) Handler(DirectCast(Sender, IMyRadio)))
+    End Function
 End Class
