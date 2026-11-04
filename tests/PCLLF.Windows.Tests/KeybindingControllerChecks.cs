@@ -129,6 +129,7 @@ public static class PclKeybindingControllerChecks {
             WindowStyle = 0, Width = 1, Height = 1, PositionX = -20000, PositionY = -20000
         })) {
             KeyEventArgs key = new KeyEventArgs(Keyboard.PrimaryDevice, inputSource, Environment.TickCount, Key.Escape);
+            key.RoutedEvent = Keyboard.PreviewKeyDownEvent;
             escape.Controller.CaptureKey(escape.View.Root, key);
             Require(key.Handled && escape.Controller.Captured == null && escape.CaptureCount == 0 && escape.SaveCalls == 0 && escape.Successes == 0 && escape.Errors == 0,
                 "Escape did not cancel capture without saving.");

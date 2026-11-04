@@ -51,6 +51,8 @@ C009／C010联合验收：`8c706ee11d705006f6ce9055532214c6da5aef85` 的 [Build4
 
 C005c2首轮 `ebdb594dc8e6cd29fea654a8a4689eb9e5ff6090`：Build41799421556 Debug126471315206失败、Release126471315247取消；完整产品编译／LocalGameFeatures／GameFeatureRegressions与原native分组检查通过，新C#5 verifier Run因KeyEventArgs构造参数inputSource为null抛ArgumentNullException，未进入期望ESC断言。不是生产行为改动；修测试为using隐藏HwndSource提供实际PresentationSource并展开C#栈，原assert保留，随后随现代共享源复验。Migration41799421563定向按键组成功，其余未选不记通过。
 
+现代首轮 `b7493b80dfd40be856be65f4e13507dd8713f506`：Modern WPF41803410215 Debug126484450166／Release126484450642实际build成功并通过真.NET10／Shared加载、四反斜线资源名／字节和共享缩略图异步验收，之后按键fixture在设置Handled时因未指定RoutedEvent失败；图片decode最终段未执行，不记通过。旧Build41803410094 Debug126484522335失败、Release126484522290取消，产品编译及此前资源／备份／近期卡片等通过，同一共享fixture触发失败。Migration41803410117成功。补测试真实PreviewKeyDownEvent（原assert不减），截图Run也展开C#底层异常供以后定位；只选按键／截图两旧消费者＋现代双配置，不重复全量。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |

@@ -84,7 +84,7 @@ try {
  Add-Type -TypeDefinition $controllerChecks -ReferencedAssemblies @('System.dll','System.Core.dll','System.Xaml.dll',
   [Windows.FrameworkElement].Assembly.Location,[Windows.UIElement].Assembly.Location,
   [Windows.Point].Assembly.Location,[PCLCS.ResourceThumbnailController].Assembly.Location)
- [PclScreenshotControllerChecks]::Run()
+ try{[PclScreenshotControllerChecks]::Run()}catch{throw ($_.Exception.GetBaseException().ToString())}
  Write-Output 'Screenshot gallery passed: two-column native cards, no in-app preview, single selection, double-click shell association, bulk footer, deselection, search, frozen thumbnails and real C# async controller concurrency/revision/viewport/unload/fault behavior. No external viewer was started.'
 }finally {
  $app.Shutdown()
