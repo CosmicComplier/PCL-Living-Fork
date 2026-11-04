@@ -16,7 +16,7 @@ import sys
 
 BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies", "mod-dependency-online")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Exact existing scripts; workflows keep their original static invocations/options.
@@ -130,6 +130,18 @@ MOD_DEPENDENCY_CHECKS = {
     "Test-ModDependencies", "Test-ModDependencyOnline", "Test-ModDependencyGraph",
     "Test-LaunchDependencies", "Test-DependencyActivation",
 }
+# Online enrichment supplies exact-content DTOs to details/graph and the real
+# launch repair plan. Activation's handcrafted local report does not call it.
+MOD_DEPENDENCY_ONLINE_PATHS = {
+    "PCLCS/Minecraft/ModDependencyOnlinePipeline.cs",
+    "PCLCS/Minecraft/ModDependencyOnlinePipeline.Files.cs",
+    "PCLCS/Minecraft/ModDependencyOnlinePipeline.Matches.cs",
+    "PCLCS/Minecraft/ModDependencyTransport.cs",
+    "Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb",
+}
+MOD_DEPENDENCY_ONLINE_CHECKS = {
+    "Test-ModDependencyOnline", "Test-ModDependencyGraph", "Test-LaunchDependencies",
+}
 # Store is the shared path/transaction facade consumed by these existing chains.
 STORE_CHECKS = RESOURCE_CHECKS | WORLD_CHECKS | LOCAL_CHECKS | {
     "Test-ReviewFixes", "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-RecentEnvironmentChanges",
@@ -190,6 +202,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("instance-clone",), (), build=False)
             elif stem == "ModDependencyInspectorPipeline":
                 include(("mod-dependencies",), (), build=False)
+            elif stem == "ModDependencyOnlinePipeline":
+                include(("mod-dependency-online",), (), build=False)
             elif stem.startswith("PersonalOptions"):
                 include(("personal-options",), (), build=False)
             elif stem.startswith("InstanceKeybinding"):
@@ -218,6 +232,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(("instance-clone",), INSTANCE_CLONE_CHECKS)
         elif name in MOD_DEPENDENCY_PATHS:
             include(("mod-dependencies",), MOD_DEPENDENCY_CHECKS)
+        elif name in MOD_DEPENDENCY_ONLINE_PATHS:
+            include(("mod-dependency-online",), MOD_DEPENDENCY_ONLINE_CHECKS)
         elif name == "PCLCS/Platform/Windows/KeybindingPageController.cs":
             include(("keybindings",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-KeybindingGroups"})
         elif name in {"PCLCS/Platform/Windows/RecentWorldPageController.cs", "PCLCS/Platform/Windows/RecentWorldQuickPlay.cs"}:

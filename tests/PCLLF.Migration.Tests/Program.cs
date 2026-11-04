@@ -34,7 +34,8 @@ internal static class Program {
             ("world-backups", WorldBackupPipelineTests.Cases),
             ("environment-history", EnvironmentHistoryPipelineTests.Cases),
             ("instance-clone", InstanceClonePipelineTests.Cases),
-            ("mod-dependencies", ModDependencyInspectorPipelineTests.Cases)
+            ("mod-dependencies", ModDependencyInspectorPipelineTests.Cases),
+            ("mod-dependency-online", ModDependencyOnlinePipelineTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

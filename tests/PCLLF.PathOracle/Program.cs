@@ -599,6 +599,10 @@ internal static class Program {
         new JProperty("cwd", Environment.CurrentDirectory), new JProperty("culture", CultureInfo.CurrentCulture.Name), new JProperty("is64Bit", Environment.Is64BitProcess), new JProperty("os", Environment.OSVersion.ToString()),
         new JProperty("defaultEncodingCodePage", Encoding.Default.CodePage), new JProperty("zipEntryCodePage", InstanceResourcePackageRules.EntryNameEncoding().CodePage),
         new JProperty("zipArchiveAssembly", typeof(ZipArchive).Assembly.FullName), new JProperty("zipFileAssembly", typeof(ZipFile).Assembly.FullName),
+        new JProperty("jsonAssembly", typeof(JToken).Assembly.FullName),
+        new JProperty("jsonFramework", typeof(JToken).Assembly.GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName),
+        new JProperty("jsonFileVersion", System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(JToken).Assembly.Location).FileVersion),
+        new JProperty("jsonAssemblySha256", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(typeof(JToken).Assembly.Location))).ToLowerInvariant()),
         new JProperty("useLegacyPathHandling", Switch("Switch.System.IO.UseLegacyPathHandling")), new JProperty("blockLongPaths", Switch("Switch.System.IO.BlockLongPaths")));
 
     private static int Compare(string casesPath, string baselinePath, string reportPath, string mode) {

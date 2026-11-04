@@ -150,7 +150,7 @@ try {
     $hostIntermediate = (Join-Path $fixture 'host-obj').Replace('\','/') + '/'
     Invoke-Checked $dotnetCommand @('build', (Join-Path $repo 'tests/PCLLF.PathOracle/PCLLF.PathOracle.csproj'), '-c', 'Release', '--nologo',
         ('-p:OutDir=' + $hostOutput), ('-p:BaseIntermediateOutputPath=' + $hostIntermediate), ('-p:MSBuildProjectExtensionsPath=' + $hostIntermediate),
-        ('-p:PathOracleSharedAssembly=' + $sharedAssembly), ('-p:PathOracleNewtonsoftAssembly=' + $newtonsoft), ('-p:ApplicationManifest=' + $manifest))
+        ('-p:PathOracleSharedAssembly=' + $sharedAssembly), ('-p:ApplicationManifest=' + $manifest))
     if (-not [IO.File]::Exists($hostExecutable)) { throw 'Native .NET 10 apphost exe missing; do not substitute dotnet.exe with a different manifest.' }
     # Prepare may partially create links before throwing. Cleanup must still unlink them first.
     $linksMayExist = $true

@@ -54,6 +54,10 @@
     <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Archives.cs" Link="Production/ModDependencyInspection.Archives.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyInspection.Resolution.cs" Link="Production/ModDependencyInspection.Resolution.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyVersions.cs" Link="Production/ModDependencyVersions.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.cs" Link="Production/ModDependencyOnlinePipeline.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.Files.cs" Link="Production/ModDependencyOnlinePipeline.Files.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyOnlinePipeline.Matches.cs" Link="Production/ModDependencyOnlinePipeline.Matches.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyTransport.cs" Link="Production/ModDependencyTransport.cs" />
     <!-- Keep the real Minecraft/component/loader models and pinned Shared helpers. -->
     <Compile Include="../../PCLCS/Constants.cs" Link="Production/Constants.cs" />
     <Compile Include="../../PCLCS/Minecraft/McVersion.cs" Link="Production/McVersion.cs" />
@@ -61,14 +65,10 @@
     <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
-    <Reference Include="Newtonsoft.Json">
-      <!-- Match the DLL already used by LF; do not change persisted JSON through a new serializer. -->
-      <HintPath>../../Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll</HintPath>
-    </Reference>
     <ProjectReference Include="../../MeloongCore/Shared/MeloongCore.csproj" />
-    <!-- Suppress Shared's transitive JSON assets here so the original LF DLL
-         remains the compile and CopyLocal input instead of NuGet's net6 build. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" ExcludeAssets="all" />
+    <!-- Match modern/PCLCS exactly: the .NET 10 product uses this fixed modern
+         asset. The original LF DLL stays the independent CLR4 oracle input. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Newtonsoft.Json" />

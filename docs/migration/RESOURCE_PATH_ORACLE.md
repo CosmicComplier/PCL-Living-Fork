@@ -159,3 +159,6 @@ v6保原291例／56比较和所有旧gold／严格门禁，再加34个原始JSON
 ## v7 资源目录排序符号待验证
 
 资源扫描迁C#后需要旧OrdinalIgnoreCase的总序，不能用布尔Equals充当Comparer。新ComparePathText在net48保原StringComparer，在现代Windows直接调用已验证来源的CompareStringOrdinal并取符号；其他平台继续原平台Comparer。v7保持原397请求与全部gold，在既有ordinal两端结果追加真实Framework StringComparer.Compare正反符号及生产adapter符号，schema强制-1/0/1并纳入严格比较；未减弱已有布尔／prefix／路径／数字门禁。原3方法／JSON片段仍固定注入，历史v6报告不改。当前两个host编译与旧驱动严格预编译通过，实际Frame排序符号尚待Windows。ExportMany的OrdinalIgnoreCase HashSet仍保原net48逻辑，现代Unicode hash域不据此闭项，N002保留实际链验证。
+
+
+2026-11-04 C014集成修正：现代驱动现在使用与LF现代PCLCS产品一致的固定Newtonsoft.Json13.0.3包（net6.0资产），原CLR4驱动仍独立使用f4固定LF Framework DLL及原源码片段。原因是.NET10纯测试首次完整序列化时，Framework DLL依赖的System.Security.Permissions不可用；不能据此改业务fallback或golds。版本未升级；现代context额外记录JSON程序集／目标框架／文件版本／SHA，baseline provenance中的newtonsoftAssemblySha256仍指固定旧DLL。397case、排序、链接、native probes及严格零差异要求均保持，现代资产下实际Windows结果随C014检查点记录；先前v7证据仍代表各自原提交和原资产组合，不重写历史证据。
