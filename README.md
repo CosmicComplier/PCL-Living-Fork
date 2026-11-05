@@ -20,7 +20,7 @@
 
 ## 使用
 
-1.4.0-pre-4 使用 **C#/.NET 10，面向 Windows x64**：精简版需要 .NET 10 Desktop Runtime，完整版包含运行时。下载选择、构建方式与兼容更新桥的作用见 [现代构建说明](docs/BUILDING_MODERN.md)及 [GitHub Release](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4)。当前 1.4.0 系列仍为预发布版。
+1.4.0-pre-4 使用 **C#/.NET 10，面向 Windows x64**。公开发布仅提供精简版 EXE、ZIP 和 SHA256 校验文件，均不包含 .NET 运行时；运行或自动升级前需先安装 .NET 10 Desktop Runtime x64。下载、构建与轻量兼容交接说明见 [现代构建说明](docs/BUILDING_MODERN.md)及 [GitHub Release](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4)。当前 1.4.0 系列仍为预发布版。
 
 旧的 VB 版本 1.3.4 和 1.3.5-pre-3 使用 Windows 64 位系统和 .NET Framework 4.8，可从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 按对应版本说明运行。产品 VB 源码和旧项目已退役，原资源与许可保留；.NET Framework 工具仍供兼容更新桥及独立历史测试使用。
 
@@ -34,15 +34,15 @@
 
 ## 自行编译
 
-当前源码使用 .NET 10 SDK 与 Windows Desktop/WPF 工具链；完整发布包中的旧版兼容桥还需要 Visual Studio/Build Tools 的 MSBuild 和 .NET Framework 4.8 编译工具。根 solution 与默认发布脚本均指向完整 C# 产品，详细工具链和定向检查见 [现代构建说明](docs/BUILDING_MODERN.md)。本机构建默认显示 dev_edition，发布构建需显式传入 -OfficialRelease。在 Windows PowerShell 中运行：
+当前源码使用 .NET 10 SDK 与 Windows Desktop/WPF 工具链；构建旧版兼容交接 EXE 还需要 Visual Studio/Build Tools 的 MSBuild 和 .NET Framework 4.8 编译工具。根 solution 与发布脚本均指向 C# 产品，详细工具链和定向检查见 [现代构建说明](docs/BUILDING_MODERN.md)。本机构建默认显示 dev_edition，公开发布构建需显式使用 -Slim 和 -OfficialRelease。在 Windows PowerShell 中运行：
 
 ```powershell
 git submodule update --init --recursive
 dotnet restore .\PCL-Living-Fork.Modern.slnx
-.\scripts\Build-Release.ps1
+.\scripts\Build-Release.ps1 -Slim
 ```
 
-默认输出到 `artifacts/release/Release`，包含原生 EXE/ZIP、供旧客户端更新的托管兼容桥、SHA256 校验和及构建索引。各文件的角色由 `NativeRelease.Artifacts.json` 标明，首次安装使用原生 EXE/ZIP。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+精简构建输出 EXE、ZIP、SHA256 校验和及 `SlimRelease.Artifacts.json` 构建索引。公开上传前按 [发布约定](docs/PUBLISHING.md)统一文件名，并为旧版更新交接嵌入同一份精简负载。内部 CI 使用的自包含完整包不作为公开附件。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
 ## 迁移工程
 
