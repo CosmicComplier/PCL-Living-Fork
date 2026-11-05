@@ -1,0 +1,23 @@
+<Project>
+  <!-- Managed dependencies use the normal .NET graph/bundle. -->
+  <PropertyGroup>
+    <LFOriginalProjectDirectory Condition="'$(LFOriginalProjectDirectory)'==''">$(MSBuildThisFileDirectory)../../Plain Craft Launcher 2</LFOriginalProjectDirectory>
+    <LFResourceGeneratorProject Condition="'$(LFResourceGeneratorProject)'==''">$(MSBuildThisFileDirectory)../BuildResources/ResourceGenerator.csproj</LFResourceGeneratorProject>
+    <LFResourceGeneratorAssembly Condition="'$(LFResourceGeneratorAssembly)'==''">$(MSBuildThisFileDirectory)../BuildResources/bin/$(Configuration)/net10.0/ResourceGenerator.dll</LFResourceGeneratorAssembly>
+    <LFGeneratedResourceDirectory Condition="'$(LFGeneratedResourceDirectory)'==''">$(MSBuildProjectDirectory)/obj/$(Configuration)/$(TargetFramework)/LFResources</LFGeneratedResourceDirectory>
+    <LFResourceDotNetHost Condition="'$(LFResourceDotNetHost)'=='' And '$(DOTNET_HOST_PATH)'!=''">$(DOTNET_HOST_PATH)</LFResourceDotNetHost>
+    <LFResourceDotNetHost Condition="'$(LFResourceDotNetHost)'==''">dotnet</LFResourceDotNetHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="My Project/Resources.Designer.cs;$(MSBuildProjectDirectory)/My Project/Resources.Designer.cs" />
+    <Compile Include="$(LFGeneratedResourceDirectory)/Resources.Designer.cs" />
+    <EmbeddedResource Include="$(LFGeneratedResourceDirectory)/PCL.Resources.resources" LogicalName="PCL.Resources.resources" />
+  </ItemGroup>
+  <Target Name="GenerateLFModernResources" BeforeTargets="GenerateTemporaryTargetAssembly;AssignTargetPaths" DependsOnTargets="ResolveReferences">
+    <MSBuild Projects="$(LFResourceGeneratorProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration)" RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed;PublishReadyToRun" />
+    <Exec Command="&quot;$(LFResourceDotNetHost)&quot; &quot;$(LFResourceGeneratorAssembly)&quot; --lf-project &quot;$(LFOriginalProjectDirectory)&quot; --output &quot;$(LFGeneratedResourceDirectory)&quot;" />
+    <ItemGroup>
+      <FileWrites Include="$(LFGeneratedResourceDirectory)/PCL.Resources.resources;$(LFGeneratedResourceDirectory)/Resources.Designer.cs;$(LFGeneratedResourceDirectory)/Resources.resx;$(LFGeneratedResourceDirectory)/resource-manifest.json;$(LFGeneratedResourceDirectory)/LF.PackResources.props" />
+    </ItemGroup>
+  </Target>
+</Project>

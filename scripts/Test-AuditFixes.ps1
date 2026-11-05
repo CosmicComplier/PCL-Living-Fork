@@ -1,6 +1,7 @@
 ﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath)
 # 只使用虚构账号、独立测试注册表和随机名称的互斥锁，不访问真实账号存储。
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
 foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')) { [Reflection.Assembly]::LoadFrom((Join-Path $root $path)) | Out-Null }
@@ -220,9 +221,9 @@ public static class LivingPclMutexAudit {
 '@
 [LivingPclMutexAudit]::Run($asm)
 [LivingPclMutexAudit]::CheckQueuedCancellation($asm)
-$startup=Get-Content -LiteralPath (Join-Path $root 'Plain Craft Launcher 2/Application.xaml.vb') -Raw
+$startup=Read-LfFixedSourceText -Name 'startup-source-f4'
 if($startup.IndexOf('WaitingMutex(e)') -gt $startup.IndexOf('Settings.ImportLegacyPclPreferences()')) { throw 'Shared settings initialize before singleton acquisition' }
 if(-not $startup.Contains('If Not UtilityCommand Then Settings.ImportLegacyPclPreferences()')) { throw 'Utility commands may migrate preferences without the singleton lock' }
-$form=Get-Content -LiteralPath (Join-Path $root 'Plain Craft Launcher 2/FormMain.xaml.vb') -Raw
+$form=Read-LfFixedSourceText -Name 'mainwindow-source-f4'
 if($form.Contains('Settings.Set("CacheMsV2OAuthRefresh", Settings.Get')) { throw 'Old startup cache overwrite remains' }
 Write-Output 'Audit regressions passed: existing/logout/corrupt V2 protection; legacy upgrade; one-time folder import/removal/reset; persistent defaults; strict certificate boundaries; update retries; canceled session writes; official/legacy/abandoned singleton coordination; shared PCL preference migration and reset.'

@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath,[string]$LegacyExecutablePath,[string]$OfficialExecutablePath)
+param([Parameter(Mandatory=$true)][string]$ExecutablePath,[string]$LegacyExecutablePath,[string]$OfficialExecutablePath)
 # 使用虚构账号和独立的测试注册表分支；不读取真实账号数据，不启动应用窗口。
 $ExecutablePath=[IO.Path]::GetFullPath($ExecutablePath)
 $ErrorActionPreference='Stop'
@@ -15,6 +15,18 @@ $flags=[Reflection.BindingFlags]'NonPublic,Static'
 $enc=$type.GetMethod('DesEncrypt',$flags);$dec=$type.GetMethod('DesDecrypt',$flags)
 $makePlan=$type.GetMethod('PlanPclAccountMigration',$flags);$apply=$type.GetMethod('ApplyPclAccountMigration',$flags)
 $entries=$type.GetField('Entries').GetValue($null)
+# The retained old-name facade has no new mapper/snapshot wrapper; use its actual
+# compiled shared backend and real Windows adapter, not a copied key policy.
+$backend=$type.GetField('Backend',$flags).GetValue($null)
+$valueName=$backend.GetType().GetMethod('RegistryValueName',[Reflection.BindingFlags]'Public,Static')
+$readSnapshot=$backend.GetType().GetMethod('ReadAccountRegistrySnapshot',[Reflection.BindingFlags]'Public,Instance')
+if(-not $valueName -or -not $readSnapshot){throw 'Actual settings namespace/snapshot contract missing'}
+function Stored([string]$name) { return [string]$valueName.Invoke($null,@($entries[$name])) }
+function Read-AccountSnapshot([Microsoft.Win32.RegistryKey]$store,[bool]$oldPrivate) {
+ $adapter=[PCLCS.LegacySettingsRegistryStore]::new($store,$false)
+ return ,$readSnapshot.Invoke($backend,@($adapter,$oldPrivate))
+}
+
 function New-Map { return ,([Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)) }
 function Encode([string]$value,[string]$id) { return $enc.Invoke($null,@($value,('PCL'+$id))) }
 function Decode([string]$value,[string]$id) { return $dec.Invoke($null,@($value,('PCL'+$id))) }
@@ -26,39 +38,63 @@ $official['CacheMsV2OAuthRefresh']=Encode 'old-refresh' $oldId
 $official['CacheAuthClient']=Encode 'auth-client' $oldId
 $official['CacheAuthPass']=Encode 'auth-password' $oldId
 $official['SystemCount']=Encode '7' $oldId
+$official['LoginLegacyName']=Encode 'playera¨NativePlayer' $oldId
 $legacy['LoginMsJson']=Encode '{"LocalOnly":"local-token","shared":"new-token"}' $legacyId
 $legacy['CacheMsV2OAuthRefresh']=Encode 'new-refresh' $legacyId
 $legacy['CacheMsV2Name']=Encode 'NewActive' $legacyId
-$legacy['LoginLegacyName']=Encode 'PlayerA' $legacyId
+$legacy['LoginLegacyName']=Encode 'PlayerA¨LocalPlayer' $legacyId
+$legacy['CacheAuthClient']=Encode 'must-not-mix-client' $legacyId
+$legacy['CacheAuthPass']='invalid-private-auth-cipher'
 $legacy['UiLauncherThemeHide']=Encode '0|1|2|3|4|7' $legacyId
 $plan=$makePlan.Invoke($null,@($official,$legacy,[string[]]@($currentId,$oldId),[string[]]@($legacyId),$currentId))
 $accounts=Decode $plan.Values['LoginMsJson'] $currentId | ConvertFrom-Json
-if(@($accounts.PSObject.Properties).Count -ne 2 -or $accounts.Shared -ne 'old-token' -or $accounts.NativeOnly -ne 'native-token') { throw 'Existing LF accounts were overwritten by an old private cache' }
-if((Decode $plan.Values['CacheMsV2Name'] $currentId) -ne 'OldActive') { throw 'Existing LF session was overwritten' }
+# Fixed LF main50 keeps existing LF Microsoft identity/logout authoritative;
+# unknown-client private Microsoft tokens are not merged or deleted.
+if(@($accounts.PSObject.Properties).Count -ne 2 -or $accounts.Shared -ne 'old-token' -or $accounts.NativeOnly -ne 'native-token' -or $null -ne $accounts.LocalOnly) { throw 'Existing LF Microsoft accounts were overwritten by private credentials' }
+if((Decode $plan.Values['CacheMsV2Name'] $currentId) -ne 'OldActive' -or (Decode $plan.Values['CacheMsV2OAuthRefresh'] $currentId) -ne 'old-refresh') { throw 'Existing LF Microsoft cache was replaced' }
+if((Decode $plan.Values['LoginLegacyName'] $currentId) -ne 'PlayerA¨LocalPlayer¨NativePlayer' -or -not $plan.DeleteLegacy.Contains('LoginLegacyName')) { throw 'Validated non-Microsoft account merge failed' }
+foreach($name in @('LoginMsJson','CacheMsV2OAuthRefresh','CacheMsV2Name','CacheAuthClient','CacheAuthPass')) { if($plan.DeleteLegacy.Contains($name)) { throw 'Unattributed Microsoft or corrupt-group private data was scheduled for deletion' } }
 if((Decode $plan.Values['CacheAuthPass'] $currentId) -ne 'auth-password') { throw 'Historical auth encryption conversion failed' }
 if($plan.Values.ContainsKey('SystemCount') -or $plan.DeleteLegacy.Contains('UiLauncherThemeHide')) { throw 'Excluded settings were included' }
 $testPath='Software\LivingPCL-CompatibilityTests\'+[Guid]::NewGuid().ToString('N')
 $testNative=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($testPath+'\Native')
 $testLegacy=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($testPath+'\Legacy')
 try {
- foreach($kv in $official.GetEnumerator()) { $testNative.SetValue($kv.Key,$kv.Value) }
+ foreach($kv in $official.GetEnumerator()) {
+  $kind=if($kv.Key -eq 'CacheAuthPass'){[Microsoft.Win32.RegistryValueKind]::ExpandString}else{[Microsoft.Win32.RegistryValueKind]::String}
+  $testNative.SetValue((Stored $kv.Key),$kv.Value,$kind)
+ }
+ # These valid ciphertext sentinels are owned by this GUID fixture only.
+ $foreignAccounts=Encode '{"Foreign":"foreign-refresh"}' $currentId
+ $foreignSession=Encode 'foreign-session' $currentId
+ $testNative.SetValue('LoginMsJson',$foreignAccounts)
+ $testNative.SetValue('CacheMsV2OAuthRefresh',$foreignSession)
  foreach($kv in $legacy.GetEnumerator()) { $testLegacy.SetValue($kv.Key,$kv.Value) }
  $apply.Invoke($null,@($plan,$testNative,$testLegacy)) | Out-Null
  foreach($name in $plan.DeleteLegacy) { if($null -ne $testLegacy.GetValue($name,$null)) { throw 'Old account storage was retained' } }
  if($null -eq $testLegacy.GetValue('UiLauncherThemeHide',$null)) { throw 'Excluded state removed' }
- $native2=New-Map;$legacy2=New-Map
- $native2=$type.GetMethod('ReadPclAccountRegistrySnapshot',$flags).Invoke($null,@($testNative,$false))
- foreach($name in $testLegacy.GetValueNames()) { $legacy2[$name]=[string]$testLegacy.GetValue($name) }
+ if($testNative.GetValue('LoginMsJson') -cne $foreignAccounts -or $testNative.GetValue('CacheMsV2OAuthRefresh') -cne $foreignSession) { throw 'Shared Microsoft sentinels were changed' }
+ foreach($name in @('LoginMsJson','CacheMsV2OAuthRefresh','CacheMsV2Name','CacheAuthClient','CacheAuthPass')) {
+  if($testLegacy.GetValue($name,$null) -cne $legacy[$name]) { throw 'Unattributed Microsoft/corrupt-group source was changed' }
+ }
+ $native2=Read-AccountSnapshot $testNative $false
+ $legacy2=Read-AccountSnapshot $testLegacy $true
+ if((Decode $native2['LoginMsJson'] $currentId) -cne (Decode $plan.Values['LoginMsJson'] $currentId)) { throw 'Snapshot selected a foreign Microsoft namespace' }
+ foreach($name in @('LoginMsJson','CacheMsV2OAuthRefresh','CacheMsV2Name')) { if($legacy2.ContainsKey($name)) { throw 'Private Microsoft source leaked into import snapshot' } }
  $again=$makePlan.Invoke($null,@($native2,$legacy2,[string[]]@($currentId,$oldId),[string[]]@($legacyId),$currentId))
  if($again.Values.Count -ne 0 -or $again.DeleteLegacy.Count -ne 0) { throw 'Migration is not idempotent' }
  $bad=$makePlan.Invoke($null,@($official,$legacy,[string[]]@($currentId,$oldId),[string[]]@($legacyId),$currentId))
  $bad.Values['CacheAuthPass']='invalid-cipher'
- $snapshot=@{};foreach($name in $testNative.GetValueNames()) { $snapshot[$name]=$testNative.GetValue($name) }
+ # Force a genuine non-String original kind for the failure/restore check.
+ $testNative.SetValue('CacheAuthPass',[string]$testNative.GetValue('CacheAuthPass'),[Microsoft.Win32.RegistryValueKind]::ExpandString)
+ $snapshot=@{};$kinds=@{}
+ foreach($name in $testNative.GetValueNames()) { $snapshot[$name]=$testNative.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);$kinds[$name]=$testNative.GetValueKind($name) }
  $failed=$false
  try { $apply.Invoke($null,@($bad,$testNative,$testLegacy)) | Out-Null } catch { $failed=$true }
  if(-not $failed) { throw 'Invalid migration was accepted' }
- foreach($name in $snapshot.Keys) { if($snapshot[$name] -cne $testNative.GetValue($name)) { throw 'Rollback failed' } }
- Write-Output 'Synthetic migration: account merge, cache grouping, official DES format, old-value deletion, exclusions, idempotence and rollback passed.'
+ if(@(Compare-Object @($snapshot.Keys|Sort-Object) @($testNative.GetValueNames()|Sort-Object)).Count -ne 0) { throw 'Rollback left missing or extra values' }
+ foreach($name in $snapshot.Keys) { if($snapshot[$name] -cne $testNative.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -or $kinds[$name] -ne $testNative.GetValueKind($name)) { throw 'Rollback failed to restore exact value/kind' } }
+ Write-Output 'Synthetic migration: LF Microsoft authority/_LF isolation, valid non-Microsoft merge, corrupt groups, DES format, owned old-value deletion, exclusions, idempotence and exact value/kind rollback passed.'
 } finally {
  $testNative.Dispose();$testLegacy.Dispose()
  if(-not $testPath.StartsWith('Software\LivingPCL-CompatibilityTests\')) { throw 'Invalid test cleanup path' }

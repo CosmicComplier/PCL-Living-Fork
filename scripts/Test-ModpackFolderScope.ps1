@@ -1,12 +1,37 @@
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 # Executes the production folder-loader body using synthetic settings and GUID temporary directories.
 $projectRoot=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName Microsoft.VisualBasic
-$source=[IO.File]::ReadAllText((Join-Path $projectRoot 'Plain Craft Launcher 2/Modules/Minecraft/ModMinecraft.vb'))
-$start=$source.IndexOf('    Private Sub McFolderListLoadSub()')
-$end=$source.IndexOf("`n    End Sub",$start)
-if($start -lt 0 -or $end -lt $start){throw 'Folder loader seam not found'}
-$body=$source.Substring($start,$end-$start)+"`n    End Sub"
+# Run the actual migrated two-parameter folder loader, keeping the original
+# GUID fixture/store assertions. No launcher startup or user catalog is used.
+$corePath=Join-Path $projectRoot 'PCLCS/bin/PCLCS.dll'
+$sharedPath=Join-Path $projectRoot 'MeloongCore/Shared/bin/MeloongCore.dll'
+$jsonPath=Join-Path $projectRoot 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'
+foreach($dependency in @($sharedPath,$jsonPath,$corePath)){
+ if(-not [IO.File]::Exists($dependency)){throw ('Build the production PCLCS dependency first: '+$dependency)}
+ [Reflection.Assembly]::LoadFrom($dependency)|Out-Null
+}
+$body=@'
+ Private Sub McFolderListLoadSub()
+  Dim Host As New PCLCS.LegacyMinecraftFolderLoaderHost(Of McFolder) With {
+   .BasePath=Function() Paths.Base, .AppDataPath=Function() Paths.AppData,
+   .ModpackEnabled=Function() ModModpackMode.Enabled,
+   .PackFolders=AddressOf ModModpackMode.CreatePackFolderList,
+   .Folders=Function() McFolderList, .StoreFolders=Sub(Value) McFolderList=Value,
+   .ReadString=Function(Key) Settings.Get(Of String)(Key),
+   .ReadBoolean=Function(Key) Settings.Get(Of Boolean)(Key),
+   .WriteString=Sub(Key,Value) Settings.Set(Key,Value),
+   .CreateLauncherProfiles=AddressOf McFolderLauncherProfilesJsonCreate,
+   .CheckPermission=AddressOf CheckPermissionWithException,
+   .Hint=Sub(Text,Red) Hint(Text,HintType.Red),
+   .Message=Function(Text,Title,Warn) MyMsgBox(Text,Title,IsWarn:=Warn),
+   .RandomDelay=Sub(Minimum,Maximum) Thread.Sleep(RandomInteger(Minimum,Maximum)),
+   .Warn=AddressOf Logger.Warn, .Error=AddressOf Logger.Error}
+  Dim Loader As New PCLCS.LegacyMinecraftFolderLoader(Of McFolder,McFolder.Types)(Host)
+  Loader.Load()
+ End Sub
+'@
 $stub=@'
 Imports System
 Imports System.IO
@@ -17,9 +42,7 @@ Public Module Fixture
  Public McFolderList As New List(Of McFolder)
  Public Messages As Integer
  Public Class McFolder
-  Public Name As String
-  Public Location As String
-  Public Type As Types
+  Inherits PCLCS.LegacyMinecraftFolder(Of McFolder.Types)
   Public Enum Types
    Vanilla
    RenamedVanilla
@@ -130,9 +153,16 @@ if(-not $compilerPath -or -not [IO.File]::Exists($compilerPath)){throw 'Visual S
 $options['CompilerDirectoryPath']=[IO.Path]::GetDirectoryName($compilerPath)
 $provider=[Microsoft.VisualBasic.VBCodeProvider]::new($options)
 $parameters=[CodeDom.Compiler.CompilerParameters]::new(@('System.dll','System.Core.dll'))
+$parameters.ReferencedAssemblies.Add($corePath)|Out-Null
+$parameters.ReferencedAssemblies.Add($sharedPath)|Out-Null
+$parameters.ReferencedAssemblies.Add($jsonPath)|Out-Null
+$framework=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
+# Prevent CodeDom inferring its core assembly from the netstandard Facades directory.
+$parameters.CoreAssemblyFileName=Join-Path $framework 'mscorlib.dll'
+$parameters.ReferencedAssemblies.Add((Join-Path $framework 'Facades/netstandard.dll'))|Out-Null
 $parameters.GenerateInMemory=$true
-$parameters.CompilerOptions='/optioninfer+ /imports:Microsoft.VisualBasic,System.Threading'
-$policy=Get-Content -LiteralPath (Join-Path $projectRoot 'Plain Craft Launcher 2/Modules/Minecraft/MinecraftFolderPolicy.vb') -Raw
+$parameters.CompilerOptions='/optioninfer+ /imports:Microsoft.VisualBasic,System.Threading /sdkpath:"'+$framework+'" /vbruntime:"'+(Join-Path $framework 'Microsoft.VisualBasic.dll')+'"'
+$policy=Read-LfFixedSourceText -Name 'folder-policy-f4'
 $compiled=$provider.CompileAssemblyFromSource($parameters,[string[]]@($code,$policy))
 $errors=@($compiled.Errors | Where-Object {-not $_.IsWarning})
 if($errors.Count){throw (($errors | ForEach-Object {$_.ErrorText}) -join '; ')}

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- LF controls retain the repository LICENCE. CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5
+       is a selective C# migration reference; its Apache LICENSE and PCL LICENCE
+       do not replace the original LF/PCL control and visual provenance. -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>Library</OutputType>
+    <OutDir>bin\</OutDir>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <AssemblyName>PCLLF.Presentation</AssemblyName>
+    <RootNamespace>PCLLF.Presentation</RootNamespace>
+    <Configurations>Debug;Release;Snapshot</Configurations>
+    <Deterministic>true</Deterministic>
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PCLCS/PCLCS.csproj" />
+    <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="NAudio">
+      <HintPath>../Plain Craft Launcher 2/Resources/NAudio.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="PolySharp" Version="1.15.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>$(DefineConstants);SNAPSHOT</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Snapshot|AnyCPU'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+  <!-- Keep WPF names unambiguous while directly calling the real WinForms clipboard. -->
+  <ItemGroup><Using Remove="System.Windows.Forms;System.Drawing" /></ItemGroup>
+</Project>

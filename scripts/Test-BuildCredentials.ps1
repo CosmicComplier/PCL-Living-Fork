@@ -1,6 +1,8 @@
 param([Parameter(Mandatory=$true)][string]$ExecutablePath,[switch]$KeylessBuild)
+# Historical CLR4 Main/credential-source oracle only. Never pass a native apphost or the managed update bridge as the full Main.
 # 输入期望值从与构建相同的环境变量读取，只输出通过/失败，不输出任何凭据。
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 $saved=@{}
 foreach($name in @('PCL_CURSEFORGE_API_KEY','PCL_MS_CLIENT_ID')){$saved[$name]=[Environment]::GetEnvironmentVariable($name)}
@@ -60,7 +62,7 @@ try {
     Set-TestInputs 'synthetic-runtime-cf' 'synthetic-runtime-ms'
     if((Read-Credential $assembly 'ReadCurseForgeKey') -cne 'synthetic-runtime-cf' -or (Read-Credential $assembly 'ReadMicrosoftClientId') -cne 'synthetic-runtime-ms'){throw 'Runtime override failed'}
     Set-TestInputs $null $null
-    $foundation=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Base/BuildCredentials.vb'))
+    $foundation=(Read-LfFixedSourceText -Name 'credentials-foundation-f4')
     $empty=[LivingPclCredentialTests]::Compile($foundation,'')
     if((Read-Credential $empty 'ReadCurseForgeKey') -ne '' -or (Read-Credential $empty 'ReadMicrosoftClientId') -ne ''){throw 'Public source has a nonempty embedded fallback'}
     $fakeCF='synthetic-cf-'+[Guid]::NewGuid().ToString('N')+'-quote"-slash\-unicode-'+[char]0x266B
@@ -111,14 +113,16 @@ try {
     }
     $fakeBuild=Join-Path $fixture 'FailBuild.exe'
     Add-Type -TypeDefinition 'public static class CredentialFailureBuild { public static int Main(string[] args) { return 23; } }' -OutputAssembly $fakeBuild -OutputType ConsoleApplication
-    $sourcePath=Join-Path $root 'Plain Craft Launcher 2/Modules/ModSecret.vb'
+    $legacyRoot=Join-Path $fixture 'legacy-build-root'
+    $sourcePath=Export-LfFixedSource -Name 'legacy-modsecret-f4' -Directory $legacyRoot
+    $null=Export-LfFixedSource -Name 'legacy-vbproj-f4' -Directory $legacyRoot
     $before=[IO.File]::ReadAllBytes($sourcePath)
-    $generatedRoot=Join-Path $root 'Plain Craft Launcher 2/obj/CredentialBuild'
+    $generatedRoot=Join-Path $legacyRoot 'Plain Craft Launcher 2/obj/CredentialBuild'
     $existing=@(Get-ChildItem -LiteralPath $generatedRoot -Filter '*.g.vb' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
     foreach($badInput in @($false,$true)) {
         Set-TestInputs $(if($badInput){"invalid`ninput"}else{$fakeCF}) $fakeMS
         $failed=$false
-        try{& (Join-Path $PSScriptRoot 'Build-Release.ps1') -MSBuildPath $fakeBuild}catch{$failed=$true}
+        try{& (Join-Path $PSScriptRoot 'tests/Build-HistoricalCredentialFixture.ps1') -MSBuildPath $fakeBuild -ProjectRoot $legacyRoot}catch{$failed=$true}
         if(-not $failed){throw 'Expected build failure was ignored'}
         $after=@(Get-ChildItem -LiteralPath $generatedRoot -Filter '*.g.vb' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
         if(@($after | Where-Object {$_ -notin $existing}).Count -ne 0 -or -not [LivingPclCredentialTests]::Equal($before,[IO.File]::ReadAllBytes($sourcePath))){throw 'Failed build left credential source or changed tracked source'}
@@ -126,7 +130,7 @@ try {
     $lease=[IO.File]::Open((Join-Path $generatedRoot 'build.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     try {
         $blocked=$false
-        try{& (Join-Path $PSScriptRoot 'Build-Release.ps1') -MSBuildPath $fakeBuild}catch{$blocked=$_.Exception.Message.Contains('build lock')}
+        try{& (Join-Path $PSScriptRoot 'tests/Build-HistoricalCredentialFixture.ps1') -MSBuildPath $fakeBuild -ProjectRoot $legacyRoot}catch{$blocked=$_.Exception.Message.Contains('build lock')}
         if(-not $blocked){throw 'Concurrent release build was not rejected'}
     }finally{$lease.Dispose()}
     Write-Output 'Build credential checks passed: encrypted readback, plaintext/Base64 absence, environment override, empty/single/dual inputs, mixed fragments, tamper/padding/UTF8 rejection, buffer cleanup, failed-build cleanup and concurrent-build lock.'

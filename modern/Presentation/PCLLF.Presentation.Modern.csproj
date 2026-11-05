@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The same LF controls, compiled XAML and complete animation engine as
+       ../../presentation/PCLLF.Presentation.csproj. NativeRuntime/NativeHost bind
+       real C# WPF frames; the complete LF theme/main-window host remains separate. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>Library</OutputType>
+    <AssemblyName>PCLLF.Presentation</AssemblyName>
+    <RootNamespace>PCLLF.Presentation</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <Configurations>Debug;Release;Snapshot</Configurations>
+    <Deterministic>true</Deterministic>
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PCLCS/PCLCS.Modern.csproj" />
+    <Compile Include="../../presentation/Controls/**/*.cs"
+      Exclude="../../presentation/**/bin/**;../../presentation/**/obj/**"
+      Link="Controls/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Animation/**/*.cs"
+      Exclude="../../presentation/**/bin/**;../../presentation/**/obj/**"
+      Link="Animation/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Launch/**/*.cs" Link="Launch/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Pages/**/*.cs" Link="Pages/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Mods/**/*.cs" Link="Mods/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Shell/**/*.cs" Link="Shell/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Window/**/*.cs" Link="Window/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="NativeWpf/**/*.cs" />
+    <Compile Include="../../presentation/Dialogs/**/*.cs" Link="Dialogs/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="../../presentation/Dialogs/*.xaml" Link="Dialogs/%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Accounts/**/*.cs" Link="Accounts/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../presentation/Foundation/**/*.cs" Link="Foundation/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="../../presentation/Controls/*.xaml" Link="Controls/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="NAudio">
+      <HintPath>../../Plain Craft Launcher 2/Resources/NAudio.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <PackageReference Include="PolySharp" Version="1.15.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>$(DefineConstants);SNAPSHOT</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Snapshot|AnyCPU'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+  <!-- Keep WPF names unambiguous while directly calling the real WinForms clipboard. -->
+  <ItemGroup><Using Remove="System.Windows.Forms;System.Drawing" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+  </ItemGroup>
+</Project>

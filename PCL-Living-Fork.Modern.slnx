@@ -1,0 +1,26 @@
+<Solution>
+  <Project Path="modern/Main/PCL-Living-Fork.Modern.csproj" />
+  <Folder Name="/Product/">
+    <Project Path="modern/PCLCS/PCLCS.Modern.csproj" />
+    <Project Path="modern/Presentation/PCLLF.Presentation.Modern.csproj" />
+  </Folder>
+  <Folder Name="/Dependencies/">
+    <Project Path="MeloongCore/Shared/MeloongCore.csproj" />
+  </Folder>
+  <Folder Name="/Tests/Native/">
+    <Project Path="tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/Components/">
+    <Project Path="tests/PCLLF.Modern.Wpf.Tests/PCLLF.Modern.Wpf.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tests/Pure/">
+    <Project Path="tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Build inputs/">
+    <File Path="docs/BUILDING_MODERN.md" />
+    <File Path="modern/BuildResources/ResourceGenerator.csproj" />
+    <File Path="modern/BuildEvents/filter-task/Lf.Build.Tasks.csproj" />
+    <File Path="modern/Main/MainResources.targets" />
+    <File Path="modern/BuildEvents/LfWithEvents.targets" />
+  </Folder>
+</Solution>

@@ -1,220 +1,27 @@
 name: Build
+
 on:
   push:
-    paths:
-      - 'Plain Craft Launcher 2/**'
-      - 'PCLCS/**'
-      - 'MeloongCore'
-      - '.gitmodules'
-      - '*.sln'
-      - '.github/workflows/**'
-      - 'scripts/**'
+    branches: [main, migration/csharp-modern-dotnet]
   pull_request:
-    paths:
-      - 'Plain Craft Launcher 2/**'
-      - 'PCLCS/**'
-      - 'MeloongCore'
-      - '.gitmodules'
-      - '*.sln'
-      - '.github/workflows/**'
-      - 'scripts/**'
+    branches: [main, migration/csharp-modern-dotnet]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
-  build:
-    name: Build
-    runs-on: windows-latest
-    strategy:  
-       matrix:  
-         configuration: [Debug, Release]
-
-    steps:
-
-    - name: Checkout
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 1
-        submodules: true
-
-    - name: Set Describe
-      shell: bash
-      run: |
-          describe=`git describe --tags --always`
-          echo "describe=$describe" >> $GITHUB_ENV
-
-    - name: Setup MSBuild.exe
-      uses: microsoft/setup-msbuild@v3
-      with:
-        msbuild-architecture: x64
-
-    - name: Setup .NET SDK
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: '9.0.x'
-    
-    - name: Update Help
-      run:  |
-        Set-Location ..
-        git clone https://github.com/LTCatt/PCL2Help.git -b master --single-branch --depth 1
-        Set-Location PCL2Help
-        Remove-Item -Path *.* -Recurse -Force
-        Compress-Archive -Path .\* -DestinationPath .\Help.zip
-        Copy-Item -Path .\Help.zip -Destination "${{ GITHUB.WORKSPACE }}\Plain Craft Launcher 2\Resources\Help.zip" -Force
-        Set-Location ..
-        Remove-Item PCL2Help -Recurse -Force
-        Set-Location ${{ GITHUB.WORKSPACE }}
-
-
-    - name: Replace
-      run: |
-        (gc "Plain Craft Launcher 2\Modules\Base\ModBase.vb") -replace 'Public Const CommitHash As String = ""', 'Public Const CommitHash As String = "${{ github.sha }}"' | Out-File "Plain Craft Launcher 2\Modules\Base\ModBase.vb"
-        
-    - name: Restore NuGet Packages
-      run: dotnet restore PCLCS\PCLCS.csproj
-
-    - name: Build
-      env:
-        PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
-      run: |
-        ./scripts/Build-Release.ps1 -Configuration ${{ matrix.configuration }}
-        $executables = @(Get-ChildItem -LiteralPath 'Plain Craft Launcher 2/bin' -Filter 'PCL-Living-Fork-*.exe')
-        if ($executables.Count -ne 1) { throw 'Expected one versioned launcher executable' }
-        "PCL_EXE=$($executables[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-    - name: Verify build credential protection
-      env:
-        PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
-      run: powershell -NoProfile -File scripts/Test-BuildCredentials.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify account migration and updater
-      run: powershell -NoProfile -STA -File scripts/Test-Release.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify CNB update fallback and mirror publication
-      run: |
-        powershell -NoProfile -STA -File scripts/Test-UpdateSources.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Update source checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-LauncherUpdateSettings.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Update source UI checks failed' }
-        python scripts/Test-CnbMirror.py
-        if ($LASTEXITCODE -ne 0) { throw 'CNB mirror checks failed' }
-        python scripts/Test-CnbTrigger.py
-        if ($LASTEXITCODE -ne 0) { throw 'CNB release trigger checks failed' }
-
-    - name: Verify cancelled version scanning
-      run: powershell -NoProfile -STA -File scripts/Test-VersionListCancellation.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify audit regressions
-      run: powershell -NoProfile -STA -File scripts/Test-AuditFixes.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify launcher window activation
-      run: powershell -NoProfile -STA -File scripts/Test-LauncherActivation.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify toolbox operations
-      run: powershell -NoProfile -File scripts/Test-Toolbox.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify memory helper permissions
-      run: powershell -NoProfile -File scripts/Test-ToolboxMemory.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify native game resource management
-      run: powershell -NoProfile -STA -File scripts/Test-InstanceResources.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify map installation, resource recycle bin and global backgrounds
-      run: |
-        powershell -NoProfile -STA -File scripts/Test-MapInstallAndRecycle.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Map installation and recycle bin checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-BackgroundModes.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Global background checks failed' }
-
-    - name: Verify resource update compatibility and replacement
-      run: powershell -NoProfile -STA -File scripts/Test-ResourceUpdates.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify personal game settings and Quick Play
-      run: powershell -NoProfile -STA -File scripts/Test-LocalGameFeatures.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify first-run keybindings and Mojang Quick Play records
-      run: powershell -NoProfile -STA -File scripts/Test-GameFeatureRegressions.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify modpack updates and personal changes
-      run: |
-        powershell -NoProfile -STA -File scripts/Test-ModpackUpdate.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Modpack update checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-ModpackUpdateUx.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Modpack update UI and download progress checks failed' }
-
-    - name: Verify file-operation cancellation, runtime recovery and redirect credentials
-      run: powershell -NoProfile -STA -File scripts/Test-ReviewFixes.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify environment restore points
-      run: |
-        powershell -NoProfile -STA -File scripts/Test-EnvironmentHistory.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Environment restore checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-BackupRetention.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Backup retention and manual protection checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-BackupTaskProgress.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Backup progress and read-only navigation checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-MicrosoftRegistryIsolation.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Microsoft registry isolation checks failed' }
-
-    - name: Verify recent-world card animation and launch sequencing
-      run: powershell -NoProfile -STA -File scripts/Test-RecentWorldCard.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify launch dependency switches, confirmation and automatic repair
-      run: |
-        powershell -NoProfile -STA -File scripts/Test-LaunchDependencies.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Launch dependency checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-DependencyActivation.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Dependency activation checks failed' }
-        powershell -NoProfile -STA -File scripts/Test-DependencyToggles.ps1 -ExecutablePath "$env:PCL_EXE"
-        if ($LASTEXITCODE -ne 0) { throw 'Dependency toggle checks failed' }
-
-    - name: Verify world protection, dependency checks, clones and resource regressions
-      run: |
-        $checks = @(
-          'Test-WorldBackups', 'Test-WorldBackupGroups', 'Test-SaveBackupIntegration',
-          'Test-ModDependencies', 'Test-ModDependencyOnline', 'Test-ModDependencyGraph',
-          'Test-InstanceClone', 'Test-InstanceCloneGroups', 'Test-CloneTaskProgress', 'Test-FileTaskNavigation', 'Test-RecentEnvironmentChanges',
-          'Test-EnvironmentCoverage', 'Test-KeybindingGroups',
-          'Test-MapDetails', 'Test-ResourceEntryPoints', 'Test-WorldDetails', 'Test-ScreenshotGallery'
-        )
-        foreach ($check in $checks) {
-          powershell -NoProfile -STA -File "scripts/$check.ps1" -ExecutablePath "$env:PCL_EXE"
-          if ($LASTEXITCODE -ne 0) { throw "$check failed" }
-        }
-
-    - name: Verify custom download saves
-      run: powershell -NoProfile -File scripts/Test-ToolboxDownload.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify modpack mode
-      run: powershell -NoProfile -STA -File scripts/Test-ModpackMode.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify modpack folder isolation
-      run: powershell -NoProfile -File scripts/Test-ModpackFolderScope.ps1
-
-    - name: Verify shared version icons
-      run: powershell -NoProfile -STA -File scripts/Test-IconCompatibility.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify complete overview component loading
-      run: powershell -NoProfile -STA -File scripts/Test-InstalledComponentLoading.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Verify exported version isolation
-      run: powershell -NoProfile -STA -File scripts/Test-ExportVersionIsolation.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Build legacy update bridge
-      run: ./scripts/Build-UpdateBridge.ps1 -ExecutablePath "$env:PCL_EXE" -OutputPath "Plain Craft Launcher 2\bin\legacy-update\LivingPCL.exe"
-
-    - name: Verify update bridge handoff
-      run: powershell -NoProfile -File scripts/Test-UpdateBridge.ps1 -ExecutablePath "$env:PCL_EXE"
-
-    - name: Upload a Build Artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: PCL-Living-Fork ${{ matrix.configuration }} ${{ env.describe }}
-        path: ${{ env.PCL_EXE }}
-
-    - name: Upload legacy update bridge
-      uses: actions/upload-artifact@v7
-      with:
-        name: LivingPCL-legacy-update ${{ matrix.configuration }} ${{ env.describe }}
-        path: Plain Craft Launcher 2\bin\legacy-update\LivingPCL.exe
+  native-product:
+    # One canonical genuine Native build and complete original LF acceptance.
+    name: LF CSharp NET10 WPF product and original consumer acceptance
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/native-main.yml
+    secrets:
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}

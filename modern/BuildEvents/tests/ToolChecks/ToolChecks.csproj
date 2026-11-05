@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <!-- Execute the actual production source, without a duplicate path formatter. -->
+    <Compile Include="../../filter-task/LfFilterWithEvents.cs" Link="LfFilterWithEvents.cs" />
+    <Reference Include="Microsoft.Build.Framework"><HintPath>$(MSBuildToolsPath)/Microsoft.Build.Framework.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Build.Utilities.Core"><HintPath>$(MSBuildToolsPath)/Microsoft.Build.Utilities.Core.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis"><HintPath>$(MSBuildToolsPath)/Roslyn/bincore/Microsoft.CodeAnalysis.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp"><HintPath>$(MSBuildToolsPath)/Roslyn/bincore/Microsoft.CodeAnalysis.CSharp.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,76 @@
+using System.Collections;
+using System.Globalization;
+using System.IO;
+using System.Reflection;
+using System.Resources;
+using System.Runtime.Loader;
+using System.Security.Cryptography;
+using System.Text.Json;
+
+static class Program {
+    static void Require(bool value, string message) { if (!value) throw new InvalidDataException(message); }
+    static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    static Dictionary<string, byte[]> Read(Stream stream) {
+        using ResourceReader reader = new(stream);
+        Dictionary<string, byte[]> values = new(StringComparer.Ordinal);
+        foreach (DictionaryEntry entry in reader) {
+            Require(entry.Key is string && entry.Value is byte[], "Resource must be a named byte[]");
+            Require(values.TryAdd((string)entry.Key, (byte[])entry.Value!), "Duplicate resource key");
+        }
+        return values;
+    }
+    static void Check(Dictionary<string, byte[]> actual, Dictionary<string, string> expected, string stage) {
+        Require(actual.Count == 5 && actual.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expected.Keys), stage + " key set changed");
+        foreach (var pair in actual) Require(Hash(pair.Value) == expected[pair.Key], stage + " bytes/BOM changed: " + pair.Key);
+        Require(!actual.ContainsKey("MeloongCore.Wpf"), stage + " includes retired Wpf");
+    }
+    static void Main(string[] args) {
+        using JsonDocument expectedJson = JsonDocument.Parse(File.ReadAllText(args[2]));
+        Dictionary<string, string> expected = expectedJson.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal);
+        using JsonDocument schema = JsonDocument.Parse(File.ReadAllText(args[3]));
+        var properties = schema.RootElement.GetProperty("typedProperties").EnumerateArray().Select(p => (Name: p.GetProperty("name").GetString()!, Key: p.GetProperty("key").GetString()!)).ToArray();
+        using (FileStream stream = File.OpenRead(args[1])) Check(Read(stream), expected, "Generated .resources");
+        // The real built Main assembly is read directly; no synthetic PCL types or Main entry point.
+        string mainPath = Path.GetFullPath(args[0]);
+        AssemblyLoadContext.Default.Resolving += (context, name) => {
+            string dependency = Path.Combine(Path.GetDirectoryName(mainPath)!, name.Name + ".dll");
+            return File.Exists(dependency) ? context.LoadFromAssemblyPath(dependency) : null;
+        };
+        Assembly main = AssemblyLoadContext.Default.LoadFromAssemblyPath(mainPath);
+        Check(Read(main.GetManifestResourceStream("PCL.Resources.resources") ?? throw new InvalidDataException("Actual Main resource missing")), expected, "Actual Main");
+        Type type = main.GetType("PCL.My.Resources.Resources", throwOnError: true)!;
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+        PropertyInfo culture = type.GetProperty("Culture", flags)!;
+        PropertyInfo managerProperty = type.GetProperty("ResourceManager", flags)!;
+        Require(culture.PropertyType == typeof(CultureInfo) && culture.CanRead && culture.CanWrite, "Culture interface changed");
+        Require(managerProperty.PropertyType == typeof(ResourceManager) && managerProperty.CanRead && !managerProperty.CanWrite, "ResourceManager interface changed");
+        Require(type.GetProperties(flags).Where(p => p.PropertyType == typeof(byte[])).Select(p => p.Name).ToHashSet().SetEquals(properties.Select(p => p.Name)), "Actual typed getter set changed");
+        foreach (var property in properties) {
+            PropertyInfo getter = type.GetProperty(property.Name, flags)!;
+            Require(getter.CanRead && !getter.CanWrite && getter.PropertyType == typeof(byte[]), "Typed getter shape changed");
+        }
+        if (args[4] == "defer-windows-getters") {
+            Console.WriteLine("PASS 5 generated blobs + 5 actual Main blobs and actual getter metadata");
+            Console.WriteLine("PENDING 15 actual Main getter calls and Culture/ResourceManager runtime checks; rerun on Windows without --defer-windows-getters");
+            return;
+        }
+        Require(args[4] == "full", "Unknown reader mode");
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Actual Main getters require WindowsDesktop; run on Windows or explicitly defer them.");
+        ResourceManager manager = (ResourceManager)managerProperty.GetValue(null)!;
+        Require(manager.BaseName == "PCL.Resources" && ReferenceEquals(managerProperty.GetValue(null), manager), "ResourceManager identity/basename changed");
+        int count = 0;
+        try {
+            foreach (CultureInfo? locale in new CultureInfo?[] { null, CultureInfo.GetCultureInfo("zh-CN"), CultureInfo.GetCultureInfo("en-US") }) {
+                culture.SetValue(null, locale);
+                Require(ReferenceEquals(culture.GetValue(null), locale), "Culture identity changed");
+                foreach (var property in properties) {
+                    PropertyInfo getter = type.GetProperty(property.Name, flags)!;
+                    Require(Hash((byte[])getter.GetValue(null)!) == expected[property.Key], "Actual Main getter changed: " + property.Name);
+                    count++;
+                }
+            }
+        } finally { culture.SetValue(null, null); }
+        Require(count == 15 && manager.GetObject("MeloongCore.Wpf") is null, "Culture/retired-key contract changed");
+        Console.WriteLine("PASS 5 generated blobs + 5 actual Main blobs, 15 actual Main getters, Culture/ResourceManager; no replacement production types");
+    }
+}

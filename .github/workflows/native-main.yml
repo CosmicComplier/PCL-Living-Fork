@@ -1,0 +1,651 @@
+name: Native .NET 10 launcher
+
+on:
+  workflow_call:
+    secrets:
+      CLIENT_ID:
+        description: Optional Microsoft client ID for the original LF build credential contract.
+        required: false
+      CURSEFORGE_API_KEY:
+        description: Optional CurseForge API key for the original LF build credential contract.
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    name: Select native product inputs
+    runs-on: ubuntu-latest
+    outputs:
+      native_run: ${{ steps.scope.outputs.native_run }}
+    steps:
+      - name: Checkout selection source and diff history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the actual selector and preserved routing scopes
+        run: python3 scripts/tests/Test-MigrationSelection.py
+      - name: Select native checks using actual changed paths
+        id: scope
+        run: python3 scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT" --report artifacts/native-main/check-selection.json
+      - name: Setup Python for isolated native build-tool regressions
+        if: steps.scope.outputs.native_run == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify actual native upgrade qualification blocks with offline fixtures
+        if: steps.scope.outputs.native_run == 'true'
+        run: |
+          python -m pip install --disable-pip-version-check PyYAML==6.0.2
+          python scripts/tests/Test-MainCiGates.py
+          pwsh -NoLogo -NoProfile -NonInteractive -Command 'if ($PSVersionTable.PSEdition -cne "Core" -or $PSVersionTable.PSVersion.Major -lt 7) { throw "PowerShell 7 Core is required." }; $PSVersionTable.PSVersion.ToString()'
+          python scripts/tests/Test-NativeUpgradeQualification.py --powershell pwsh
+      - name: Upload the native selection evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-selected-checks
+          path: artifacts/native-main/check-selection.json
+          if-no-files-found: error
+          retention-days: 7
+
+  native:
+    needs: select
+    if: needs.select.outputs.native_run == 'true'
+    name: Native Main (${{ matrix.configuration }})
+    runs-on: windows-latest
+    timeout-minutes: 40
+    # Only a selected real build acquires this group. A selector-only push must
+    # not cancel a previous real package/runtime verification on the branch.
+    concurrency:
+      group: native-product-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}-${{ matrix.configuration }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      NATIVE_CONFIGURATION: ${{ matrix.configuration }}
+      MSBUILDDISABLENODEREUSE: '1'
+      DOTNET_CLI_USE_MSBUILD_SERVER: '0'
+
+    steps:
+      - name: Checkout LF and the pinned Shared dependency
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+          fetch-depth: 0
+
+      - name: Verify fixed historical sources without product VB files
+        # Full Git history stays explicit; Desktop preflight builds no old Main.
+        if: matrix.configuration == 'Release'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -File scripts/tests/Test-FixedLfSource.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed historical source baseline preflight failed after product VB retirement.' }
+
+      - name: Verify original historical credential failure and lock samples
+        # Explicit CLR4 credential-only Git fixture, never Main/bridge/apphost.
+        # Keep original exit23/invalid-input/source-cleanup/exclusive-lock cases.
+        if: matrix.configuration == 'Release'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -File scripts/native-smoke/Test-HistoricalCredentialFailures.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Preserved historical credential failure and lock regression failed.' }
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Record the actual source and toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $logDirectory = Join-Path $env:GITHUB_WORKSPACE "artifacts/native-main/$env:NATIVE_CONFIGURATION"
+          New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+          "NATIVE_LOG_DIRECTORY=$logDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $sharedRevision = (& git -C MeloongCore rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sharedRevision -cne 'c774ae4c85fd94e0eaa171db21e78a65870df19b') {
+            throw 'The complete native product requires the fixed LF Shared revision.'
+          }
+          & dotnet --info 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'toolchain.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Reading the actual .NET SDK failed.' }
+          [ordered]@{
+            commit = $env:GITHUB_SHA
+            configuration = $env:NATIVE_CONFIGURATION
+            shared = $sharedRevision
+            mainProject = 'modern/Main/PCL-Living-Fork.Modern.csproj'
+            targetFramework = 'net10.0-windows'
+            packageRuntime = 'win-x64'
+            credentials = 'Optional original LF build inputs; empty public fallback is valid. Exact packaged Main/bundle checked; no external publication.'
+            coldEntry = if ($env:NATIVE_CONFIGURATION -eq 'Release') { 'Required: genuine native startup, normal WM_CLOSE and reopen.' } else { 'Not executed: the current bounded smoke accepts LF BuildType 0/50; Debug BuildType 100 remains a separate runtime gap.' }
+            mainWarningPolicy = 'Main conversion warnings remain visible; zero errors required. Core/Presentation/tools/facade tests keep warnings-as-errors.'
+            facade = 'Required in both configurations: 28 separately isolated actual Main data/UI/task/process/install families; account-ui requires its own fresh configuration child. Controlled process/HTTP/store samples are not real authentication or Minecraft. Actual product entry/continuous interaction have independent receipts.'
+          } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $logDirectory 'context.json')
+
+      - name: Stamp only the original Main CommitHash constant
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_SHA -cnotmatch '\A[0-9a-fA-F]{40}\z') { throw 'Expected the actual 40-hex commit SHA.' }
+          $file = Join-Path $env:GITHUB_WORKSPACE 'modern/Main/Modules/Base/ModBase.cs'
+          $source = [IO.File]::ReadAllText($file)
+          $needle = 'public const string CommitHash = "";'
+          if ([regex]::Matches($source, [regex]::Escape($needle)).Count -ne 1) { throw 'Main CommitHash replacement contract changed; review the actual source.' }
+          $replacement = 'public const string CommitHash = "' + $env:GITHUB_SHA + '";'
+          [IO.File]::WriteAllText($file, $source.Replace($needle, $replacement), [Text.UTF8Encoding]::new($false))
+
+      - name: Restore the actual Main and isolated facade project graph
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & dotnet restore tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --verbosity minimal "-p:Configuration=$env:NATIVE_CONFIGURATION" 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'restore.log')
+          if ($LASTEXITCODE -ne 0) { throw 'The complete native Main/facade graph did not restore.' }
+
+      - name: Require strict Core Presentation and build-helper compilation
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $builds = @(
+            @{ Name = 'core'; Project = 'modern/PCLCS/PCLCS.Modern.csproj'; Configuration = $env:NATIVE_CONFIGURATION },
+            @{ Name = 'presentation'; Project = 'modern/Presentation/PCLLF.Presentation.Modern.csproj'; Configuration = $env:NATIVE_CONFIGURATION },
+            @{ Name = 'resources'; Project = 'modern/BuildResources/ResourceGenerator.csproj'; Configuration = $env:NATIVE_CONFIGURATION },
+            @{ Name = 'events'; Project = 'modern/BuildEvents/filter-task/Lf.Build.Tasks.csproj'; Configuration = 'Release' }
+          )
+          foreach ($build in $builds) {
+            & dotnet build $build.Project --configuration $build.Configuration --verbosity minimal -warnaserror -p:ContinuousIntegrationBuild=true --disable-build-servers -nodeReuse:false -m:1 2>&1 |
+              Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY ("strict-" + $build.Name + '.log'))
+            if ($LASTEXITCODE -ne 0) { throw ('Strict native dependency/helper compilation failed: ' + $build.Name) }
+          }
+
+      - name: Build the complete CSharp WPF launcher and retain its diagnostics
+        id: main
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & dotnet build modern/Main/PCL-Living-Fork.Modern.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore --verbosity minimal -p:ContinuousIntegrationBuild=true --disable-build-servers -nodeReuse:false -m:1 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'main-build.log')
+          if ($LASTEXITCODE -ne 0) { throw 'The complete native CSharp Main has build errors; warnings remain recorded for review.' }
+
+      - name: Verify real Main resources without VB inputs
+        id: resources
+        if: ${{ !cancelled() && steps.main.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python modern/BuildResources/tests/Test-NativeResources.py --main "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/LivingPCL.dll" --generator "modern/BuildResources/bin/$env:NATIVE_CONFIGURATION/net10.0/ResourceGenerator.dll" --dotnet (Get-Command dotnet).Source
+          if ($LASTEXITCODE -ne 0) { throw 'Native resource bytes/getters/culture or VB-free input checks failed.' }
+
+      - name: Build the isolated actual Main facade checks
+        id: facade
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & dotnet build tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore --verbosity minimal -warnaserror -p:BuildProjectReferences=false -p:ContinuousIntegrationBuild=true --disable-build-servers -nodeReuse:false -m:1 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'facade-build.log')
+          if ($LASTEXITCODE -ne 0) { throw 'The isolated real-Main facade test host did not build.' }
+
+      - name: Package the real native product and its legacy update bridge
+        id: package
+        if: ${{ !cancelled() && steps.main.outcome == 'success' }}
+        env:
+          PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $mainProject = Join-Path $env:GITHUB_WORKSPACE 'modern/Main/PCL-Living-Fork.Modern.csproj'
+          $packageDirectory = Join-Path $env:NATIVE_LOG_DIRECTORY 'package'
+          & ./scripts/Build-Release.ps1 -NativeProjectPath $mainProject -OutputPath $packageDirectory -Configuration $env:NATIVE_CONFIGURATION -DotNetPath (Get-Command dotnet).Source 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'package.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Building the genuine native release package failed.' }
+
+      - name: Verify the three package roles and actual ZIP bytes
+        id: package_roles
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageDirectory = [IO.Path]::GetFullPath((Join-Path $env:NATIVE_LOG_DIRECTORY 'package'))
+          $index = Get-Content -LiteralPath (Join-Path $packageDirectory 'NativeRelease.Artifacts.json') -Raw | ConvertFrom-Json
+          if ($index.schemaVersion -ne 1 -or $index.kind -cne 'PCLLF.NativeRelease.Artifacts' -or $index.configuration -cne $env:NATIVE_CONFIGURATION -or $index.runtimeIdentifier -cne 'win-x64' -or $index.bridgeOnly -isnot [bool] -or $index.bridgeOnly) {
+            throw 'Unexpected native release artifact-index contract/configuration.'
+          }
+          if ($index.nativePayloadSha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Invalid actual native payload hash.' }
+          $roles = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+          $assetNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          foreach ($item in @($index.artifacts)) {
+            if (-not $item.fileName -or $item.fileName -in @('.', '..') -or $item.fileName.IndexOfAny([char[]]'\/') -ge 0 -or [IO.Path]::IsPathRooted($item.fileName)) { throw 'Artifact names must be relative leaf names.' }
+            $path = [IO.Path]::GetFullPath((Join-Path $packageDirectory $item.fileName))
+            if (-not [IO.Path]::IsPathRooted($item.path) -or -not [string]::Equals($path, [IO.Path]::GetFullPath($item.path), [StringComparison]::OrdinalIgnoreCase)) { throw 'Artifact index points outside its actual output file.' }
+            if ($item.sha256 -cnotmatch '\A[0-9a-f]{64}\z' -or -not [IO.File]::Exists($path) -or (Get-Item -LiteralPath $path).Length -ne $item.bytes -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $item.sha256) { throw 'A native release artifact differs from its actual size/SHA256.' }
+            if (-not $assetNames.Add($item.fileName)) { throw 'Different artifact roles cannot alias the same output file.' }
+            $roles.Add($item.role, $item)
+          }
+          $expectedRoles = @('native-exe', 'native-zip', 'legacy-bridge', 'checksums')
+          if ($roles.Count -ne 4 -or @($expectedRoles | Where-Object { -not $roles.ContainsKey($_) }).Count -ne 0 -or @(Get-ChildItem -LiteralPath $packageDirectory -File).Count -ne 5) { throw 'Expected exactly four package roles and one build-only index.' }
+          $native = $roles['native-exe']
+          $archive = $roles['native-zip']
+          if ($native.sha256 -cne $index.nativePayloadSha256 -or $archive.nativeEntrySha256 -cne $index.nativePayloadSha256) { throw 'The native first-install roles disagree with the actual payload.' }
+          $checksums = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+          foreach ($line in [IO.File]::ReadAllLines($roles['checksums'].path)) {
+            $match = [regex]::Match($line, '\A(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)\z')
+            if (-not $match.Success) { throw 'Malformed native release checksum record.' }
+            $checksums.Add($match.Groups['name'].Value, $match.Groups['hash'].Value)
+          }
+          if ($checksums.Count -ne 3) { throw 'The release checksum text must cover exactly the three real assets.' }
+          foreach ($role in @('native-exe', 'native-zip', 'legacy-bridge')) {
+            $item = $roles[$role]
+            if (-not $checksums.ContainsKey($item.fileName) -or $checksums[$item.fileName] -cne $item.sha256) { throw 'Release checksum text disagrees with its asset role.' }
+          }
+          $zip = [IO.Compression.ZipFile]::OpenRead($archive.path)
+          try {
+            if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -cne $archive.nativeEntryName) { throw 'First-install ZIP must contain exactly the index-declared native entry.' }
+            $stream = $zip.Entries[0].Open()
+            $hash = [Security.Cryptography.SHA256]::Create()
+            try { $entryHash = [BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+            finally { $hash.Dispose(); $stream.Dispose() }
+            if ($entryHash -cne $index.nativePayloadSha256) { throw 'First-install ZIP contains different bytes from the actual native product.' }
+          } finally { $zip.Dispose() }
+          "NATIVE_EXE=$($native.path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          [ordered]@{
+            nativeFirstInstall = $native.fileName
+            nativeFirstInstallZip = $archive.fileName
+            managedLegacyAutomaticUpdateBridge = $roles['legacy-bridge'].fileName
+            supportIndexIsReleaseAsset = $false
+          } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $env:NATIVE_LOG_DIRECTORY 'package-roles.json')
+
+      - name: Verify actual CSharp credential factories and the exact Native Main module
+        id: credentials
+        if: ${{ !cancelled() && steps.package_roles.outcome == 'success' }}
+        env:
+          PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dotnet = (Get-Command dotnet).Source
+          if ($env:NATIVE_CONFIGURATION -eq 'Release') {
+            & ./scripts/tests/Test-CSharpCredentialFactories.ps1 -DotNetPath $dotnet
+          }
+          $mainOutput = "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/win-x64"
+          & ./scripts/tests/Test-NativeBuildCredentials.ps1 -ManagedMainPath "$mainOutput/LivingPCL.dll" -NativeExecutablePath "$env:NATIVE_EXE" -DotNetPath $dotnet
+
+      - name: Verify managed and native bridge metadata exception routing
+        id: metadata_identity
+        if: ${{ !cancelled() && steps.package_roles.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mainOutput = "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/win-x64"
+          & ./scripts/tests/Test-BridgePayloadIdentity.ps1 -BridgeBuildScript scripts/Build-UpdateBridge.ps1 -NativePayloadPath "$env:NATIVE_EXE" -ManagedPayloadPath "$mainOutput/LivingPCL.dll" -ForeignManagedPath "modern/BuildResources/bin/$env:NATIVE_CONFIGURATION/net10.0/ResourceGenerator.dll" -UnbundledAppHostPath "$mainOutput/LivingPCL.exe" -NativeInspectorProject scripts/native-update-inspector/NativeUpdateInspector.csproj -NativeUpdaterSource modern/Main/Modules/ModernBundleIdentity.cs -EvidenceRoot (Join-Path $env:NATIVE_LOG_DIRECTORY 'bridge-identity') -DotNetPath (Get-Command dotnet).Source
+
+      - name: Require genuine native cold entry normal close and reopen
+        id: cold_entry
+        # Run first, before any data-only host could affect the fresh CI profile.
+        # Pending/unknown dialogs and forced cleanup remain nonzero failures.
+        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.package_roles.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -STA -File scripts/Test-NativeLauncherSmoke.ps1 -ExecutablePath "$env:NATIVE_EXE" -WorkspaceRoot "$env:GITHUB_WORKSPACE" -EvidenceRoot (Join-Path $env:NATIVE_LOG_DIRECTORY 'smoke') 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'smoke.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual native cold startup/WM_CLOSE/reopen is failed or pending; inspect the retained evidence.' }
+
+      - name: Qualify only the real Release package identity and cold entry for the fresh-host upgrade
+        id: upgrade_qualification
+        # Data-only facade failures remain workflow failures, but do not revoke
+        # a package whose required product gates actually succeeded in this run.
+        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.main.outcome == 'success' && steps.resources.outcome == 'success' && steps.package.outcome == 'success' && steps.package_roles.outcome == 'success' && steps.credentials.outcome == 'success' && steps.metadata_identity.outcome == 'success' && steps.cold_entry.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = [IO.Path]::GetFullPath($env:NATIVE_LOG_DIRECTORY)
+          $indexPath = Join-Path $root 'package/NativeRelease.Artifacts.json'
+          $index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
+          $coldFiles = @(Get-ChildItem -LiteralPath (Join-Path $root 'smoke') -Filter evidence.json -Recurse -File)
+          $identityFiles = @(Get-ChildItem -LiteralPath (Join-Path $root 'bridge-identity') -Filter results.json -Recurse -File)
+          if ($coldFiles.Count -ne 1 -or $identityFiles.Count -ne 1) { throw 'Qualification needs exactly one current-run cold and metadata identity receipt.' }
+          $cold = Get-Content -LiteralPath $coldFiles[0].FullName -Raw | ConvertFrom-Json
+          if ($cold.Result -cne 'passed' -or $cold.ForcedCleanup -isnot [bool] -or $cold.ForcedCleanup -or @($cold.CleanupErrors).Count -ne 0 -or $cold.MainProof.sha256 -cne $index.nativePayloadSha256 -or @($cold.Runs).Count -ne 2 -or @($cold.Runs | Where-Object { $_.NormalExit -isnot [bool] -or -not $_.NormalExit -or $_.ExitCode -ne -1 }).Count -ne 0) { throw 'Cold-entry receipt does not qualify this exact Release payload.' }
+          function Qualified-File([string]$path) {
+            $file = Get-Item -LiteralPath $path
+            if ($file.Length -le 0 -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Qualification inputs must be nonempty ordinary files.' }
+            [ordered]@{ relativePath = [IO.Path]::GetRelativePath($root, $file.FullName).Replace('\', '/'); bytes = $file.Length; sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $qualification = [ordered]@{
+            schemaVersion = 1; kind = 'PCLLF.NativeUpgradeQualification'
+            repository = $env:GITHUB_REPOSITORY; sourceSha = $env:GITHUB_SHA
+            sourceRunId = $env:GITHUB_RUN_ID; sourceRunAttempt = $env:GITHUB_RUN_ATTEMPT
+            configuration = 'Release'; runtimeIdentifier = 'win-x64'; nativePayloadSha256 = $index.nativePayloadSha256
+            requiredSteps = [ordered]@{ main = 'success'; resources = 'success'; package = 'success'; package_roles = 'success'; credentials = 'success'; metadata_identity = 'success'; cold_entry = 'success' }
+            packageIndex = Qualified-File $indexPath
+            roles = @($index.artifacts | ForEach-Object { [ordered]@{ role = $_.role; fileName = $_.fileName; bytes = $_.bytes; sha256 = $_.sha256 } })
+            coldEntry = Qualified-File $coldFiles[0].FullName
+            metadataIdentity = Qualified-File $identityFiles[0].FullName
+            scope = 'Release product build/resources/package/identity and actual cold close/reopen only; independent facade/Debug/legacy-link checks are not reported passed.'
+          }
+          $temporary = Join-Path $root 'native-upgrade-qualification.pending'
+          [IO.File]::WriteAllText($temporary, ($qualification | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          Move-Item -LiteralPath $temporary -Destination (Join-Path $root 'native-upgrade-qualification.json')
+          Write-Output 'PASS same-run Release upgrade qualification; independent data checks retain their own outcomes.'
+
+      - name: Verify real Registry account migration in a fresh owned namespace
+        # Explicit solo family uses real Main/Windows stores and refuses unknown
+        # existing keys. The genuine cold entry runs first and cleans its profile.
+        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.facade.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & dotnet run --project tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-build -- --groups registry-data 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'registry-data-runtime.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Real Native Registry migration failed or fresh-profile ownership was not established.' }
+
+      - name: Run actual Main facade feature groups in separate isolated STA children
+        # A package/cold-entry failure stays failed but must not hide this
+        # independent, already-built data/adapter acceptance result.
+        if: ${{ !cancelled() && steps.facade.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $failedGroups = @()
+          $registeredJson = & dotnet run --project tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-build -- --list-groups
+          if ($LASTEXITCODE -ne 0) { throw 'The real facade host did not enumerate its registered groups.' }
+          $registered = @(($registeredJson -join "`n") | ConvertFrom-Json)
+          if ($registered.Count -eq 0 -or $registered -notcontains 'registry-data' -or @($registered | Where-Object { $_ -notmatch '^[a-z0-9-]+$' }).Count -ne 0 -or @($registered | Select-Object -Unique).Count -ne $registered.Count) { throw 'The facade group registry is empty or invalid.' }
+          # Registry data owns its dedicated fresh-profile step above.
+          $groups = @($registered | Where-Object { $_ -ne 'registry-data' })
+          foreach ($group in $groups) {
+            # Every family owns its real STA child and temporary state. A
+            # failed theme family must not hide file/dependency acceptance.
+            & dotnet run --project tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-build -- --groups $group 2>&1 |
+              Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY ("facade-" + $group + '.log'))
+            if ($LASTEXITCODE -ne 0) { $failedGroups += $group }
+          }
+          if ($failedGroups.Count -ne 0) { throw ('Actual native Main acceptance failed: ' + ($failedGroups -join ', ')) }
+
+      - name: Verify actual Main safe navigation theme focus and wheel
+        id: interaction
+        # Independent fresh profile/fixture after the original cold receipt;
+        # this new UI result cannot replace that receipt or qualify a package.
+        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.cold_entry.outcome == 'success' && steps.package_roles.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -STA -File scripts/native-smoke/interaction/Test-NativeLauncherInteraction.ps1 -ExecutablePath "$env:NATIVE_EXE" -WorkspaceRoot "$env:GITHUB_WORKSPACE" -EvidenceRoot (Join-Path $env:NATIVE_LOG_DIRECTORY 'interaction') 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'interaction.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Main continuous interaction is failed or pending; original cold qualification retains its independent outcome.' }
+
+      - name: Compile the original optional LegacyLink mode without running services
+        id: legacy_link_compile
+        if: ${{ !cancelled() && steps.main.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          # The default-mode package/cold entry/facade checks are complete above.
+          # Compile the preserved optional source graph only; never start a link
+          # service or replace those already-published default-mode artifacts.
+          & dotnet build modern/Main/PCL-Living-Fork.Modern.csproj --configuration $env:NATIVE_CONFIGURATION --no-restore -p:EnableLegacyLink=true -p:ContinuousIntegrationBuild=true --verbosity minimal --disable-build-servers -nodeReuse:false -m:1 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'legacy-link-build.log')
+          if ($LASTEXITCODE -ne 0) { throw 'The original optional LegacyLink mode failed Windows compilation.' }
+          Write-Output 'Compiled EnableLegacyLink=true only; optional network services were not executed. Main warnings remain in legacy-link-build.log.'
+
+      - name: Upload small actual native startup evidence
+        if: always() && matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-startup-evidence-${{ matrix.configuration }}
+          path: |
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/evidence.json
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/*-diagnostics.json
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/PCL/Log*.txt
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/startup-*.log
+            artifacts/native-main/${{ matrix.configuration }}/smoke/**/main-*.png
+          if-no-files-found: warn
+          compression-level: 9
+          retention-days: 7
+
+      - name: Upload small actual Main interaction evidence
+        if: always() && matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-interaction-evidence-${{ matrix.configuration }}
+          path: |
+            artifacts/native-main/${{ matrix.configuration }}/interaction.log
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/evidence.json
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/interaction-*.json
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/interaction-*.png
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/startup-*.log
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/PCL/Log*.txt
+          if-no-files-found: warn
+          compression-level: 9
+          retention-days: 7
+
+      - name: Upload native build packages and bounded runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-main-${{ matrix.configuration }}
+          path: |
+            artifacts/native-main/${{ matrix.configuration }}/
+            !artifacts/native-main/${{ matrix.configuration }}/interaction/**/Install with spaces/*.exe
+            !artifacts/native-main/${{ matrix.configuration }}/interaction/**/BundleExtract/**
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 7
+
+  native-upgrade:
+    name: Genuine legacy to native update entry
+    needs: native
+    # Keep the matrix/workflow red on any failure. Only this separate fresh-host
+    # acceptance may proceed, after same-run qualified Release bytes are checked.
+    if: ${{ !cancelled() && (needs.native.result == 'success' || needs.native.result == 'failure') }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    # A separate hosted machine/profile: never reuse a matrix job that ran Main
+    # or a facade. Only this cross-run legacy download needs actions:read.
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - name: Checkout matching acceptance sources without credentials
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup the same .NET 10 toolchain for strict fixture builds
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Record the real entry input provenance before downloads
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE 'artifacts/native-upgrade'
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          [ordered]@{
+            commit = $env:GITHUB_SHA
+            currentRun = $env:GITHUB_RUN_ID
+            nativeArtifact = 'native-main-Release'
+            nativeArtifactRun = $env:GITHUB_RUN_ID
+            legacyRepository = 'DDZmumo/PCL-Living-Fork'
+            legacyRun = '41894581233'
+            legacyHead = '8ff80deb1de834efbee2fc6b180cc268dc1eed0e'
+            legacyArtifact = '13354809865'
+            legacyArtifactName = 'PCL-Living-Fork Release 8ff80de'
+            legacyZipSha256 = 'c0583c65e294e20c2c781ea7842f817ac8c57c84cb71cbb7d99a171392883bc3'
+            legacyExeSha256 = 'f4c88a842d506c62e812d50493126c5f25a73b0bfa866bb749c0473e2740d151'
+            selectedCases = @('legacy', 'manual', 'parent-timeout', 'invalid-inputs')
+            aclRollback = 'Not selected by this default job. Requires separate explicit case and observed post-replacement phase; pending never passes.'
+            sourcePolicy = 'Actual producer Native Main and fixed published old Main; no old rebuild or replacement test entry.'
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $evidence 'context.json')
+
+      - name: Download the Release matrix artifact from this exact run regardless of independent data results
+        uses: actions/download-artifact@v4
+        with:
+          name: native-main-Release
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+          path: inputs/native-upgrade/current-release
+
+      - name: Rebind only the real package roles by relative leaf and verify bytes
+        id: upgrade_inputs
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Fail closed before downloading/running the old product: the native
+          # matrix may be red only because an independent acceptance group failed.
+          $root = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'inputs/native-upgrade/current-release'))
+          $qualificationPath = Join-Path $root 'native-upgrade-qualification.json'
+          if (-not [IO.File]::Exists($qualificationPath) -or (Get-Item -LiteralPath $qualificationPath).Length -gt 65536 -or ((Get-Item -LiteralPath $qualificationPath).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Missing, oversized or nonordinary Release upgrade qualification; no product entry is allowed.' }
+          $qualification = Get-Content -LiteralPath $qualificationPath -Raw | ConvertFrom-Json
+          if ($qualification.schemaVersion -ne 1 -or $qualification.kind -cne 'PCLLF.NativeUpgradeQualification' -or $qualification.repository -cne $env:GITHUB_REPOSITORY -or $qualification.sourceSha -cne $env:GITHUB_SHA -or [string]$qualification.sourceRunId -cne $env:GITHUB_RUN_ID -or [string]$qualification.sourceRunAttempt -cne $env:GITHUB_RUN_ATTEMPT -or $qualification.configuration -cne 'Release' -or $qualification.runtimeIdentifier -cne 'win-x64' -or $qualification.nativePayloadSha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Qualification must identify this exact repository/SHA/run/attempt and Release win-x64 payload.' }
+          $required = @('main', 'resources', 'package', 'package_roles', 'credentials', 'metadata_identity', 'cold_entry')
+          if (@($qualification.requiredSteps.PSObject.Properties).Count -ne $required.Count -or @($required | Where-Object { $qualification.requiredSteps.$_ -cne 'success' }).Count -ne 0) { throw 'A required real product gate did not succeed; no product entry is allowed.' }
+          function Read-QualifiedJson([object]$record, [string]$pattern, [long]$maximumBytes) {
+            if ($record.relativePath -cnotmatch $pattern -or $record.sha256 -cnotmatch '\A[0-9a-f]{64}\z' -or $record.bytes -le 0 -or $record.bytes -gt $maximumBytes) { throw 'Qualification contains an invalid bounded relative evidence record.' }
+            $actual = [IO.Path]::GetFullPath((Join-Path $root $record.relativePath))
+            if (-not $actual.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or -not [IO.File]::Exists($actual)) { throw 'Qualified evidence must stay inside this downloaded artifact.' }
+            $node = Get-Item -LiteralPath $actual
+            $file = $node
+            while ($null -ne $node) {
+              if (($node.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Qualified evidence cannot traverse a reparse point.' }
+              if ([string]::Equals($node.FullName, $root, [StringComparison]::OrdinalIgnoreCase)) { break }
+              $node = if ($node -is [IO.FileInfo]) { $node.Directory } else { $node.Parent }
+            }
+            if ($file.Length -ne $record.bytes -or (Get-FileHash -LiteralPath $actual -Algorithm SHA256).Hash.ToLowerInvariant() -cne $record.sha256) { throw 'Qualified evidence bytes/SHA do not match this same-run receipt.' }
+            Get-Content -LiteralPath $actual -Raw | ConvertFrom-Json
+          }
+          $cold = Read-QualifiedJson $qualification.coldEntry '\Asmoke/NativeSmoke-[0-9a-f]{32}/evidence\.json\z' 1048576
+          if ($cold.Result -cne 'passed' -or $cold.ForcedCleanup -isnot [bool] -or $cold.ForcedCleanup -or @($cold.CleanupErrors).Count -ne 0 -or $cold.MainProof.sha256 -cne $qualification.nativePayloadSha256 -or $cold.MainProof.buildType -notin @(0, 50) -or @($cold.Runs).Count -ne 2) { throw 'Cold-entry receipt is failed/pending/forced or belongs to another payload.' }
+          foreach ($pass in @(1, 2)) {
+            $runs = @($cold.Runs | Where-Object { $_.Pass -eq $pass })
+            if ($runs.Count -ne 1 -or $runs[0].NormalExit -isnot [bool] -or -not $runs[0].NormalExit -or $runs[0].ExitCode -ne -1 -or $runs[0].ExpectedInformationNoticeVisible -isnot [bool] -or -not $runs[0].ExpectedInformationNoticeVisible -or ([string]$runs[0].Window.Title).Trim() -cne 'LivingPCL' -or $runs[0].Window.Class -notlike 'HwndWrapper*' -or $runs[0].Window.Right -le $runs[0].Window.Left -or $runs[0].Window.Bottom -le $runs[0].Window.Top) { throw 'Qualification requires both actual native visible-window/normal-close/reopen receipts.' }
+          }
+          $identity = Read-QualifiedJson $qualification.metadataIdentity '\Abridge-identity/BridgeIdentity-[0-9a-f]{32}/results\.json\z' 1048576
+          $nativeProof = @($identity.results | Where-Object { $_.name -ceq 'genuine-native-main' })
+          $managedProof = @($identity.results | Where-Object { $_.name -ceq 'genuine-managed-original-rule' })
+          if ($identity.count -ne 11 -or @($identity.results).Count -ne 11 -or $nativeProof.Count -ne 1 -or $nativeProof[0].accepted -isnot [bool] -or -not $nativeProof[0].accepted -or $nativeProof[0].nativeInspectorUsed -isnot [bool] -or -not $nativeProof[0].nativeInspectorUsed -or $nativeProof[0].nativeIdentity.AssemblyName -cne 'LivingPCL' -or $nativeProof[0].nativeIdentity.Product -cne 'PCL Living Fork' -or $managedProof.Count -ne 1 -or $managedProof[0].accepted -isnot [bool] -or -not $managedProof[0].accepted -or $managedProof[0].nativeInspectorUsed -isnot [bool] -or $managedProof[0].nativeInspectorUsed) { throw 'Actual native/managed identity routing receipt is incomplete or rejected.' }
+          $qualifiedIndex = Read-QualifiedJson $qualification.packageIndex '\Apackage/NativeRelease\.Artifacts\.json\z' 65536
+          # Consume only the qualified receipts and five package/ files. Other
+          # logs/profiles are never used as inputs; producer .path is ignored.
+          $package = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'inputs/native-upgrade/current-release/package'))
+          $indexPath = Join-Path $package 'NativeRelease.Artifacts.json'
+          if (-not [IO.File]::Exists($indexPath) -or (Get-Item -LiteralPath $indexPath).Length -gt 65536) { throw 'Missing or oversized release package index.' }
+          $index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
+          if ($index.schemaVersion -ne 1 -or $index.kind -cne 'PCLLF.NativeRelease.Artifacts' -or $index.configuration -cne 'Release' -or $index.runtimeIdentifier -cne 'win-x64' -or $index.bridgeOnly -isnot [bool] -or $index.bridgeOnly -or $index.nativePayloadSha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Not a complete Release native package index.' }
+          $roles = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+          $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          foreach ($item in @($index.artifacts)) {
+            if (-not $item.fileName -or $item.fileName -in @('.', '..') -or [IO.Path]::IsPathRooted($item.fileName) -or $item.fileName.IndexOfAny([char[]]"\/:`r`n") -ge 0 -or $item.fileName.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) { throw 'Package filenames must be valid relative leaves.' }
+            $actual = [IO.Path]::GetFullPath((Join-Path $package $item.fileName))
+            if (-not $actual.StartsWith($package + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or -not [IO.File]::Exists($actual)) { throw 'Package leaf does not resolve inside the downloaded package.' }
+            $file = Get-Item -LiteralPath $actual
+            if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $item.sha256 -cnotmatch '\A[0-9a-f]{64}\z' -or $file.Length -ne $item.bytes -or (Get-FileHash -LiteralPath $actual -Algorithm SHA256).Hash.ToLowerInvariant() -cne $item.sha256) { throw 'Relocated package size/SHA or ordinary-file contract failed.' }
+            if (-not $names.Add($item.fileName)) { throw 'Package roles cannot alias a filename.' }
+            $roles.Add($item.role, [pscustomobject]@{ role = $item.role; fileName = $item.fileName; path = $actual; sha256 = $item.sha256; bytes = $item.bytes; nativeEntryName = $item.nativeEntryName; nativeEntrySha256 = $item.nativeEntrySha256 })
+          }
+          $expected = @('native-exe', 'native-zip', 'legacy-bridge', 'checksums')
+          if ($roles.Count -ne 4 -or @($expected | Where-Object { -not $roles.ContainsKey($_) }).Count -gt 0 -or @(Get-ChildItem -LiteralPath $package -Force).Count -ne 5) { throw 'Expected exactly four package roles plus the build-only index.' }
+          if ($qualification.nativePayloadSha256 -cne $index.nativePayloadSha256 -or $qualifiedIndex.nativePayloadSha256 -cne $index.nativePayloadSha256 -or @($qualification.roles).Count -ne 4) { throw 'Qualified and relocated payload/index roles disagree.' }
+          $qualifiedRoles = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+          foreach ($item in @($qualification.roles)) {
+            if (-not $qualifiedRoles.Add($item.role) -or -not $roles.ContainsKey($item.role)) { throw 'Qualification must bind exactly the four unique real package roles.' }
+            $actualRole = $roles[$item.role]
+            if ($item.fileName -cne $actualRole.fileName -or $item.bytes -ne $actualRole.bytes -or $item.sha256 -cne $actualRole.sha256) { throw 'Qualified package role name/bytes/SHA differs from the relocated verified asset.' }
+          }
+          if ($roles['native-exe'].sha256 -cne $index.nativePayloadSha256 -or $roles['native-zip'].nativeEntrySha256 -cne $index.nativePayloadSha256) { throw 'Actual native role SHA disagrees with payload/ZIP.' }
+          $sums = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+          foreach ($line in [IO.File]::ReadAllLines($roles['checksums'].path)) {
+            $match = [regex]::Match($line, '\A(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)\z')
+            if (-not $match.Success) { throw 'Invalid checksum record.' }
+            $sums.Add($match.Groups['name'].Value, $match.Groups['hash'].Value)
+          }
+          if ($sums.Count -ne 3) { throw 'Checksums must cover exactly the three actual assets.' }
+          foreach ($role in @('native-exe', 'native-zip', 'legacy-bridge')) { if (-not $sums.ContainsKey($roles[$role].fileName) -or $sums[$roles[$role].fileName] -cne $roles[$role].sha256) { throw 'Relocated release checksum/role disagreement.' } }
+          $zip = [IO.Compression.ZipFile]::OpenRead($roles['native-zip'].path)
+          try {
+            $entryName = $roles['native-zip'].nativeEntryName
+            if (-not $entryName -or $entryName.IndexOfAny([char[]]"\/:`r`n") -ge 0 -or $entryName -in @('.', '..') -or $zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -cne $entryName) { throw 'Native ZIP must contain exactly the declared ordinary leaf.' }
+            $stream = $zip.Entries[0].Open(); $hash = [Security.Cryptography.SHA256]::Create()
+            try { $entryHash = [BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() } finally { $hash.Dispose(); $stream.Dispose() }
+            if ($entryHash -cne $index.nativePayloadSha256) { throw 'Downloaded ZIP contains different native payload bytes.' }
+          } finally { $zip.Dispose() }
+          [ordered]@{ schemaVersion = 1; sourceArtifact = 'native-main-Release'; sourceRun = $env:GITHUB_RUN_ID; sourceRunAttempt = $env:GITHUB_RUN_ATTEMPT; qualificationSha256 = (Get-FileHash -LiteralPath $qualificationPath -Algorithm SHA256).Hash.ToLowerInvariant(); productVersion = $index.productVersion; nativePayloadSha256 = $index.nativePayloadSha256; relocatedRoles = @($expected | ForEach-Object { $roles[$_] }); ignoredProducerAbsolutePaths = $true } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 (Join-Path $env:GITHUB_WORKSPACE 'artifacts/native-upgrade/relocated-inputs.json')
+          "UPGRADE_NATIVE_EXE=$($roles['native-exe'].path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "UPGRADE_MANAGED_BRIDGE=$($roles['legacy-bridge'].path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Download and verify the fixed original legacy product artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $uri = 'https://api.github.com/repos/DDZmumo/PCL-Living-Fork/actions/artifacts/13354809865'
+          $metadata = Invoke-RestMethod -Uri $uri -Headers $headers
+          if ([string]$metadata.id -cne '13354809865' -or $metadata.name -cne 'PCL-Living-Fork Release 8ff80de' -or $metadata.expired -ne $false -or [string]$metadata.workflow_run.id -cne '41894581233' -or $metadata.workflow_run.head_sha -cne '8ff80deb1de834efbee2fc6b180cc268dc1eed0e' -or $metadata.digest -cne 'sha256:c0583c65e294e20c2c781ea7842f817ac8c57c84cb71cbb7d99a171392883bc3' -or $metadata.size_in_bytes -ne 5807581) { throw 'Pinned successful old product artifact metadata changed or expired.' }
+          $folder = Join-Path $env:GITHUB_WORKSPACE 'inputs/native-upgrade/legacy-8ff80de'
+          New-Item -ItemType Directory -Path $folder -Force | Out-Null
+          $archive = Join-Path $folder 'artifact-13354809865.zip'
+          # pwsh strips Authorization on redirect by default. Never add
+          # PreserveAuthorizationOnRedirect to the signed artifact-storage hop.
+          Invoke-WebRequest -Uri ($uri + '/zip') -Headers $headers -OutFile $archive
+          if ((Get-Item -LiteralPath $archive).Length -ne 5807581 -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'c0583c65e294e20c2c781ea7842f817ac8c57c84cb71cbb7d99a171392883bc3') { throw 'Downloaded original old ZIP digest/length mismatch.' }
+          $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+          $legacy = Join-Path $folder 'PCL-Living-Fork-1.3.4.exe'
+          try {
+            if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -cne 'PCL-Living-Fork-1.3.4.exe' -or $zip.Entries[0].Length -ne 10266112) { throw 'Expected the exact unique original old EXE, never the other helper artifact.' }
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($zip.Entries[0], $legacy, $false)
+          } finally { $zip.Dispose() }
+          if ((Get-FileHash -LiteralPath $legacy -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'f4c88a842d506c62e812d50493126c5f25a73b0bfa866bb749c0473e2740d151') { throw 'Pinned actual old EXE SHA mismatch.' }
+          "UPGRADE_LEGACY_EXE=$legacy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "UPGRADE_LEGACY_ZIP=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          [ordered]@{ repository = 'DDZmumo/PCL-Living-Fork'; run = '41894581233'; head = $metadata.workflow_run.head_sha; artifactId = '13354809865'; artifactName = $metadata.name; archiveDigest = $metadata.digest; exeSha256 = 'f4c88a842d506c62e812d50493126c5f25a73b0bfa866bb749c0473e2740d151'; rawArchiveVerified = $true } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $env:GITHUB_WORKSPACE 'artifacts/native-upgrade/legacy-provenance.json')
+
+      - name: Require genuine old bridge and actual Native entry protocol cases
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Default cases only: legacy/manual/parent-timeout/invalid-inputs.
+          # No ACL mutation is enabled by the workflow. Unknown/pending UI,
+          # unobserved phases and forced process cleanup remain nonzero.
+          & powershell -NoProfile -STA -File scripts/Test-NativeUpdateBridge.ps1 -NativeExecutablePath "$env:UPGRADE_NATIVE_EXE" -BridgeExecutablePath "$env:UPGRADE_MANAGED_BRIDGE" -LegacyExecutablePath "$env:UPGRADE_LEGACY_EXE" -ExpectedLegacySha256 'f4c88a842d506c62e812d50493126c5f25a73b0bfa866bb749c0473e2740d151' -LegacyArtifactArchive "$env:UPGRADE_LEGACY_ZIP" -WorkspaceRoot "$env:GITHUB_WORKSPACE" -NativeProjectPath modern/Main/PCL-Living-Fork.Modern.csproj -EvidenceRoot (Join-Path $env:GITHUB_WORKSPACE 'artifacts/native-upgrade/runtime') 2>&1 | Tee-Object -FilePath (Join-Path $env:GITHUB_WORKSPACE 'artifacts/native-upgrade/actual-entry.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual old-to-Native update cases failed or remain pending; preserve evidence instead of substituting a fake parent/Main.' }
+
+      - name: Preserve actual upgrade protocol evidence on every outcome
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-upgrade-entry
+          path: artifacts/native-upgrade/
+          if-no-files-found: warn
+          retention-days: 7
+
+  gate:
+    name: Native product gate
+    if: always()
+    needs: [select, native, native-upgrade]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Require the actual selected validation result
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+          VALIDATION_SELECTED: ${{ needs.select.outputs.native_run }}
+          VALIDATION_RESULT: ${{ needs.native.result }}
+        run: python scripts/Check-CiGate.py
+      - name: Require genuine legacy to native upgrade acceptance
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+          VALIDATION_SELECTED: ${{ needs.select.outputs.native_run }}
+          VALIDATION_RESULT: ${{ needs.native-upgrade.result }}
+        run: python scripts/Check-CiGate.py

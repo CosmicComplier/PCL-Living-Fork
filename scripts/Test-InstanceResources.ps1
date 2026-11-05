@@ -26,6 +26,20 @@ function Invoke-Store($name,[object[]]$arguments){
 function Kind([string]$name){return [Enum]::Parse($kindType,$name)}
 function Put([string]$path,[string]$text){[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null;[IO.File]::WriteAllText($path,$text)}
 function Assert-Rejected([scriptblock]$action,[string]$message){$rejected=$false;try{& $action|Out-Null}catch{$rejected=$true};if(-not $rejected){throw $message}}
+function Assert-StoreException([string]$name,[object[]]$values,[type]$expected,[string]$expectedMessage){
+ $observed=$null
+ try{Invoke-Store $name $values|Out-Null}catch{
+  $observed=$_.Exception
+  while(($observed -is [Reflection.TargetInvocationException] -or $observed -is [Management.Automation.MethodInvocationException]) -and $null -ne $observed.InnerException){$observed=$observed.InnerException}
+ }
+ if($null -eq $observed -or $observed.GetType() -ne $expected){$actual=if($null -eq $observed){'no exception'}else{$observed.GetType().FullName};throw ('Unexpected resource mapping exception for '+$name+'; expected '+$expected.FullName+'; observed '+$actual)}
+ if(-not [string]::IsNullOrEmpty($expectedMessage) -and $observed.Message -cne $expectedMessage){throw ('Resource validation message changed for '+$name)}
+}
+function Read-PackDetail($entry,$detail){
+ [object[]]$values=@($entry,$detail)
+ $store.GetMethod('ReadPackInfo',$flags).Invoke($null,$values)|Out-Null
+ return ,$values[1]
+}
 function New-Zip([string]$path,[hashtable]$items){
  $archive=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
  try{foreach($name in $items.Keys){$writer=[IO.StreamWriter]::new($archive.CreateEntry($name).Open());try{$writer.Write($items[$name])}finally{$writer.Dispose()}}}finally{$archive.Dispose()}
@@ -48,6 +62,113 @@ function Render-Png($element,[string]$path,[int]$width,[int]$height){
 }
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('LivingPCL-Resources-'+[Guid]::NewGuid().ToString('N'))
 try{
+ # Old BAML names the non-inheriting attached-property owner. It must resolve the
+ # same native DP and original callback, without touching the system clipboard.
+ $clipboardOwner=$asm.GetType('PCL.Controls.Behaviors.ClipboardInterceptor',$true)
+ $clipboardProperty=$clipboardOwner.GetField('EnableSafeClipboardProperty',$flags).GetValue($null)
+ $nativeClipboard=[PCLLF.Presentation.Controls.ClipboardInterceptorView]::EnableSafeClipboardProperty
+ if(-not [object]::ReferenceEquals($clipboardProperty,$nativeClipboard)){throw 'Legacy clipboard owner created a duplicate DP'}
+ foreach($item in @(@([Windows.Controls.TextBox]::new(),3),@([Windows.Controls.RichTextBox]::new(),3),@([Windows.Controls.DataGrid]::new(),1))){
+  $control=$item[0];$added=[int]$item[1];$before=$control.CommandBindings.Count
+  if([bool]$control.GetValue($clipboardProperty)){throw 'Clipboard attached property default changed'}
+  $control.SetValue($clipboardProperty,$true)
+  if($control.CommandBindings.Count -ne $before+$added){throw 'Actual clipboard callback did not add original command bindings'}
+  $control.SetValue($clipboardProperty,$true)
+  if($control.CommandBindings.Count -ne $before+$added){throw 'Same clipboard property value repeated the change callback'}
+  $control.SetValue($clipboardProperty,$false);$control.SetValue($clipboardProperty,$true)
+  if($control.CommandBindings.Count -ne $before+2*$added){throw 'Clipboard false-to-true transition lost original binding accumulation'}
+  $control.CommandBindings.Clear()
+ }
+ Write-Output 'PASS: old BAML clipboard owner shares the native DP and original false/true callback bindings; no clipboard command executed.'
+ # Preserve original name-only reflection across the native base-class boundary.
+ $legacyPageType=$asm.GetType('PCL.MyPageRight',$true)
+ $legacyStateType=$asm.GetType('PCL.MyPageRight+PageStates',$true)
+ foreach($typeName in @('PCL.MyPageRight','PCL.PageInstanceMod')){
+  $pageType=$asm.GetType($typeName,$true)
+  $property=$pageType.GetProperty('PageState');$getter=$pageType.GetMethod('get_PageState');$setter=$pageType.GetMethod('set_PageState')
+  if($null -eq $property -or $property.PropertyType -ne $legacyStateType -or $getter.ReturnType -ne $legacyStateType -or $setter.GetParameters()[0].ParameterType -ne $legacyStateType){throw 'Original page state name-only lookup lost its unique old enum contract'}
+ }
+ $page=[Activator]::CreateInstance($legacyPageType)
+ $originalState=$legacyPageType.GetProperty('PageState');$nativeState=[PCLLF.Presentation.Controls.MyPageRightView].GetProperty('NativePageState')
+ $savedState=$originalState.GetValue($page,$null)
+ try{
+  $originalState.SetValue($page,[Enum]::Parse($legacyStateType,'ContentStay'),$null)
+  if($nativeState.GetValue($page,$null).ToString() -cne 'ContentStay'){throw 'Legacy page state write did not reach the actual native store'}
+  $nativeState.SetValue($page,[Enum]::Parse($nativeState.PropertyType,'ContentExit'),$null)
+  if($originalState.GetValue($page,$null).ToString() -cne 'ContentExit'){throw 'Native page state write did not reach the original enum property'}
+ }finally{$originalState.SetValue($page,$savedState,$null)}
+ Write-Output 'PASS: original page property/getter/setter name-only reflection and bidirectional live native state remain unique.'
+ $kindNames=@('Saves','Screenshots','ResourcePacks','ShaderPacks','Schematics')
+ $kindTitles=@('存档','截图','资源包','光影包','投影/原理图')
+ $kindFolders=@('saves','screenshots','resourcepacks','shaderpacks','schematics')
+ if($kindType.FullName -cne 'PCL.InstanceResourceKind' -or [Enum]::GetUnderlyingType($kindType) -ne [int] -or ([Enum]::GetNames($kindType) -join '|') -cne ($kindNames -join '|')){throw 'Resource kind lost its original VB enum identity or five names'}
+ for($index=0;$index -lt $kindNames.Length;$index++){
+  $kind=[Enum]::ToObject($kindType,[int]$index)
+  if($kind.ToString() -cne $kindNames[$index] -or (Invoke-Store 'Title' @($kind)) -cne $kindTitles[$index] -or (Invoke-Store 'FolderName' @($kind)) -cne $kindFolders[$index]){throw 'Resource kind numeric values, title or folder mapping changed'}
+  $gameFolder='relative\mixed/slash'
+  if((Invoke-Store 'Root' @($gameFolder,$kind)) -cne [IO.Path]::Combine($gameFolder,$kindFolders[$index])){throw 'Resource Root changed its original Path.Combine behavior'}
+ }
+ foreach($invalid in @(-1,5,[int]::MinValue,[int]::MaxValue)){
+  $kind=[Enum]::ToObject($kindType,[int]$invalid)
+  foreach($method in @('Title','FolderName')){Assert-StoreException $method @($kind) ([IndexOutOfRangeException])}
+  Assert-StoreException 'Root' @($null,$kind) ([IndexOutOfRangeException])
+ }
+ Assert-StoreException 'Root' @($null,([Enum]::ToObject($kindType,0))) ([ArgumentNullException])
+ $invalidName='文件名无效，请使用不含路径和特殊字符的名称。'
+ $systemName='此名称为系统保留名称。'
+ $launcherName='此名称为启动器临时目录保留。'
+ $supplementary=[char]::ConvertFromUtf32(0x1f4be)
+ foreach($name in @('World name','截图 2026-11-03','CONSOLE','COM0','COM10','LPT0','LPT10','XCON','.pcl','.pclx-test','.hidden','pack..name',('a'*120),($supplementary*60))){if((Invoke-Store 'SafeName' @($name)) -cne $name){throw 'Resource name validation changed an accepted name'}}
+ Assert-StoreException 'SafeName' @($null) ([IO.IOException]) $invalidName
+ foreach($name in @('',' ',([string][char]9),([string][char]0x00a0),' name','name ','file.','.','..',('a'*121),(($supplementary*60)+'a'),'CON.',' CON','.pcl-bad/')){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $invalidName}
+ # Fixed original Windows filename set, independent of the implementation's current Path table.
+ $forbidden=@([char[]](0..31))+@([char[]]'<>:"/\|?*')
+ foreach($character in $forbidden){Assert-StoreException 'SafeName' @(('a'+[string]$character+'b')) ([IO.IOException]) $invalidName}
+ $reserved=@('CON','PRN','AUX','NUL')+@(1..9|ForEach-Object {'COM'+$_;'LPT'+$_})
+ foreach($name in $reserved){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $systemName;Assert-StoreException 'SafeName' @($name.ToLowerInvariant()+'.txt') ([IO.IOException]) $systemName}
+ foreach($name in @('.pcl-','.PCL-test')){Assert-StoreException 'SafeName' @($name) ([IO.IOException]) $launcherName}
+ $sizeSamples=@(
+  @{Value=[long]-1;Text='-1 B'},@{Value=[long]0;Text='0 B'},@{Value=[long]1023;Text='1023 B'},
+  @{Value=[long]1024;Text='1 KB'},@{Value=[long]1536;Text='1.5 KB'},@{Value=[long]1048576;Text='1 MB'},
+  @{Value=[long]1073741824;Text='1 GB'},@{Value=[long]1099511627776;Text='1024 GB'},
+  @{Value=[long]::MinValue;Text='-9223372036854775808 B'},@{Value=[long]::MaxValue;Text='8589934592 GB'}
+ )
+ $sizeCulture=[Threading.Thread]::CurrentThread.CurrentCulture
+ try{
+  foreach($culture in @('en-US','fr-FR')){
+   [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo($culture)
+   foreach($sample in $sizeSamples){$expected=$sample.Text;if($culture -eq 'fr-FR'){$expected=$expected.Replace('.',',')};if((Invoke-Store 'FormatSize' @($sample.Value)) -cne $expected){throw 'Resource size units, boundary or current-culture formatting changed'}}
+  }
+ }finally{[Threading.Thread]::CurrentThread.CurrentCulture=$sizeCulture}
+ $fileExtensions=@('.png','.jpg','.jpeg','.bmp','.zip','.litematic','.schem','.schematic','.nbt')
+ $acceptedExtensions=@{0=@();1=@('.png','.jpg','.jpeg','.bmp');2=@('.zip');3=@('.zip');4=@('.litematic','.schem','.schematic','.nbt')}
+ for($index=0;$index -lt 5;$index++){
+  $kind=[Enum]::ToObject($kindType,[int]$index)
+  foreach($extension in $fileExtensions){
+   $expected=$acceptedExtensions[$index] -contains $extension
+   foreach($name in @(('resource'+$extension),('relative.folder/FILE'+$extension.ToUpperInvariant()),$extension)){if((Invoke-Store 'AcceptFile' @($kind,$name)) -ne $expected){throw 'Resource extension whitelist changed'}}
+  }
+  foreach($name in @('resource','resource.txt','resource.jar','file.png:stream','file.zip\','file.nbt.','file.jpg ')){if(Invoke-Store 'AcceptFile' @($kind,$name)){throw 'Resource extension filter accepted a suffix or unlisted type'}}
+  Assert-StoreException 'AcceptFile' @($kind,$null) ([NullReferenceException])
+ }
+ foreach($invalid in @(-1,5,[int]::MinValue,[int]::MaxValue)){
+  $kind=[Enum]::ToObject($kindType,[int]$invalid)
+  if(Invoke-Store 'AcceptFile' @($kind,'valid.png')){throw 'Resource extension filter accepted an unknown kind'}
+  Assert-StoreException 'AcceptFile' @($kind,$null) ([NullReferenceException])
+ }
+ $pathForbidden=@([char[]](0..31))+@([char[]]'"<>|')
+ foreach($character in $pathForbidden){foreach($index in @(0,1,-1)){$kind=[Enum]::ToObject($kindType,[int]$index);Assert-StoreException 'AcceptFile' @($kind,('bad'+[string]$character+'name.png')) ([ArgumentException])}}
+ $imageKindForExtension=[Enum]::ToObject($kindType,1)
+ foreach($name in @('bad?name.png','bad*name.PNG','drive:name.jpg','file.png:stream.jpg')){if(-not (Invoke-Store 'AcceptFile' @($imageKindForExtension,$name))){throw 'Resource extension filter incorrectly applied filename or ADS rejection'}}
+ foreach($device in @('\\?\C:\bad|name.png','\??\C:\bad|name.png','\\.\C:\bad|name.png')){
+  # PowerShell's CLR4 domain can have a different legacy-path switch from LF.
+  # Compare the bridge to its real host API here; the modern cases pin LF defaults.
+  $hostError=$null
+  try{$extension=[IO.Path]::GetExtension($device);if($extension -cne '.png'){throw 'Unexpected host device extension'}}catch{$hostError=$_.Exception;while($null -ne $hostError.InnerException){$hostError=$hostError.InnerException}}
+  if($null -ne $hostError){if($hostError.GetType() -ne [ArgumentException]){throw $hostError};Assert-StoreException 'AcceptFile' @($imageKindForExtension,$device) ([ArgumentException])}
+  elseif(-not (Invoke-Store 'AcceptFile' @($imageKindForExtension,$device))){throw 'Resource extension filter changed the host device exception policy'}
+  Assert-StoreException 'AcceptFile' @($imageKindForExtension,('  '+$device)) ([ArgumentException])
+ }
  $worldKind=Kind 'Saves';$imageKind=Kind 'Screenshots';$packKind=Kind 'ResourcePacks';$shaderKind=Kind 'ShaderPacks';$schematicKind=Kind 'Schematics'
  $missing=Join-Path $fixture 'absent'
  if((Scan $missing $worldKind).Count -ne 0 -or [IO.Directory]::Exists($missing)){throw 'Viewing resources created a missing folder'}
@@ -58,6 +179,12 @@ try{
  Write-Png (Join-Path $saves 'Test World/icon.png')
  $worlds=Scan $saves $worldKind
  if($worlds.Count -ne 1 -or $worlds[0].Name -ne 'Test World'){throw 'World folders were not listed'}
+ $resourceType=$worlds[0].GetType()
+ if($resourceType.FullName -cne 'PCL.InstanceResourceEntry' -or -not $resourceType.IsSealed -or $resourceType.BaseType.FullName -cne 'PCLCS.InstanceResourceEntryData'){throw 'Resource rows lost their original sealed VB type or production DTO base'}
+ $resourceFields=@{RecycleId=[string];Name=[string];FullPath=[string];Description=[string];IsDirectory=[bool];ModifiedUtc=[DateTime];CreatedUtc=[DateTime];Length=[long]}
+ foreach($name in $resourceFields.Keys){$field=$resourceType.GetField($name,$flags);if($null -eq $field -or $field.FieldType -ne $resourceFields[$name] -or $field.DeclaringType -ne $resourceType.BaseType){throw ('Inherited resource field contract changed: '+$name)}}
+ $iconField=$resourceType.GetField('Icon',$flags)
+ if($null -eq $iconField -or $iconField.FieldType -ne [Windows.Media.ImageSource] -or $iconField.DeclaringType -ne $resourceType -or $null -eq $worlds[0].Icon -or -not $worlds[0].Icon.IsFrozen){throw 'Resource row did not retain its original WPF Icon field and loaded image'}
  $export=Join-Path $fixture 'world.zip'
  Invoke-Store 'Export' @($saves,$worlds[0],$export,$none)|Out-Null
  $archive=[IO.Compression.ZipFile]::OpenRead($export)
@@ -76,6 +203,55 @@ try{
  if(@([IO.Directory]::GetDirectories($saves,'.pcl-import-*')).Count){throw 'Canceled import left staging directories'}
  $packs=Invoke-Store 'Root' @($mc,$packKind);[IO.Directory]::CreateDirectory($packs)|Out-Null
  $pack=Join-Path $fixture 'Native Pack.zip';New-Zip $pack @{'pack.mcmeta'='{"pack":{"pack_format":46,"description":"Synthetic native pack"}}'}
+ $metadataFolder=Join-Path $fixture 'metadata-detail'
+ $metadataFile=Join-Path $metadataFolder 'pack.mcmeta'
+ $metadataEntry=[Activator]::CreateInstance($resourceType,$true)
+ $metadataEntry.FullPath=$metadataFolder;$metadataEntry.IsDirectory=$true
+ foreach($sample in @(
+  @{Json='{"pack":{"description":"first\r\nsecond\u2028third","pack_format":46}}';Text='first second third · 资源格式 46'},
+  @{Json='{"pack":{"description":{"text":"\nX\u0085Y"},"pack_format":null}}';Text=' X Y · 资源格式 '},
+  @{Json='{"pack":{"description":{"text":1234}}}';Text='1234'},
+  @{Json='{}';Text='seed'},@{Json='{"pack":[]}';Text='seed'},
+  @{Json='{"pack":{"description":[]}}';Text='seed'},@{Json='not JSON';Text='seed'}
+ )){
+  Put $metadataFile $sample.Json
+  if(-not [string]::Equals((Read-PackDetail $metadataEntry 'seed'),$sample.Text,[StringComparison]::Ordinal)){throw 'Resource pack detail parsing, newline or swallowed-error behavior changed'}
+ }
+ $longDescription=('a'*179)+$supplementary
+ Put $metadataFile ('{"pack":{"description":"'+$longDescription+'"}}')
+ $actualDetail=Read-PackDetail $metadataEntry 'seed'
+ if(-not [string]::Equals($actualDetail,$longDescription.Substring(0,180),[StringComparison]::Ordinal) -or -not [char]::IsHighSurrogate($actualDetail[179])){throw 'Resource pack detail did not retain the original 180 UTF16-unit boundary'}
+ foreach($json in @('{"pack":null}','{"pack":{"description":null}}')){Put $metadataFile $json;Assert-StoreException 'ReadPackInfo' @($metadataEntry,'seed') ([InvalidOperationException])}
+ $missingPackMessage='资源包缺少 pack.mcmeta，未替换原文件。'
+ $missingShaderMessage='光影包缺少 shaders 目录，未替换原文件。'
+ $unknownKind=[Enum]::ToObject($kindType,5)
+ $emptyPackage=Join-Path $fixture 'empty-package.zip';New-Zip $emptyPackage @{}
+ $wrongCasePackage=Join-Path $fixture 'wrong-case-package.zip';New-Zip $wrongCasePackage @{'Pack.mcmeta'='not JSON'}
+ $unparsedPackage=Join-Path $fixture 'unparsed-package.zip';New-Zip $unparsedPackage @{'pack.mcmeta'='not JSON'}
+ $shaderPackage=Join-Path $fixture 'shader-package.zip';New-Zip $shaderPackage @{'SHADERS/only.vert'='not inspected'}
+ $shaderDirectory=Join-Path $fixture 'shader-directory.zip';New-Zip $shaderDirectory @{'shaders/'=''}
+ $wrongShader=Join-Path $fixture 'wrong-shader-package.zip';New-Zip $wrongShader @{'nested/shaders/file.vert'='not root';'shaders\file.vert'='wrong separator'}
+ foreach($path in @($pack,$unparsedPackage)){Invoke-Store 'ValidatePackage' @($path,$packKind)|Out-Null}
+ foreach($path in @($shaderPackage,$shaderDirectory)){Invoke-Store 'ValidatePackage' @($path,$shaderKind)|Out-Null}
+ foreach($path in @($emptyPackage,$wrongCasePackage)){Assert-StoreException 'ValidatePackage' @($path,$packKind) ([IO.IOException]) $missingPackMessage}
+ foreach($path in @($emptyPackage,$wrongShader)){Assert-StoreException 'ValidatePackage' @($path,$shaderKind) ([IO.IOException]) $missingShaderMessage}
+ Invoke-Store 'ValidatePackage' @($emptyPackage,$unknownKind)|Out-Null
+ Assert-StoreException 'ValidatePackage' @((Join-Path $fixture 'missing-package.zip'),$unknownKind) ([IO.FileNotFoundException])
+ $badPackage=Join-Path $fixture 'bad-package.zip';[IO.File]::WriteAllText($badPackage,'not ZIP')
+ Assert-StoreException 'ValidatePackage' @($badPackage,$unknownKind) ([IO.InvalidDataException])
+ # A valid EOCD with a corrupt central directory verifies that unknown kinds do
+ # not start reading entries merely because archive opening has succeeded.
+ $lazyPackage=Join-Path $fixture 'lazy-central-package.zip';New-Zip $lazyPackage @{'file.txt'='owned'}
+ $lazyBytes=[IO.File]::ReadAllBytes($lazyPackage);$central=-1
+ for($i=0;$i -lt $lazyBytes.Length-3;$i++){if($lazyBytes[$i] -eq 0x50 -and $lazyBytes[$i+1] -eq 0x4b -and $lazyBytes[$i+2] -eq 0x01 -and $lazyBytes[$i+3] -eq 0x02){if($central -ne -1){throw 'Ambiguous synthetic central directory'};$central=$i}}
+ if($central -lt 0){throw 'Synthetic central directory was not found'}
+ $lazyBytes[$central]=0;[IO.File]::WriteAllBytes($lazyPackage,$lazyBytes)
+ Invoke-Store 'ValidatePackage' @($lazyPackage,$unknownKind)|Out-Null
+ Assert-StoreException 'ValidatePackage' @($lazyPackage,$packKind) ([IO.InvalidDataException])
+ Assert-StoreException 'ValidatePackage' @($lazyPackage,$shaderKind) ([IO.InvalidDataException])
+ foreach($path in @($pack,$emptyPackage,$wrongCasePackage,$unparsedPackage,$shaderPackage,$shaderDirectory,$wrongShader,$badPackage,$lazyPackage)){
+  $exclusive=[IO.FileStream]::new($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None);$exclusive.Dispose()
+ }
  Invoke-Store 'ImportFile' @($packs,$packs,$packKind,$pack,$none)|Out-Null
  $packEntries=Scan $packs $packKind
  if($packEntries.Count -ne 1 -or -not $packEntries[0].Description.Contains('Synthetic native pack')){throw 'Resource-pack metadata was not read'}
@@ -196,7 +372,9 @@ try{
   Render-Png $panel (Join-Path $PreviewDirectory 'native-instance-resources.png') 1080 710
   $panel.Children.Clear()
  }
- Write-Output 'Instance resources passed: five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+ Write-Output 'Instance resources passed: original enum/title/folder/error, safe-name/UTF16/message, size/current-culture, pack-description/ref/UTF16/error, extension-filter/null/device and package/lazy-directory/handle contracts, five native pages, compact checkbox rows/hover actions, native filters/action bar, single/bulk selection, hidden-selection clearing, online update filter, bulk export/recycle/restore, world round trips, metadata/preview handle release, import collision/cancellation and path/stale-entry protection.'
+}catch{
+ throw ($_.Exception.ToString())
 }finally{
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
  if(-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($full) -notmatch '\ALivingPCL-Resources-[a-f0-9]{32}\z'){throw 'Unsafe resource fixture cleanup'}

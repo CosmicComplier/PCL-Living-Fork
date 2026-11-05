@@ -59,10 +59,53 @@ try{
  $cancel=[Threading.CancellationTokenSource]::new();$cancel.Cancel();Reject {Invoke-Static $groups 'Build' @([string[]]@($source,$clone),$cancel.Token)} 'Canceled relation scan completed'
  # Initialize native resources without Startup, a window, a directory scan or a real delete.
  $app=[Activator]::CreateInstance($asm.GetType('PCL.Application'),$true);$app.InitializeComponent();[Windows.Application]::ResourceAssembly=$asm
+ [Windows.Application].GetField('_startupUri',[Reflection.BindingFlags]'NonPublic,Instance').SetValue($app,$null)
  $app.remove_Startup([Delegate]::CreateDelegate([Windows.StartupEventHandler],$app,$asm.GetType('PCL.Application').GetMethod('Application_Startup',$flags)))
  $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Threading.DispatcherUnhandledExceptionEventHandler],$app,$asm.GetType('PCL.Application').GetMethod('Application_DispatcherUnhandledException',$flags)))
  $asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
  $sourceInstance=Instance $source;$cloneInstance=Instance $clone;$siblingInstance=Instance $sibling;$grandInstance=Instance $grandchild;$siblingInstance.IsStar=$true
+ # Actual clone page and its original validator/controls; no successful CloneVersion/Migrate command is dispatched.
+ $clonePageType=$asm.GetType('PCL.PageInstanceClone',$true);$ownerField=$asm.GetType('PCL.PageInstanceLeft',$true).GetField('Instance',$flags)
+ $oldOwner=$ownerField.GetValue($null);$clonePage=$null;$pageSubscribed=$false;$clonerUi=$asm.GetType('PCL.InstanceClonerUi',$true)
+ try{
+  $ownerField.SetValue($null,$sourceInstance.PSObject.BaseObject);$clonePage=[Activator]::CreateInstance($clonePageType);$clonePage.Refresh()
+  foreach($part in @('TextName','BtnClone','BtnMigrate','LabSource','LabOrigin','LabValidation','CardOrigin','CheckSaves','CheckScreenshots','CheckServers')){if($null -eq $clonePage.FindName($part)){throw ('Clone page lost its real named part: '+$part)}}
+  $nameBox=$clonePage.FindName('TextName');$cloneButton=$clonePage.FindName('BtnClone');$originCard=$clonePage.FindName('CardOrigin');$originLabel=$clonePage.FindName('LabOrigin');$validation=$clonePage.FindName('LabValidation')
+  if($nameBox.Text -cne ($sourceInstance.Name+' - 测试') -or $clonePage.FindName('LabSource').Text -cne ('当前版本：'+$sourceInstance.Name) -or $originCard.Visibility -ne 'Collapsed' -or -not $cloneButton.IsEnabled){throw 'Clone page did not bind the real source/default name or hide missing origin data'}
+  if($nameBox.ValidateRules.Count -ne 1 -or $nameBox.ValidateRules[0].GetType().FullName -cne 'PCL.ValidateFolderName' -or $nameBox.ValidateRules[0].Folder.TrimEnd('\') -ine $versions.TrimEnd('\')){throw 'Clone page did not use the original folder validator scoped to its fixture versions directory'}
+  foreach($part in @('CheckSaves','CheckScreenshots','CheckServers')){if($clonePage.FindName($part).GetType().FullName -cne 'PCL.MyCheckBox' -or $clonePage.FindName($part).Checked){throw 'Clone options lost native two-state checkbox types or original false defaults'}}
+  $clonePage.FindName('CheckSaves').Checked=$true;$clonePage.FindName('CheckServers').Checked=$true
+  $nameBox.Text=$sourceInstance.Name;$clonePageType.GetMethod('ValidateName',$flags).Invoke($clonePage,@())|Out-Null
+  if($cloneButton.IsEnabled -or $validation.Visibility -ne 'Visible' -or $validation.Text -cne '同名版本已存在，请使用新的测试版本名称。'){throw 'Clone page accepted an existing version name'}
+  $nameBox.Text='invalid:name';$clonePageType.GetMethod('ValidateName',$flags).Invoke($clonePage,@())|Out-Null
+  if($cloneButton.IsEnabled -or [string]::IsNullOrWhiteSpace($validation.Text)){throw 'Clone page accepted an invalid native folder name'}
+  $beforeDirectories=([IO.Directory]::GetDirectories($versions)|Sort-Object)-join '|'
+  $clonePageType.GetMethod('CloneVersion',$flags).Invoke($clonePage,@())|Out-Null
+  if($clonerUi.GetProperty('IsBusy',$flags).GetValue($null,$null) -or (([IO.Directory]::GetDirectories($versions)|Sort-Object)-join '|') -cne $beforeDirectories){throw 'The invalid-name disabled clone action dispatched work or created a directory'}
+  $nameBox.Text='ui-clone-valid';$clonePage.Refresh()
+  if(-not $cloneButton.IsEnabled -or $validation.Visibility -ne 'Collapsed' -or $nameBox.Text -cne 'ui-clone-valid' -or -not $clonePage.FindName('CheckSaves').Checked -or $clonePage.FindName('CheckScreenshots').Checked -or -not $clonePage.FindName('CheckServers').Checked){throw 'Same-owner clone refresh discarded the user name/options or rejected a valid name'}
+  $ownerField.SetValue($null,$cloneInstance.PSObject.BaseObject)
+  $clonePageType.GetMethod('CloneVersion',$flags).Invoke($clonePage,@())|Out-Null
+  if($clonerUi.GetProperty('IsBusy',$flags).GetValue($null,$null) -or [IO.Directory]::Exists((Join-Path $versions 'ui-clone-valid')) -or (([IO.Directory]::GetDirectories($versions)|Sort-Object)-join '|') -cne $beforeDirectories){throw 'A stale-owner clone page dispatched work or created its former owner target'}
+  $clonePage.Refresh()
+  if($nameBox.Text -cne ($cloneInstance.Name+' - 测试') -or $originCard.Visibility -ne 'Visible' -or -not $originLabel.Text.StartsWith('来源版本：'+$sourceInstance.Name,[StringComparison]::Ordinal) -or -not $clonePage.FindName('BtnMigrate').IsEnabled){throw 'Changing owner retained the previous name or lost the real clone source/migration card'}
+  $ownerField.SetValue($null,(Instance $orphan).PSObject.BaseObject);$clonePage.Refresh()
+  if($originCard.Visibility -ne 'Collapsed'){throw 'A clone with a missing source still showed an actionable source card'}
+  $ownerField.SetValue($null,(Instance $bad).PSObject.BaseObject);$clonePage.Refresh()
+  if($originCard.Visibility -ne 'Visible' -or $originLabel.Text -cne '副本来源记录不可用，无法自动迁移。请在资源管理器中检查版本目录。' -or $clonePage.FindName('BtnMigrate').IsEnabled){throw 'Malformed clone origin metadata did not show its original unavailable-source state'}
+  # Exercise the real Loaded/Unloaded handlers without a dispatcher pump; StartupUri and startup handlers are already removed.
+  $ownerField.SetValue($null,$sourceInstance.PSObject.BaseObject);$clonePageType.GetMethod('PageLoaded',$flags).Invoke($clonePage,@())|Out-Null;$pageSubscribed=$true
+  $nameBox.Text='ui-retained-on-changed';Invoke-Static $clonerUi 'PublishChanged' @()|Out-Null
+  if($nameBox.Text -cne 'ui-retained-on-changed'){throw 'The clone Changed subscription discarded a same-owner user name'}
+  $ownerField.SetValue($null,$cloneInstance.PSObject.BaseObject);Invoke-Static $clonerUi 'PublishChanged' @()|Out-Null
+  if($nameBox.Text -cne ($cloneInstance.Name+' - 测试') -or $clonePage.FindName('LabSource').Text -cne ('当前版本：'+$cloneInstance.Name)){throw 'The clone Loaded handler did not refresh a new owner on the real Changed event'}
+  $clonePageType.GetMethod('PageUnloaded',$flags).Invoke($clonePage,@())|Out-Null;$pageSubscribed=$false
+  $ownerField.SetValue($null,$sourceInstance.PSObject.BaseObject);Invoke-Static $clonerUi 'PublishChanged' @()|Out-Null
+  if($clonePage.FindName('LabSource').Text -cne ('当前版本：'+$cloneInstance.Name)){throw 'The clone Unloaded handler left its Changed subscription attached'}
+  Write-Output 'Clone page passed actual construction/parts, original validators and native options, source/default/user naming, missing/malformed origin display, stale-owner/invalid-name guards and real Changed attach/detach. No successful clone/migration command or Minecraft launch was invoked.'
+ }finally{
+  try{if($pageSubscribed -and $clonePage){$clonePageType.GetMethod('PageUnloaded',$flags).Invoke($clonePage,@())|Out-Null}}finally{$ownerField.SetValue($null,$oldOwner)}
+ }
  $map=New-InstanceMap;foreach($value in @($sourceInstance,$cloneInstance,$siblingInstance,$grandInstance)){$map.Add($value.PathVersion.TrimEnd('\'),$value)}
  $choice=Invoke-Static $pageType 'BuildCloneChoice' @($model.ByPath[$source],$map,$null)
  if($choice -isnot [Windows.Controls.StackPanel] -or $choice.Children.Count -ne 2){throw 'Source row is not separate from its collapsible clone group'}

@@ -1,7 +1,9 @@
 ﻿param([string]$ExecutablePath,[string]$VbcPath,[string]$ReadOnlyLegacyModsFolder)
-# Read-only metadata fixtures in a GUID temp directory. No launcher entry point, game, real profile, or network.
-# With no EXE, compile ONLY ModDependencyInspector.vb and a tiny instance adapter stub.
+# Read-only metadata fixtures in a GUID temp directory. No launcher entry point, game, real profile, or live dependency API.
+# Without EXE, compile the full fixed LF50 Inspector/Index reference originals and the existing tiny instance stub.
+# Current Core metadata remains a prerequisite guard; its migrated algorithm is not the original reference implementation.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
 $jsonPath=Join-Path $root 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'
@@ -62,6 +64,20 @@ try {
    else{$VbcPath='C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\Roslyn\vbc.exe'}
   }
   if(-not [IO.File]::Exists($VbcPath)){throw 'Pass -VbcPath for the VS Roslyn VB compiler, or -ExecutablePath for an already built launcher.'}
+  # The migrated inspector lives in PCLCS. Build that library and its pinned
+  # project dependencies; the main VB launcher and its credentials are not needed.
+  $dotnetCommand=(Get-Command dotnet -CommandType Application -ErrorAction Stop).Source
+  & $dotnetCommand build (Join-Path $root 'PCLCS/PCLCS.csproj') --configuration Release --verbosity minimal -warnaserror
+  if($LASTEXITCODE -ne 0){throw 'Standalone dependency core build failed.'}
+  $coreReference=Join-Path $root 'PCLCS/bin/PCLCS.dll'
+  $sharedReference=Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'
+  foreach($reference in @($coreReference,$sharedReference)){
+   if(-not [IO.File]::Exists($reference)){throw ('Missing standalone production dependency: '+$reference)}
+  }
+  [Reflection.Assembly]::LoadFrom($sharedReference)|Out-Null
+  $coreAssembly=[Reflection.Assembly]::LoadFrom($coreReference)
+  $coreType=$coreAssembly.GetType('PCLCS.ModDependencyInspection`10',$true)
+  if(-not $coreType.IsGenericTypeDefinition -or $coreType.GetGenericArguments().Length -ne 10){throw 'Standalone fixture did not load the migrated production inspector.'}
   $stub=Join-Path $fixture 'InstanceStub.vb'
   [IO.File]::WriteAllText($stub,@'
 Imports System.Collections.Generic
@@ -82,7 +98,8 @@ End Class
   $ExecutablePath=Join-Path $fixture 'ModDependenciesFixture.dll'
   $framework=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
   $references=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll')|ForEach-Object {Join-Path $framework $_}
-  $arguments=@('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($references -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb'),$stub)
+  $references+=@($coreReference,$sharedReference)
+  $arguments=@('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($references -join ',')),('/reference:'+$jsonPath),(Export-LfFixedSource -Name 'deps-inspector-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),(Export-LfFixedSource -Name 'deps-index-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),$stub)
   & $VbcPath @arguments
   if($LASTEXITCODE -ne 0){throw 'Isolated ModDependencyInspector compilation failed.'}
  }else{

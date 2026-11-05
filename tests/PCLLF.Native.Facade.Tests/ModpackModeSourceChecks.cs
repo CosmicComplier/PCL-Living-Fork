@@ -1,0 +1,100 @@
+namespace PCLLF.Native.Facade.Tests;
+// Exact original observable statements; no VB/source parsing occurs at runtime.
+internal static class ModpackModeSourceChecks {
+    private static readonly Dictionary<string,Dictionary<int,string>> Original = new(StringComparer.Ordinal) {
+        ["Test-ModpackMode.ps1"] = new() {
+            [39] = "Func<string,bool> confirm=name=>{calls++;if(name!=action)throw new Exception(\"Wrong mod warning\");return accept;};",
+            [41] = "if(result!=(enabled ? accept : true) || calls!=(enabled ? 1 : 0))throw new Exception(\"Mod warning/cancellation failed\");",
+            [48] = "Func<bool,bool> confirm=desired=>{calls++;if(desired==current)throw new Exception(\"Wrong warning direction\");return accepted;};",
+            [50] = "if(calls!=1 || result!=(accepted ? !current : current))throw new Exception(\"Confirmation/cancellation failed\");",
+            [52] = "Func<bool,bool> unused=desired=>{throw new Exception(\"Unchanged state prompted\");};",
+            [53] = "if((bool)method.Invoke(null,new object[]{false,false,unused}))throw new Exception(\"Unchanged state mutated\");",
+            [62] = "if($marker.Source.ToString() -ne 'Normal' -or $marker.DefaultValue -ne $false){throw 'Export marker must default off in local Setup.ini'}",
+            [64] = "if($mode.GetProperty('Enabled',$flags).GetValue($null)){throw 'Unmarked launcher enabled modpack mode through a saved switch'}",
+            [68] = "if($entry.Source.ToString() -ne 'Normal' -or $entry.DefaultValue -ne $false){throw 'Mode must default off in local Setup.ini'}",
+            [102] = "if(-not (Call-Mode 'CanChangeMinecraft' @('26.2','26.2')) -or (Call-Mode 'CanChangeMinecraft' @('26.2','26.1'))){throw 'Minecraft version lock failed'}",
+            [104] = "if((Call-Mode 'DisplayTitle' @('LivingPCL')) -cne ('LivingPCL'+$suffix) -or (Call-Mode 'DisplayTitle' @('Custom')) -cne ('Custom'+$suffix)){throw 'Mode title suffix failed'}",
+            [107] = "if($buttons[1].Visibility -ne 'Collapsed' -or $buttons[4].Visibility -ne 'Collapsed' -or $buttons[3].Visibility -ne 'Visible' -or $header.Visibility -ne 'Visible'){throw 'Compact top navigation failed'}",
+            [108] = "if($left.FindName('ItemUI').Visibility -ne 'Collapsed' -or $left.FindName('ItemLink').Visibility -ne 'Collapsed' -or $left.FindName('ItemLaunch').Visibility -ne 'Visible' -or $left.FindName('ItemSystem').Visibility -ne 'Visible'){throw 'Compact setup navigation failed'}",
+            [109] = "if($launch.FindName('BtnVersion').Visibility -ne 'Visible'){throw 'Version selection is missing in pack mode'}",
+            [110] = "if([Windows.Controls.Grid]::GetColumnSpan($launch.FindName('BtnMore')) -ne 1){throw 'Version settings overlap the restored version selector'}",
+            [111] = "if($overview.FindName('BtnManageDelete').Visibility -ne 'Collapsed' -or $overview.FindName('BtnDisplayStar').Visibility -ne 'Collapsed' -or $fakeHeader.Info -ne ''){throw 'Version deletion/favorite/header details remained visible'}",
+            [112] = "foreach($logo in $fakeHeader.Children | Where-Object {$_ -is [Windows.Controls.Canvas] -and $_.Background -is [Windows.Media.ImageBrush]}){if($logo.Background.Stretch -ne 'Uniform'){throw 'Header bitmap is stretched'}}",
+            [113] = "if($instanceViews['PageInstanceLeft'].FindName('ItemExport').Visibility -ne 'Collapsed' -or $instanceViews['PageInstanceLeft'].FindName('ItemModify').Visibility -ne 'Visible'){throw 'Export/modify navigation is incorrect'}",
+            [116] = "if([int](Call-Mode 'NormalizeInstancePage' @($modifyId)) -ne 2 -or [int](Call-Mode 'NormalizeInstancePage' @($exportId)) -ne 0){throw 'Version routing must preserve modify and reject export'}",
+            [117] = "foreach($name in @('BtnManageDownload','BtnHintDownload')){if($instanceViews['PageInstanceMod'].FindName($name).Visibility -ne 'Collapsed'){throw 'Mod download entry remained visible'}}",
+            [120] = "if($combo.Visibility -ne 'Visible' -or -not $combo.IsEnabled -or $instanceViews[$name].FindName('LabArgumentIndie').Visibility -ne 'Visible' -or $combo.Parent.RowDefinitions[0].Height.Value -le 0){throw 'Isolation setting must remain visible and editable in modpack mode'}",
+            [125] = "if(-not (Call-Mode 'BlocksPage' @($pageId))){throw 'Restricted page remained accessible'}",
+            [129] = "if(Call-Mode 'BlocksPage' @($pageId)){throw 'Required page was blocked'}",
+            [133] = "if($page.GetType().FullName -ne 'PCL.PageSetupModpack'){throw 'Full settings remained accessible'}",
+            [137] = "if($folderRows.Count -ne 1 -or $folderRows[0].ContextMenu -or $folderRows[0].Buttons){throw 'Pack folder selection exposed add/import or folder management'}",
+            [139] = "if($folderRows[0].Tag.Location -ne $expectedRoot){throw 'Pack folder selection escaped its own launcher directory'}",
+            [142] = "if($allowed -ne ($relative -eq 'versions\\Allowed\\')){throw 'Pack instance folder boundary failed'}",
+            [146] = "if($entries['LaunchFolders'].ValueCache[''] -cne $sharedBefore){throw 'First pack registration changed the shared directory catalog'}",
+            [149] = "if(-not $page.FindName('CheckModpackMode').Checked -or -not $page.FindName('LabVersion').Text.StartsWith($brand+' ')){throw 'Compact page state/version failed'}",
+            [150] = "if([string]::IsNullOrEmpty($page.FindName('CardLauncher').MainTextBlock.Text)){throw 'Launcher card title is missing'}",
+            [151] = "if([Windows.Controls.Grid]::GetColumn($page.FindName('CheckModpackMode')) -ne 1){throw 'Mode checkbox does not align with the other setting values'}",
+            [152] = "foreach($name in @('BtnSystemUpdate','ComboSystemActivity','BtnSystemSettingImp','BtnSystemSettingExp','CardDebug')){if($page.FindName($name)){throw 'Unexpected full-setting control in compact page'}}",
+            [153] = "if(-not $page.FindName('TextSystemCache')){throw 'Cache folder setting missing'}",
+            [156] = "if(-not (Call-Mode 'CanChangeMinecraft' @('26.2','26.1'))){throw 'Normal Minecraft editing was restricted'}",
+            [157] = "if((Call-Mode 'DisplayTitle' @('LivingPCL')) -cne 'LivingPCL'){throw 'Normal title did not return'}",
+            [161] = "if($buttons[1].Visibility -ne 'Visible' -or $buttons[4].Visibility -ne 'Visible'){throw 'Normal top navigation did not return'}",
+            [162] = "if($left.FindName('ItemUI').Visibility -ne 'Visible' -or $launch.FindName('BtnVersion').Visibility -ne 'Visible'){throw 'Normal navigation did not return'}",
+            [163] = "if($overview.FindName('BtnManageDelete').Visibility -ne 'Visible' -or $overview.FindName('BtnDisplayStar').Visibility -ne 'Visible' -or $fakeHeader.Info -ne 'synthetic header details'){throw 'Normal instance actions/details did not return'}",
+            [164] = "foreach($name in @('PageInstanceSetup','PageSetupLaunch')){if($instanceViews[$name].FindName('ComboArgumentIndieV2').Visibility -ne 'Visible'){throw 'Normal isolation row did not return'}}",
+            [166] = "if($system.GetType().FullName -ne 'PCL.PageSetupSystem' -or -not $system.FindName('CheckModpackMode')){throw 'Normal launcher mode switch missing'}",
+            [171] = "if($system.FindName('CheckModpackMode').Visibility -ne 'Visible'){throw 'Exported launcher lost its mode switch'}",
+            [174] = "if($system.FindName('CheckModpackMode').Visibility -ne 'Collapsed' -or $system.FindName('LabModpackMode').Visibility -ne 'Collapsed'){throw 'Unmarked launcher exposed the mode switch'}",
+            [177] = "if(-not $system.FindName('LabLauncherVersion').Text.StartsWith($brand+' ') -or [Windows.Controls.Grid]::GetRow($system.FindName('LabLauncherVersion')) -ne 2){throw 'Normal launcher version line must follow the update source'}",
+            [178] = "foreach($key in $preferences.Keys){if($preferences[$key] -ne $entries[$key].ValueCache['']){throw 'Mode altered existing hidden preferences'}}",
+            [181] = "if(-not $packOption.Checked -or -not $packOption.Tag.DefaultChecked){throw 'Export mode is not selected by default'}",
+            [183] = "if($packOption.Parent.Visibility -ne 'Collapsed'){throw 'Pack option visible without a launcher'}",
+            [185] = "if($packOption.Parent.Visibility -ne 'Visible'){throw 'Pack option hidden with a launcher'}",
+            [194] = "if(-not $text.Contains('Unrelated:preserve') -or -not $text.Contains('LivingModpackExported:True') -or -not $text.Contains('LivingModpackMode:'+([string]$enabled))){throw 'Export marker/mode failed to override copied state or changed unrelated data'}",
+            [198] = "if([IO.Directory]::Exists($withoutLauncher)){throw 'Standalone modpack acquired launcher settings'}",
+            [199] = "if($entry.ValueCache[''] -ne $false){throw 'Export changed the producing launcher mode'}",
+            [208] = "if($localMods.Count -ne 1 -or $localMods['fabric-api'] -ne '0.155.2'){throw 'Local installed-component metadata scan failed'}",
+            [212] = "if(($rows.Name -join ',') -cne 'Minecraft,Fabric,Fabric API'){throw 'Overview included uninstalled or incompatible components'}",
+            [217] = "if($cards.Count -ne 3 -or @($cards | Where-Object {$_.IsHitTestVisible}).Count){throw 'Installed overview components must be display-only cards'}",
+            [236] = "if(-not $normalCard){throw 'Normal launcher card not found for preview'}",
+            [237] = "if($system.FindName('PanDonate')){throw 'Removed potato-code controls remain in normal launcher settings'}",
+        },
+        ["Test-ModpackFolderScope.ps1"] = new() {
+            [181] = "if($asm.GetType('Fixture').GetField('Messages').GetValue($null) -ne 0){throw 'Pack launcher prompted about a shared folder'}",
+            [182] = "if($asm.GetType('Settings').GetField('Reads').GetValue($null) -ne 0 -or $asm.GetType('Settings').GetField('Writes').GetValue($null) -ne 0){throw 'Pack launcher accessed or registered in the shared folder catalog'}",
+            [183] = "if($asm.GetType('Settings').GetField('Folders').GetValue($null) -cne $original){throw 'Pack launcher changed the shared folder catalog'}",
+            [185] = "if($folders.Count -ne 1 -or $folders[0].Location -ne ($other+'\\.minecraft\\')){throw 'Pack folder scope escaped its launcher directory'}",
+            [190] = "if($asm.GetType('Fixture').GetField('Messages').GetValue($null) -ne 1){throw 'Ordinary mode no longer follows official invalid-folder handling'}",
+        },
+        ["Test-ExportVersionIsolation.ps1"] = new() {
+            [31] = "if(-not $option -or -not $option.Checked){throw 'The advanced isolation option must default to checked'}",
+            [46] = "if((Read-Setting $settings 'VersionArgumentIndieV2') -cne [string]$enabled -or (Read-Setting $settings 'VersionArgumentIndie') -ne [string]$(if($enabled){1}else{2})){throw 'Exported per-version isolation settings disagree with the option'}",
+            [47] = "if((Read-Setting $settings 'Unrelated') -cne 'preserve-source'){throw 'Export changed unrelated version settings'}",
+            [53] = "if($null -eq $policy){throw 'MRPACK has no explicit isolation choice'}",
+            [54] = "if($policy.GetType().GetField('Enabled',$flags).GetValue($policy.PSObject.BaseObject) -ne $enabled){throw 'MRPACK isolation state differs from the export option'}",
+            [61] = "if($forwardPolicy.GetType().GetField('Enabled',$flags).GetValue($forwardPolicy.PSObject.BaseObject) -ne $enabled){throw 'Forward-slash archive metadata was not recognized'}",
+            [73] = "if($wrappedPolicy.GetType().GetField('Enabled',$flags).GetValue($wrappedPolicy.PSObject.BaseObject) -ne $enabled){throw 'Launcher ZIP lost the explicit isolation choice'}",
+            [79] = "if($entries['VersionArgumentIndieV2'].ValueCache.ContainsKey($versionPath)){throw 'Old per-version settings cache survived import setup'}",
+            [81] = "if($gameFolder -ne $(if($enabled){$version}else{$mcRoot})){throw 'Download target ignores the isolation choice'}",
+            [84] = "if([IO.File]::ReadAllText((Join-Path $gameFolder 'mods/example.jar')) -cne 'synthetic-mod' -or [IO.File]::ReadAllText((Join-Path $gameFolder 'saves/world/level.dat')) -cne 'synthetic-save'){throw 'Imported game files do not match their launch directory'}",
+            [85] = "foreach($relative in @('PCL/Logo.png','runtime/jre/bin/java.exe')){if(-not [IO.File]::Exists((Join-Path $version $relative))){throw 'Version configuration or bundled Java escaped the version directory'}}",
+            [86] = "if(-not $enabled -and ([IO.Directory]::Exists((Join-Path $version 'mods')) -or [IO.Directory]::Exists((Join-Path $mcRoot 'PCL')) -or [IO.Directory]::Exists((Join-Path $mcRoot 'runtime')))){throw 'Disabled isolation duplicated game files or misplaced version-only data'}",
+            [87] = "if((Read-Setting (Join-Path $version 'PCL/Setup.ini') 'VersionArgumentIndieV2') -cne [string]$enabled){throw 'Import overwrote the chosen isolation state'}",
+            [90] = "if(-not $rejected){throw 'Override routing accepted a path traversal'}",
+            [95] = "if(-not $rejected){throw 'Shared-root import accepted an unrelated version or cache target'}",
+            [105] = "if($null -ne $legacyPolicy){throw 'A third-party pack was mistaken for an explicit LivingPCL export choice'}",
+            [108] = "if((Read-Setting (Join-Path $legacyVersion 'PCL/Setup.ini') 'VersionArgumentIndieV2') -cne 'True'){throw 'Legacy pack import behavior changed'}",
+            [109] = "if([Convert]::ToBase64String([IO.File]::ReadAllBytes($original)) -cne [Convert]::ToBase64String($originalBytes) -or $entries['LaunchArgumentIndieV2'].ValueCache[''] -ne 3){throw 'Export changed the original version or global default isolation'}",
+        },
+    };
+    private static readonly Dictionary<string,HashSet<int>> Seen = new(StringComparer.Ordinal);
+    internal static void Reset() => Seen.Clear();
+    internal static void Check(string script, int line, bool condition) {
+        Native.Check(Original.TryGetValue(script,out var expected) && expected.ContainsKey(line), "Unknown modpack-mode original assertion: " + script + ":" + line);
+        Native.Check(condition,script + ":" + line + " " + Original[script][line]);
+        if (!Seen.TryGetValue(script,out var ids)) Seen.Add(script,ids = new()); ids.Add(line);
+    }
+    internal static void Complete() {
+        foreach (var script in Original) { Native.Check(Seen.TryGetValue(script.Key,out var ids) && ids.SetEquals(script.Value.Keys),"Incomplete original observable coverage: " + script.Key); Console.WriteLine("PASS modpack-mode " + script.Key + " " + ids!.Count + "/" + script.Value.Count); }
+    }
+}

@@ -1,0 +1,35 @@
+name: CNB release tooling checks
+
+on:
+  push:
+    branches: [main, migration/csharp-modern-dotnet]
+  pull_request:
+    branches: [main, migration/csharp-modern-dotnet]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Validate synthetic stable and preview mirroring
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify canonical artifacts and stable versus preview manifests
+        run: python scripts/Test-CnbMirror.py
+      - name: Verify receipt compatibility idempotence and bounded triggers
+        run: python scripts/Test-CnbTrigger.py

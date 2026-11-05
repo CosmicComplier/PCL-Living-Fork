@@ -40,6 +40,9 @@ try{
  $settings['LaunchPersonalOptionsSync'].ValueCache['']=$true
  Call $sync 'ImportFrom' @($source)|Out-Null
  $session=Call $sync 'Prepare' @($target)
+ if($null -eq $session -or $session.GetType().FullName -cne 'PCL.PersonalOptionsSession'){throw 'Prepare did not preserve the original VB session type'}
+ foreach($name in @('Id','VersionPath','GameFolder','Baseline','Keys','Tracked')){if($null -eq $session.GetType().GetField($name,$flags)){throw ('Session field reflection contract changed: '+$name)}}
+ if((Field $session 'VersionPath') -cne $target.PathVersion -or (Field $session 'GameFolder') -cne $target.PathIndie -or (Field $session 'Tracked')){throw 'Prepared session fields or initial tracking state changed'}
  $merged=[IO.File]::ReadAllText($targetFile)
  if($merged -notmatch 'mouseSensitivity:0.8' -or $merged -notmatch 'key_key.forward:key.keyboard.r' -or $merged -notmatch 'showSubtitles:true'){throw 'Personal options were not applied'}
  foreach($line in @('renderDistance:32','resourcePacks:["author-target.zip"]','key_mod.magic:key.keyboard.v')){if(-not $merged.Contains($line)){throw 'Author/custom options were changed'}}
@@ -65,8 +68,24 @@ try{
  if([string](Call $sync 'MergeText' @("fov:70`n",$view,$true,$viewKeys,$true)) -cne "fov:90`n"){throw 'Normalized FOV was not converted to degrees'}
  $view=[Newtonsoft.Json.Linq.JObject]::Parse('{"fov":"90"}')
  if([string](Call $sync 'MergeText' @("fov:0.0`n",$view,$false,$viewKeys,$false)) -cne "fov:0.5`n"){throw 'Degree FOV was not converted for older options'}
+ # Keep a real CLR4 oracle for .NET 10's changed floating-point overflow/special-symbol parsing.
+ if([Environment]::Version.Major -ne 4){throw 'The legacy FOV baseline requires Windows PowerShell on CLR4.'}
+ $fovBaseline=[Collections.Generic.List[string]]::new()
+ $fovNbsp=[string][char]0xa0
+ foreach($raw in @('1e400','-1e400','Infinity','-Infinity','+Infinity','infinity','INFINITY','-infinity','NaN','nan','NAN','+NaN','-NaN',"`t Infinity ",($fovNbsp+'Infinity'+$fovNbsp),($fovNbsp+'NaN'+$fovNbsp),"`t-Infinity`t",'0','-1','1','1.0000001')){
+  foreach($fallback in @($false,$true)){
+   [double]$numeric=0;$parsed=[double]::TryParse($raw,[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$numeric)
+   $usesDegrees=$fallback;if($parsed){$usesDegrees=[Math]::Abs($numeric) -gt 1}
+   $expectedFov=if($usesDegrees){'90'}else{'0.5'}
+   $actual=[string](Call $sync 'MergeText' @(("fov:"+$raw+"`n"),$view,$false,$viewKeys,$fallback))
+   if($actual -cne ("fov:"+$expectedFov+"`n")){throw ('FOV differs from CLR4 parsing: '+$raw+'; default='+$fallback)}
+   $fovBaseline.Add(($raw.Trim()+'|'+$fallback+'='+$expectedFov))
+  }
+ }
+ Write-Output ('CLR4 FOV baseline passed: '+($fovBaseline -join '; '))
  $tracked=Call $sync 'Prepare' @($target)
  Call $sync 'Track' @($tracked,[Diagnostics.Process]::GetCurrentProcess())|Out-Null
+ if(-not (Field $tracked 'Tracked')){throw 'Tracking did not update the original session object'}
  if($null -ne (Call $sync 'Prepare' @($target))){throw 'Options were applied to a directory with a live game session'}
  $journalName='options-sessions/'+(Field $tracked 'Id')+'.json'
  $journal=Call $data 'ReadJson' @($journalName);$journal['pid']=[Newtonsoft.Json.Linq.JValue]::new(2147483646);$journal['started']=[Newtonsoft.Json.Linq.JValue]::new([long]1)
@@ -79,10 +98,30 @@ try{
  Assert-Rejected {Call $data 'AtomicWrite' @($targetFile,$bytes,'incorrect-old-hash',$true)} 'Concurrent options edit was overwritten'
  foreach($pair in @(@('1.19.4',$false),@('1.20.1',$true),@('26.2',$true))){if((Call $quick 'Supported' @((Instance ('version-'+$pair[0]) $pair[0]))) -ne $pair[1]){throw 'Quick Play version gate failed'}}
  $world=Join-Path $target.PathVersion 'saves/World with spaces';Put (Join-Path $world 'level.dat') 'synthetic-world';Put (Join-Path $world 'region/keep.txt') 'world-data-preserve'
- Assert-Rejected {Call $quick 'WorldPath' @($target.PathVersion,'../outside')} 'World traversal was accepted'
- $arguments=[Collections.Generic.List[string]]::new();$arguments.Add('--quickPlayMultiplayer');$arguments.Add('example.invalid');$arguments.Add('--server');$arguments.Add('example.invalid')
+ foreach($identifier in @($null,'',' ','.','..','../outside','..\outside','bad:name',([string][char]0))){Assert-Rejected {Call $quick 'WorldPath' @($target.PathVersion,$identifier)} 'Invalid Quick Play world identifier was accepted'}
+ if((Call $quick 'WorldPath' @($target.PathVersion,'World with spaces')) -cne $world){throw 'Quick Play changed the valid world path'}
+ # Query the real old path API before comparing the migrated VB production entry.
+ # Exception types affect ReadSessionLog, which catches IOException only.
+ $pathOracleCount=0
+ foreach($character in [IO.Path]::GetInvalidFileNameChars()){
+  $identifier='A'+[string]$character+'B';$expectedType=[IO.IOException]
+  try{[IO.Path]::GetFileName($identifier)|Out-Null}catch{$pathError=$_.Exception;while($null -ne $pathError.InnerException){$pathError=$pathError.InnerException};$expectedType=$pathError.GetType()}
+  $actualType=$null
+  try{Call $quick 'WorldPath' @($null,$identifier)|Out-Null}catch{$pathError=$_.Exception;while($null -ne $pathError.InnerException){$pathError=$pathError.InnerException};$actualType=$pathError.GetType()}
+  if($actualType -ne $expectedType){throw ('Quick Play path differs from CLR4 exception order for codepoint '+[int]$character+': expected '+$expectedType+', actual '+$actualType)}
+  $pathOracleCount++
+ }
+ Write-Output ('CLR4 Quick Play path oracle passed: '+$pathOracleCount+' invalid filename characters; GetFileName errors precede folder/guard.')
+ $missingWorld=Join-Path $target.PathVersion 'saves/missing-quickplay-leaf'
+ Assert-Rejected {Call $quick 'WorldPath' @($target.PathVersion,'missing-quickplay-leaf')} 'Missing Quick Play world was accepted'
+ if([IO.Directory]::Exists($missingWorld)){throw 'Quick Play validation created a missing world directory'}
+ $arguments=[Collections.Generic.List[string]]::new()
+ foreach($argument in @('prefix','--quickPlaySingleplayer','old world','--quickPlayMultiplayer','example.invalid','--quickPlayRealms','realm','--server','-single-hyphen-value','--port','25565','--server','--kept','value','--SERVER','upper-kept','--quickPlayPath=custom.json','--server=equals-kept','--quickPlaySingleplayer')){$arguments.Add($argument)}
  $context=Call $quick 'Prepare' @($target,'World with spaces',$arguments,$false)
  if($arguments.Contains('--quickPlayMultiplayer') -or $arguments.Contains('--server') -or -not $arguments.Contains('--quickPlaySingleplayer') -or $arguments[$arguments.IndexOf('--quickPlaySingleplayer')+1] -cne 'World with spaces'){throw 'World Quick Play conflicted with server arguments or split the folder name'}
+ $expectedArguments=@('prefix','--kept','value','--SERVER','upper-kept','--quickPlayPath=custom.json','--server=equals-kept','--quickPlaySingleplayer','World with spaces')
+ if($arguments.Count -ne $expectedArguments.Length+2 -or $arguments[$expectedArguments.Length] -cne '--quickPlayPath'){throw 'Quick Play duplicate, adjacent or trailing flags changed the argument layout'}
+ for($i=0;$i -lt $expectedArguments.Length;$i++){if($arguments[$i] -cne $expectedArguments[$i]){throw ('Quick Play retained argument changed at index '+$i)}}
  $log=Field $context 'LogFile'
  Put $log '[{"type":"singleplayer","identifier":"World with spaces","name":"A recent world","lastPlayedTime":"2026-10-01T12:00:00Z"}]'
  Call $quick 'Finish' @($context)|Out-Null
@@ -98,20 +137,25 @@ try{
   $archive=[IO.Compression.ZipFile]::Open($jar,[IO.Compression.ZipArchiveMode]::Create)
   try{
    $writer=[IO.StreamWriter]::new($archive.CreateEntry('fabric.mod.json').Open());try{$writer.Write('{"id":"'+$mod+'","name":"Example '+$mod+'"}')}finally{$writer.Dispose()}
-   $writer=[IO.StreamWriter]::new($archive.CreateEntry('assets/'+$mod+'/lang/en_us.json').Open());try{$writer.Write('{"'+$mod+'.action":"Example action"}')}finally{$writer.Dispose()}
+   $writer=[IO.StreamWriter]::new($archive.CreateEntry('assets/'+$mod+'/lang/en_us.json').Open());try{$writer.Write('{"'+$mod+'.action":"Example\r\nline\u000bvertical"}')}finally{$writer.Dispose()}
   }finally{$archive.Dispose()}
  }
  $rows=Call $bindings 'ReadBindings' @($target.PathVersion,[Threading.CancellationToken]::None)
  $entry=@($rows|Where-Object {(Field $_ 'Key') -eq 'key_fixture.action'})[0]
  if((Field $entry 'SharedCount') -ne 3 -or (Field $entry 'Owners') -notmatch 'Example fixture'){throw 'Shared-key or local mod ownership identification failed'}
+ if((Field $entry 'Name') -cne ('Example line'+[char]11+'vertical')){throw 'Binding title changed the original Meloong line-ending contract'}
  $unknownEntry=@($rows|Where-Object {(Field $_ 'Key') -eq 'key_unknown.action'})[0]
  if((Field $unknownEntry 'SharedCount') -ne 2 -or (Field $unknownEntry 'Owners') -match 'Example'){throw 'Default chat binding conflict or unknown owner handling failed'}
  $before=[IO.File]::ReadAllText($targetFile)
  Call $bindings 'Save' @($target.PathVersion,'key_fixture.action','key.keyboard.r','key.keyboard.y')|Out-Null
  if([IO.File]::ReadAllText($targetFile) -cne $before.Replace('key_fixture.action:key.keyboard.r','key_fixture.action:key.keyboard.y')){throw 'Rebinding changed unrelated options'}
  Assert-Rejected {Call $bindings 'Save' @($target.PathVersion,'key_fixture.action','key.keyboard.r','key.keyboard.u')} 'A stale binding overwrote a newer edit'
+ $sameValueBytes=[Convert]::ToBase64String([IO.File]::ReadAllBytes($targetFile))
+ Put ($targetFile+'.pcl-backup') 'same-value-backup-sentinel'
+ Call $bindings 'Save' @($target.PathVersion,'key_fixture.action','key.keyboard.y','key.keyboard.y')|Out-Null
+ foreach($path in @($targetFile,($targetFile+'.pcl-backup'))){if([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -cne $sameValueBytes){throw 'Same-value rebinding did not preserve bytes and rotate the backup'}}
  if([string](Call $sync 'NormalizeBinding' @('19:ALT')) -cne 'key.keyboard.r:ALT' -or [string](Call $sync 'BindingForVersion' @('key.keyboard.r:ALT',$false)) -cne '19:ALT'){throw 'Modifier or legacy binding conversion failed'}
- Write-Output 'Local game features passed: personal-field merge, author/custom-option preservation, backup/newlines, bidirectional changes, version exception, legacy keys/FOV, active/exited sessions, atomic conflicts, Quick Play paths/arguments/missing worlds, shared-key/mod ownership, rebinding and stale-edit protection. No real games, accounts or user profiles were used.'
+ Write-Output 'Local game features passed: personal-field merge, author/custom-option preservation, backup/newlines, bidirectional changes, version exception, legacy keys/FOV, active/exited sessions, atomic conflicts, Quick Play paths/arguments/missing worlds, shared-key/mod ownership, rebinding, stale-edit protection and same-value backup rotation. No real games, accounts or user profiles were used.'
 }finally{
  $data.GetProperty('TestRoot',$flags).SetValue($null,$null,$null)
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'

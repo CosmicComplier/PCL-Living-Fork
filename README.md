@@ -20,7 +20,7 @@
 
 ## 使用
 
-需要 **Windows 64 位系统和 .NET Framework 4.8**。从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载 EXE，或解压 ZIP 后运行 `PCL-Living-Fork-1.3.4.exe`。
+已发布的 VB 版本 1.3.4 和 1.3.5-pre-3 使用 **Windows 64 位系统和 .NET Framework 4.8**，从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载后按该版本说明运行。本迁移分支构建的 C#/.NET 10 原生产品面向 Windows x64：完整发布包包含运行时，精简包需要 .NET 10 Desktop Runtime；迁移构建与产物角色见 [现代构建说明](docs/BUILDING_MODERN.md)。迁移分支尚未发布为正式版本。 产品 VB 源码和旧项目已退役，原资源与许可保留；.NET Framework 工具仍供兼容更新桥及独立历史测试使用。
 
 升级时保留原有 `PCL`、`.minecraft` 和游戏目录。程序内更新保留原文件名。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 
@@ -32,15 +32,19 @@
 
 ## 自行编译
 
-需要 Visual Studio 2022 的“.NET 桌面开发”工作负载、.NET Framework 4.8 Targeting Pack 和 .NET 9 SDK。在 VS Developer PowerShell 中运行：
+迁移分支使用 .NET 10 SDK 与 Windows Desktop/WPF 工具链；完整发布包中的旧版兼容桥还需要 Visual Studio/Build Tools 的 MSBuild 和 .NET Framework 4.8 编译工具。根 solution 与默认发布脚本均指向完整 C# 产品，详细工具链和定向检查见 [现代构建说明](docs/BUILDING_MODERN.md)。在 Windows PowerShell 中运行：
 
 ```powershell
 git submodule update --init --recursive
-dotnet restore .\PCLCS\PCLCS.csproj
+dotnet restore .\PCL-Living-Fork.Modern.slnx
 .\scripts\Build-Release.ps1
 ```
 
-输出文件按版本号命名，例如 `Plain Craft Launcher 2\bin\PCL-Living-Fork-1.3.5-pre-3.exe`。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+默认输出到 `artifacts/release/Release`，包含原生 EXE/ZIP、供旧客户端更新的托管兼容桥、SHA256 校验和及构建索引。各文件的角色由 `NativeRelease.Artifacts.json` 标明，首次安装使用原生 EXE/ZIP。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+
+## 迁移工程
+
+迁移分支的目标、实施顺序和 MMC 兼容验收要求见 [迁移工程说明](docs/MIGRATION.md)。工程从现有 LF 继续演进，以 PCL 原版源码为基础来源，以 CE 为同源迁移参考。
 
 ## 国内发布同步
 

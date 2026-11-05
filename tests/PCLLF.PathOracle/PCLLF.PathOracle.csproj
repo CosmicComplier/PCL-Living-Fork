@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <PathOracleSharedAssembly Condition="'$(PathOracleSharedAssembly)' == ''">$(MSBuildThisFileDirectory)../../MeloongCore/Shared/bin/MeloongCore.dll</PathOracleSharedAssembly>
+    <ApplicationManifest Condition="'$(ApplicationManifest)' == ''">$(MSBuildThisFileDirectory)../../Plain Craft Launcher 2/app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePaths.cs" Link="Production/InstanceResourcePaths.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePathText.cs" Link="Production/InstanceResourcePathText.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePathCompatibility.cs" Link="Production/InstanceResourcePathCompatibility.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackageRules.cs" Link="Production/InstanceResourcePackageRules.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourceDetailsRules.cs" Link="Production/InstanceResourceDetailsRules.cs" />
+    <Compile Include="../../PCLCS/Minecraft/InstanceResourcePackMetadataCompatibility.cs" Link="Production/InstanceResourcePackMetadataCompatibility.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
+    <Compile Include="../../PCLCS/Minecraft/LegacyPathCharacters.cs" Link="Production/LegacyPathCharacters.cs" />
+    <Reference Include="MeloongCore"><HintPath>$(PathOracleSharedAssembly)</HintPath></Reference>
+    <!-- The CLR4 driver separately uses the immutable LF DLL. This modern
+         endpoint matches the actual .NET 10 PCLCS package/asset. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>

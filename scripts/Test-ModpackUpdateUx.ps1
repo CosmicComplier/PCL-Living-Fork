@@ -4,9 +4,9 @@ $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
 $root=Split-Path $PSScriptRoot -Parent
 $ExecutablePath=[IO.Path]::GetFullPath($ExecutablePath)
-Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Net.Http
-$references=@($ExecutablePath,'System.dll','System.Core.dll','System.Net.Http.dll',[Windows.Application].Assembly.Location,[Windows.Media.Brushes].Assembly.Location,[Windows.Threading.DispatcherObject].Assembly.Location)
-foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll','Plain Craft Launcher 2/Resources/ThrottleDebounce.dll')){
+Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Xaml,System.Net.Http
+$references=@($ExecutablePath,'System.dll','System.Core.dll','System.Net.Http.dll','System.Xaml.dll',[Windows.Application].Assembly.Location,[Windows.Media.Brushes].Assembly.Location,[Windows.Threading.DispatcherObject].Assembly.Location)
+foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','presentation/bin/PCLLF.Presentation.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll','Plain Craft Launcher 2/Resources/ThrottleDebounce.dll')){
  $file=Join-Path $root $path;[Reflection.Assembly]::LoadFrom($file)|Out-Null;$references+=$file
 }
 $references+=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8/Facades/netstandard.dll'

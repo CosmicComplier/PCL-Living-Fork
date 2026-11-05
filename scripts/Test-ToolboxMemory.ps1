@@ -5,8 +5,10 @@ param(
 # 只打开当前令牌作角色检查，并注入虚构清理/提权委托；不调整权限、不清理内存、不触发 UAC。
 # 不传 ExecutablePath 时只编译独立帮助类，不构建或启动启动器，不读配置及私有构建输入。
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Run with powershell -NoProfile (.NET Framework), not pwsh.' }
 $fixture = $null
+$backendResolver = $null
 try {
     if ($ExecutablePath) {
         $assembly = [Reflection.Assembly]::LoadFrom([IO.Path]::GetFullPath($ExecutablePath))
@@ -14,15 +16,34 @@ try {
         $fixture = Join-Path ([IO.Path]::GetTempPath()) ('LivingPCL-ToolboxMemory-' + [Guid]::NewGuid().ToString('N'))
         [IO.Directory]::CreateDirectory($fixture) | Out-Null
         $output = Join-Path $fixture 'MemoryChecks.dll'
-        $source = Join-Path (Split-Path $PSScriptRoot -Parent) 'Plain Craft Launcher 2/Modules/Base/NativeMemoryOptimizer.vb'
+        $source = Export-LfFixedSource -Name 'memory-adapter-a1' -Directory (Join-Path $fixture 'fixed-baseline')
         if (-not $CompilerPath) {
             $sdk = & dotnet --list-sdks | Select-Object -Last 1
             if ($sdk -notmatch '^(\S+)\s+\[(.+)\]$') { throw 'A .NET SDK is required for standalone memory helper checks.' }
             $CompilerPath = Join-Path (Join-Path $Matches[2] $Matches[1]) 'Roslyn/bincore/vbc.dll'
         }
         $framework = [Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
-        & dotnet $CompilerPath /nologo /target:library /rootnamespace:PCL /optioninfer+ /optionstrict+ /optionexplicit+ "/sdkpath:$framework" "/out:$output" $source
+        # Compile the real C# memory backend as an isolated library before the
+        # old-name ABI adapter; no launcher build, settings or privileged action.
+        $repoRoot = Split-Path $PSScriptRoot -Parent
+        $backend = Join-Path $fixture 'MemoryBackend.dll'
+        $csharpCompiler = Join-Path (Split-Path $CompilerPath -Parent) 'csc.dll'
+        $csharpSources = @(
+            (Join-Path $repoRoot 'PCLCS/Toolbox/LegacyMemoryOptimizationOperation.cs'),
+            (Join-Path $repoRoot 'PCLCS/Platform/Windows/Toolbox/LegacyNativeMemoryOptimizer.cs')
+        )
+        $references = @('mscorlib.dll','System.dll','System.Core.dll') | ForEach-Object { '/reference:' + (Join-Path $framework $_) }
+        & dotnet $csharpCompiler /nologo /target:library /langversion:13.0 /nullable:enable "/out:$backend" @references @csharpSources
+        if ($LASTEXITCODE -ne 0) { throw "Standalone C# memory backend compile failed: $LASTEXITCODE" }
+        & dotnet $CompilerPath /nologo /target:library /rootnamespace:PCL /optioninfer+ /optionstrict+ /optionexplicit+ "/sdkpath:$framework" "/reference:$backend" "/out:$output" $source
         if ($LASTEXITCODE -ne 0) { throw "Standalone memory helper compile failed: $LASTEXITCODE" }
+        $backendAssembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($backend))
+        $backendResolver = [ResolveEventHandler]({
+            param($sender, $request)
+            if (($request.Name -split ',')[0] -eq 'MemoryBackend') { return $backendAssembly }
+            return $null
+        }.GetNewClosure())
+        [AppDomain]::CurrentDomain.add_AssemblyResolve($backendResolver)
         $assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($output))
     }
     Add-Type -ReferencedAssemblies System.Core -TypeDefinition @'
@@ -129,6 +150,7 @@ public static class LivingPclMemoryChecks {
     Write-Error $_ -ErrorAction Continue
     exit 1
 } finally {
+    if ($backendResolver) { [AppDomain]::CurrentDomain.remove_AssemblyResolve($backendResolver) }
     if ($fixture -and [IO.Directory]::Exists($fixture)) {
         $resolved = [IO.Path]::GetFullPath($fixture)
         $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')

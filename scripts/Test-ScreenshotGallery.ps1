@@ -46,6 +46,9 @@ function Render-Png($element,[string]$path,[int]$width,[int]$height){
  $encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
  $stream=[IO.File]::Create($path);try{$encoder.Save($stream)}finally{$stream.Dispose()}
 }
+# C# delegates run safely on the worker pool; PowerShell script blocks have no background runspace.
+$controllerChecks = [IO.File]::ReadAllText((Join-Path $root 'tests/PCLLF.Windows.Tests/ResourceThumbnailControllerChecks.cs'))
+
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclScreenshotGallery-'+[Guid]::NewGuid().ToString('N'))
 try {
  $kind=Kind 'Screenshots';$shots=Join-Path $fixture 'screenshots'
@@ -78,7 +81,11 @@ try {
  if($PreviewDirectory){[IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null;Render-Png $panel (Join-Path $PreviewDirectory 'screenshot-gallery.png') 780 720}
  $type.GetMethod('ScreenshotClick',$flags).Invoke($page,[object[]]@($items[0],1,$open))|Out-Null
  if($script:opened -ne 1){throw 'Selection unexpectedly launched another viewer'}
- Write-Output 'Screenshot gallery passed: two-column native cards, no in-app preview, single selection, double-click shell association, bulk footer, deselection, search and frozen thumbnails. No external viewer was started.'
+ Add-Type -TypeDefinition $controllerChecks -ReferencedAssemblies @('System.dll','System.Core.dll','System.Xaml.dll',
+  [Windows.FrameworkElement].Assembly.Location,[Windows.UIElement].Assembly.Location,
+  [Windows.Point].Assembly.Location,[PCLCS.ResourceThumbnailController].Assembly.Location)
+ try{[PclScreenshotControllerChecks]::Run()}catch{throw ($_.Exception.GetBaseException().ToString())}
+ Write-Output 'Screenshot gallery passed: two-column native cards, no in-app preview, single selection, double-click shell association, bulk footer, deselection, search, frozen thumbnails and real C# async controller concurrency/revision/viewport/unload/fault behavior. No external viewer was started.'
 }finally {
  $app.Shutdown()
  $full=[IO.Path]::GetFullPath($fixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'

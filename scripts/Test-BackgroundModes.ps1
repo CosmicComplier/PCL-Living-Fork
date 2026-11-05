@@ -26,8 +26,8 @@ try{
  $savedOpacity=$settings['UiBackgroundOpacity'].ValueCache[''];$savedColorful=$settings['UiBackgroundColorful'].ValueCache[''];$savedImage=$image.Background
  foreach($mode in @(1,0,1,0)){
   $entry.ValueCache['']=$mode
-  $animation=$asm.GetType('PCL.ModAnimation');$enabled=$animation.GetField('_AniControlEnabled',$flags);$previous=$enabled.GetValue($null);$enabled.SetValue($null,($previous+1))
-  try{$service.GetMethod('RefreshSettings').Invoke($null,@($page))|Out-Null}finally{$enabled.SetValue($null,$previous)}
+  $animation=$asm.GetType('PCL.ModAnimation');$enabled=$animation.GetProperty('AniControlEnabled',$flags);$previous=$enabled.GetValue($null,$null);$enabled.SetValue($null,($previous+1),$null)
+  try{$service.GetMethod('RefreshSettings').Invoke($null,@($page))|Out-Null}finally{$enabled.SetValue($null,$previous,$null)}
   $render.Invoke($null,@($hostPanel,$image))|Out-Null
   $refreshUi.Invoke($page,@(($mode -eq 0),0))|Out-Null
   if($mode -eq 1){

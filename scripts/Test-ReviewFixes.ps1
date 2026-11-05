@@ -5,10 +5,10 @@ $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
 $root=Split-Path $PSScriptRoot -Parent
 $ExecutablePath=[IO.Path]::GetFullPath($ExecutablePath)
-Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Net.Http
-$references=@($ExecutablePath,'System.dll','System.Core.dll','System.Net.Http.dll',
+Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Xaml,System.Net.Http
+$references=@($ExecutablePath,'System.dll','System.Core.dll','System.Net.Http.dll','System.Xaml.dll',
  [Windows.Application].Assembly.Location,[Windows.Media.Brushes].Assembly.Location,[Windows.Threading.DispatcherObject].Assembly.Location)
-foreach($file in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')){
+foreach($file in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll','presentation/bin/PCLLF.Presentation.dll','Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll')){
  $path=Join-Path $root $file;[Reflection.Assembly]::LoadFrom($path)|Out-Null;$references+=$path
 }
 $facade=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8/Facades/netstandard.dll'
@@ -144,7 +144,13 @@ public static class ReviewFixChecks {
  }
  public static void Redirects(Assembly asm){
   var type=asm.GetType("PCL.SafeRedirectHandler");Require(type!=null,"HTTP redirect policy does not protect credential headers");
-  var downloadClient=(HttpClient)asm.GetType("PCL.ModNet").GetField("ThreadClient",Flags).GetValue(null);
+  var runtimeField=asm.GetType("PCL.ModNet").GetField("NativeRuntime",Flags);
+  Require(runtimeField!=null,"Download runtime bridge was not found");
+  var runtime=runtimeField.GetValue(null);Require(runtime!=null,"Download runtime is not initialized");
+  var clientField=runtime.GetType().GetField("ThreadClient",Flags);
+  Require(clientField!=null,"Actual runtime download client was not found");
+  var downloadClient=(HttpClient)clientField.GetValue(runtime);
+  Require(downloadClient!=null,"Actual runtime download client is not initialized");
   var handlerField=typeof(HttpMessageInvoker).GetFields(Flags).Single(f=>f.FieldType==typeof(HttpMessageHandler));
   var productionHandler=handlerField.GetValue(downloadClient) as DelegatingHandler;
   Require(productionHandler!=null&&type.IsInstanceOfType(productionHandler),"Download transport bypasses the safe redirect policy");
@@ -225,10 +231,59 @@ try{
  if($Check -in @('All','Redirects')){[ReviewFixChecks]::Redirects($asm);Write-Output 'PASS: same-host/cross-host credentials, unsafe redirect targets and redirect loops.'}
  if($Check -in @('All','Workflow')){
   $workflow=[IO.File]::ReadAllText((Join-Path $root '.github/workflows/build.yml'))
-  foreach($path in @('PCLCS/**','MeloongCore','.gitmodules','*.sln')){
-   if(([regex]::Matches($workflow,[regex]::Escape("- '$path'"))).Count -ne 2){throw "CI push/PR filters omit build input: $path"}
+  function Get-CiPathPatterns([string]$text,[string]$eventName){
+   $section=[regex]::Match($text,'(?ms)^  '+[regex]::Escape($eventName)+':\r?\n(?<body>.*?)(?=^  [A-Za-z_][A-Za-z0-9_]*:|\z)')
+   if(-not $section.Success){throw "CI workflow omits event: $eventName"}
+   $filter=[regex]::Match($section.Groups['body'].Value,'(?m)^    (?<kind>paths|paths-ignore):\s*\r?\n(?<rules>(?:^      - [^\r\n]*\r?\n)+)')
+   if(-not $filter.Success){return '**'}
+   $patterns=@()
+   foreach($line in [regex]::Matches($filter.Groups['rules'].Value,'(?m)^      - (?<rule>[^\r\n]+)')){
+    $pattern=$line.Groups['rule'].Value.Trim()
+    if(($pattern.StartsWith("'") -and $pattern.EndsWith("'")) -or ($pattern.StartsWith('"') -and $pattern.EndsWith('"'))){$pattern=$pattern.Substring(1,$pattern.Length-2)}
+    if([string]::IsNullOrEmpty($pattern)){throw 'CI path filters contain an empty pattern'}
+    if($filter.Groups['kind'].Value -eq 'paths-ignore'){$pattern='!'+$pattern}
+    $patterns+=$pattern
+   }
+   if($filter.Groups['kind'].Value -eq 'paths-ignore'){$patterns=@('**')+$patterns}
+   return $patterns
   }
-  Write-Output 'PASS: push and PR filters include C# projects, the submodule and solution inputs.'
+  function Test-CiPath([string[]]$patterns,[string]$path){
+   $included=$false
+   foreach($pattern in $patterns){
+    $exclude=$pattern.StartsWith('!');$glob=if($exclude){$pattern.Substring(1)}else{$pattern}
+    # The repository uses *, ** and ? path globs. Compare their ordered include/
+    # exclude behavior, not the spelling of a particular equivalent include rule.
+    if($glob.IndexOfAny([char[]]'[]+') -ge 0){throw "CI path coverage check needs support for this glob: $glob"}
+    $expression=[regex]::Escape($glob).Replace('\*\*/','(?:.*/)?').Replace('\*\*','.*').Replace('\*','[^/]*').Replace('\?','[^/]')
+    if([regex]::IsMatch($path,'\A'+$expression+'\z',[Text.RegularExpressions.RegexOptions]::CultureInvariant)){$included=-not $exclude}
+   }
+   return $included
+  }
+  $buildInputs=@(& git -c core.quotepath=false -C $root ls-files -- 'PCLCS/**' 'Plain Craft Launcher 2/**' 'MeloongCore' '.gitmodules' '*.sln')
+  if($LASTEXITCODE -ne 0 -or $buildInputs.Count -eq 0){throw 'Cannot enumerate tracked CI build inputs'}
+  $buildInputs=@($buildInputs|Where-Object {$_ -notmatch '\.md$'})+@('PCLCS/Future/Nested/Input.cs','Future.sln','MeloongCore','.gitmodules')
+  foreach($eventName in @('push','pull_request')){
+   $patterns=@(Get-CiPathPatterns $workflow $eventName)
+   foreach($path in $buildInputs){if(-not (Test-CiPath $patterns $path)){throw "CI $eventName filters omit build input: $path"}}
+  }
+  $python=(Get-Command python -ErrorAction Stop).Source
+  $selector=Join-Path $root 'scripts/Select-MigrationChecks.py'
+  function Get-CiSelection([string[]]$arguments){
+   $json=@(& $python $selector @arguments)
+   if($LASTEXITCODE -ne 0){throw 'CI check selection command failed'}
+   return (($json -join [Environment]::NewLine)|ConvertFrom-Json)
+  }
+  $metadata=Get-CiSelection @('--path','PCLCS/Minecraft/InstanceResourceDetailsRules.cs')
+  if($metadata.full -or -not $metadata.product_build -or -not $metadata.oracle -or @($metadata.groups).Count -ne 1 -or $metadata.groups[0] -cne 'resource-metadata'){throw 'Metadata change did not select its production compatibility chain'}
+  if(@($metadata.windows_scripts) -notcontains 'Test-InstanceResources' -or @($metadata.windows_scripts) -notcontains 'Test-MapDetails' -or @($metadata.windows_scripts) -contains 'Test-ModDependencies'){throw 'Metadata checks omitted consumers or selected unrelated module checks'}
+  foreach($selection in @((Get-CiSelection @('--path','PCLCS/Future/Nested/Input.cs')),(Get-CiSelection @('--full')))){
+   if(-not $selection.full -or -not $selection.product_build -or -not $selection.oracle -or -not $selection.inventory -or @($selection.groups).Count -eq 0){throw 'Unknown/shared or explicit complete checkpoint did not keep full coverage'}
+   foreach($requiredGroup in @('world-metadata','local-data','personal-options','keybindings','quick-play','resource-entry','resource-paths','resource-files','resource-metadata')){if(@($selection.groups) -notcontains $requiredGroup){throw "Complete checkpoint omitted $requiredGroup"}}
+   foreach($required in @('Test-Release','Test-ReviewFixes','Test-ModDependencies','Test-IconCompatibility')){if(@($selection.windows_scripts) -notcontains $required){throw "Complete checkpoint omitted $required"}}
+  }
+  $documentation=Get-CiSelection @('--path','docs/MIGRATION_GOAL.md')
+  if($documentation.full -or $documentation.product_build -or $documentation.migration_run -or @($documentation.groups).Count -ne 0 -or @($documentation.windows_scripts).Count -ne 0){throw 'Documentation-only change selected product regression work'}
+  Write-Output 'PASS: push/PR path coverage includes tracked product, submodule and solution inputs; selection preserves metadata consumers, unknown/full gates and documentation isolation.'
  }
 }finally{
  $app.Shutdown()

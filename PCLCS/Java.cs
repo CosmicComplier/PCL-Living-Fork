@@ -18,6 +18,7 @@ namespace PCLCS;
     /// Java 的版本号（例如 16.0.1），保证 <see cref="Version.Major"/> 为其主版本。
     /// <para/> 若为 null，则还需要调用 <see cref="CheckAsync"/> 以获取版本号。
     /// </summary>
+    [JsonConverter(typeof(JavaCacheVersionConverter))]
     public Version? Version = version;
     /// <summary>Java 的默认字符编码。</summary>
     [JsonIgnore] public string? FileEncodingName;
@@ -94,6 +95,43 @@ namespace PCLCS;
     /// <summary>用户友好的描述文本。</summary>
     public override string ToString()
         => $"Java {Version?.Major.ToString() ?? "尚未检查"} ({Version})：{Folder}";
+}
+
+// Scoped to the persisted Java.Version member. Framework LF wrote Version as
+// an object; modern System.Version has a string conversion contract. Reads must
+// accept the historical cache without changing global JSON or current writes.
+internal sealed class JavaCacheVersionConverter : JsonConverter {
+    public override bool CanWrite => false;
+    public override bool CanConvert(Type objectType) => objectType == typeof(Version);
+    public override object? ReadJson(JsonReader reader, Type objectType, object? existingValue, JsonSerializer serializer) {
+        if (reader.TokenType == JsonToken.Null) return null;
+        try {
+            if (reader.TokenType == JsonToken.String) {
+                string? text = (string?)reader.Value;
+                return string.IsNullOrEmpty(text) ? null : new Version(text);
+            }
+            if (reader.TokenType == JsonToken.StartObject) {
+                JObject value = JObject.Load(reader);
+                int ReadComponent(string name) {
+                    JToken? component = value.GetValue(name, StringComparison.Ordinal);
+                    if (component?.Type != JTokenType.Integer)
+                        throw new JsonSerializationException("Cached Java Version requires an integer " + name + ".");
+                    return checked((int)component.Value<long>());
+                }
+                int major = ReadComponent("Major"), minor = ReadComponent("Minor");
+                int build = ReadComponent("Build"), revision = ReadComponent("Revision");
+                if (major < 0 || minor < 0 || build < -1 || revision < -1 || (build == -1 && revision != -1))
+                    throw new JsonSerializationException("Cached Java Version components are invalid.");
+                if (build == -1) return new Version(major, minor);
+                return revision == -1 ? new Version(major, minor, build) : new Version(major, minor, build, revision);
+            }
+        } catch (Exception error) when (error is ArgumentException or FormatException or OverflowException or InvalidCastException) {
+            throw new JsonSerializationException("Cached Java Version is invalid.", error);
+        }
+        throw new JsonSerializationException("Cached Java Version must be a string, a historical component object, or null.");
+    }
+    public override void WriteJson(JsonWriter writer, object? value, JsonSerializer serializer)
+        => throw new NotSupportedException("Java cache version writes use the existing serializer contract.");
 }
 
 public static class JavaUtils {
@@ -203,10 +241,11 @@ public static class JavaUtils {
                         // 判断文件夹是否包含重解析点（例如符号链接）
                         static bool HasReparsePoint(FileSystemInfo info) {
                             if (PathUtils.IsParentOf(Paths.AppData + @".minecraft\runtime\", info.FullName)) return false; // 不筛查 PCL 的下载路径（#8928）
+                            FileSystemInfo? current = info;
                             do {
-                                if (info.Attributes.HasFlagF(FileAttributes.ReparsePoint)) return true;
-                                info = info is FileInfo fileInfo ? fileInfo.Directory : ((DirectoryInfo) info).Parent;
-                            } while (info is not null);
+                                if (current.Attributes.HasFlagF(FileAttributes.ReparsePoint)) return true;
+                                current = current is FileInfo fileInfo ? fileInfo.Directory : ((DirectoryInfo) current).Parent;
+                            } while (current is not null);
                             return false;
                         }
                         // 结果

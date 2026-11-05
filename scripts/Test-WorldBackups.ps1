@@ -1,6 +1,7 @@
 ﻿param([string]$ExecutablePath,[switch]$EngineOnly)
 # Only GUID-named temporary worlds and local profiles are touched. No game or launcher is started.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclWorldBackups-'+[Guid]::NewGuid().ToString('N'))
 $flags=[Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
@@ -18,12 +19,20 @@ try{
  [Reflection.Assembly]::LoadFrom((Join-Path $root 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'))|Out-Null
  [Reflection.Assembly]::LoadFrom((Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'))|Out-Null
  if($EngineOnly){
-  # Compile the actual engine, replacing only launcher/UI adapters with inert test doubles.
-  # This never builds the launcher or reads build credentials.
-  $engine=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb'))
-  $engine=$engine.Substring(0,$engine.IndexOf('Friend NotInheritable Class WorldBackupsUi'))
+  # Compile the actual VB facade and LocalGameData adapter; all engine business
+  # code runs from the current PCLCS DLL. Only launcher/UI services are inert stubs.
+  # Never build the launcher, load UI assemblies or read build credentials here.
+  $core=Join-Path $root 'PCLCS/bin/PCLCS.dll'
+  if(-not [IO.File]::Exists($core)){throw 'Build PCLCS/PCLCS.csproj before running the isolated backup engine.'}
+  $coreAssembly=[Reflection.Assembly]::LoadFrom($core)
+  $backupEngineType=$coreAssembly.GetType('PCLCS.WorldBackupEngine`1',$false)
+  if($null -eq $backupEngineType){throw 'Build the current PCLCS library containing WorldBackupEngine before -EngineOnly.'}
+  $engine=(Read-LfFixedSourceText -Name 'backups-adapter-a1')
+  $uiBoundary=[regex]::Matches($engine,'(?m)^Friend NotInheritable Class WorldBackupsUi\r?$')
+  if($uiBoundary.Count -ne 1){throw 'Expected exactly one production backup UI boundary for isolated facade compilation.'}
+  $engine=$engine.Substring(0,$uiBoundary[0].Index)
   Put (Join-Path $fixture 'Engine.vb') $engine
-  Put (Join-Path $fixture 'LocalGameData.vb') ([IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb')))
+  Put (Join-Path $fixture 'LocalGameData.vb') ((Read-LfFixedSourceText -Name 'localdata-adapter-a1'))
   $stubs=@'
 Imports System
 Imports System.IO
@@ -99,17 +108,24 @@ End Module
 '@
   Put (Join-Path $fixture 'Stubs.vb') $stubs
   $compiler=Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/Roslyn/vbc.exe'
-  if(-not (Test-Path -LiteralPath $compiler)){throw 'VB compiler not found; use -ExecutablePath after the normal launcher build.'}
+  if(-not (Test-Path -LiteralPath $compiler)){
+   $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+   if(Test-Path -LiteralPath $vswhere){$compiler=& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild/Current/Bin/Roslyn/vbc.exe'|Select-Object -First 1}
+  }
+  if(-not $compiler -or -not (Test-Path -LiteralPath $compiler)){throw 'VB compiler not found; use -ExecutablePath after the normal launcher build.'}
   $framework=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8'
   $output=Join-Path $fixture 'WorldBackupEngine.dll'
   $references=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll')|ForEach-Object {Join-Path $framework $_}
   $references+=Join-Path $root 'Plain Craft Launcher 2/Resources/Newtonsoft.Json.dll'
   $references+=Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'
+  $references+=$core
   $references+=Join-Path $framework 'Facades/netstandard.dll'
   $compilerArgs=@('/nologo','/target:library','/rootnamespace:PCL','/imports:System,System.Collections.Generic,System.Diagnostics,System.Linq,System.Threading,Newtonsoft.Json.Linq,MeloongCore',('/out:'+$output),('/sdkpath:'+$framework),('/reference:'+($references -join ',')),(Join-Path $fixture 'Engine.vb'),(Join-Path $fixture 'LocalGameData.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Base/FileTaskProgress.vb'),(Join-Path $fixture 'Stubs.vb'))
   & $compiler @compilerArgs
   if($LASTEXITCODE -ne 0){throw 'Isolated world-backup engine compilation failed'}
   $asm=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($output))
+  $service=$asm.GetType('PCL.WorldBackups',$true).GetField('Service',$flags)
+  if($null -eq $service -or -not $service.FieldType.IsGenericType -or $service.FieldType.GetGenericTypeDefinition() -ne $backupEngineType){throw 'The isolated production facade is not bound to the current C# backup engine.'}
  }else{
   if(-not $ExecutablePath){throw 'Specify -ExecutablePath or -EngineOnly.'}
   Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
@@ -186,6 +202,17 @@ End Module
  $watcherModule=$asm.GetType('PCL.ModWatcher',$true);$watcherType=$asm.GetType('PCL.ModWatcher+Watcher',$true)
  $watchers=$watcherModule.GetField('McWatcherList',$flags).GetValue($null)
  $watcher=[Runtime.Serialization.FormatterServices]::GetUninitializedObject($watcherType)
+ if(-not $EngineOnly){
+  # Do not run the game-monitoring constructor. Attach the actual C# engine using
+  # the actual production Host/Group, so original default Loading state is valid.
+  # FormatterServices bypasses the new readonly engine initialization as well.
+  $nativeField=$watcherType.GetField('Native',$flags)
+  if($null -eq $nativeField){throw 'Actual Watcher engine bridge was not found'}
+  $watcherHost=$watcherModule.GetField('Host',$flags).GetValue($null)
+  $watcherGroup=$watcherModule.GetField('Group',$flags).GetValue($null)
+  $nativeWatcher=$nativeField.FieldType.GetConstructors()[0].Invoke(@($watcher,$watcherHost,$watcherGroup))
+  $nativeField.SetValue($watcher,$nativeWatcher)
+ }
  $watcherType.GetField('GameProcess',$flags).SetValue($watcher,$self)
  $watcherType.GetField('Instance',$flags).SetValue($watcher,$instance)
  $watchers.Add($watcher)
@@ -287,10 +314,10 @@ End Module
  if(-not [IO.File]::Exists((Join-Path $deleted ($selected[0]+'/world.zip')))){throw 'Removed backup is not recoverable'}
  AssertText (Join-Path $world 'level.dat') 'retention-3'
  # Backups now live below each world in the saves page, using native collapsible groups.
- $groupXml=[xml][IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml'))
- $groupSource=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupGroup.xaml.vb'))
- $settingsXml=[xml][IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml'))
- $settingsSource=[IO.File]::ReadAllText((Join-Path $root 'Plain Craft Launcher 2/Pages/PageInstance/WorldBackupSettings.xaml.vb'))
+ $groupXml=[xml](Read-LfFixedSourceText -Name 'backup-group-xaml-f4')
+ $groupSource=(Read-LfFixedSourceText -Name 'backup-group-code-f4')
+ $settingsXml=[xml](Read-LfFixedSourceText -Name 'backup-settings-xaml-f4')
+ $settingsSource=(Read-LfFixedSourceText -Name 'backup-settings-code-f4')
  foreach($control in @('MyCard','MyIconTextButton')){if(-not $groupXml.SelectSingleNode("//*[local-name()='$control']")){throw ('Missing native backup-group control '+$control)}}
  foreach($control in @('MyCard','MyCheckBox','MyTextBox')){if(-not $settingsXml.SelectSingleNode("//*[local-name()='$control']")){throw ('Missing native backup-settings control '+$control)}}
  if(-not $groupSource.Contains('Row.BindRestorePoint(Point)') -or -not $groupSource.Contains('Row.RestorePoint(') -or -not $groupSource.Contains('CardBackups.SwapControl = PanContent') -or $groupSource -match '\.Tag\s*=' -or -not $settingsSource.Contains('BindOwner') -or -not $settingsSource.Contains('CardSettings.SwapControl = PanSettings')){throw 'Native grouped backup UI contract failed'}

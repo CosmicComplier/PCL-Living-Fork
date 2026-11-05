@@ -1,0 +1,63 @@
+{
+  "repository": "dotnet/runtime",
+  "tag": "v10.0.14",
+  "commit": "6aa72daa24f66c01c3d7b6a32519e9d21396deec",
+  "license": "MIT",
+  "files": [
+    {
+      "path": "src/installer/managed/Microsoft.NET.HostModel/Bundle/Manifest.cs",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/installer/managed/Microsoft.NET.HostModel/Bundle/Manifest.cs",
+      "sha256": "b45defad7f4c3545995b7f66af234eab1edbf524f900df8b0784fb35ab6f364f"
+    },
+    {
+      "path": "src/installer/managed/Microsoft.NET.HostModel/Bundle/FileEntry.cs",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/installer/managed/Microsoft.NET.HostModel/Bundle/FileEntry.cs",
+      "sha256": "02419b4d1f18ccd389c8a2145a9e660a002c17294596837b77a280d34de4c848"
+    },
+    {
+      "path": "src/installer/managed/Microsoft.NET.HostModel/Bundle/Bundler.cs",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/installer/managed/Microsoft.NET.HostModel/Bundle/Bundler.cs",
+      "sha256": "611d3da3eb4d25ef9ae411fb5d626f8d55852bedd759d9e0ec3c8ad7b4713b77"
+    },
+    {
+      "path": "src/installer/managed/Microsoft.NET.HostModel/Bundle/TargetInfo.cs",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/installer/managed/Microsoft.NET.HostModel/Bundle/TargetInfo.cs",
+      "sha256": "83f5f6a56a41926295e082400fcb099296b45658ddd7918b48b6cee7f90c72e2"
+    },
+    {
+      "path": "src/installer/managed/Microsoft.NET.HostModel/Bundle/FileType.cs",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/installer/managed/Microsoft.NET.HostModel/Bundle/FileType.cs",
+      "sha256": "bb378074145d183576a47169c3651d605eed70f454b18e1c8263b69e83419fae"
+    },
+    {
+      "path": "src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs",
+      "sha256": "43702bfa853468ac1bf7a1c8fe94f9331c979318c1de55e86df3204420e57cdd"
+    },
+    {
+      "path": "src/native/corehost/bundle/header.cpp",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/native/corehost/bundle/header.cpp",
+      "sha256": "17522c11aeff1b0f0b8c91279185f51c21b7471f1021379e464b883f8cee18f2"
+    },
+    {
+      "path": "src/native/corehost/bundle/header.h",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/native/corehost/bundle/header.h",
+      "sha256": "b10c01238c27049163a461793f98637b75c1ae609f13447241555b30a6f122a2"
+    },
+    {
+      "path": "src/native/corehost/bundle/file_entry.cpp",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/native/corehost/bundle/file_entry.cpp",
+      "sha256": "0524eec21bb93d88d8ef3d219ebd50e7f98a5a7d8f3a40f9a29631bdf41be971"
+    },
+    {
+      "path": "src/native/corehost/bundle/reader.h",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/src/native/corehost/bundle/reader.h",
+      "sha256": "2c00438274a39dd8437208914f32d40ec9d47143149883c260cb50515361099f"
+    },
+    {
+      "path": "LICENSE.TXT",
+      "source": "https://raw.githubusercontent.com/dotnet/runtime/6aa72daa24f66c01c3d7b6a32519e9d21396deec/LICENSE.TXT",
+      "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310"
+    }
+  ]
+}

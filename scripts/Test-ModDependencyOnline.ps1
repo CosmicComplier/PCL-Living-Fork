@@ -1,6 +1,7 @@
 ﻿param([string]$ExecutablePath,[string]$VbcPath)
-# GUID fixtures and injected API responses only. No live HTTP, launcher startup, accounts, or real mods.
+# GUID fixtures and injected API responses only. No live dependency HTTP, launcher startup, accounts, or real mods.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
 $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclModDependencyOnline-'+[Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($fixture)|Out-Null
@@ -85,6 +86,20 @@ try {
  if(-not $ExecutablePath){
   if(-not $VbcPath){$VbcPath='C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\Roslyn\vbc.exe'}
   if(-not [IO.File]::Exists($VbcPath)){throw 'Pass -VbcPath for Roslyn, or -ExecutablePath for a built launcher.'}
+  # Reuse the actual migrated inspector while keeping the original injected
+  # online transport and instance adapters; no main launcher build is required.
+  $dotnetCommand=(Get-Command dotnet -CommandType Application -ErrorAction Stop).Source
+  & $dotnetCommand build (Join-Path $root 'PCLCS/PCLCS.csproj') --configuration Release --verbosity minimal -warnaserror
+  if($LASTEXITCODE -ne 0){throw 'Standalone online dependency core build failed.'}
+  $coreReference=Join-Path $root 'PCLCS/bin/PCLCS.dll'
+  $sharedReference=Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'
+  foreach($reference in @($coreReference,$sharedReference)){
+   if(-not [IO.File]::Exists($reference)){throw ('Missing standalone production dependency: '+$reference)}
+  }
+  [Reflection.Assembly]::LoadFrom($sharedReference)|Out-Null
+  $coreAssembly=[Reflection.Assembly]::LoadFrom($coreReference)
+  $coreType=$coreAssembly.GetType('PCLCS.ModDependencyInspection`10',$true)
+  if(-not $coreType.IsGenericTypeDefinition -or $coreType.GetGenericArguments().Length -ne 10){throw 'Standalone fixture did not load the migrated production inspector.'}
   $stub=Join-Path $fixture 'InstanceStub.vb'
   [IO.File]::WriteAllText($stub,@'
 Imports System.Collections.Generic
@@ -110,7 +125,8 @@ End Module
 '@)
   $ExecutablePath=Join-Path $fixture 'ModDependencyOnlineFixture.dll'
   $refs=@('System.dll','System.Core.dll','System.IO.Compression.dll','System.IO.Compression.FileSystem.dll','System.Net.Http.dll')|ForEach-Object {Join-Path $framework $_}
-  & $VbcPath @('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($refs -join ',')),('/reference:'+$jsonPath),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyInspector.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyIndex.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Minecraft/ModDependencyOnline.vb'),$stub)
+  $refs+=@($coreReference,$sharedReference)
+  & $VbcPath @('/nologo','/target:library','/rootnamespace:PCL','/optioninfer+','/optionstrict+','/utf8output',('/sdkpath:'+$framework),('/out:'+$ExecutablePath),('/reference:'+($refs -join ',')),('/reference:'+$jsonPath),(Export-LfFixedSource -Name 'deps-inspector-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),(Export-LfFixedSource -Name 'deps-index-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),(Export-LfFixedSource -Name 'deps-online-lf50' -Directory (Join-Path $fixture 'fixed-baseline')),$stub)
   if($LASTEXITCODE -ne 0){throw 'Isolated online dependency compilation failed.'}
  }else {
   foreach($path in @('MeloongCore/Shared/bin/MeloongCore.dll','MeloongCore/Wpf/bin/MeloongCore.Wpf.dll','PCLCS/bin/PCLCS.dll')){

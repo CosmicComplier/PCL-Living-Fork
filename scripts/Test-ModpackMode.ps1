@@ -72,9 +72,9 @@ try {
  $launch=[Activator]::CreateInstance($asm.GetType('PCL.PageLaunchLeft'))
  $globals.GetField('FrmSetupLeft').SetValue($null,$left)
  $globals.GetField('FrmLaunchLeft').SetValue($null,$launch)
- $animationField=$asm.GetType('PCL.ModAnimation').GetField('_AniControlEnabled',[Reflection.BindingFlags]'NonPublic,Static')
- $previousAnimation=$animationField.GetValue($null)
- $animationField.SetValue($null,($previousAnimation+1))
+ $animationField=$asm.GetType('PCL.ModAnimation').GetProperty('AniControlEnabled',$flags)
+ $previousAnimation=$animationField.GetValue($null,$null)
+ $animationField.SetValue($null,($previousAnimation+1),$null)
  $instanceViews=@{}
  try{
   foreach($name in @('PageInstanceLeft','PageInstanceOverall','PageInstanceMod','PageInstanceModDisabled','PageInstanceSetup','PageSetupLaunch')){
@@ -82,7 +82,7 @@ try {
    $instanceViews[$name]=$view
    $globals.GetField(('Frm'+$name.Substring(4))).SetValue($null,$view)
   }
- }finally{$animationField.SetValue($null,$previousAnimation)}
+ }finally{$animationField.SetValue($null,$previousAnimation,$null)}
  $overview=$instanceViews['PageInstanceOverall']
  $fakeHeader=[Activator]::CreateInstance($asm.GetType('PCL.MyListItem'))
  $fakeHeader.Title='26.2-Fabric 0.19.3';$fakeHeader.Info='synthetic header details';$fakeHeader.Height=42
@@ -164,10 +164,10 @@ try {
  foreach($name in @('PageInstanceSetup','PageSetupLaunch')){if($instanceViews[$name].FindName('ComboArgumentIndieV2').Visibility -ne 'Visible'){throw 'Normal isolation row did not return'}}
  $system=$left.PageGet([Enum]::ToObject($asm.GetType('PCL.FormMain+PageSubType'),3))
  if($system.GetType().FullName -ne 'PCL.PageSetupSystem' -or -not $system.FindName('CheckModpackMode')){throw 'Normal launcher mode switch missing'}
- $animations=$asm.GetType('PCL.ModAnimation').GetField('_AniControlEnabled',[Reflection.BindingFlags]'NonPublic,Static')
- $oldAnimations=$animations.GetValue($null)
- $animations.SetValue($null,($oldAnimations+1))
- try{$system.Reload()}finally{$animations.SetValue($null,$oldAnimations)}
+ $animations=$asm.GetType('PCL.ModAnimation').GetProperty('AniControlEnabled',$flags)
+ $oldAnimations=$animations.GetValue($null,$null)
+ $animations.SetValue($null,($oldAnimations+1),$null)
+ try{$system.Reload()}finally{$animations.SetValue($null,$oldAnimations,$null)}
  if($system.FindName('CheckModpackMode').Visibility -ne 'Visible'){throw 'Exported launcher lost its mode switch'}
  $marker.ValueCache['']=$false
  $system.GetType().GetMethod('RefreshModpackSwitch',[Reflection.BindingFlags]'NonPublic,Instance').Invoke($system,@()) | Out-Null

@@ -1,0 +1,414 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "legacySelectorSha256": "57dd32fd8d52e17b155efdaffc27aed83c005f77d0d7975ed03957a9370fc7c0",
+    "nativeSelectorSha256": "65b579b0590a5cc91d4cfd9532993e6379dfb3f554e141e2f78d6026ef38b861",
+    "capturedFrom": "Actual Root selector CLI before additive native_run routing; 21 original paths plus canonical FileTaskProgress/SettingsIsolation cases. No old selector implementation is shipped or imported.",
+    "scopeFields": [
+      "full",
+      "product_build",
+      "migration_run",
+      "groups",
+      "windows_scripts",
+      "world_checks",
+      "engine_only",
+      "oracle",
+      "inventory"
+    ]
+  },
+  "scopes": {
+    "world-backups": {
+      "full": false,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "world-backups"
+      ],
+      "windows_scripts": [
+        "Test-InstanceResources",
+        "Test-MapInstallAndRecycle",
+        "Test-ModpackUpdate",
+        "Test-ModpackUpdateUx",
+        "Test-BackupRetention",
+        "Test-WorldBackups",
+        "Test-WorldBackupGroups",
+        "Test-SaveBackupIntegration",
+        "Test-InstanceClone",
+        "Test-InstanceCloneGroups"
+      ],
+      "world_checks": true,
+      "engine_only": true,
+      "oracle": false,
+      "inventory": false
+    },
+    "resource-page": {
+      "full": false,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "resource-entry",
+        "resource-paths",
+        "resource-files",
+        "resource-metadata"
+      ],
+      "windows_scripts": [
+        "Test-InstanceResources",
+        "Test-MapInstallAndRecycle",
+        "Test-BackgroundModes",
+        "Test-ResourceUpdates",
+        "Test-SaveBackupIntegration",
+        "Test-InstanceClone",
+        "Test-MapDetails",
+        "Test-ResourceEntryPoints",
+        "Test-ScreenshotGallery"
+      ],
+      "world_checks": true,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "instance-clone": {
+      "full": false,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "instance-clone"
+      ],
+      "windows_scripts": [
+        "Test-EnvironmentHistory",
+        "Test-BackupRetention",
+        "Test-InstanceClone",
+        "Test-InstanceCloneGroups",
+        "Test-RecentEnvironmentChanges",
+        "Test-EnvironmentCoverage",
+        "Test-ExportVersionIsolation"
+      ],
+      "world_checks": true,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "release-script": {
+      "full": false,
+      "product_build": true,
+      "migration_run": false,
+      "groups": [],
+      "windows_scripts": [
+        "Test-Release"
+      ],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "map-details-script": {
+      "full": false,
+      "product_build": true,
+      "migration_run": false,
+      "groups": [],
+      "windows_scripts": [
+        "Test-MapDetails"
+      ],
+      "world_checks": true,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "all-migration-groups": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": [
+        "world-metadata",
+        "local-data",
+        "personal-options",
+        "keybindings",
+        "quick-play",
+        "resource-entry",
+        "resource-paths",
+        "resource-files",
+        "resource-metadata",
+        "world-backups",
+        "environment-history",
+        "instance-clone",
+        "mod-dependencies",
+        "mod-dependency-online",
+        "settings",
+        "validation-loaders",
+        "legacy-java",
+        "foundation"
+      ],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "file-task-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": [
+        "world-backups",
+        "environment-history",
+        "instance-clone"
+      ],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "settings-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": [
+        "settings"
+      ],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "world-backup-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": [
+        "world-backups"
+      ],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "no-checks": {
+      "full": false,
+      "product_build": false,
+      "migration_run": false,
+      "groups": [],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "complete": {
+      "full": true,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "world-metadata",
+        "local-data",
+        "personal-options",
+        "keybindings",
+        "quick-play",
+        "resource-entry",
+        "resource-paths",
+        "resource-files",
+        "resource-metadata",
+        "world-backups",
+        "environment-history",
+        "instance-clone",
+        "mod-dependencies",
+        "mod-dependency-online",
+        "settings",
+        "validation-loaders",
+        "legacy-java",
+        "foundation"
+      ],
+      "windows_scripts": [
+        "Test-Release",
+        "Test-VersionListCancellation",
+        "Test-AuditFixes",
+        "Test-CustomEventAndSecret",
+        "Test-LauncherActivation",
+        "Test-MigratedControls",
+        "Test-Toolbox",
+        "Test-ToolboxMemory",
+        "Test-InstanceResources",
+        "Test-MapInstallAndRecycle",
+        "Test-BackgroundModes",
+        "Test-ResourceUpdates",
+        "Test-LocalGameFeatures",
+        "Test-GameFeatureRegressions",
+        "Test-ModpackUpdate",
+        "Test-ModpackUpdateUx",
+        "Test-ReviewFixes",
+        "Test-EnvironmentHistory",
+        "Test-BackupRetention",
+        "Test-RecentWorldCard",
+        "Test-LaunchDependencies",
+        "Test-DependencyActivation",
+        "Test-DependencyToggles",
+        "Test-WorldBackups",
+        "Test-WorldBackupGroups",
+        "Test-SaveBackupIntegration",
+        "Test-ModDependencies",
+        "Test-ModDependencyOnline",
+        "Test-ModDependencyGraph",
+        "Test-InstanceClone",
+        "Test-InstanceCloneGroups",
+        "Test-RecentEnvironmentChanges",
+        "Test-EnvironmentCoverage",
+        "Test-KeybindingGroups",
+        "Test-MapDetails",
+        "Test-ResourceEntryPoints",
+        "Test-WorldDetails",
+        "Test-ScreenshotGallery",
+        "Test-ToolboxDownload",
+        "Test-ModpackMode",
+        "Test-ModpackFolderScope",
+        "Test-IconCompatibility",
+        "Test-InstalledComponentLoading",
+        "Test-ExportVersionIsolation"
+      ],
+      "world_checks": true,
+      "engine_only": true,
+      "oracle": true,
+      "inventory": true
+    }
+  },
+  "legacyCases": [
+    {
+      "path": "PCLCS/Minecraft/WorldBackupEngine.cs",
+      "scope": "world-backups",
+      "native": true
+    },
+    {
+      "path": "PCLCS/Platform/Windows/Resources/ResourcePageController.cs",
+      "scope": "resource-page",
+      "native": true
+    },
+    {
+      "path": "PCLCS/Minecraft/InstanceCloneEngine.cs",
+      "scope": "instance-clone",
+      "native": true
+    },
+    {
+      "path": "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb",
+      "scope": "world-backups",
+      "native": false
+    },
+    {
+      "path": "scripts/Test-Release.ps1",
+      "scope": "release-script",
+      "native": false
+    },
+    {
+      "path": "scripts/Test-MapDetails.ps1",
+      "scope": "map-details-script",
+      "native": false
+    },
+    {
+      "path": "tests/PCLLF.Migration.Tests/Program.cs",
+      "scope": "all-migration-groups",
+      "native": false
+    },
+    {
+      "path": "tests/PCLLF.Migration.Tests/FileTaskProgressTests.cs",
+      "scope": "file-task-tests",
+      "native": false
+    },
+    {
+      "path": "tests/PCLLF.Migration.Tests/SettingsMicrosoftIsolationTests.cs",
+      "scope": "settings-tests",
+      "native": false
+    },
+    {
+      "path": "tests/PCLLF.Migration.Tests/WorldBackupPipelineTests.cs",
+      "scope": "world-backup-tests",
+      "native": false
+    },
+    {
+      "path": "tests/PCLLF.Modern.Wpf.Tests/Program.cs",
+      "scope": "no-checks",
+      "native": false
+    },
+    {
+      "path": ".github/workflows/modern-wpf.yml",
+      "scope": "no-checks",
+      "native": false
+    },
+    {
+      "path": "scripts/Sync-CnbRelease.py",
+      "scope": "no-checks",
+      "native": false
+    },
+    {
+      "path": "docs/MIGRATION_STATUS.md",
+      "scope": "no-checks",
+      "native": false
+    },
+    {
+      "path": "MeloongCore",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": ".gitmodules",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "modern/PCLCS/PCLCS.Modern.csproj",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "modern/future-shared/Contract.cs",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "PCLCS/FutureShared.cs",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "scripts/Select-MigrationChecks.py",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "scripts/Write-BuildCredentials.ps1",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "scripts/Build-UpdateBridge.ps1",
+      "scope": "complete",
+      "native": true
+    },
+    {
+      "path": "unknown future config.json",
+      "scope": "complete",
+      "native": true
+    }
+  ],
+  "nativeOnlyPaths": [
+    "modern/Main/FormMain.xaml.cs",
+    "modern/Main/PCL-Living-Fork.Modern.csproj",
+    "modern/Main/FormMain.xaml",
+    "modern/BuildEvents/filter-task/Lf.Build.Tasks.csproj",
+    "modern/BuildResources/Program.cs",
+    "modern/Presentation/NativeWpf/Utils/WindowsUtils.cs",
+    "modern/ThirdParty/NAudio.dll",
+    "tests/PCLLF.Native.Facade.Tests/Program.cs",
+    "scripts/Test-NativeLauncherSmoke.ps1",
+    "scripts/native-smoke/NativeSmokeWin32.cs",
+    "scripts/native-update-inspector/Program.cs",
+    "scripts/Build-NativeRelease.ps1",
+    "scripts/Build-ModernRelease.ps1",
+    ".github/workflows/native-main.yml",
+    "PCL-Living-Fork.Modern.slnx",
+    "scripts/tests/Test-NativeUpgradeQualification.py",
+    "scripts/tests/native-credentials/NativeCredentialChecks.csproj",
+    "scripts/tests/native-credentials/Program.cs",
+    "scripts/tests/Test-NativeBuildCredentials.ps1",
+    "scripts/tests/Test-CSharpCredentialFactories.ps1"
+  ]
+}
