@@ -41,6 +41,8 @@ internal static class Program
         {
             if (!OperatingSystem.IsWindows())
                 throw new PlatformNotSupportedException("This host requires a real Windows .NET10/WPF runtime.");
+            if (args.Contains("--modpack-download-child", StringComparer.Ordinal))
+                return ModpackDownloadProcess.RunChild(args);
             if (BackupResourceChecks.TryRunIdleChild(args, out int backupIdleExit))
                 return backupIdleExit;
             string[] selected = ReadGroups(args);
@@ -92,7 +94,9 @@ internal static class Program
         return selected.Distinct(StringComparer.Ordinal).ToArray();
     }
 
-    private static int RunChild(string[] args)
+    internal static int RunDownloadChild(string nonce) => RunChild(["--modpack-download-child", nonce], true);
+
+    private static int RunChild(string[] args, bool dedicatedDownload = false)
     {
         string root = Path.Combine(Path.GetTempPath(), "PclNativeFacade-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -123,6 +127,31 @@ internal static class Program
             stdout = process.StandardOutput.ReadToEndAsync(); ObserveFault(stdout);
             stderr = process.StandardError.ReadToEndAsync(); ObserveFault(stderr);
             Task[] drains = [stdout, stderr];
+            if (dedicatedDownload)
+            {
+                string receipt = Path.Combine(root, ModpackDownloadProcess.ReceiptName);
+                while (!File.Exists(receipt))
+                {
+                    if (Remaining() == 0) throw new TimeoutException("Dedicated download did not prove completion within the same60-second deadline.");
+                    if (process.WaitForExit(Math.Min(25, Remaining())))
+                        throw new InvalidOperationException("Dedicated download exited before its complete owned-manager receipt: " + process.ExitCode);
+                }
+                ModpackDownloadProcess.RequireReceipt(receipt, args[1], process.Id, root);
+                if (process.HasExited) throw new InvalidOperationException("Dedicated download exited before the parent took ownership of its retained manager threads.");
+                // LF's three NetManager loops intentionally live for the entire
+                // product process. The verified dedicated child retains its
+                // settings/platform guards until this explicit process boundary.
+                process.Kill(true);
+                if (!process.WaitForExit(Remaining()) || !Task.WaitAll(drains, Remaining()) || run.ElapsedMilliseconds >= 60000)
+                    throw new TimeoutException("Owned download termination/output exceeded the same60-second deadline.");
+                if (process.ExitCode != -1) throw new InvalidOperationException("Owned Windows download termination did not return the expected -1: " + process.ExitCode);
+                string errors = stderr.GetAwaiter().GetResult();
+                if (errors.Length != 0) throw new InvalidOperationException("Dedicated download reported stderr despite its receipt: " + errors);
+                Console.Write(stdout.GetAwaiter().GetResult());
+                outputPrinted = true;
+                Console.WriteLine("PASS native modpack download lifetime: complete UX/file/network/listener evidence; exactly three original foreground NetManager loops retained until expected parent-owned termination (-1), not a natural exit0.");
+                return 0;
+            }
             if (!process.WaitForExit(Remaining()) || !Task.WaitAll(drains, Remaining()) || run.ElapsedMilliseconds >= 60000)
                 throw new TimeoutException("Native facade host/output exceeded the same60-second deadline.");
             Console.Write(stdout.GetAwaiter().GetResult()); Console.Error.Write(stderr.GetAwaiter().GetResult());
@@ -173,7 +202,7 @@ internal static class Program
                     if (cleanup.ElapsedMilliseconds >= 5000) cleanupErrors.Add(new TimeoutException("Native child cleanup exceeded the same five-second deadline."));
                     if (!outputPrinted)
                     {
-                        Cleanup("write failure metadata", () => Console.Error.WriteLine("Native child failure evidence: groups=" + string.Join(',', ReadGroups(args)) +
+                        Cleanup("write failure metadata", () => Console.Error.WriteLine("Native child failure evidence: groups=" + (dedicatedDownload ? "modpack-download-child" : string.Join(',', ReadGroups(args))) +
                             "; PID=" + process.Id + "; stopped=" + stopped + "; settled=" + settled + "; stdout=" + stdout?.Status + "; stderr=" + stderr?.Status));
                         Cleanup("write complete stdout tail", () => PrintTail(stdout, "stdout"));
                         Cleanup("write complete stderr tail", () => PrintTail(stderr, "stderr"));

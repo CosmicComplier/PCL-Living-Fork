@@ -55,13 +55,34 @@ internal static class MmcImportChecks
         Check("roots",File.ReadAllText(Path.Combine(folder,"mods","keep.txt"))=="actual-pack-data");
         Check("files",File.ReadAllText(Path.Combine(folder,"options.txt"))=="gamma:1.0");
         Check("ini",Ini(folder,"VersionArgumentIndie")=="1"&&Ini(folder,"VersionArgumentIndieV2")=="True"&&Ini(folder,"IsStar")=="False");
-        Check("commands",Ini(folder,"VersionAdvanceRun")=="\"{java}java.exe\" \"{minecraft}mods\" \"{verpath}config\" {name} {name}");
+        const string expectedCommand = "\"{java}java.exe\" \"{minecraft}mods\" \"{verpath}config\" {name} {name}";
+        string actualCommand = Ini(folder,"VersionAdvanceRun");
+        if (actualCommand != expectedCommand) CommandDiagnostics(scope, prefix, name, !appendJvm, actualCommand, expectedCommand);
+        Check("commands",actualCommand==expectedCommand);
         Check("server",Ini(folder,"VersionServerEnter")=="mc.example.invalid:25565");
         Check("logo",Ini(folder,"LogoCustom")=="True"&&Ini(folder,"Logo")=="PCL\\Logo.png"&&File.ReadAllBytes(Path.Combine(folder,"PCL","Logo.png")).SequenceEqual(png));
         Check("jvm",Ini(folder,"VersionAdvanceJvm")=="-Dpack=a=b"+(appendJvm?" -Dglobal=kept":""));
         Check("preserve",Ini(folder,"UnknownFixture")=="keep-me"&&File.ReadAllBytes(zip).SequenceEqual(original));
         using(FileStream exclusive=new(zip,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){}Check("archive-release",true);
         if(prefix.Length>0)Check("nested",File.Exists(Path.Combine(folder,"mods","keep.txt"))&&!Directory.Exists(Path.Combine(folder,"Pack")));
+    }
+    // Only the GUID-owned synthetic package/config is read after its genuine
+    // workload/thread has returned. This exposes no user command or profile and
+    // preserves the fixed LF command gold; diagnostics never repair the result.
+    private static void CommandDiagnostics(MmcImportScope scope, string prefix, string name, bool replaceJvm, string actual, string expected) {
+        static string Synthetic(string value) => Newtonsoft.Json.JsonConvert.SerializeObject(value.Length <= 2048 ? value : value[..2048] + "<truncated>");
+        string input = Config(name, replaceJvm).Split('\n').Single(line => line.StartsWith("PreLaunchCommand=", StringComparison.Ordinal));
+        string file = Path.Combine(scope.LastTemp, prefix.Replace('/', Path.DirectorySeparatorChar), "instance.cfg");
+        string owned = Native.Full(scope.Root) + Path.DirectorySeparatorChar;
+        Native.Check(Native.Full(file).StartsWith(owned, StringComparison.OrdinalIgnoreCase), "MMC diagnostic input escaped its owned synthetic root.");
+        try {
+            string converted = File.Exists(file) ? File.ReadAllText(file) : "<missing synthetic config>";
+            string readFlag = ModBase.ReadIni(file, "OverrideCommands", "<missing-key>"), readCommand = ModBase.ReadIni(file, "PreLaunchCommand", "<missing-key>");
+            string setup = Path.Combine(scope.Game, "versions", name, "PCL", "Setup.ini");
+            Native.Check(Native.Full(setup).StartsWith(owned, StringComparison.OrdinalIgnoreCase), "MMC diagnostic output escaped its owned synthetic root.");
+            string stored = File.Exists(setup) ? File.ReadLines(setup).FirstOrDefault(line => line.StartsWith("VersionAdvanceRun:", StringComparison.Ordinal)) ?? "<missing command line>" : "<missing synthetic Setup.ini>";
+            Console.WriteLine("DIAG MMC synthetic command: actual=" + Synthetic(actual) + "; expected=" + Synthetic(expected) + "; input=" + Synthetic(input) + "; convertedConfig=" + Synthetic(converted) + "; cachedOverride=" + Synthetic(readFlag) + "; cachedCommand=" + Synthetic(readCommand) + "; storedCommand=" + Synthetic(stored));
+        } catch (Exception error) { Console.WriteLine("DIAG MMC synthetic command diagnostic failed: " + error.GetType().Name); }
     }
     private static Exception Rejected(Func<object?> action) { try { action(); } catch(Exception error) { return error; } throw new InvalidOperationException("Expected existing MMC refusal did not occur."); }
     private static void ParseAndRefusal(MmcImportScope scope) {

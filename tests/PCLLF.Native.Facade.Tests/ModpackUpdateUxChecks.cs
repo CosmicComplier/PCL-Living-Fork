@@ -38,12 +38,12 @@ internal static class ModpackUpdateUxChecks
     internal static void Run(string root)
     {
         ModpackUpdateCleanup.VerifyIsolatedChild();
-        DownloadProgress(Path.Combine(root, "loopback"));
+        ModpackDownloadProcess.RunParent();
         VersionsAndPreview(Path.Combine(root, "preview"));
         Console.WriteLine("PASS native modpack-update UX: UX-P1..P4 and UX-01..UX-13 (actual loopback, selection/modal and read-only preview).");
     }
 
-    private static void DownloadProgress(string folder)
+    internal static void DownloadProgress(string folder)
     {
         Directory.CreateDirectory(folder);
         byte[] bytes = new byte[2 * 1024 * 1024]; new Random(731).NextBytes(bytes);
@@ -112,6 +112,8 @@ internal static class ModpackUpdateUxChecks
                 ModpackUpdateCleanup.TerminateChild("UX downloader cancellation/completion barrier failed before loopback/roots disposal: " + error);
             }
         }
+        using FileStream exclusive = new(files[0].LocalPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        Check(exclusive.Length == bytes.Length, "UX-cleanup-exclusive", "completed download retained a file handle or changed length");
     }
 
     private static void VersionsAndPreview(string folder)
