@@ -183,7 +183,29 @@ try {
     if($case -eq 'parent-timeout'){
      Wait-Failure $helper '原启动器尚未退出。';if($script:caseRecord.Failure.ElapsedMilliseconds -lt 18000){Pending 'Observer cannot establish original twenty-second parent wait; preserve timing evidence.'};if($parent.HasExited -or (Hash-File $script:target) -cne $script:caseRecord.OriginalSha256){throw 'Parent timeout modified installed target or closed actual parent.'};if(-not $bridge.WaitForExit(10000) -or $bridge.ExitCode -ne 1){throw 'Bridge failed to report unchanged-target native failure.'};Close-Main $parent $notice
     }else{
-     Close-Main $parent $notice;$restarted=Wait-Restart;$null=Wait-Ready $restarted $newNotice;if(-not $helper.WaitForExit(15000) -or $helper.ExitCode -ne 0 -or -not $bridge.WaitForExit(15000) -or $bridge.ExitCode -ne 0){throw 'Actual helper/bridge did not finish native replacement successfully.'};if((Hash-File $script:target) -cne $nativeProof.sha256){throw 'Actual installed native payload SHA mismatch.'};Close-Main $restarted $newNotice
+     Close-Main $parent $notice;$restarted=Wait-Restart;$null=Wait-Ready $restarted $newNotice
+     # Preserve the original short-circuit waits: helper 15s/zero first, then
+     # bridge 15s/zero. Failure snapshots never add an unattempted bridge wait.
+     $helperFinished=$helper.WaitForExit(15000);$helperExitCode=$null;if($helperFinished){$helperExitCode=$helper.ExitCode}
+     $bridgeWaitAttempted=$false;$bridgeFinished=$null;$bridgeExitCode=$null
+     if($helperFinished -and $helperExitCode -eq 0){$bridgeWaitAttempted=$true;$bridgeFinished=$bridge.WaitForExit(15000);if($bridgeFinished){$bridgeExitCode=$bridge.ExitCode}}
+     $handoff=[ordered]@{Helper=@{ProcessId=$helper.Id;WaitAttempted=$true;WaitForExitMilliseconds=15000;WaitForExit=$helperFinished;ExitCode=$helperExitCode};Bridge=@{ProcessId=$bridge.Id;WaitAttempted=$bridgeWaitAttempted;WaitForExitMilliseconds=15000;WaitForExit=$bridgeFinished;ExitCode=$bridgeExitCode};RestartProcessId=$restarted.Id;Target=$script:target;ExpectedTargetSha256=$nativeProof.sha256}
+     $script:caseRecord.Handoff=$handoff
+     if(-not $helperFinished -or $helperExitCode -ne 0 -or -not $bridgeFinished -or $bridgeExitCode -ne 0){
+      # Read only owned process/window/file state before forced cleanup. No
+      # button is pressed and diagnostic errors cannot turn failure into pass.
+      $handoff.Processes=@();$handoff.DiagnosticErrors=@()
+      foreach($owned in @(@{Role='helper';Process=$helper},@{Role='bridge';Process=$bridge},@{Role='restart';Process=$restarted})){
+       $observation=[ordered]@{Role=$owned.Role;ProcessId=$owned.Process.Id;HasExited=$null;ExitCode=$null;Windows=@()}
+       try{$owned.Process.Refresh();$observation.HasExited=$owned.Process.HasExited;if($observation.HasExited){$observation.ExitCode=$owned.Process.ExitCode}}catch{$handoff.DiagnosticErrors+=($owned.Role+' process: '+$_.Exception.Message)}
+       try{foreach($window in @([PclLfNativeSmoke.Win32]::Windows($owned.Process.Id))){$body=$null;if($window.ClassName -ceq '#32770'){$body=[PclLfNativeUpgrade.Dialogs]::Body($window.Handle)};$observation.Windows+=,@{Handle=$window.Handle.ToInt64();Title=$window.Title;ClassName=$window.ClassName;Body=$body}}}catch{$handoff.DiagnosticErrors+=($owned.Role+' windows: '+$_.Exception.Message)}
+       $handoff.Processes+=,$observation
+      }
+      try{$handoff.TargetExists=[IO.File]::Exists($script:target);if($handoff.TargetExists){$handoff.TargetBytes=([IO.FileInfo]$script:target).Length;$handoff.TargetSha256=Hash-File $script:target};$handoff.ReplacementFiles=@([IO.Directory]::EnumerateFiles($script:install,([IO.Path]::GetFileName($script:target)+'.updating-*')))+@([IO.Directory]::EnumerateFiles($script:install,([IO.Path]::GetFileName($script:target)+'.update-backup-*')))}catch{$handoff.DiagnosticErrors+=('target: '+$_.Exception.Message)}
+      try{Write-Output ('Actual upgrade helper/bridge diagnostic: '+($handoff|ConvertTo-Json -Depth 9 -Compress))}catch{$handoff.DiagnosticErrors+=('diagnostic output: '+$_.Exception.Message)}
+      throw 'Actual helper/bridge did not finish native replacement successfully.'
+     }
+     if((Hash-File $script:target) -cne $nativeProof.sha256){throw 'Actual installed native payload SHA mismatch.'};Close-Main $restarted $newNotice
      if($case -eq 'native-reinstall'){$script:caseRecord.Limit='Same-build native reinstall proves native target/protocol identity, not a different-version upgrade.'}
     }
    }
