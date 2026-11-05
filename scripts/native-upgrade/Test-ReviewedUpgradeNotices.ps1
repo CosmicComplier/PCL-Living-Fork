@@ -1,0 +1,95 @@
+﻿#requires -Version 5.1
+param([string]$UpgradeScriptPath=(Join-Path (Split-Path $PSScriptRoot -Parent) 'Test-NativeUpdateBridge.ps1'))
+$ErrorActionPreference='Stop'
+if($PSVersionTable.PSEdition -ne 'Desktop'){throw 'Run in actual Windows PowerShell 5.1.'}
+$policy=Join-Path $PSScriptRoot 'ReviewedUpgradeNotices.ps1'
+foreach($path in @($policy,$UpgradeScriptPath)){
+ $raw=[IO.File]::ReadAllBytes($path)
+ if($raw[0] -ne 239 -or $raw[1] -ne 187 -or $raw[2] -ne 191){throw 'Unicode PS5 startup policy must retain its UTF-8 BOM.'}
+}
+. $policy
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile([IO.Path]::GetFullPath($UpgradeScriptPath),[ref]$tokens,[ref]$errors)
+if($errors.Count -ne 0){throw 'Actual upgrade script did not parse in PS5.'}
+$evidence=@{Result='pending'}
+foreach($name in @('Pending','Check-Log','Assert-LfNormalClose','Test-ClosedLogGeneration')){
+ $functions=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$true))
+ if($functions.Count -ne 1){throw ('Expected one actual function: '+$name)}
+ . ([scriptblock]::Create($functions[0].Extent.Text))
+}
+$assignments=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$ready'},$true))
+if($assignments.Count -ne 1){throw 'Expected one actual Main readiness expression.'}
+$readyExpression=[scriptblock]::Create('param($text,$window,$notice,$nativeProof,$newNotice) '+$assignments[0].Right.Extent.Text)
+$nl=[string][char]13+[char]10
+$prefix='00:00:00.001 I [MessageDialogController] '
+$script:target='D:\owned-ci\Install with spaces\LivingPCL Actual Target.exe'
+$stages=@('第一阶段加载用时：','第二阶段加载用时：','第三阶段加载用时：','PCL 位置：',$script:target)
+$stageLog=($stages -join $nl)+$nl
+$count=0
+function Assert-Value([bool]$Expected,[scriptblock]$Action,[string]$Label){
+ $value=& $Action
+ if($value -isnot [bool] -or $value -ne $Expected){throw ('Unexpected notice/readiness result: '+$Label)}
+ $script:count++
+}
+function Assert-Refused([scriptblock]$Action,[string]$Label){
+ $refused=$false
+ try{& $Action | Out-Null}catch{$refused=$true}
+ if(-not $refused){throw ('Unsafe notice accepted: '+$Label)}
+ $script:count++
+}
+function Message-Log([string]$Title,[string]$Body,[string]$Kind='普通'){
+ $rows=@($Kind+'弹窗：'+$Title)+@($Body -split '\r?\n'|Where-Object {$_.Length -gt 0})
+ return (($rows | ForEach-Object {$prefix+$_}) -join $nl)+$nl
+}
+$highlights='- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime'+$nl+'- 更新页新增版本搜索、当前版本标记与 Markdown 说明'+$nl+'- 修复图片、中文搜索、资源详情异常及删除版本卡顿'
+foreach($version in @('dev_edition','1.4.0-pre-4')){
+ $script:nativeProof=[pscustomobject]@{versionBaseName=$version}
+ $script:newNotice='PCL Living Fork '+$version+' 版本说明'
+ $caption='PCL Living Fork '+$version+$nl+$nl+$highlights
+ if((Get-ReviewedUpgradeCaption $version) -cne $caption){throw 'Reviewed caption differs from independent complete expected body.'}
+ $count++
+ $regular=Message-Log $newNotice ('PCL Living Fork '+$version+' 是基于 PCL 官方开源版的第三方版本。'+$nl+$nl+$highlights)
+ $upgrade=Message-Log 'PCL Living Fork 更新说明' $caption
+ foreach($log in @($regular,$upgrade,($regular+$upgrade),($upgrade+$regular))){
+  Assert-Value $true {Test-ReviewedStartupNotice $log $newNotice $version -NativePhase} 'complete native notice'
+  Check-Log $log $newNotice
+  Assert-Value $true {& $readyExpression ($stageLog+$log) ([pscustomobject]@{Owned=$true}) $newNotice $nativeProof $newNotice} 'actual readiness with full known notice'
+ }
+ Assert-Value $false {Test-ReviewedStartupNotice (Message-Log 'PCL Living Fork 更新说明' '') $newNotice $version -NativePhase} 'title-only remains pending'
+ $partial=Message-Log 'PCL Living Fork 更新说明' ('PCL Living Fork '+$version)
+ Assert-Value $false {Test-ReviewedStartupNotice $partial $newNotice $version -NativePhase} 'caption prefix remains pending'
+ Assert-Refused {Check-Log $partial $newNotice -RequireComplete} 'partial caption cannot be final close'
+ Assert-Refused {Check-Log (Message-Log 'PCL Living Fork 更新说明' '') $newNotice -RequireComplete} 'title only cannot be final close'
+ $closeLog='00:00:01.001 I [Owned] 收到关闭指令'+$nl+'00:00:01.002 I [Owned] 程序已退出，返回值：Success'+$nl
+ Assert-LfNormalClose -1 ($upgrade+$closeLog) $newNotice
+ $count++
+ Assert-Refused {Assert-LfNormalClose -1 ($partial+$closeLog) $newNotice} 'actual close refuses incomplete caption'
+ Assert-Refused {Assert-LfNormalClose 0 ($upgrade+$closeLog) $newNotice} 'actual close preserves exact self-Kill exit'
+ Assert-Value $false {Test-ReviewedStartupNotice ($upgrade.TrimEnd([char]13,[char]10)) $newNotice $version -NativePhase} 'partial final line remains pending'
+ Assert-Refused {Check-Log ($partial+$regular) $newNotice} 'missing caption before next dialog'
+ Assert-Refused {Check-Log (Message-Log 'PCL Living Fork 更新说明' ($caption+' changed')) $newNotice} 'changed full body'
+ Assert-Refused {Check-Log (Message-Log 'PCL Living Fork 更新说明' ($caption+$nl+'extra')) $newNotice} 'extra caption line'
+ Assert-Refused {Check-Log (Message-Log 'PCL Living Fork 更新说明' $caption.Replace($version,'1.4.0-pre-5')) $newNotice} 'wrong caption version'
+ foreach($kind in @('选择','输入')){
+  Assert-Refused {Check-Log (Message-Log 'PCL Living Fork 更新说明' $caption $kind) $newNotice} 'same title with unsafe dialog kind'
+ }
+ Assert-Refused {Check-Log ($upgrade+(Message-Log 'unexpected destructive question' 'unknown')) $newNotice} 'unknown dialog after allowed upgrade'
+ Assert-Refused {Check-Log ($regular+$upgrade+'00:00:00.002 E [Actual] failure'+$nl) $newNotice} 'Error after allowed notices'
+ Assert-Refused {Check-Log $upgrade 'PCL Living Fork 1.3.4 版本说明'} 'native upgrade forbidden in old phase'
+ for($missing=0;$missing -lt $stages.Count;$missing++){
+  $incomplete=@();for($i=0;$i -lt $stages.Count;$i++){if($i -ne $missing){$incomplete+=$stages[$i]}}
+  $bad=($incomplete -join $nl)+$nl+$upgrade
+  Assert-Value $false {& $readyExpression $bad ([pscustomobject]@{Owned=$true}) $newNotice $nativeProof $newNotice} 'missing original stage/path'
+ }
+ Assert-Value $false {& $readyExpression ($stageLog+$upgrade) $null $newNotice $nativeProof $newNotice} 'missing actual window'
+}
+Assert-Value $true {Test-ReviewedStartupNotice (Message-Log 'PCL Living Fork 1.3.4 版本说明' 'legacy fixture') 'PCL Living Fork 1.3.4 版本说明' ''} 'original old notice retained'
+Assert-Refused {Test-ReviewedStartupNotice (Message-Log 'PCL Living Fork 更新说明' 'wrong') 'PCL Living Fork 1.4.0-pre-5 版本说明' '1.4.0-pre-5' -NativePhase} 'unreviewed future native version'
+Assert-Refused {Test-ReviewedStartupNotice '' 'PCL Living Fork 1.4.0-pre-4 版本说明' 'dev_edition' -NativePhase} 'mismatched metadata binding'
+$bytes=[Text.Encoding]::UTF8.GetBytes('normally closed owned generation')
+$script:closedLogGeneration=[pscustomobject]@{ProcessId=70;Bytes=$bytes}
+Assert-Value $true {Test-ClosedLogGeneration $bytes 71} 'prior exact closed log is still not current'
+Assert-Value $false {Test-ClosedLogGeneration $bytes 70} 'same PID cannot bypass current checks'
+Assert-Value $false {Test-ClosedLogGeneration ([Text.Encoding]::UTF8.GetBytes('changed log')) 71} 'changed log cannot bypass current checks'
+Write-Output ('PASS '+$count+' actual PS5 native-upgrade notice/readiness regressions; exact Native caption only, old phase/unknown/kind/body/Error/partial records refused or pending. No Main/profile/process/window/input action.')
+
