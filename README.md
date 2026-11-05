@@ -42,7 +42,7 @@ dotnet restore .\PCL-Living-Fork.Modern.slnx
 .\scripts\Build-Release.ps1 -Slim
 ```
 
-精简构建输出 EXE、ZIP、SHA256 校验和及 `SlimRelease.Artifacts.json` 构建索引。公开上传前按 [发布约定](AGENTS.md)统一文件名，并为旧版更新交接嵌入同一份精简负载。内部 CI 使用的自包含完整包不作为公开附件。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
+精简构建输出 EXE、ZIP、SHA256 校验和及 `SlimRelease.Artifacts.json` 构建索引。公开上传前按 [发布约定](docs/PUBLISHING.md)统一文件名，并为旧版更新交接嵌入同一份精简负载。内部 CI 使用的自包含完整包不作为公开附件。源码不包含实际 Client ID 或 API Key；请通过 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY` 环境变量提供自己的配置，构建时会加密嵌入。
 
 ## 迁移工程
 
