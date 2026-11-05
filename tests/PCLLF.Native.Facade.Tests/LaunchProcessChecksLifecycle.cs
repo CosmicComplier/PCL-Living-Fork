@@ -251,7 +251,11 @@ internal sealed partial class LaunchProcessChecksScope
             foreach (Process process in owned.Keys)
             {
                 if (handlers.TryGetValue(process, out var pair)) { process.OutputDataReceived -= pair.Output; process.ErrorDataReceived -= pair.Error; }
-                foreach (Action close in new Action[] { () => process.StandardInput.Close(), () => process.StandardOutput.Close(), () => process.StandardError.Close(), process.Dispose })
+                // Watcher owns BeginOutputReadLine/BeginErrorReadLine. Their
+                // EOF callbacks and actual WaitForExit drain settled above;
+                // synchronous getters would now select an incompatible mode.
+                // Process.Dispose closes its async or never-read pipe readers.
+                foreach (Action close in new Action[] { () => process.StandardInput.Close(), process.Dispose })
                     try { close(); } catch (Exception error) { closeErrors.Add(error); }
             }
             if (closeErrors.Count != 0) throw new AggregateException("Owned launch process/pipe handles did not all close.", closeErrors);

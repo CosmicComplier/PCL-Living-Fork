@@ -49,6 +49,38 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
         }
     }
 
+    // LF can cancel a prebuilt metadata placeholder before Manager.Start.
+    // Only a real registration owns a count, bound to that manager instance.
+    // Terminal transitions detach the exact lease under LockState; an older
+    // Reset/Cancel tail must never release a later registration of this file.
+    private sealed class ManagerCountLease(TManager owner)
+    {
+        private int released;
+        internal void Release()
+        {
+            if (Interlocked.Exchange(ref released, 1) == 0)
+                Interlocked.Decrement(ref owner.FileRemain);
+        }
+    }
+    private ManagerCountLease? managerCountLease;
+    internal void RegisterManagerCount(TManager owner)
+    {
+        lock (LockState)
+        {
+            if (managerCountLease is not null)
+                return;
+            Interlocked.Increment(ref owner.FileRemain);
+            managerCountLease = new ManagerCountLease(owner);
+        }
+    }
+    // Called only from the original terminal state LockState critical sections.
+    private ManagerCountLease? DetachManagerCount()
+    {
+        ManagerCountLease? lease = managerCountLease;
+        managerCountLease = null;
+        return lease;
+    }
+
     public ConcurrentList<TDownload> Tasks = new ConcurrentList<TDownload>();
     public List<TSource> Sources = null !;
     private int FirstThreadSource = 0;
@@ -928,6 +960,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
     {
         checked
         {
+            ManagerCountLease? lease;
             lock (LockState)
             {
                 if (N(State) >= 5)
@@ -937,9 +970,10 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                 // 凉凉
                 Logger.Info($"{LocalName}：已失败，当前状态 {State}");
                 State = NV(6);
+                lease = DetachManagerCount();
             }
 
-            CancelInternal();
+            CancelInternal(lease);
             foreach (var Task in Tasks)
                 Task.OnFileFail(Self);
         }
@@ -954,19 +988,21 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
             if (Tasks.Any())
                 return;
             // 确认中断
+            ManagerCountLease? lease;
             lock (LockState)
             {
                 if (N(State) >= 5)
                     return;
                 Logger.Info($"{LocalName}：已中断，当前状态 {State}");
                 State = NV(6);
+                lease = DetachManagerCount();
             }
 
-            CancelInternal();
+            CancelInternal(lease);
         }
     }
 
-    private void CancelInternal()
+    private void CancelInternal(ManagerCountLease? lease)
     {
         checked
         {
@@ -982,7 +1018,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
 
             try
             {
-                Interlocked.Decrement(ref NetManager.FileRemain);
+                lease?.Release();
             }
             catch
             {
@@ -995,14 +1031,16 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
     {
         checked
         {
+            ManagerCountLease? lease;
             lock (LockState)
             {
                 if (N(State) >= 5)
                     return;
                 State = NV(5);
+                lease = DetachManagerCount();
             }
 
-            Interlocked.Decrement(ref NetManager.FileRemain);
+            lease?.Release();
             if (PrintLog)
                 Logger.Info($"{LocalName}：已完成");
             foreach (var Task in Tasks)

@@ -184,6 +184,20 @@ internal sealed class Probe
         }
         throw new InvalidOperationException("PENDING: UIA target has no provable Main HWND ancestor.");
     }
+    private void AssertScrollContainsTheme(AutomationElement theme, AutomationElement scroll)
+    {
+        // A shared rectangle alone cannot prove that this is the current page's
+        // scroller. Follow only the already-owned theme peer's raw ancestors.
+        AutomationElement? ancestor = TreeWalker.RawViewWalker.GetParent(theme);
+        for (int depth = 0; depth < 45 && ancestor != null; depth++)
+        {
+            if (ancestor.Current.ProcessId != pid) throw new InvalidOperationException("Theme scroll ancestor belongs to another process.");
+            if (ancestor.Equals(scroll)) return;
+            if (ancestor.Current.NativeWindowHandle != 0) break;
+            ancestor = TreeWalker.RawViewWalker.GetParent(ancestor);
+        }
+        throw new InvalidOperationException("PENDING: actual theme ComboBox has no provable selected PanBack ancestor.");
+    }
     private void Click(AutomationElement node, string step)
     {
         // A posted coordinate alone does not establish WPF Mouse.DirectlyOver.
@@ -359,8 +373,16 @@ internal sealed class Probe
         Wait(() => Native.IsIconic(hwnd), "same owned Main minimized");
         Native.Send(hwnd, 0x0112, new IntPtr(0xF120), IntPtr.Zero);
         Wait(() => !Native.IsIconic(hwnd), "same owned Main restored"); Stable("restored-window"); Focus(); Capture("restored-window");
-        var scroll = Unique(n => n.Current.AutomationId == "PanBack" && n.TryGetCurrentPattern(ScrollPattern.Pattern, out _) && n.Current.BoundingRectangle.Left > Native.Client(hwnd).Left + 150, "personalization PanBack ScrollPattern");
-        ScrollPattern pattern = (ScrollPattern)scroll.GetCurrentPattern(ScrollPattern.Pattern);
+        AutomationElement theme = Combo(); var themeBounds = theme.Current.BoundingRectangle;
+        var scroll = Unique(n => n.Current.AutomationId == "PanBack" && n.Current.ClassName == "ScrollViewer" && n.Current.ControlType == ControlType.Pane &&
+            Native.Client(hwnd).Contains(n.Current.BoundingRectangle) && n.Current.BoundingRectangle.Contains(themeBounds), "personalization PanBack containing actual theme ComboBox");
+        AssertScrollContainsTheme(theme, scroll);
+        bool hasScrollPattern = scroll.TryGetCurrentPattern(ScrollPattern.Pattern, out object rawPattern);
+        steps.Add(new { Action = "scroll-provider", AutomationId = scroll.Current.AutomationId, ClassName = scroll.Current.ClassName,
+            Bounds = scroll.Current.BoundingRectangle.ToString(CultureInfo.InvariantCulture), ThemeBounds = themeBounds.ToString(CultureInfo.InvariantCulture),
+            ThemeAncestorProved = true, ScrollPatternAvailable = hasScrollPattern });
+        if (!hasScrollPattern) throw new InvalidOperationException("PENDING: actual owned personalization PanBack ancestor has no ScrollPattern provider.");
+        ScrollPattern pattern = (ScrollPattern)rawPattern;
         if (!pattern.Current.VerticallyScrollable || pattern.Current.VerticalScrollPercent > 1) throw new InvalidOperationException("PENDING: personalization has no provable top/scrollable content.");
         double before = pattern.Current.VerticalScrollPercent;
         WithOwnedHover(scroll, "wheel-down", (screen, local, bounds) => {

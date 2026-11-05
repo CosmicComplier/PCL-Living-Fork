@@ -272,35 +272,42 @@ public abstract class LegacyNetManager<TSource, TThread, TFile, TDownload, TMana
                 }
             }
 
-            // 添加每个文件
-            var NewFiles = new List<TFile>();
-            var NewFilesList = new List<TFile>();
-            foreach (var inputFile in Task.CoreFiles)
+            // CancelDownload uses this same owner lock for its terminal state.
+            // Keep cache IO outside it; only real registration is serialized.
+            lock (Task.LockState)
             {
-                TFile File = inputFile;
-                TFile? OngoingFile = null;
-                if (AllFiles.TryGetValue(File.LocalPath, out OngoingFile) && N(OngoingFile.State) < 5)
+                if (Convert.ToInt32(Task.State) >= 2)
+                    return new List<TFile>();
+                // 添加每个文件
+                var NewFiles = new List<TFile>();
+                var NewFilesList = new List<TFile>();
+                foreach (var inputFile in Task.CoreFiles)
                 {
-                    // 该文件正在被另一个任务下载
-                    Logger.Trace(() => $"{File.LocalName}：无需开始，该文件已在下载中，目标 {File.LocalPath}");
-                    File = OngoingFile; // 将列表中的文件替换成下载中的文件，即两个任务指向同一个文件；抛弃现在的 File 对象
-                }
-                else
-                {
-                    // 常规情况（该文件可能已在其他任务中下载完成，但这并不影响）
-                    Logger.Trace(() => $"{File.LocalName}：开始，目标 {File.LocalPath}");
-                    AllFiles[File.LocalPath] = File;
-                    NewFiles.Add(File);
-                    Interlocked.Increment(ref FileRemain);
+                    TFile File = inputFile;
+                    TFile? OngoingFile = null;
+                    if (AllFiles.TryGetValue(File.LocalPath, out OngoingFile) && N(OngoingFile.State) < 5)
+                    {
+                        // 该文件正在被另一个任务下载
+                        Logger.Trace(() => $"{File.LocalName}：无需开始，该文件已在下载中，目标 {File.LocalPath}");
+                        File = OngoingFile; // 将列表中的文件替换成下载中的文件，即两个任务指向同一个文件；抛弃现在的 File 对象
+                    }
+                    else
+                    {
+                        // 常规情况（该文件可能已在其他任务中下载完成，但这并不影响）
+                        Logger.Trace(() => $"{File.LocalName}：开始，目标 {File.LocalPath}");
+                        AllFiles[File.LocalPath] = File;
+                        NewFiles.Add(File);
+                        File.RegisterManagerCount((TManager)this);
+                    }
+
+                    NewFilesList.Add(File);
+                    File.Tasks.Add(Task);
                 }
 
-                NewFilesList.Add(File);
-                File.Tasks.Add(Task);
+                Task.CoreFiles = new ConcurrentQueue<TFile>(NewFilesList);
+                Tasks.Add(Task);
+                return NewFiles;
             }
-
-            Task.CoreFiles = new ConcurrentQueue<TFile>(NewFilesList);
-            Tasks.Add(Task);
-            return NewFiles;
         }
     }
 }

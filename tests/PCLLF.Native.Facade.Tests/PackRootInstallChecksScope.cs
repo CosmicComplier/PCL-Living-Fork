@@ -147,7 +147,7 @@ internal sealed class PackRootInstallChecksScope
         try
         {
             ModNet.LoaderDownload[] downloads=ModNet.NetManager.Tasks.ToArray();
-            object ThreadInfo(Thread thread)=>new { Id=thread.ManagedThreadId,Name=thread.Name,Alive=thread.IsAlive,Background=thread.IsBackground,State=thread.ThreadState.ToString() };
+            object ThreadInfo(Thread thread)=>new { Id=thread.ManagedThreadId,Name=thread.Name,Alive=thread.IsAlive,State=thread.ThreadState.ToString() };
             var snapshot=new {
                 Kind="HMCL completion observation",Stage=stage,TransientStopped=TransientStopped(),
                 FileRemain=Volatile.Read(ref ModNet.NetManager.FileRemain),NetworkWorkers=Volatile.Read(ref ModNet.NetTaskThreadCount),CleanupRunning=Volatile.Read(ref cleanupRunning),
