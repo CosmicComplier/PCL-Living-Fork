@@ -18,6 +18,7 @@ namespace PCLLF.Presentation.Windowing;
 
 public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnimation>
     where TStack : class, ILegacyMainPageStack, new() where TInstance : class where TAnimation : struct {
+    private const string ForkReleaseHighlights = "- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime\r\n- 更新页新增版本搜索、当前版本标记与 Markdown 说明\r\n- 修复图片、中文搜索、资源详情异常及删除版本卡顿";
     public void ConstructBeforeXaml() {
         host.WriteStartTick(host.Clock()); host.AssignGlobalWindow(); host.CreateLaunchLeft(); host.CreateLaunchRight();
         int last = host.ReadInteger("SystemLastVersionReg");
@@ -84,13 +85,13 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             }
             try { host.JavaInitialize(); System.Threading.Thread.Sleep(100); host.StartClientList(); RunThread(host.ClearTaskTemp, "TryClearTaskTemp", ThreadPriority.BelowNormal); }
             catch (Exception ex) { Logger.Error(ex, "初始化加载池运行失败"); }
-            if (host.VersionBranchMain() == "OpenSource") Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n- 首页可开关模组依赖检查与自动补全\r\n- 整合包更新按分类预览，下载显示实际进度\r\n- 还原点可选设置自动清理上限，手动记录单独保留", $"{host.LauncherName()} {host.VersionBaseName()} 版本说明");
+            if (host.VersionBranchMain() == "OpenSource") Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + ForkReleaseHighlights, $"{host.LauncherName()} {host.VersionBaseName()} 版本说明");
             host.CheckUpdates();
         }, "初始化", ThreadPriority.Lowest);
         Logger.Info($"第三阶段加载用时：{checked(host.Clock() - host.StartTick())} ms");
     }
     public void ShowUpdateLog() => RunThread(() => {
-        string content = $"{host.LauncherName()} {host.VersionBaseName()}\r\n\r\n新增启动前模组依赖检查和自动补全，优化整合包更新界面与下载进度，支持可选的还原点自动清理。手动还原点和手动存档备份不自动清理。";
+        string content = $"{host.LauncherName()} {host.VersionBaseName()}\r\n\r\n" + ForkReleaseHighlights;
         if (Message(content, host.LauncherName() + " 更新说明", "确定", "查看更新日志") == 2) host.OpenWebsite(host.ReleasesUrl());
     }, "Fork UpdateLog Output");
     public void Upgrade(int lastVersion) {
