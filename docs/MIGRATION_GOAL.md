@@ -2,7 +2,9 @@
 
 当前目标是将 PCLLF 已有产品实现迁移到 C#、.NET 10 和 WPF，完成功能等价、数据兼容、资源依赖、发布产物及旧版更新桥的验证。做到本目标的全部验收项后停止自动续跑。本目标不自动转入新增 MMC 兼容或性能阶段。
 
-当前状态：`in_progress`。产品178业务VB/旧vbproj及比较builder已退役，root正式7项目为C#/.NET10 WPF，保两独立测试VB oracle/历史固定源和资源许可。585自动整链双配置28族/Core11/root26/launch三场景/合成账号UI、两轮Main交互/默认包/C7/旧桥及下游全绿。81c删除后统一reusable Build已真实完成Main/54资源/包/原两可选凭据来源C7及同run旧桥；Debug28全过，Release仅file-tasks因测试Stopped通知先于真实lease释放竞态失败，其余27族及UI/cold通过。现仅修测试订阅顺序并按原5秒等真实thread，待Native-only Windows复验。真实账号授权/Minecraft/JVM运行及旧新手感仍需外部实机验收，尚不标整体完成。新增MMC/性能/Rust/C++仍延后。
+当前状态：`paused`（2026-11-05用户交接）。迁移分支的工程和自动验收收尾已完成：完整C#/.NET10 WPF构建发布，产品业务VB/vbproj为0，保两独立测试VB oracle；最终已验代码 `ce65fa00d381943b38faaaea2f23f21577cbe8f8` 的统一Build41964906918双配置28族、Core11/root26/launch三场景/合成账号UI、资源/C7/cold/独立Main两轮交互和真实旧桥四case全通过。后续仅交接文档变化，不能计作未复验代码。用户明确先本人电脑实测，再交main分支agent测试/修复/验证；真实授权、Minecraft/JVM与旧新手感仍为接收者待验，整体实机验收未标completed。‘PCLLF 等价迁移’小时续跑已实际停用并写入交接优先指令；未经用户明确恢复不继续自动修改，也不启动新增MMC/性能/Rust/C++。Root始终未写/合main，未创建公开Release。
+
+用户最新交接决定优先于下文旧续跑节奏：本分支保持检查点，由用户及其main agent接手。当前交接入口、包角色/下载、最终CI证据、主分支CI guard注意项与实机清单见 [MIGRATION_STATUS.md 的交接段](MIGRATION_STATUS.md#migration-handoff)。下文保留原目标和历史约束作为来源，不代表暂停后仍需小时续跑。
 
 完整工程背景见 [MIGRATION.md](MIGRATION.md)。可执行任务、进度、验证证据和下次入口只维护在 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)，续跑时从账本继续，不重新建立同一套计划。
 

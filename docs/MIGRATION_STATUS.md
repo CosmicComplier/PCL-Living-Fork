@@ -4,14 +4,45 @@
 
 ## 当前状态
 
-- 目标状态：`in_progress`。正式产品为独立于业务VB/vbproj的 `modern/Main` 完整C#/.NET10 WPF。585真实Windows双配置28族/Core11/完整HMCL26/launch三场景/合成账号UI和独立Main两轮滚轮等全部通过，资源/原生包/C7/旧桥与下游回归同绿。已按门禁实体退役178业务VB/1vbproj及临时比较builder；原资源/vendor/许可、两个测试VB oracle/固定历史源保持。删除后统一reusable Build及可选凭据转发尚待本批Windows，不把准备/编译当运行；真实账号/游戏/人手验收仍未完成。
+- 目标状态：`paused`（用户交接，2026-11-05）。迁移分支工程与自动验收收尾完成，最后已验代码ce65fa0/Build41964906918所有required jobs成功；178业务VB/旧vbproj与比较builder已退役，资源许可/固定历史源/两测试VB oracle保留。用户明确本人实机测试后交main agent测试、修复和验证；真实授权/实际Minecraft/JVM与人手体验未伪称通过，整体外部验收未标completed。小时自动任务‘PCLLF 等价迁移’已实际is_enabled=false；当前只交接，不操作main或自动进入MMC/性能。
 - 集成分支：`migration/csharp-modern-dotnet`。初始起点`f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`保持；LF main当前同步源固定`50b028da5fcad2226d74d901a41d8c43a249bfb2`，仅只读来源，不向main提交/合并、不force。6个新提交不能整文件覆盖既已迁移的Core/typed桥。
-- 最新已验证检查点 `5857707`：Native41959283044 Debug127021866562/Release127021866616全28族、Core11含Windows旧Reset尾/真新Start、完整HMCL26/zero/receipt、launch0/23/cancel及account全成功；独立Main两round导航/主题/焦点/滚轮/正常close-1通过。fresh桥127024668878同image/handle严格0/23及四实际case成功。Build41959283088两配置各44步、Modern41959282948双配置及Migration41959282939 Windows508/508/Ubuntu457/457/strict397全成功；manual preview未选不计通过。
-- 当前交付批次：81c实体退休后统一Build→Native已成功实跑，业务VB/vbproj0的Main/54资源/发布包/C7及同run旧桥真实通过。Debug28全过，Release仅file-tasks备份测试observer先于真实Stopped lease释放的竞态失败；只修该测试单源的订阅先后和原5秒内真实Thread.Join，不改生产/guard/gold/Scope/重试。新Native-only回归待，仍保真实授权/游戏/人手的外部验收条目。
+- 最后已验代码 `ce65fa00d381943b38faaaea2f23f21577cbe8f8`：统一Build41964906918 Debug127039821647/Release127039821725全28族（含file-tasks观察顺序修复）、Core11/root26/launch0-23-cancel/account、54资源/C7 Checks19/默认四角色通过，独立Main两round与cold正常exit-1/无forcedcleanup过；fresh桥127041920117同run资格/角色/SHA绑定后严格WinPS0/23+四实际case过。此次native-only，pure业务skip/Modern未选，不记通过；复用585/81已选的完整下游证据。
+- 当前交付：只追加最终证据和接收者清单，不改生产代码、不再选新迁移任务。后继文档commit相对ce65仅文档diff；以此区分“最后已验代码”和“最终交接HEAD”。历史Cxxx编号及早期门禁记录留存，当前源码迁移/运行状态以本节和交接表为准，不重新逐方法迁移。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前18组（设置／校验Loader／Java与新增foundation独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
 - 恢复原则：复用既有清单与证据，只整理当前整链范围和必要依赖；先小范围完成G005，再从C007d2推进资源链及所需宿主前置，按需更新相关任务依赖并保持无环，不重新规划全仓库。旧子任务号作为内部步骤，已完成项和真实失败证据均保留；目标与自动续跑按用户指令恢复。
+
+
+<a id="migration-handoff"></a>
+
+## 交接给用户与 main 分支 agent（2026-11-05）
+
+用户明确由本人电脑实测，再交main agent继续测试、修复与验证。Root的迁移分支自动工程收尾已完成、小时续跑实际暂停；这不是“真实账号/游戏/人手体验已全通过”的声明。Root没有向main提交、合并或force push，也没有创建公开Release；接收agent按用户另授予它的范围处理main。
+
+| 接手事实 | 最终证据与操作 |
+| --- | --- |
+| 已验代码与分支 | [`ce65fa00d381943b38faaaea2f23f21577cbe8f8`](https://github.com/DDZmumo/PCL-Living-Fork/tree/ce65fa00d381943b38faaaea2f23f21577cbe8f8)，`migration/csharp-modern-dotnet`；之后交接commit仅文档，生产和测试源码未变 |
+| 产品入口 | 根`PCL-Living-Fork.sln`/Modern.slnx的7个实际C#项目，`modern/Main`完整.NET10 WPF，默认`scripts/Build-Release.ps1`→Native→Modern；业务VB/vbproj0，保两个独立测试VB oracle |
+| 最终自动验收 | [统一Build41964906918](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918)全success；[Debug127039821647](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918/job/127039821647)/[Release127039821725](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918/job/127039821725)各28族、Core11/完整root26/launch0-23-cancel/account，Release真实Registry/54资源/包/C7/cold/UI通过 |
+| 真实旧桥 | [127041920117](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918/job/127041920117)：同Buildproducer的7步资格/角色/SHA绑定、真实WinPS retained image/handle严格exit0/23，legacy/manual/parent-timeout/invalid-inputs四case全过 |
+| 退休前/辅助基线 | 585的Build41959283088两配置最后各44步无skip、Modern41959282948双配置、Migration41959282939的508/457/strict397全过；退休81c的Migration41962533412也实过。ce65纯业务skip/Modern未选，不混计为此轮新通过，也不可把Native apphost/兼容桥当旧CLR4 Main强套旧44 |
+| 本机测试包 | [native-main-Release artifact13387900396](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918/artifacts/13387900396)内`package/NativeRelease.Artifacts.json`按role选`native-exe`或`native-zip`内实际原生exe；顶层`PCL-Living-Fork-{version}.exe`是`legacy-bridge`，供旧版自动更新，勿混作原生产品包 |
+| 文件身份 | `SHA256SUMS.txt`覆盖三个实际资产，Artifacts.json是第5个构建索引；下载后按`fileName`在本地重绑并核hash，勿信生产机器绝对`path`。两套真实cold/UI绑定的Native EXE SHA256为`85165de54e85c21ebfd1a56e9ce01722adfe1e86fe6d512488bce48a4efd2858` |
+| 小型运行证据 | [UI13386939075](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918/artifacts/13386939075)ZIP SHA`9130aad116baf976f6ffa4f9db5bb483f1eef402a6a22476b8cac998eeaf96ff`；[cold13386714716](https://github.com/DDZmumo/PCL-Living-Fork/actions/runs/41964906918/artifacts/13386714716)ZIP SHA`b7df6a084a6e238043d6f4f2e24cc2840c87b568b0ed710ec10985fe26f96d44`均实下载核对。大Release/桥artifact未本地下载，不把服务端digest说成本地核验 |
+
+CI artifact当前按7天保留；过期可从固定代码在Windows重新构建或在迁移分支手动dispatch原workflow。构建说明/角色/可选原凭据来源见 [BUILDING_MODERN.md](BUILDING_MODERN.md)；空公开构建合法，配置来源/C7通过不等于用户真实授权通过。不应在个人电脑伪造GitHub-hosted/fresh-profile环境绕CI fixture守卫；本机用正常产品UI验证真实数据和游戏。
+
+**main agent首先处理的CI差异：** Build caller与Native select两处仍硬限migration分支/以migration为base的PR；Modern/Migration辅助workflow也有各自分支条件。只改一处、在main手动dispatch或看见绿色selector都可能仍全skip，选择器的non-migration full不会解除这些guard。接收agent须在它的授权范围明确适配实际分支/PR base并核jobs真实执行；Root为遵守原限制保留这些guard，不在本轮改main。
+
+用户/接收agent的实机待验范围：
+
+- 现有LF旧数据在同机升级后的实际账号选择、刷新、退出/重登、皮肤/其他本人使用的登录页；保持共享/独立设置、未知配置和账号数据。当前账号UI只证明六段受控HTTP＋原加密事务等合成链，未做真实微软/外部服务授权。
+- 本人实际实例和已支持Java的选择、完整Main→JVM/Minecraft参数/classpath/natives/启动/正常退出，以及本人使用的整合包；现有真实进程三例采用自有cmd，不是实际Java游戏通过。仅按现有规则验，新增MMC/Prism/GTNH/Java规则仍延后。
+- 实际操作备份/还原、取消/失败后的文件占用/个人修改/环境恢复，以及与旧版对比hover/滚动/拖放/字体/动画叠加和中断的手感。自动UI已证明两round导航/主题/焦点/minimize/双滚轮/回launch及13键十phase，不能替代这些人手判断。
+- Debug普通cold entry未选（现bounded smoke仅LF BuildType0/50），可选LegacyLink只编译未跑真实网络；native-reinstall/restart-rollback两个额外桥case未选，不算通过。REL-08真实File.Replace/拒绝重启回滚、UPD-04真实cancel/lease和四既选旧桥已有证据，不为交接追溯扩大门禁。
+
+保留来源：LF f4aa0fae62c3ee8af24c81e61844c8fdd13c8983、只读同步main50b028da5fcad2226d74d901a41d8c43a249bfb2，PCL5ef81e490ae46b1100d61e33d0183094c7a80ca8、CE1a7653127d578efdb2a9388999a3fdc67d9e49d5及Shared c774ae4c85fd94e0eaa171db21e78a65870df19b。不得丢vendor/许可、固定17Git源/ninecaller/WinPS5故障门、两个独立VB oracle和fullhistory，不改成CE底座。已退业务源码可从585固定Git树恢复；后续不依赖本机临时目录。整体最终实机结论/R004由用户及接收agent补证后决定，未经用户恢复不重启此branch自动续跑。
 
 ## 证据与基线
 
@@ -195,6 +226,9 @@ R001默认入口现接真实C#/NET10：Build-Release→Build-NativeRelease→Bui
 `81c3a0b`退休后真实结果：统一Build41962533654成功进入Native reusable并作为唯一Native producer，无单独重复Native自动run；Debug127032305551全28、Release127032305567其余27族/soloRegistry通过，仅file-tasks失败。无业务VB的完整C# Main/54真实资源/默认现代包/4roles+index/ZIP/C7 Checks19/metadata真实通过，原两个可选来源在Package与actualC7同stepenv；不输出/披露实际输入，不把当前为空或非空推断成真实服务授权通过。Core11含Win专属旧Reset尾/真新Start及完整HMCL26/parent receipt/所有zero尾、launch0/23/cancel、account/MMC等保持通过。Release独立UI两round与cold正常exit-1/无ForcedCleanup/无cleanupError，wheel0→52.2551989→约0、每次光标恢复、十三键十phase（cold八phase）及startup225/226/228均过。UI artifact13386277223 ZIP SHA256 `1c05f98e881d0efd2ed7465dc0ff1f5f96052d13f3b04db9ecc82d8a71b445c9`已核。fresh桥127034836196在同一Build41962533654的Release资格/角色/SHA绑定后运行，实际WinPS retained image/handle严格0/23与legacy/manual/parent-timeout/invalid-inputs四case全过；这是新reusable graph的真实调用，原manual preview未选不冒称执行。Migration41962533412 Ubuntu127032054780457/457、Windows127032054787508/508、18组/strict397零差异；本轮无旧44jobs且Modern未触发不计通过。当前提交实际Git inventory执行成功，仅2测试VB源码，产品VB0/旧业务vbproj0；初始固定清单不改。
 
 81c唯一首错：Release03:40:59 FileTaskBackupScenarios.Require21→Run277写预约不可用。实际fixture250先订worker.Stopped信号、255才TryAcquireSnapshot；真正LegacyMinecraftInstanceLocks.Acquire143才同步订精确lease字典移除，故Stopped multicast的早信号可抢在后续真实release前醒来。不是产品提前解锁或退休导致缺源；该lease为ConcurrentDictionary非Mutex，无线程归属问题。现仅此测试：成功Acquire后再订信号，在原workload入口捕获真实Thread，finally release→Stopped.Wait(剩余)→Thread.Join(剩余)共用原5000ms Stopwatch，保持取消期间必须占用、写竞争拒绝、导航与随后真实WriteLease原断言，不加retry/扩大deadline/以Running=false冒真thread终止。作者最终109源actualMain/Core静态strict0W0E5.04秒，Root合并后actualMain9598+新Core私有staging完整facade strict0W0E4.45秒，独立源审确认FIFO/可见性/异常收尾；仅Linux跨编，新的实际Windows本族仍待。当前batch实际路由只Native，已过无新影响的pure/old44/Modern不重复跑。
+
+
+`ce65fa0`最终收尾实证：统一Build41964906918所有jobs completed/success，Debug127039821647/Release127039821725 file-tasks真实通过、全28无failedGroup；原5秒Stopped observer/真实Thread.Join修复未放宽断言。Core11含Windows-only旧Reset尾、完整Root26/zero/receipt、launch0/23/cancel/account、54resources/默认包/C7 Checks19/metadata/historical17及故障门、独立UI/cold全部无回退；两round正常close=-1、forced=false/cleanupErrors=[]，实际Main Native SHA85165de5…由两小证据一致绑定。fresh桥127041920117同Build资格/角色/SHA绑定后真实WinPS0/23与legacy/manual/parent-timeout/invalid-inputs四case明示通过。Root独立查最终job元数据全success；本次native-only的pure业务skip/Modern未选不冒称运行，复用585/81相应已验。用户明确本机后交main agent，Root已实际将‘PCLLF 等价迁移’自动任务is_enabled=false并追加交接优先指令，再读状态确认停用；本批只更新文档与交接，不再跑已过产品测试，不创建main PR/公开Release，未开始延后阶段。
 
 本轮已推送的实现与验证检查点：
 
@@ -422,15 +456,15 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | C031b | in_progress | C024c、C027c | 6a8bfc6完整提示/消息/帮助/主时钟/ModMain/音乐迁Shell真实业务，原音频/播放列表/线程/队列/事件入口不改；f6d83c6补Feedback/Info原Err语义。真正Windows音频/主生命周期与modern Win32按本批/最终产品验收 |
 | C031c | in_progress | C024b、C022、C026b | d1b2848完整事件分发/路径/对象、主题、签头/Identify迁C#；真实原5DP owner/enum/private集合/Color字段单份，实际BuildCredentials不替代。双目标编译/合成纯样本通过，新增原XAML/签头Windows脚本待CI；无真实凭据或网络/硬件访问 |
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
-| N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
+| N002 | done | N001 | LF现代Core/Presentation/固定Shared与完整Main图已经真实Windows双配置编译运行，585下游和ce65完整Native门通过；这是现代工程交付，真实外部账号/游戏/人手仍交R003 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF、LF50功能/事件/typed桥独立于业务VB/designer/vbproj/resx；两配置真实构建、54资源getter/18blob、原生四角色与C7、可选LegacyLink编译通过。b3ef Native两配置原25族、Release真实Registry/225/226/228及两轮正常冷启/关闭/复开已通过；MMC26固定合同/root+nested及modpack-update真实下载FLOW完整通过，新增账号/启动/根安装与Main交互仍待修复后Windows，不以编译或局部夹具关闭整项 |
+| N003 | done | N002、C031 | 无业务VB/vbproj的完整LF C#/.NET10 WPF正式工程、54getter/18blob、默认四角色/C7、两配置28族及Release cold/UI实际通过，最终ce65；可选LegacyLink仅编译/Debugcold与实机范围保留交接限制 |
 | N004 | in_progress | N003、C022 | 实际Main Settings/CurrentIdentify/DES→真实Windows Registry已通过13_LF值/kind、旧缓存升级/退出、非MS兼容、未知数据和原kind恢复/取消/INI/JSON保留。502 startup228又以合成13_LF raw/kind贯穿真正FormMain两轮；保fresh/GUID owner与仅本人清理。20e两配置已通过合成微软账号UI选择/成功/退出/失败/cancel与原加密事务；真实授权/全九页及旧版升级后完整账号链仍未验，不读真实凭据 |
-| N005 | in_progress | N003、N004 | b3ef原生四角色/C7/真实cold、Registry通过，fresh旧桥126991328486整体success：真实WinPS同Handle/image严格exit0/23与legacy/manual/parent-timeout/invalid-inputs四case明示通过，原协议/等待/字节/正常关闭/锁释放保持。默认发布入口已切Native/Modern且31b双配置实际Windows发布/C7/metadata和Release cold/资格通过；native-reinstall/restart-rollback未选择不计通过，无外部发布 |
-| R001 | in_progress | N003、N005 | 178产品VB+1vbproj及比较builder已实体移除，保2测试oracle/固定源/资源许可。81c统一reusable Build的无VB Main/54资源/现代包/原2可选凭据C7与同run真旧桥均过；Debug28全过，Release唯一测试observer竞态已最小修，等本族复验后关项，不以大多数绿当全绿 |
-| R002 | in_progress | R001（最终关闭依赖） | 585两配置28族、Core11、完整HMCL26/zero/receipt、launch0/23/cancel、合成account及原44/Modern/strict均真实全过。Retirement后新发布接线仍须复验；真实授权/游戏、更多外部服务及人手范围按R003边界，不把合成HTTP/cmd和现MMC矩阵外推新能力 |
-| R003 | in_progress | R002（最终关闭依赖） | 585真实主窗两轮notice/导航/主题INI与像素/焦点/minimize-restore/ScrollPattern双wheel/回launch/正常close均过，含13键十phase；合成完整账号UI与真实cmd进程三场景通过。真实微软/其它服务授权、Minecraft/JVM实际运行退出、升级后真实账号及旧新hover/拖放/字体/动画人手体验仍未验证，不能据自动UI全部泛称完成 |
-| R004 | todo | R003 | 汇总全部完成证据和剩余限制，自审最终差异与远端状态；仅在目标全部验收后标 `completed` 并暂停续跑 |
+| N005 | done | N003、N004（数据/自动范围） | ce65统一reusable Build实际发布/4角色/C7/同run资格后，WinPS retained image/handle严格0/23与四既选真实旧桥case全过；原生成凭据生命周期/可选来源/正常close/文件锁保持，无公开Release，两个extra桥case未选不外推 |
+| R001 | done | N003、N005 | 178产品VB+1vbproj及比较builder实体退役，保两测试VB oracle/固定源/全部资源许可；ce65统一Build无VB Main/54资源/包/C7/全28/同run旧桥通过，file-tasks测试观察顺序复验双配置成功 |
+| R002 | done | R001 | 自动等价验收范围完成：585旧44/Modern/strict及ce65双配置28/Core11/完整HMCL26/zero/receipt/launch0-23-cancel/合成account/资源/真实UI与更新桥全过；真实授权/实际Minecraft及人手边界交R003，不把受控链外推外部服务 |
+| R003 | handoff | R002 | 自动Main两round导航/主题/焦点/minimize/wheel/回launch/正常close和13键十phase已过；用户明确本人实机测后交main agent。真实授权/实际JVM游戏/升级后本人账号与hover-drop-font-animation手感待接收者验收，不伪称完成 |
+| R004 | handoff | R003 | 本迁移分支自审/远端代码与最终CI/交接清单已完成，小时续跑实际暂停；整体实机结果和最终completed由用户及接收agent补R003后决定，不自动进MMC/性能 |
 | D001 | deferred | 当前目标完成后另立目标 | 新 MMC／Prism 组件规则、补丁语义、Java 交集、LWJGL 与 GTNH 增强 |
 | D002 | deferred | 当前目标完成后另立目标 | 性能优化；当前只保留必要基线与等价回归 |
 | D003 | deferred | 当前目标完成后另立目标 | 新 Rust／C++ 模块或其他原生化改造 |
@@ -516,6 +550,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：先提交推送file-tasks单源Stopped observer顺序/原5秒真实Thread.Join，跑本批Native-only实际Windows；其余prod代码/新发布配置未变，保原所有gold/28/包/资源/资格/旧桥。通过后集中关闭R001/N003/N005自动门，记录585与81及后继完整证据；继续等待真实账号授权/游戏/人手R003的Windows实机条件与用户选择，不把合成HTTP/cmd或自动GUI外推真实授权/游戏。无必要独立工作时明确报告外部阻塞，不重新转换/重复全测，不自动开始MMC/性能，main仍只读50b028d。
+下次入口：已按2026-11-05用户决定交接并暂停，不再自动选迁移任务。用户实机后由main agent依上方交接段继续真实授权/游戏/人手与主分支CI guard适配；未经用户明确恢复不重启Root续跑，不改main、不自动开展新增MMC/性能。最后已验代码ce65及Build41964906918保持，可从远端恢复，无本地临时依赖。
 
-当前仍需完成：实体退休后新CI/可选凭据接线的Windows实跑与最终真实授权/游戏/人手验收、原验收脚本的实际Main入口全接通、迁移后完整GUI／真实账号／游戏启动与未选更新桥case。旧桥四实际case已通过，不重复描述为未开始。正式C#/NET10完整产品已构建发布，不再将其描述为尚未开始；编译和当前部分功能族证据不能代替最终兼容验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
+当前留给接收者：真实用户授权/本人Minecraft-JVM实例/旧新人手体验与最终整体验收，必要时在其授权范围处理main的CI分支条件和修复。迁移分支源码/工程/自动发布与已选运行回归已经收尾，暂停续跑并交接；不能把这些外部待验叫作已完成，也不要重复开始源码转换或新增MMC/性能。

@@ -56,7 +56,7 @@ $releaseOutput = Join-Path $PWD ('artifacts/native-release/' + [Guid]::NewGuid()
 pwsh -NoProfile -File scripts/Build-Release.ps1 -Configuration Release -OutputPath $releaseOutput
 ```
 
-脚本复用 C# 凭据生成器的 GUID 临时目录与清理逻辑，执行真正的 `win-x64` 自包含单文件发布，并创建原更新协议需要的兼容桥。其发布调用已关闭构建服务器/节点复用并顺序执行。默认源码构建可使用空内嵌凭据。`Build` 工作流现在统一调用 Native reusable；保留旧流水线的 `CLIENT_ID`、`CURSEFORGE_API_KEY` 两个可选 secret，仅在打包及同一实际 Main/bundle 凭据检查步骤映射为 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY`。缺失时仍允许公开空值构建；本地可经相同环境变量提供输入。值不进入命令行、日志或验收回执，81c统一Build中真实打包/同Main-bundle C7与同run旧桥已通过，不以空值或配置来源校验证明真实服务授权。该命令只生成文件。未传 `-OutputPath` 时输出到 `artifacts/release/{Configuration}`；已存在的发布资产不会被覆盖，重复发布请选新目录或先自行处理旧资产。可用 `-EnableLegacyLink` 将原可选联机代码编译进真实产品，构建脚本不会启动它。`Build-NativeRelease.ps1` 和 `Build-ModernRelease.ps1` 保持独立底层入口，调用链为默认入口→Native 打包→Modern C# 发布，不循环调用。
+脚本复用 C# 凭据生成器的 GUID 临时目录与清理逻辑，执行真正的 `win-x64` 自包含单文件发布，并创建原更新协议需要的兼容桥。其发布调用已关闭构建服务器/节点复用并顺序执行。默认源码构建可使用空内嵌凭据。`Build` 工作流现在统一调用 Native reusable；保留旧流水线的 `CLIENT_ID`、`CURSEFORGE_API_KEY` 两个可选 secret，仅在打包及同一实际 Main/bundle 凭据检查步骤映射为 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY`。缺失时仍允许公开空值构建；本地可经相同环境变量提供输入。值不进入命令行、日志或验收回执，ce65最终统一Build中真实打包/同Main-bundle C7、双配置28族和同run旧桥均已通过，不以空值或配置来源校验证明真实服务授权。该命令只生成文件。未传 `-OutputPath` 时输出到 `artifacts/release/{Configuration}`；已存在的发布资产不会被覆盖，重复发布请选新目录或先自行处理旧资产。可用 `-EnableLegacyLink` 将原可选联机代码编译进真实产品，构建脚本不会启动它。`Build-NativeRelease.ps1` 和 `Build-ModernRelease.ps1` 保持独立底层入口，调用链为默认入口→Native 打包→Modern C# 发布，不循环调用。
 
 以实际 `NativeRelease.Artifacts.json` 中的角色、版本与 SHA256 为准：
 
@@ -70,3 +70,5 @@ pwsh -NoProfile -File scripts/Build-Release.ps1 -Configuration Release -OutputPa
 `NativeRelease.Artifacts.json` 是构建索引。跨目录或跨 CI job 下载后，按角色的 `fileName` 在下载目录定位并复验 hash，索引里的原生产目录绝对 `path` 需要重新定位。完整功能兼容与 Windows 实际结果继续按迁移进度记录验收。
 
 独立历史凭据检查运行 `powershell -NoProfile -File scripts/native-smoke/Test-HistoricalCredentialFailures.ps1`，需要真正 Windows PowerShell 5 Desktop/CLR4。它从固定 LF Git 对象导出凭据基础源与许可，编译自有 GUID 内不含 Main/WPF 的 credential-only DLL，以独立 WinPS 子进程复用原完整 `Test-BuildCredentials.ps1`，保留源码差分、失败/非法输入/并发锁样本；编译与子进程临时文件限制在同一 GUID，环境在 finally 恢复。此独立入口已在20e/585的真实Windows Release通过。失败构建由 `scripts/tests/Build-HistoricalCredentialFixture.ps1` 承载。该 helper 必须使用原 GUID 临时目录与明确的 `FailBuild.exe`，正常工作树/MSBuild/成功产品构建均被拒绝；它不是默认发布路径。真实 Native 凭据验收必须引用对应发布的完整 `LivingPCL.dll` 或经过有界读取识别的真正单文件入口，不能反射顶层旧更新兼容桥来冒充 Main。
+
+2026-11-05：迁移分支自动工程收尾后按用户决定暂停并交接，本机包选择、最终代码/CI链接和main分支双层CI guard限制见 [迁移账本交接段](MIGRATION_STATUS.md#migration-handoff)。本机请走正常产品UI，不伪造CI fresh-host守卫环境。
