@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 param(
  [Parameter(Mandatory=$true)][string]$ExecutablePath,
  [string]$WorkspaceRoot=$env:GITHUB_WORKSPACE,
@@ -343,7 +343,7 @@ try{
  }
  $evidence.StartupContracts.ImportOrdering='passed-blocked-then-normal-import';$evidence.StartupContracts.V2Preservation='passed-two-real-FormMain-startups'
  $evidence.Result='passed';$evidence.Limit='Cold actual Main HWND visible in the CI windowstation/normal close/reopen only; noninteractive sessions are recorded, not claimed as human desktop interaction. Known OpenSource version information is observed, never clicked. Mutex-before-import, the safe official-update refusal and raw authoritative LF account preservation are checked; GPU/memory utilities, authentication, navigation/font feel and update-bridge completion are not inferred.'
- if($ExerciseInteraction){$evidence.InteractionScope='Opt-in external probe: exact reviewed local information notice dismissal, safe Main settings/personalization/launch navigation, observable theme/INI restore, measured wheel offsets, focus and same-HWND minimize/restore; stable owned-window screenshots. Human feel/hover/drop/authentication/game/services/hardware remain pending.';$evidence.Limit='Original startup/mutex/import/account/close/reopen/file-lock contracts remain required. Only the exact reviewed 1.3.5-pre-3 information notice is dismissed in opt-in mode. Per-pass interaction evidence describes observed UIA/layout/own-config/screenshots in the CI windowstation; no human desktop or complete R003 pass is inferred.'}
+ if($ExerciseInteraction){$evidence.InteractionScope='Opt-in external probe: exact reviewed local information notice dismissal, safe Main settings/personalization/launch navigation, observable theme/INI restore, measured wheel offsets, focus and same-HWND minimize/restore; stable owned-window screenshots. Human feel/hover/drop/authentication/game/services/hardware remain pending.';$evidence.Limit='Original startup/mutex/import/account/close/reopen/file-lock contracts remain required. Only the exact reviewed 1.3.5-pre-3 or dev_edition information notice is dismissed in opt-in mode. Per-pass interaction evidence describes observed UIA/layout/own-config/screenshots in the CI windowstation; no human desktop or complete R003 pass is inferred.'}
 }catch{if($evidence.Result -ne 'pending' -or $_.Exception.Message -notlike 'PENDING:*'){$evidence.Result='failed'};$evidence.Error=$_.Exception.Message;throw}
 finally{
  try{

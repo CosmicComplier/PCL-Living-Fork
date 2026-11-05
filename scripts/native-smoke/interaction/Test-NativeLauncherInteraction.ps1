@@ -24,6 +24,8 @@ $output=Join-Path $toolRoot 'bin';$intermediate=Join-Path $toolRoot 'obj'
 $project=Join-Path $PSScriptRoot 'NativeInteractionProbe.csproj'
 & $DotNetPath build $project -c Release --output $output ('-p:BaseIntermediateOutputPath='+$intermediate+'\') ('-p:MSBuildProjectExtensionsPath='+$intermediate+'\') -warnaserror -v:q
 if($LASTEXITCODE -ne 0){throw 'External UIAutomation observer failed to compile; product was not started.'}
+& $DotNetPath (Join-Path $output 'NativeInteractionProbe.dll') --self-test-notice-policy
+if($LASTEXITCODE -ne 0){throw 'Exact information-notice policy failed; product was not started.'}
 $smoke=@{ExecutablePath=$ExecutablePath;WorkspaceRoot=$WorkspaceRoot;EvidenceRoot=$EvidenceRoot;DotNetPath=$DotNetPath;StartupTimeoutSeconds=$StartupTimeoutSeconds;CloseTimeoutSeconds=$CloseTimeoutSeconds;ExerciseInteraction=$true;InteractionProbePath=(Join-Path $output 'NativeInteractionProbe.dll')}
 if($NativeProjectPath){$smoke.NativeProjectPath=$NativeProjectPath}
 & (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'Test-NativeLauncherSmoke.ps1') @smoke

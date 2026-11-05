@@ -21,8 +21,8 @@ namespace PclLfNativeInteraction;
 
 internal sealed class Probe
 {
-    private const string Notice = "PCL Living Fork 1.3.5-pre-3 版本说明";
-    private const string Caption = "PCL Living Fork 1.3.5-pre-3 是基于 PCL 官方开源版的第三方版本。\r\n\r\n- 首页可开关模组依赖检查与自动补全\r\n- 整合包更新按分类预览，下载显示实际进度\r\n- 还原点可选设置自动清理上限，手动记录单独保留";
+    private readonly string Notice;
+    private readonly string Caption;
     private readonly Dictionary<string, string> args;
     private readonly Dictionary<string, object?> evidence = new();
     private readonly List<object> steps = new();
@@ -38,7 +38,10 @@ internal sealed class Probe
 
     private Probe(Dictionary<string, string> arguments)
     {
-        args = arguments; pid = int.Parse(args["pid"], CultureInfo.InvariantCulture);
+        args = arguments;
+        Notice = args["notice"];
+        Caption = ReviewedInformationNotice.CaptionForTitle(Notice);
+        pid = int.Parse(args["pid"], CultureInfo.InvariantCulture);
         hwnd = new IntPtr(long.Parse(args["hwnd"], CultureInfo.InvariantCulture));
         fixture = Path.GetFullPath(args["fixture"]); owner = args["owner"];
         exe = Path.GetFullPath(args["exe"]);
@@ -57,6 +60,11 @@ internal sealed class Probe
         Probe? probe = null;
         try
         {
+            if (values.Length == 1 && values[0] == "--self-test-notice-policy")
+            {
+                ReviewedInformationNotice.VerifyPolicy();
+                return 0;
+            }
             if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess || Environment.GetEnvironmentVariable("CI") != "true" || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" || Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted") throw new InvalidOperationException("PENDING: isolated GitHub-hosted x64 Windows only.");
             Native.SetThreadDpiAwarenessContext(new IntPtr(-4));
             if (values.Length != 18) throw new InvalidOperationException("Expected nine named fixture arguments.");
@@ -353,7 +361,7 @@ internal sealed class Probe
     }
     private void Run()
     {
-        if (args["notice"] != Notice) throw new InvalidOperationException("PENDING: only the reviewed 1.3.5-pre-3 information notice may be dismissed.");
+        if (args["notice"] != Notice) throw new InvalidOperationException("PENDING: expected information notice changed after fixture admission.");
         Stable("known-notice"); var title = Text(Notice, "LabTitle"); var caption = Text(Caption, "LabCaption"); var button = Text("确定", "LabText");
         if (caption.Current.BoundingRectangle.Top <= title.Current.BoundingRectangle.Top || button.Current.BoundingRectangle.Top <= caption.Current.BoundingRectangle.Top) throw new InvalidOperationException("Information notice geometry/unique button differs.");
         Capture("notice"); Click(button, "dismiss-exact-information-notice");
