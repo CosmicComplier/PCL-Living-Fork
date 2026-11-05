@@ -2,7 +2,7 @@
 
 当前目标是将 PCLLF 已有产品实现迁移到 C#、.NET 10 和 WPF，完成功能等价、数据兼容、资源依赖、发布产物及旧版更新桥的验证。做到本目标的全部验收项后停止自动续跑。本目标不自动转入新增 MMC 兼容或性能阶段。
 
-当前状态：`in_progress`。正式modern/Main完整C#/.NET10 WPF与LF50主要功能已接，真实Windows双配置构建/54资源/默认四角色发布/C7/metadata、Release cold/225/226/228/Registry和真实旧桥四case通过。20e两配置原25族＋完整合成账号UI通过（26/28）；独立历史凭据故障/锁与固定17source预检通过。启动正常0已通过但整族流收尾失败，HMCL安装数据阶段成功后计数收尾失败，26项完整回执未过；本批修异步pipe Dispose及原LF未登记取消0→-1的计数所有权，保原故障样本/zero断言，正负对照与跨编已验，真实Windows仍待。主窗口导航/主题/焦点/恢复已过，滚轮前selector已按真实pane/Combo祖先修，仍待Windows。178业务VB/1vbproj实体未退，真实授权/游戏/最终人手交互未完成。新增MMC/性能/Rust/C++仍延后。
+当前状态：`in_progress`。5857707真实Windows双配置28族、Core11并发/完整HMCL26回执、launch正常0/异常23/取消、合成账号UI、两轮Main导航/主题/焦点/滚轮/正常关闭、默认四角色/C7/54资源/Registry/startup225/226/228和旧桥四case均通过；旧44/Modern/508与457/strict397同检查点全绿。已据此实体移除178产品VB/1vbproj及比较builder，保两个独立测试VB oracle/历史固定源和全部许可资源；统一Build调用C#现代工作流并显式保原两个可选凭据来源，删除后新reusable发布/C7接线仍待Windows。真实授权/游戏及最终人手体验继续待验，尚不标整体完成。新增MMC/性能/Rust/C++仍延后。
 
 完整工程背景见 [MIGRATION.md](MIGRATION.md)。可执行任务、进度、验证证据和下次入口只维护在 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)，续跑时从账本继续，不重新建立同一套计划。
 

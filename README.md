@@ -19,7 +19,7 @@
 
 ## 使用
 
-已发布的旧版 1.3.4 使用 **Windows 64 位系统和 .NET Framework 4.8**，从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载后按该版本说明运行。本迁移分支构建的 C#/.NET 10 原生产品面向 Windows x64，包含运行时；迁移构建与产物角色见 [现代构建说明](docs/BUILDING_MODERN.md)。迁移分支尚未发布为正式版本。
+已发布的旧版 1.3.4 使用 **Windows 64 位系统和 .NET Framework 4.8**，从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载后按该版本说明运行。本迁移分支构建的 C#/.NET 10 原生产品面向 Windows x64，包含运行时；迁移构建与产物角色见 [现代构建说明](docs/BUILDING_MODERN.md)。迁移分支尚未发布为正式版本。 产品VB比较源码和旧项目已退役，原资源与许可保留；.NET Framework工具仍供兼容更新桥及独立历史测试使用。
 
 升级时保留原有 `PCL`、`.minecraft` 和游戏目录。程序内更新保留原文件名。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 

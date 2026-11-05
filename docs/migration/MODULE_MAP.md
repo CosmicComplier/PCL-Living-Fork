@@ -12,7 +12,7 @@
 
 来源标记：**P** 为基线已有实现，**P+LF** 为基线实现加 LF 修改，**LF** 为 LF 新增文件。由 `git diff --name-status` 及实际调用点核对；标记说明文件来源，不裁定某个算法的原创归属。固定清单记录 168 个 VB／55,900 行、10 个 C#／1,034 行、71 个 XAML／5,540 行，含注释和空行、不含子模块内容；其中 LF 相对上游新增 56 个 VB／12,129 行，此外还有原文件修改。后续工作树中的 C# 提取不计入这个固定基线数字。
 
-LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][lf-game]，**R** = [Modules/Resource][lf-resource]，**U** = [Controls][lf-controls]，**P** = [Pages][lf-pages]，均位于 `Plain Craft Launcher 2/` 下。下文脚本均位于 [scripts][scripts]。CE 的“候选”指需要核对行为、依赖和许可的源码；同名不代表等价，没有同名也不代表 CE 没有该能力。实际引入须记录提交、文件、署名、许可及 LF 修改。
+LF 路径简写：**B** = [Modules/Base][lf-base]，**G** = [Modules/Minecraft][lf-game]，**R** = [Modules/Resource][lf-resource]，**U** = [Controls][lf-controls]，**P** = [Pages][lf-pages]，均位于 `Plain Craft Launcher 2/` 下。 这些旧代码链接现固定到退役前 `58577078b72ab14a7585c7e2a9234554532dc399` 的 Git 树；178业务VB/旧项目已实体移除，现行生产入口为 `modern/Main`、`PCLCS` 与现代 Presentation。初始LF/PCL/CE来源基线不变。下文脚本均位于 [scripts][scripts]。CE 的“候选”指需要核对行为、依赖和许可的源码；同名不代表等价，没有同名也不代表 CE 没有该能力。实际引入须记录提交、文件、署名、许可及 LF 修改。
 
 ## 当前批量迁移的固定来源与适配
 
@@ -271,24 +271,24 @@ CE许可按实际路径核对：`Plain Craft Launcher 2/**`使用该目录的`LI
 6. 本图来自本地固定 Git 树、工程引用、源码调用点和测试脚本的阅读核对；没有把本次文档检查写成 Windows 测试执行结果。新增或改变行为、扩大 MMC、性能优化和 Rust／C++ 工作保持 deferred，完成记录归入当前 goal 后再选择下一目标。
 
 [pcl]: https://github.com/Meloong-Git/PCL/tree/5ef81e490ae46b1100d61e33d0183094c7a80ca8
-[lf-base]: <../../Plain Craft Launcher 2/Modules/Base>
-[lf-game]: <../../Plain Craft Launcher 2/Modules/Minecraft>
-[lf-resource]: <../../Plain Craft Launcher 2/Modules/Resource>
-[lf-controls]: <../../Plain Craft Launcher 2/Controls>
-[lf-pages]: <../../Plain Craft Launcher 2/Pages>
-[lf-project]: <../../Plain Craft Launcher 2/PCL-Living-Fork.vbproj>
+[lf-base]: https://github.com/DDZmumo/PCL-Living-Fork/tree/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Base
+[lf-game]: https://github.com/DDZmumo/PCL-Living-Fork/tree/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Minecraft
+[lf-resource]: https://github.com/DDZmumo/PCL-Living-Fork/tree/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Resource
+[lf-controls]: https://github.com/DDZmumo/PCL-Living-Fork/tree/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Controls
+[lf-pages]: https://github.com/DDZmumo/PCL-Living-Fork/tree/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Pages
+[lf-project]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/PCL-Living-Fork.vbproj
 [lf-cs]: ../../PCLCS
 [lf-cs-project]: ../../PCLCS/PCLCS.csproj
 [lf-shared-project]: ../../MeloongCore/Shared/MeloongCore.csproj
 [lf-wpf-project]: ../../MeloongCore/Wpf/MeloongCore.Wpf.csproj
-[lf-loader]: <../../Plain Craft Launcher 2/Modules/Base/ModLoader.vb>
-[lf-file-operation]: <../../Plain Craft Launcher 2/Modules/Base/LoaderFileOperation.vb>
-[lf-minecraft]: <../../Plain Craft Launcher 2/Modules/Minecraft/ModMinecraft.vb>
-[lf-launch]: <../../Plain Craft Launcher 2/Modules/Minecraft/ModLaunch.vb>
-[lf-local-data]: <../../Plain Craft Launcher 2/Modules/Minecraft/LocalGameData.vb>
-[lf-modpack]: <../../Plain Craft Launcher 2/Modules/Minecraft/ModModpack.vb>
-[lf-settings]: <../../Plain Craft Launcher 2/Pages/PageSetup/Settings.vb>
-[lf-update]: <../../Plain Craft Launcher 2/Modules/ModLauncherUpdate.vb>
+[lf-loader]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Base/ModLoader.vb
+[lf-file-operation]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Base/LoaderFileOperation.vb
+[lf-minecraft]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Minecraft/ModMinecraft.vb
+[lf-launch]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Minecraft/ModLaunch.vb
+[lf-local-data]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Minecraft/LocalGameData.vb
+[lf-modpack]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/Minecraft/ModModpack.vb
+[lf-settings]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Pages/PageSetup/Settings.vb
+[lf-update]: https://github.com/DDZmumo/PCL-Living-Fork/blob/58577078b72ab14a7585c7e2a9234554532dc399/Plain%20Craft%20Launcher%202/Modules/ModLauncherUpdate.vb
 [lf-bridge]: ../../scripts/update-bridge/Program.cs
 [lf-workflows]: ../../.github/workflows
 [lf-migration-tests]: ../../tests/PCLLF.Migration.Tests

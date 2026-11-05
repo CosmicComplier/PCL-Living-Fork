@@ -1,27 +1,14 @@
 name: Native .NET 10 launcher
 
 on:
-  push:
-    branches:
-      - migration/csharp-modern-dotnet
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!LICENCE'
-      - '!LICENSE'
-      - '!NOTICE.md'
-  pull_request:
-    branches:
-      - migration/csharp-modern-dotnet
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!LICENCE'
-      - '!LICENSE'
-      - '!NOTICE.md'
   workflow_call:
+    secrets:
+      CLIENT_ID:
+        description: Optional Microsoft client ID for the original LF build credential contract.
+        required: false
+      CURSEFORGE_API_KEY:
+        description: Optional CurseForge API key for the original LF build credential contract.
+        required: false
   workflow_dispatch:
 
 permissions:
@@ -138,7 +125,7 @@ jobs:
             mainProject = 'modern/Main/PCL-Living-Fork.Modern.csproj'
             targetFramework = 'net10.0-windows'
             packageRuntime = 'win-x64'
-            credentials = 'Open-source keyless build; no release credential or external publication.'
+            credentials = 'Optional original LF build inputs; empty public fallback is valid. Exact packaged Main/bundle checked; no external publication.'
             coldEntry = if ($env:NATIVE_CONFIGURATION -eq 'Release') { 'Required: genuine native startup, normal WM_CLOSE and reopen.' } else { 'Not executed: the current bounded smoke accepts LF BuildType 0/50; Debug BuildType 100 remains a separate runtime gap.' }
             mainWarningPolicy = 'Main conversion warnings remain visible; zero errors required. Core/Presentation/tools/facade tests keep warnings-as-errors.'
             facade = 'Required in both configurations: 28 separately isolated actual Main data/UI/task/process/install families; account-ui requires its own fresh configuration child. Controlled process/HTTP/store samples are not real authentication or Minecraft. Actual product entry/continuous interaction have independent receipts.'
@@ -214,6 +201,9 @@ jobs:
       - name: Package the real native product and its legacy update bridge
         id: package
         if: ${{ !cancelled() && steps.main.outcome == 'success' }}
+        env:
+          PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
@@ -280,6 +270,9 @@ jobs:
       - name: Verify actual CSharp credential factories and the exact Native Main module
         id: credentials
         if: ${{ !cancelled() && steps.package_roles.outcome == 'success' }}
+        env:
+          PCL_MS_CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PCL_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         run: |
           $ErrorActionPreference = 'Stop'
           $dotnet = (Get-Command dotnet).Source
@@ -287,7 +280,7 @@ jobs:
             & ./scripts/tests/Test-CSharpCredentialFactories.ps1 -DotNetPath $dotnet
           }
           $mainOutput = "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/win-x64"
-          & ./scripts/tests/Test-NativeBuildCredentials.ps1 -ManagedMainPath "$mainOutput/LivingPCL.dll" -NativeExecutablePath "$env:NATIVE_EXE" -DotNetPath $dotnet -KeylessBuild
+          & ./scripts/tests/Test-NativeBuildCredentials.ps1 -ManagedMainPath "$mainOutput/LivingPCL.dll" -NativeExecutablePath "$env:NATIVE_EXE" -DotNetPath $dotnet
 
       - name: Verify managed and native bridge metadata exception routing
         id: metadata_identity
