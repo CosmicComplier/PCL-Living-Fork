@@ -26,6 +26,7 @@ public sealed partial class ResourcePageController<TInstance, TEntry, TOnline>
     public CancellationTokenSource? Operation, OnlineCancellation;
     public bool Busy, Checking, Rendering;
     public int Filter, OnlineRevision;
+    public int SortMode { get; private set; }
     public readonly HashSet<string> SelectedPaths = new(StringComparer.OrdinalIgnoreCase);
     public readonly Dictionary<string, TOnline> Online = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IResourcePageRow<TEntry, TOnline>> Rows = new(StringComparer.OrdinalIgnoreCase);
@@ -141,6 +142,20 @@ public sealed partial class ResourcePageController<TInstance, TEntry, TOnline>
         ApplyRecycleMode(); RenderList();
     }
     public void SearchChanged() => RenderList();
+    public void SortChanged(int value) {
+        if (value < 0 || value > 4 || value >= 3 && Kind != 0) throw new ArgumentOutOfRangeException(nameof(value));
+        if (SortMode == value) return;
+        SortMode = value;
+        RenderList();
+    }
+    private List<TEntry> SortVisible(List<TEntry> visible) {
+        // Recycle entry creation is the deletion-record time, not installation or LastPlayed.
+        if (SortMode == 0 || IsRecycleMode) return visible;
+        bool newestFirst = SortMode == 1 || SortMode == 3;
+        return LocalResourceSort.ByTime(visible, newestFirst,
+            entry => SortMode >= 3 ? entry.LastPlayedUtc : entry.CreatedUtc > DateTime.FromFileTimeUtc(0) ? entry.CreatedUtc : (DateTime?)null,
+            entry => entry.Name ?? "", entry => entry.FullPath ?? "").ToList();
+    }
     private string OnlineSearchText(TEntry entry) => Online.TryGetValue(entry.FullPath!, out TOnline? info)
         ? Host.ProjectName(info) + " " + string.Join(" ", Host.Tags(info)) : "";
     private bool HasUpdate(TEntry entry) => Online.TryGetValue(entry.FullPath!, out TOnline? info) && Host.HasUpdate(info);
@@ -152,6 +167,7 @@ public sealed partial class ResourcePageController<TInstance, TEntry, TOnline>
             string query = View.GetSearch().Trim();
             List<TEntry> matches = Entries.Where(item => query == "" || (item.Name + " " + item.Description + " " + OnlineSearchText(item)).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
             List<TEntry> visible = matches.Where(item => Filter == 0 || (Filter == 1 && HasUpdate(item)) || (Filter == 2 && !item.IsDirectory) || (Filter == 3 && item.IsDirectory)).ToList();
+            visible = SortVisible(visible);
             View.FilterAll.Text = (query == "" ? "全部" : "搜索结果") + $" ({matches.Count})";
             View.FilterUpdates.Text = $"可更新 ({matches.Count(HasUpdate)})";
             View.FilterUpdates.Visibility = Host.UpdatesSupported(Kind) && (Filter == 1 || matches.Any(HasUpdate)) ? Visibility.Visible : Visibility.Collapsed;

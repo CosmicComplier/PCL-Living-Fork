@@ -12,6 +12,8 @@ public class InstanceResourceEntryData {
     public bool IsDirectory;
     public DateTime ModifiedUtc;
     public DateTime CreatedUtc;
+    // Read from level.dat during the background world scan, never inferred from filesystem times.
+    public DateTime? LastPlayedUtc;
     public long Length;
 }
 

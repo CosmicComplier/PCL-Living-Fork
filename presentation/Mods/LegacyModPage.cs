@@ -25,6 +25,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     private bool loaded;
     private int dependencyChecking,bottomCount;
     private LegacyModFilter filter;
+    private LocalResourceSortOrder sortOrder;
     private List<TMod>? searchResult;
     public LegacyModPage(LegacyModPageView view,LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){this.view=view;this.host=host;}
     public void Loaded(){host.ApplyMode();if(!host.LastWasDetails())view.ScrollHome();host.ChangeAnimationControl(1);host.Selected().Clear();ReloadModList();ApplyLoaderWarnings();ChangeAllSelected(false);host.ChangeAnimationControl(-1);if(loaded)return;loaded=true;host.BindMainKey();host.AdjustFilterMargins();}
@@ -101,9 +102,18 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
         host.SetButtons(item,new[]{info,dependencies,open,toggle,delete});
     }
     public bool IsSearching=>!string.IsNullOrWhiteSpace(view.Search());
-    private IEnumerable<TMod> Current=>IsSearching?searchResult!:(host.Output()??new List<TMod>());
+    private IEnumerable<TMod> Current=>IsSearching?(searchResult??new List<TMod>()):(host.Output()??new List<TMod>());
+    public LocalResourceSortOrder SortOrder {
+        get=>sortOrder;
+        set {
+            if(!Enum.IsDefined(typeof(LocalResourceSortOrder),value))throw new ArgumentOutOfRangeException(nameof(value));
+            if(sortOrder==value)return;
+            sortOrder=value;RefreshUI();
+        }
+    }
+    public void SortChanged(int value){if(value>=0)SortOrder=(LocalResourceSortOrder)value;}
     public void RefreshUI(){
-        if(view.List() is null)return;List<TMod> showing=Current.Where(CanPassFilter).ToList();host.ChangeAnimationControl(1);
+        if(view.List() is null)return;IReadOnlyList<TMod> showing=LocalResourceSort.Order(Current.Where(CanPassFilter),sortOrder,mod=>mod.File);host.ChangeAnimationControl(1);
         if(showing.Any()){view.List()!.Visibility=Visibility.Visible;view.List()!.Children.Clear();foreach(TMod mod in showing){if(!host.Items().TryGetValue(mod.EnabledName,out TItem? item))continue;host.SetChecked(item,host.Selected().Contains(mod.EnabledName));view.List()!.Children.Add(item);}}
         else view.List()!.Visibility=Visibility.Collapsed;
         host.ChangeAnimationControl(-1);host.SetSelected(host.Selected().Where(name=>showing.Any(mod=>Same(mod.EnabledName,name))).ToList());RefreshBars();

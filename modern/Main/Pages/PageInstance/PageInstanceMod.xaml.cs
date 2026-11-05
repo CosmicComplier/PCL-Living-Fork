@@ -27,6 +27,12 @@ namespace PCL
             this.InitializeComponent();
         }
 
+        private void SortChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is MyComboBox selector && ReferenceEquals(e.OriginalSource, selector))
+                Native.SortChanged(selector.SelectedIndex);
+        }
+
         private LegacyModPageView CreateView()
         {
             return new LegacyModPageView()

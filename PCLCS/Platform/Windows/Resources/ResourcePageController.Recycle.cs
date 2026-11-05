@@ -51,8 +51,20 @@ public sealed partial class ResourcePageController<TInstance, TEntry, TOnline>
         View.BtnExport.Logo = IsRecycleMode ? View.RestoreLogo : View.SaveLogo;
         View.BtnDelete.Text = IsRecycleMode ? "彻底删除" : "删除";
         View.CardList.Title = IsRecycleMode ? "回收站" : " ";
-        View.PanFilter.Margin = new Thickness(15, IsRecycleMode ? 40 : 13, 0, 0);
-        View.PanResourceList.Margin = new Thickness(20, IsRecycleMode ? 75 : 48, 18, 22);
+        if (View.SortHeader is not null) {
+            View.SortHeader.Margin = new Thickness(15, IsRecycleMode ? 40 : 13, 15, 0);
+            View.PanFilter.Margin = new Thickness(0);
+            View.PanResourceList.Margin = new Thickness(20, 7, 18, 22);
+        } else {
+            View.PanFilter.Margin = new Thickness(15, IsRecycleMode ? 40 : 13, 0, 0);
+            View.PanResourceList.Margin = new Thickness(20, IsRecycleMode ? 75 : 48, 18, 22);
+        }
+        if (View.SortControl is not null) {
+            View.SortControl.IsEnabled = !IsRecycleMode;
+            View.SortControl.ToolTip = IsRecycleMode ? "回收站按删除记录顺序显示；删除时间不作为添加时间或最后游玩时间。" :
+                Kind == 0 ? "添加时间取文件夹创建时间，仅为近似值；最后游玩取 level.dat 的 LastPlayed，未知时间排在最后。" :
+                "添加时间以本地文件或文件夹的创建时间估算，复制、解压、迁移可能改变此时间，不代表资源的发布日期。";
+        }
         if (!IsRecycleMode) {
             RefreshResourceToolbar();
             return;

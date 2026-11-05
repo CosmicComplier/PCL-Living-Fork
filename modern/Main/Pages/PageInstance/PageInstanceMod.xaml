@@ -19,13 +19,24 @@
                         </WrapPanel>
                     </local:MyCard>
                     <local:MyCard x:Name="PanListBack" VerticalAlignment="Top" Opacity="0" Margin="0,0,0,14" Title=" " MinHeight="55">
-                        <StackPanel x:Name="PanFilter" Margin="15,13,0,0" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Height="28">
+                        <StackPanel>
+                          <WrapPanel Margin="15,13,15,0">
+                           <StackPanel x:Name="PanFilter" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Height="28">
                             <local:MyRadioButton Tag="0" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="全部" x:Name="BtnFilterAll" Checked="True" />
                             <local:MyRadioButton Tag="1" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="已启用" x:Name="BtnFilterEnabled" />
                             <local:MyRadioButton Tag="2" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="已禁用" x:Name="BtnFilterDisabled" />
                             <local:MyRadioButton Tag="3" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="可更新" x:Name="BtnFilterCanUpdate" />
+                           </StackPanel>
+                           <local:MyComboBox x:Name="ComboSort" Width="190" Height="28" Margin="8,0,0,0" SelectedIndex="0"
+                                             SelectionChanged="SortChanged" AutomationProperties.Name="模组排序"
+                                             ToolTip="添加时间以本地文件创建时间估算；复制、解压、迁移或替换可能改变它，不代表模组发布日期。">
+                               <local:MyComboBoxItem Content="默认排序" />
+                               <local:MyComboBoxItem Content="添加时间：最近在前" />
+                               <local:MyComboBoxItem Content="添加时间：最早在前" />
+                           </local:MyComboBox>
+                          </WrapPanel>
+                          <StackPanel Margin="20,7,18,22" Name="PanList" VerticalAlignment="Top" />
                         </StackPanel>
-                        <StackPanel Margin="20,48,18,22" Name="PanList" VerticalAlignment="Top" />
                     </local:MyCard>
                 </StackPanel>
             </local:MyScrollViewer>

@@ -57,6 +57,8 @@ namespace PCL
             __LfAttachOwnHandles();
             this.Kind = Kind;
             this.InitializeComponent();
+            this.ComboSortLastPlayedNewest.Visibility = Kind == global::PCL.InstanceResourceKind.Saves ? Visibility.Visible : Visibility.Collapsed;
+            this.ComboSortLastPlayedOldest.Visibility = this.ComboSortLastPlayedNewest.Visibility;
             global::PCL.LocalResourceUi.ApplySelectionIcons(this.BtnUpdate, this.BtnDelete, this.BtnDeselect);
             this.BtnExport.Logo = global::PCL.ModBase.Logo.IconButtonSave;
             this.BtnBackupRestore.Logo = global::PCL.ModBase.Logo.IconButtonRefresh;
@@ -79,6 +81,8 @@ namespace PCL
                 PanOperations = PanOperations,
                 PanResourceList = PanResourceList,
                 PanFilter = PanFilter,
+                SortHeader = PanSortHeader,
+                SortControl = ComboSort,
                 BackupSettings = BackupSettings,
                 PanList = PanList,
                 PanWorlds = PanWorlds,
@@ -290,6 +294,17 @@ namespace PCL
         private void SearchChanged()
         {
             this.Controller?.SearchChanged();
+        }
+
+        private void SortChanged(object sender, SelectionChangedEventArgs args)
+        {
+            if (this.Controller is null || this.ComboSort.SelectedIndex < 0) return;
+            if (this.Kind != global::PCL.InstanceResourceKind.Saves && this.ComboSort.SelectedIndex >= 3)
+            {
+                this.ComboSort.SelectedIndex = this.Controller.SortMode;
+                return;
+            }
+            this.Controller.SortChanged(this.ComboSort.SelectedIndex);
         }
 
         private void FilterChanged(global::PCL.MyRadioButton Sender, global::System.Boolean User)
