@@ -1,6 +1,6 @@
 # 现代 C# 产品开发入口
 
-在仓库根目录打开 [PCL-Living-Fork.Modern.slnx](../PCL-Living-Fork.Modern.slnx)。它包含真实 LF 主程序、现代 Core/Presentation、固定的 Shared，以及现有 Native/组件/纯 C# 验收项目。原 [PCL-Living-Fork.sln](../PCL-Living-Fork.sln) 保留为旧产品比较入口；迁移验收进度见 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)。
+在仓库根目录打开 [PCL-Living-Fork.sln](../PCL-Living-Fork.sln) 或 [PCL-Living-Fork.Modern.slnx](../PCL-Living-Fork.Modern.slnx)。两个入口都包含同一组真实 C#/.NET 10 LF 主程序、现代 Core/Presentation、固定的 Shared，以及现有 Native/组件/纯 C# 验收项目；默认 solution 不再构建 VB 产品。迁移验收与旧比较源码的退休门禁见 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)。
 
 主程序是 [modern/Main/PCL-Living-Fork.Modern.csproj](../modern/Main/PCL-Living-Fork.Modern.csproj)，`WinExe` 的入口为 `PCL.Application`。它是 solution 唯一根项目。启动项目选择属于 IDE 用户设置，`.slnx` 没有可移植的默认启动项目声明；首次打开时将此项目设为启动项目。命令行启动使用下面明确的 `--project` 路径。
 
@@ -49,14 +49,14 @@ dotnet run --project tests/PCLLF.Migration.Tests/PCLLF.Migration.Tests.csproj --
 
 ## Release 发布包
 
-在仓库根目录用现有入口生成到一个新目录：
+默认发布入口现在生成真实 Native 完整包。在仓库根目录指定一个新目录：
 
 ```powershell
 $releaseOutput = Join-Path $PWD ('artifacts/native-release/' + [Guid]::NewGuid().ToString('N'))
-pwsh -NoProfile -File scripts/Build-NativeRelease.ps1 -NativeProjectPath modern/Main/PCL-Living-Fork.Modern.csproj -Configuration Release -OutputPath $releaseOutput
+pwsh -NoProfile -File scripts/Build-Release.ps1 -Configuration Release -OutputPath $releaseOutput
 ```
 
-脚本复用 C# 凭据生成器的 GUID 临时目录与清理逻辑，执行真正的 `win-x64` 自包含单文件发布，并创建原更新协议需要的兼容桥。其发布调用已关闭构建服务器/节点复用并顺序执行。默认源码构建可使用空内嵌凭据。该命令只生成文件。
+脚本复用 C# 凭据生成器的 GUID 临时目录与清理逻辑，执行真正的 `win-x64` 自包含单文件发布，并创建原更新协议需要的兼容桥。其发布调用已关闭构建服务器/节点复用并顺序执行。默认源码构建可使用空内嵌凭据。该命令只生成文件。未传 `-OutputPath` 时输出到 `artifacts/release/{Configuration}`；已存在的发布资产不会被覆盖，重复发布请选新目录或先自行处理旧资产。可用 `-EnableLegacyLink` 将原可选联机代码编译进真实产品，构建脚本不会启动它。`Build-NativeRelease.ps1` 和 `Build-ModernRelease.ps1` 保持独立底层入口，调用链为默认入口→Native 打包→Modern C# 发布，不循环调用。
 
 以实际 `NativeRelease.Artifacts.json` 中的角色、版本与 SHA256 为准：
 
@@ -68,3 +68,5 @@ pwsh -NoProfile -File scripts/Build-NativeRelease.ps1 -NativeProjectPath modern/
 | `checksums` | `SHA256SUMS.txt`，覆盖以上三个实际资产 |
 
 `NativeRelease.Artifacts.json` 是构建索引。跨目录或跨 CI job 下载后，按角色的 `fileName` 在下载目录定位并复验 hash，索引里的原生产目录绝对 `path` 需要重新定位。完整功能兼容与 Windows 实际结果继续按迁移进度记录验收。
+
+旧 `Test-BuildCredentials.ps1` 的 CLR4 源码差分及失败/并发样本继续使用固定 LF Git 对象和 `scripts/tests/Build-HistoricalCredentialFixture.ps1`。该 helper 必须使用原 GUID 临时目录与明确的 `FailBuild.exe`，正常工作树/MSBuild/成功产品构建均被拒绝；它不是默认发布路径。真实 Native 凭据验收必须引用对应发布的完整 `LivingPCL.dll` 或经过有界读取识别的真正单文件入口，不能反射顶层旧更新兼容桥来冒充 Main。

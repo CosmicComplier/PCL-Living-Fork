@@ -21,6 +21,7 @@ on:
       - '!LICENCE'
       - '!LICENSE'
       - '!NOTICE.md'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -72,7 +73,7 @@ jobs:
     # Only a selected real build acquires this group. A selector-only push must
     # not cancel a previous real package/runtime verification on the branch.
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}-${{ matrix.configuration }}
+      group: native-product-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}-${{ matrix.configuration }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
@@ -200,7 +201,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           $mainProject = Join-Path $env:GITHUB_WORKSPACE 'modern/Main/PCL-Living-Fork.Modern.csproj'
           $packageDirectory = Join-Path $env:NATIVE_LOG_DIRECTORY 'package'
-          & ./scripts/Build-NativeRelease.ps1 -NativeProjectPath $mainProject -OutputPath $packageDirectory -Configuration $env:NATIVE_CONFIGURATION -DotNetPath (Get-Command dotnet).Source 2>&1 |
+          & ./scripts/Build-Release.ps1 -NativeProjectPath $mainProject -OutputPath $packageDirectory -Configuration $env:NATIVE_CONFIGURATION -DotNetPath (Get-Command dotnet).Source 2>&1 |
             Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'package.log')
           if ($LASTEXITCODE -ne 0) { throw 'Building the genuine native release package failed.' }
 

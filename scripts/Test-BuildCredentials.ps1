@@ -1,4 +1,5 @@
 param([Parameter(Mandatory=$true)][string]$ExecutablePath,[switch]$KeylessBuild)
+# Historical CLR4 Main/credential-source oracle only. Never pass a native apphost or the managed update bridge as the full Main.
 # 输入期望值从与构建相同的环境变量读取，只输出通过/失败，不输出任何凭据。
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Get-FixedLfSource.ps1')
@@ -121,7 +122,7 @@ try {
     foreach($badInput in @($false,$true)) {
         Set-TestInputs $(if($badInput){"invalid`ninput"}else{$fakeCF}) $fakeMS
         $failed=$false
-        try{& (Join-Path $PSScriptRoot 'Build-Release.ps1') -MSBuildPath $fakeBuild -ProjectRoot $legacyRoot}catch{$failed=$true}
+        try{& (Join-Path $PSScriptRoot 'tests/Build-HistoricalCredentialFixture.ps1') -MSBuildPath $fakeBuild -ProjectRoot $legacyRoot}catch{$failed=$true}
         if(-not $failed){throw 'Expected build failure was ignored'}
         $after=@(Get-ChildItem -LiteralPath $generatedRoot -Filter '*.g.vb' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
         if(@($after | Where-Object {$_ -notin $existing}).Count -ne 0 -or -not [LivingPclCredentialTests]::Equal($before,[IO.File]::ReadAllBytes($sourcePath))){throw 'Failed build left credential source or changed tracked source'}
@@ -129,7 +130,7 @@ try {
     $lease=[IO.File]::Open((Join-Path $generatedRoot 'build.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
     try {
         $blocked=$false
-        try{& (Join-Path $PSScriptRoot 'Build-Release.ps1') -MSBuildPath $fakeBuild -ProjectRoot $legacyRoot}catch{$blocked=$_.Exception.Message.Contains('build lock')}
+        try{& (Join-Path $PSScriptRoot 'tests/Build-HistoricalCredentialFixture.ps1') -MSBuildPath $fakeBuild -ProjectRoot $legacyRoot}catch{$blocked=$_.Exception.Message.Contains('build lock')}
         if(-not $blocked){throw 'Concurrent release build was not rejected'}
     }finally{$lease.Dispose()}
     Write-Output 'Build credential checks passed: encrypted readback, plaintext/Base64 absence, environment override, empty/single/dual inputs, mixed fragments, tamper/padding/UTF8 rejection, buffer cleanup, failed-build cleanup and concurrent-build lock.'

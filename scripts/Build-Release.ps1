@@ -1,55 +1,26 @@
 param(
-    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
+    [ValidateSet('Debug', 'Release', 'Snapshot')][string]$Configuration = 'Release',
     [string]$OutputPath,
-    [string]$MSBuildPath = 'msbuild',
-    [string]$ProjectRoot
+    [string]$DotNetPath = 'dotnet',
+    [string]$NativeProjectPath,
+    [switch]$EnableLegacyLink
 )
 $ErrorActionPreference = 'Stop'
-# A historical source-mode failure fixture can select its own fixed GUID workspace.
-# Default legacy publishing remains unchanged until the coordinated cutover.
-$projectRoot = if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { Split-Path $PSScriptRoot -Parent } else { [IO.Path]::GetFullPath($ProjectRoot) }
-$generatedRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot 'Plain Craft Launcher 2\obj\CredentialBuild'))
-$generatedFolder = Join-Path $generatedRoot ([Guid]::NewGuid().ToString('N'))
-$generatedSource = Join-Path $generatedFolder 'BuildCredentials.g.vb'
-$buildLease = $null
-try {
-    [IO.Directory]::CreateDirectory($generatedRoot) | Out-Null
-    try {
-        $buildLease = [IO.File]::Open((Join-Path $generatedRoot 'build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-    } catch {
-        throw 'Cannot acquire the workspace build lock; another release build may be running.'
-    }
-    [IO.Directory]::CreateDirectory($generatedFolder) | Out-Null
-    & (Join-Path $PSScriptRoot 'Write-BuildCredentials.ps1') -OutputPath $generatedSource
-    $intermediatePath = Join-Path $generatedFolder 'Intermediate\'
-    $buildArgs = @((Join-Path $projectRoot 'Plain Craft Launcher 2\PCL-Living-Fork.vbproj'), '-restore', '-t:Rebuild', "-p:Configuration=$Configuration", "-p:GeneratedCredentialSource=$generatedSource", "-p:CredentialIntermediateOutputPath=$intermediatePath", '-verbosity:minimal', '-nologo')
-    if ($OutputPath) { $buildArgs += "-p:OutputPath=$OutputPath" }
-    & $MSBuildPath @buildArgs
-    if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE" }
-    # Keep the legacy assembly identity, but use the public product name on disk.
-    $projectFolder=Join-Path $projectRoot 'Plain Craft Launcher 2'
-    $outputFolder=if($OutputPath){if([IO.Path]::IsPathRooted($OutputPath)){[IO.Path]::GetFullPath($OutputPath)}else{[IO.Path]::GetFullPath((Join-Path $projectFolder $OutputPath))}}else{Join-Path $projectFolder 'bin'}
-    $productVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $outputFolder 'LivingPCL.exe')).ProductVersion
-    if($productVersion -notmatch '\A\d+\.\d+\.\d+(?:\.\d+)?\z'){throw 'The built executable has an invalid product version'}
-    $executableName='PCL-Living-Fork-'+$productVersion+'.exe'
-    foreach($suffix in @('', '.config')){
-        $compiled=Join-Path $outputFolder ('LivingPCL.exe'+$suffix)
-        if([IO.File]::Exists($compiled)){Move-Item -LiteralPath $compiled -Destination (Join-Path $outputFolder ($executableName+$suffix)) -Force}
-    }
+$projectRoot = Split-Path $PSScriptRoot -Parent
+$project = if ($NativeProjectPath) { [IO.Path]::GetFullPath($NativeProjectPath) } else { Join-Path $projectRoot 'modern/Main/PCL-Living-Fork.Modern.csproj' }
+$output = if ($OutputPath) { [IO.Path]::GetFullPath($OutputPath) } else { Join-Path $projectRoot ('artifacts/release/' + $Configuration) }
+# The native publisher owns the package/identity checks. Its modern inner
+# publisher owns the ONLY C# credential GUID, build lease and finally cleanup.
+# Historical credential-failure fixtures have a separate explicit test helper;
+# this default entry never selects a business VB/vbproj or the managed bridge as Main.
+Write-Output ('Building full LF C#/.NET10 ' + $Configuration + ' product: ' + $project)
+& (Join-Path $PSScriptRoot 'Build-NativeRelease.ps1') -NativeProjectPath $project -OutputPath $output -Configuration $Configuration -DotNetPath $DotNetPath -EnableLegacyLink:$EnableLegacyLink
+$indexPath = Join-Path $output 'NativeRelease.Artifacts.json'
+$index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
+$expected = @('native-exe', 'native-zip', 'legacy-bridge', 'checksums')
+$roles = @($index.artifacts | ForEach-Object { $_.role })
+if ($index.schemaVersion -ne 1 -or $index.kind -cne 'PCLLF.NativeRelease.Artifacts' -or $index.bridgeOnly -isnot [bool] -or $index.bridgeOnly -or $roles.Count -ne $expected.Count -or @($expected | Where-Object { $_ -cnotin $roles }).Count -ne 0) {
+    throw 'Default release requires the complete actual native EXE/ZIP/legacy bridge/checksums package.'
 }
-finally {
-    try {
-        if ([IO.Directory]::Exists($generatedFolder)) {
-            $resolvedFolder = [IO.Path]::GetFullPath($generatedFolder)
-            $rootPrefix = $generatedRoot.TrimEnd('\') + '\'
-            if (-not $resolvedFolder.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase) -or
-                [IO.Path]::GetFileName($resolvedFolder) -notmatch '\A[0-9a-f]{32}\z' -or
-                (([IO.File]::GetAttributes($resolvedFolder) -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-                throw 'Unsafe credential-build cleanup path'
-            }
-            [IO.Directory]::Delete($resolvedFolder, $true)
-        }
-    } finally {
-        if ($null -ne $buildLease) { $buildLease.Dispose() }
-    }
-}
+foreach ($item in @($index.artifacts)) { Write-Output ('Release role ' + $item.role + ': ' + $item.fileName + ' (' + $item.bytes + ' bytes, SHA256 ' + $item.sha256 + ')') }
+Write-Output ('Build-only release index: ' + $indexPath + '; no release uploaded and no launcher/update entry executed.')
