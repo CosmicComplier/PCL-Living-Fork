@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 param(
  [Parameter(Mandatory=$true)][string]$ExecutablePath,
  [string]$WorkspaceRoot=$env:GITHUB_WORKSPACE,
@@ -21,6 +21,7 @@ $ErrorActionPreference='Stop'
 $repoRoot=Split-Path $PSScriptRoot -Parent
 if($env:OS -ne 'Windows_NT' -or $env:CI -ne 'true' -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'PENDING: requires an isolated disposable GitHub-hosted Windows CI machine/profile.'}
 if([IntPtr]::Size -ne 8 -or $PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'PENDING: invoke 64-bit Windows PowerShell -NoProfile -STA; no product runtime is hosted by PowerShell.'}
+& (Join-Path $PSScriptRoot 'tests/Test-NativeSmokeReadiness.ps1') -SmokeScript $PSCommandPath
 if(-not $WorkspaceRoot){throw 'PENDING: WorkspaceRoot must identify the dedicated CI workspace.'}
 $WorkspaceRoot=[IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\')
 if(-not [IO.Directory]::Exists($WorkspaceRoot)){throw 'WorkspaceRoot does not exist.'}

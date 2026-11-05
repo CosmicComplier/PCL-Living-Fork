@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import yaml
@@ -37,6 +38,17 @@ def main() -> None:
     assert "--list-groups" in facade["run"] and "'registry-data'" in facade["run"] and "$groups = @('map-details'" not in facade["run"], "CI feature coverage must use the real host registry"
     assert any("--groups registry-data" in step.get("run", "") for step in reusable["jobs"]["native"]["steps"]), "Dedicated Registry group disappeared"
     checks += 3
+    ps5_scripts = {
+        path
+        for job in reusable["jobs"].values()
+        for step in job.get("steps", [])
+        for path in re.findall(r"\bpowershell(?:\.exe)?\s[^\n]*?-File\s+([^\s\"'$]+\.ps1)", step.get("run", ""))
+    }
+    assert "scripts/Test-NativeLauncherSmoke.ps1" in ps5_scripts, "Actual PS5 cold entry was not covered"
+    for path in sorted(ps5_scripts):
+        raw = (ROOT / path).read_bytes()
+        assert raw.isascii() or raw.startswith(b"\xef\xbb\xbf"), (path, "Windows PowerShell 5.1 needs a UTF-8 BOM for non-ASCII source")
+        checks += 1
     for workflow_name, gate_name, selection, validation in (
         ("native-main.yml", "gate", "select", "native"),
         ("migration-validation.yml", "gate", "select", "validate"),
