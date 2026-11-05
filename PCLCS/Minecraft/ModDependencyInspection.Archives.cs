@@ -34,6 +34,31 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
             RememberLoaderWarnings(ModsFolder, Result);
             return Result;
         }
+        /// <summary>Read one archive with the shared loader parser, without folder scans, disk indexes or legacy caches.</summary>
+        public static TReport ReadSingleArchive(string fileName, TContext context, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            var result = new TReport { Context = context ?? new TContext() };
+            result.Builtins = CreateBuiltins(result.Context);
+            try
+            {
+                if ((File.GetAttributes(fileName) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("跳过链接文件");
+                using (var stream = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, false))
+                    ReadArchive(archive, Path.GetFullPath(fileName), "", true, false, 0, result,
+                        new ReadBudget { ForceFresh = true, NoCache = true }, token);
+                BuildReport(result, token);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error) when (error is IOException || error is InvalidDataException || error is UnauthorizedAccessException ||
+                error is JsonException || error is FormatException || error is DecoderFallbackException ||
+                error is ArgumentException || error is InvalidOperationException || error is OverflowException)
+            {
+                Incomplete(result, Path.GetFileName(fileName) + "：无法完整读取元数据（" + error.Message + "）。");
+            }
+            return result;
+        }
         public static TReport ScanRaw(global::System.String ModsFolder, TContext Context, global::System.Threading.CancellationToken Token, global::System.Boolean ForceFresh = false)
         {
             var Result = new TReport() { Context = (Context) ?? (new TContext()) };
@@ -178,7 +203,7 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
 
         private class ReadBudget
         {
-            public global::System.Boolean ForceFresh;
+            public global::System.Boolean ForceFresh, NoCache;
             public global::System.Int64 Bytes;
             public global::System.Int32 Count;
         }
@@ -340,7 +365,7 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
                 case "META-INF/neoforge.mods.toml":
                     {
                         // NeoForge 1.20.4 also uses mods.toml; distinguish it using actual platform dependencies.
-                        var Platforms = ReadToml(Content).Where(Section => (((Section.Name.StartsWith("dependencies.", global::System.StringComparison.Ordinal)) && (Scalar(Section, "mandatory") != "false")) && (new[] { "", "required" }.Contains(Scalar(Section, "type"))))).Select(Section => Scalar(Section, "modId")).ToList();
+                        var Platforms = ReadToml(Content).Where(Section => Section.IsArray && (((Section.Name.StartsWith("dependencies.", global::System.StringComparison.Ordinal)) && (Scalar(Section, "mandatory") != "false")) && (new[] { "", "required" }.Contains(Scalar(Section, "type"))))).Select(Section => Scalar(Section, "modId")).ToList();
                         if (((Metadata.FullName.Contains("neoforge")) || (Platforms.Contains("neoforge"))))
                         {
                             DeclaredPlatform = "neoforge";
@@ -612,6 +637,7 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
         private class TomlSection
         {
             public global::System.String Name;
+            public bool IsArray, Incomplete;
             public global::System.Collections.Generic.Dictionary<global::System.String, global::System.String> Values = new global::System.Collections.Generic.Dictionary<global::System.String, global::System.String>(global::System.StringComparer.Ordinal);
         }
 
@@ -644,6 +670,8 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
                 }
                 if (((Quote) != ('\0')))
                 {
+                    if (Ch == '\n' && !Triple)
+                        throw new FormatException("TOML 单行字符串未结束");
                     Statement.Append(Ch);
                     if (Escape)
                     {
@@ -696,21 +724,34 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
                         Curly += 1;
                     if (((Ch) == ('}')))
                         Curly -= 1;
+                    if (Square < 0 || Curly < 0)
+                        throw new FormatException("TOML 容器括号不匹配");
                     if (((((Ch) == ('\n')) && ((Square) <= (0))) && ((Curly) <= (0))))
                     {
                         global::System.String Line = Statement.ToString().Trim();
                         Statement.Clear();
                         if (Line.StartsWith("[", global::System.StringComparison.Ordinal))
                         {
-                            var Header = global::System.Text.RegularExpressions.Regex.Match(Line, @"^\[{1,2}\s*([A-Za-z0-9_.-]+)\s*\]{1,2}$");
-                            Current = new TomlSection() { Name = (Header.Success) ? (Header.Groups[1].Value) : ("?") };
+                            var Header = Regex.Match(Line, @"^(?<open>\[\[|\[)\s*(?<name>[A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*)\s*(?<close>\]\]|\])$");
+                            bool validHeader = Header.Success && Header.Groups["open"].Length == Header.Groups["close"].Length;
+                            Current = new TomlSection() {
+                                Name = validHeader ? Regex.Replace(Header.Groups["name"].Value, @"\s+", "") : "?",
+                                IsArray = validHeader && Header.Groups["open"].Length == 2,
+                                Incomplete = !validHeader
+                            };
                             Sections.Add(Current);
                         }
                         else if (!string.IsNullOrEmpty(Line))
                         {
                             var Assignment = global::System.Text.RegularExpressions.Regex.Match(Line, @"^([A-Za-z0-9_.-]+)\s*=\s*(.+)$", global::System.Text.RegularExpressions.RegexOptions.Singleline);
-                            if (Assignment.Success)
-                                Current.Values[Assignment.Groups[1].Value] = Assignment.Groups[2].Value.Trim();
+                            if (Assignment.Success) {
+                                string key = Assignment.Groups[1].Value;
+                                if (Current.Values.ContainsKey(key)) Current.Incomplete = true;
+                                Current.Values[key] = Assignment.Groups[2].Value.Trim();
+                            } else {
+                                // A valid quoted/dotted key outside this subset is not silently ignored.
+                                Current.Incomplete = true;
+                            }
                         }
                         Square = 0;
                         Curly = 0;
@@ -754,9 +795,12 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
         {
             var Sections = ReadToml(Content);
             var GlobalSection = Sections[0];
-            var FileProperties = Sections.FirstOrDefault(Entry => (Entry.Name == "properties"));
-            if (((Enabled) && (Sections.Any(Section => (Section.Name == "?")))))
-                Incomplete(Report, global::System.IO.Path.GetFileName(RootPath) + "：存在未识别的 TOML 表名，部分声明未解析。");
+            var FileProperties = Sections.FirstOrDefault(Entry => !Entry.IsArray && Entry.Name == "properties");
+            if (Enabled && Sections.Any(section => section.Incomplete || section.Name == "?" ||
+                (section.Name == "mods" && !section.IsArray) ||
+                (section.Name.StartsWith("dependencies.", StringComparison.Ordinal) && !section.IsArray) ||
+                (section.Name == "properties" && section.IsArray)))
+                Incomplete(Report, Path.GetFileName(RootPath) + "：TOML 表类型、表名或赋值不受支持，部分声明未解析。");
             global::System.String ManifestVersion = "";
             var Manifest = Archive.GetEntry("META-INF/MANIFEST.MF");
             if (Manifest is not null)
@@ -766,7 +810,7 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
                 if (Match.Success)
                     ManifestVersion = Match.Groups[1].Value.Trim();
             }
-            foreach (var Section in Sections.Where(Entry => (Entry.Name == "mods")))
+            foreach (var Section in Sections.Where(Entry => Entry.IsArray && Entry.Name == "mods"))
             {
                 global::System.String Version = global::System.Text.RegularExpressions.Regex.Replace(Scalar(Section, "version"), @"\$\{file\.([A-Za-z0-9_.-]+)\}", Match =>
                     {
@@ -779,7 +823,7 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
                     Item.Side = "client";
                 Items.Add(Item);
             }
-            foreach (var Section in Sections.Where(Entry => Entry.Name.StartsWith("dependencies.", global::System.StringComparison.Ordinal)))
+            foreach (var Section in Sections.Where(Entry => Entry.IsArray && Entry.Name.StartsWith("dependencies.", global::System.StringComparison.Ordinal)))
             {
                 global::System.String OwnerId = Section.Name.Substring("dependencies.".Length);
                 var Item = Items.FirstOrDefault(Entry => ((Entry.Id ?? "") == (OwnerId ?? "")));
@@ -1033,7 +1077,7 @@ public sealed partial class ModDependencyInspection<TContext,TMod,TDependency,TE
             global::System.String CacheKey = (global::System.String)null;
             global::System.Int32 BeforeMods = Report.Mods.Count;
             global::System.Int32 BeforeNotices = Report.Notices.Count;
-            if (!(Nested))
+            if (!Nested && !Budget.NoCache)
             {
                 var SourceInfo = new global::System.IO.FileInfo(RootPath);
                 CacheKey = ((((((((((((FilePathKey(RootPath) + "|") + SourceInfo.Length) + "|") + SourceInfo.LastWriteTimeUtc.Ticks) + "|") + SourceInfo.CreationTimeUtc.Ticks) + "|") + Enabled) + "|") + Report.Context.MinecraftVersion) + "|") + global::System.String.Join(";", Report.Context.LoaderVersions.OrderBy(Pair => Pair.Key).Select(Pair => ((Pair.Key + "=") + Pair.Value))));

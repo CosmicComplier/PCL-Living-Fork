@@ -92,7 +92,7 @@ internal static class ModpackUpdateFlowChecks
         flow.Archives.Enqueue(next); flow.Confirm = (_, _, _, _, _) => 2;
         flow.Preview = _ => throw new InvalidOperationException("Refused baseline must not reach preview.");
         TraceStage("baseline-refusal-start"); flow.Start(missing); flow.WaitStopped(); TraceStage("baseline-refusal-stopped");
-        Check(flow.Messages.Count == 1 && flow.Messages[0] == "建立整合包记录" && flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded, "FLOW-02", "baseline refusal was not real cancellation");
+        Check(flow.Messages.Count == 1 && flow.Messages[0] == "补全整合包记录" && flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded, "FLOW-02", "baseline refusal was not real cancellation");
         Check(Update("ReadManifest", missing.PathVersion) is null && !File.Exists(Path.Combine(missing.PathIndie, "config/author.txt")), "FLOW-02-bytes", "baseline refusal wrote author files/manifest");
 
         // The workflow first asks for the next archive, then asks for the current
@@ -107,7 +107,7 @@ internal static class ModpackUpdateFlowChecks
         flow.Preview = plan => { shown = plan; return 2; };
         TraceStage("preview-refusal-start"); flow.Start(declined); flow.WaitStopped(); TraceStage("preview-refusal-stopped");
         Check(shown is not null && shown.GetType().Assembly == Native.Main && Changes(shown).Any(Conflict), "FLOW-03-plan", "preview did not receive actual personal-preserving plan");
-        Check(flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded && flow.Messages.SequenceEqual(new[] { "建立整合包记录" }), "FLOW-03", "preview rejection did not cancel after establishing the correct origin");
+        Check(flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded && flow.Messages.SequenceEqual(new[] { "补全整合包记录" }), "FLOW-03", "preview rejection did not cancel after establishing the correct origin");
         Check(File.ReadAllText(Path.Combine(declined.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(declined.PathIndie, "config/personal.txt")) == "my-edit" && Update("ReadManifest", declined.PathVersion) is null, "FLOW-03-bytes", "refused preview committed files or persisted origin");
 
         // Cancel the REAL taskbar combo while the existing confirmation primitive
@@ -138,19 +138,64 @@ internal static class ModpackUpdateFlowChecks
         Check(!flow.Worker!.LastSucceeded && File.ReadAllText(Path.Combine(canceled.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(canceled.PathIndie, "config/personal.txt")) == "my-edit" && File.ReadAllText(Path.Combine(canceled.PathVersion, "PCL", "ModpackOrigin.json")) == canceledOrigin, "FLOW-05", "real canceled flow changed author/personal/origin bytes");
         Check(!Directory.Exists(Path.Combine(canceled.PathVersion, "PCL", "PackUpdateBackups")), "FLOW-05-backup", "cancellation before commit created a transaction");
 
+        // Same-runtime updates still depend on the version JSON observed in
+        // preview. A different program may change it without changing game files.
+        ModMinecraft.McInstance stale = Instance(minecraft, "stale-runtime-1.20.1");
+        SeedOrigin(stale, old, root, "stale-runtime-origin");
+        string staleOrigin = File.ReadAllText(Path.Combine(stale.PathVersion, "PCL", "ModpackOrigin.json"));
+        string versionJson = Directory.GetFiles(stale.PathVersion, "*.json").Single();
+        string? externalVersion = null;
+        flow.Archives.Enqueue(next);
+        flow.Preview = _ =>
+        {
+            JObject data = JObject.Parse(File.ReadAllText(versionJson));
+            data["fixtureExternalEdit"] = "after-preview";
+            externalVersion = data.ToString(); Put(versionJson, externalVersion);
+            return 1;
+        };
+        TraceStage("stale-runtime-start"); flow.Start(stale); flow.WaitStopped(); TraceStage("stale-runtime-stopped");
+        Check(flow.Step!.State == ModBase.LoadState.Failed && !flow.Worker!.LastSucceeded && flow.Step.Error?.ToString().Contains("预览后发生变化", StringComparison.Ordinal) == true,
+            "FLOW-09", "same-runtime workflow accepted a version JSON changed after preview");
+        Check(externalVersion is not null && File.ReadAllText(versionJson) == externalVersion && File.ReadAllText(Path.Combine(stale.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(stale.PathIndie, "config/personal.txt")) == "my-edit" && File.ReadAllText(Path.Combine(stale.PathVersion, "PCL", "ModpackOrigin.json")) == staleOrigin,
+            "FLOW-09-bytes", "stale-preview rejection changed external runtime edits or author/personal/origin bytes");
+        Check(!Directory.Exists(Path.Combine(stale.PathVersion, "PCL", "PackUpdateBackups")), "FLOW-09-backup", "stale runtime preview created a commit transaction");
+
+        // Schema 1 could have lost edited entries during RecordInstalled.
+        // Matching names, versions, Minecraft and loaders alone cannot validate
+        // an original package whose surviving author hashes disagree.
+        ModMinecraft.McInstance wrongOriginal = Instance(minecraft, "wrong-original-1.20.1");
+        SeedOrigin(wrongOriginal, old, root, "wrong-original-origin");
+        string wrongOrigin = LegacyPrunedOrigin(wrongOriginal);
+        string wrongPackageFolder = Path.Combine(root, "wrong-original-package"); Directory.CreateDirectory(wrongPackageFolder);
+        string wrongOld = Pack(wrongPackageFolder, "flow-old", new() { ["config/author.txt"] = "not-the-recorded-author", ["config/personal.txt"] = "old-default" }, fabric: false);
+        flow.Messages.Clear(); flow.Archives.Enqueue(next); flow.Archives.Enqueue(wrongOld);
+        flow.Preview = _ => throw new InvalidOperationException("Wrong original package reached preview.");
+        TraceStage("wrong-original-start"); flow.Start(wrongOriginal); flow.WaitStopped(); TraceStage("wrong-original-stopped");
+        Check(flow.Step!.State == ModBase.LoadState.Failed && !flow.Worker!.LastSucceeded && flow.Messages.SequenceEqual(new[] { "补全整合包记录" }) && flow.Step.Error?.ToString().Contains("哈希核对", StringComparison.Ordinal) == true,
+            "FLOW-10", "same-name/version/runtime original with wrong author bytes was not rejected before preview");
+        Check(File.ReadAllText(Path.Combine(wrongOriginal.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(wrongOriginal.PathIndie, "config/personal.txt")) == "my-edit" && File.ReadAllText(Path.Combine(wrongOriginal.PathVersion, "PCL", "ModpackOrigin.json")) == wrongOrigin,
+            "FLOW-10-bytes", "wrong-original rejection changed author/personal/pruned-origin bytes");
+        Check(!Directory.Exists(Path.Combine(wrongOriginal.PathVersion, "PCL", "PackUpdateBackups")), "FLOW-10-backup", "wrong-original rejection created a commit transaction");
+
         // Accepted flow: use a same-runtime pack so the REAL history capture,
         // commit and reload run, without downloading/installing Minecraft itself.
+        // Begin with a real pruned schema-1 origin and repair it from the correct
+        // old package; this also verifies the new complete record is committed.
         ModMinecraft.McInstance accepted = Instance(minecraft, "accepted-1.20.1");
         SeedOrigin(accepted, old, root, "accept-origin");
+        LegacyPrunedOrigin(accepted);
         PageInstanceLeft.Instance = accepted;
         Native.Field(typeof(ModMinecraft), "_McInstanceSelected").SetValue(null, accepted);
-        flow.Archives.Enqueue(next);
+        flow.Messages.Clear(); flow.Archives.Enqueue(next); flow.Archives.Enqueue(old);
         int previews = 0;
         flow.Preview = plan =>
         {
             previews++;
             Check(Changes(plan).Any(Conflict) && Changes(plan).Any(change => !Conflict(change)), "FLOW-06-preview", "accepted workflow discarded personal/author distinction");
             Check(File.ReadAllText(Path.Combine(accepted.PathIndie, "config/author.txt")) == "old-author", "FLOW-06-confirm", "target changed before confirmation");
+            JObject repaired = (JObject)Get(plan, "Baseline")!;
+            Check(repaired["schema"]?.Value<int>() == 2 && repaired["complete"]?.Value<bool>() == true && repaired["files"]?["config/personal.txt"]?["hash"] is not null,
+                "FLOW-11-preview", "correct old package did not restore the pruned author declaration before planning");
             return 1;
         };
         int infos = flow.Infos.Count;
@@ -163,12 +208,18 @@ internal static class ModpackUpdateFlowChecks
         Check(((IEnumerable<JObject>)Native.Static("PCL.EnvironmentHistory", "Points", accepted.PathVersion)!).Any(point => point["label"]?.ToString() == "整合包更新前"), "FLOW-08-history", "real pre-update environment snapshot missing");
         Check(PageInstanceLeft.Instance is not null && !ReferenceEquals(PageInstanceLeft.Instance, accepted) && Native.Full(PageInstanceLeft.Instance.PathVersion) == Native.Full(accepted.PathVersion) && ReferenceEquals(PageInstanceLeft.Instance, ModMinecraft.McInstanceSelected), "FLOW-08-reload", "actual selected/page instance was not reloaded together");
         Check(!((IEnumerable<string>)Update("Pending", accepted.PathVersion)!).Any() && !flow.Updating && !ModMinecraft.McInstanceLock.IsLocked(accepted), "FLOW-08-release", "successful actual workload left pending state/Active/lease");
+        JObject committedOrigin = JObject.Parse(File.ReadAllText(Path.Combine(accepted.PathVersion, "PCL", "ModpackOrigin.json")));
+        string expectedPersonalHash = "sha1:" + Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes("new-default"))).ToLowerInvariant();
+        Check(flow.Messages.SequenceEqual(new[] { "补全整合包记录" }) && committedOrigin["schema"]?.Value<int>() == 2 && committedOrigin["complete"]?.Value<bool>() == true && committedOrigin["files"]?["config/personal.txt"]?["hash"]?.ToString() == expectedPersonalHash,
+            "FLOW-11-origin", "correct schema-1 repair did not commit a complete schema-2 author origin");
+        Check(committedOrigin["files"]?["config/personal.txt"]?["state"]?.ToString() == "retained" && committedOrigin["files"]?["config/personal.txt"]?["local"]?["hash"]?.ToString() == Digest(Path.Combine(accepted.PathIndie, "config/personal.txt")),
+            "FLOW-11-retained", "new author expectation and retained personal observation were not recorded separately");
         TraceStage("common-barrier-enter");
         using (DeadlineGuard deadlineGuard = new(DateTime.UtcNow.AddSeconds(10), "common actual-task completion barrier")) scope.FinishActualTasks();
         TraceStage("common-barrier-return");
         accounts.AssertUsed(); TraceStage("account-read-contract-return");
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS native modpack-update workflow: FLOW-01..08 (genuine admission lease, baseline/preview refusals, guarded cancellation, history/commit/reload).");
+        Console.WriteLine("PASS native modpack-update workflow: FLOW-01..11 (genuine admission lease, baseline/preview refusals, guarded cancellation, stale runtime guard, schema-1 repair, history/commit/reload).");
     }
 
     // The real SelectInstance evaluates CacheNideServer/CacheAuthServerServer
@@ -288,6 +339,18 @@ internal static class ModpackUpdateFlowChecks
         Put(Path.Combine(instance.PathVersion, "PCL", "ModpackOrigin.json"), ((JObject)Update("Manifest", original)!).ToString());
         Put(Path.Combine(instance.PathIndie, "config/author.txt"), "old-author");
         Put(Path.Combine(instance.PathIndie, "config/personal.txt"), "my-edit");
+    }
+    private static string LegacyPrunedOrigin(ModMinecraft.McInstance instance)
+    {
+        string file = Path.Combine(instance.PathVersion, "PCL", "ModpackOrigin.json");
+        JObject data = JObject.Parse(File.ReadAllText(file));
+        data["schema"] = 1; data.Remove("complete");
+        JObject files = (JObject)data["files"]!;
+        files.Remove("config/personal.txt");
+        foreach (JProperty item in files.Properties())
+            item.Value = new JObject { ["hash"] = item.Value["hash"]?.DeepClone(), ["identity"] = item.Value["identity"]?.DeepClone() };
+        Put(file, data.ToString());
+        return File.ReadAllText(file);
     }
     private static void Pump(DateTime deadline)
     {

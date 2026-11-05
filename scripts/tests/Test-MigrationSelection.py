@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,10 @@ def main() -> int:
     # retain every old group/script/oracle/credential gate, not a second router.
     for case in GOLD["legacyCases"]:
         expect(cli([case["path"]]), case["scope"], case["native"], "preserved scope: " + case["path"], [case["path"]])
+    # New author-ownership/JAR fixtures must be selected on their own changes
+    # and when a shared loader parser changes. Retain the original gold cases.
+    for case in GOLD["packUpdateCases"]:
+        expect(cli(case["paths"]), case["scope"], case["native"], "pack update: " + case["label"], case["paths"])
     for path in GOLD["nativeOnlyPaths"]:
         expect(cli([path]), "no-checks", True, "native-only: " + path, [path])
     for path in ("scripts/tests/Test-MigrationSelection.py", "scripts/tests/MigrationSelection.golden.json"):
@@ -75,6 +80,12 @@ def main() -> int:
     mixed = ["modern/Main/FormMain.xaml.cs", "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb"]
     expect(cli(mixed), "world-backups", True, "mixed native and legacy consumers", mixed)
     expect(cli(extra=["--full"]), "complete", True, "explicit complete checkpoint", [])
+    registry_source = (repo / "tests/PCLLF.Migration.Tests/Program.cs").read_text(encoding="utf-8")
+    registry_block = re.search(r'\bgroups\s*=\s*\[(.*?)\];', registry_source, re.DOTALL)
+    require(registry_block is not None, "Production migration test group registration is missing.")
+    registry = re.findall(r'^\s+\("([a-z0-9-]+)",', registry_block.group(1), re.MULTILINE)
+    require(registry and len(registry) == len(set(registry)), "Production migration test registry is empty or contains duplicate keys.")
+    require(registry == GOLD["scopes"]["complete"]["groups"], "Complete CI scope does not contain exactly the production migration test groups in canonical order.")
     # No event is deliberately conservative; it must not be mistaken for a
     # valid, empty git diff (the latter is exercised below).
 

@@ -40,6 +40,7 @@ internal static class ModpackUpdateUxChecks
         ModpackUpdateCleanup.VerifyIsolatedChild();
         ModpackDownloadProcess.RunParent();
         VersionsAndPreview(Path.Combine(root, "preview"));
+        ConflictChoicesAndOwnership(Path.Combine(root, "ownership-preview"));
         Console.WriteLine("PASS native modpack-update UX: UX-P1..P4 and UX-01..UX-13 (actual loopback, selection/modal and read-only preview).");
     }
 
@@ -193,6 +194,91 @@ internal static class ModpackUpdateUxChecks
         Check(((UniformGrid)Get(preview, "Filters")!).Columns == 2, "UX-11", "compact categories did not wrap to two columns");
         Check(Changes(plan).Count == before && Changes(plan).Count(Conflict) == conflicts, "UX-12", "preview mutated original plan");
         Check(new[] { "modpack-version-selector.png", "modpack-update-preview.png", "modpack-removals-preview.png", "modpack-preview-compact.png" }.All(name => new FileInfo(Path.Combine(folder, name)).Length > 8), "UX-13", "actual offscreen WPF renders missing");
+    }
+
+    private static void ConflictChoicesAndOwnership(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        object package = New("PackUpdatePackage");
+        Set(package, "Name", "Ownership fixture"); Set(package, "Version", "2"); Set(package, "Minecraft", "26.1.2");
+        ((IDictionary)Get(package, "Loaders")!).Add(ModLoaders.Fabric, "0.19.3");
+        object plan = New("PackUpdatePlan"); Set(plan, "Package", package);
+        ((IList)Get(plan, "Warnings")!).Add("两个同哈希本地候选需要核对。");
+        ((IList)Get(plan, "RuntimeWarnings")!).Add("personal.jar 声明 minecraft <1.22，与目标 26.1.2 不兼容。");
+
+        object Add(string relative, PackUpdateOwnership ownership, bool conflict, bool displayOnly, bool author = true, string? local = null, bool incoming = true)
+        {
+            object change = New("PackUpdateChange");
+            Set(change, "Relative", relative); Set(change, "LocalRelative", local); Set(change, "Ownership", ownership);
+            Set(change, "Conflict", conflict); Set(change, "DisplayOnly", displayOnly); Set(change, "AllowAuthor", author);
+            Set(change, "Reason", ownership == PackUpdateOwnership.PersonalAdded ? "个人新增，不属于作者清单" : "fixture ownership evidence");
+            if (local is not null) Set(change, "Before", "sha1:fixture-before");
+            if (incoming) { object file = New("PackUpdateFile"); Set(file, "Relative", relative); Set(change, "Incoming", file); }
+            ((IList)Get(plan, "Changes")!).Add(change);
+            return change;
+        }
+        Add("mods/player-extra.jar", PackUpdateOwnership.PersonalAdded, false, true, author: false, local: "mods/player-extra.jar", incoming: false);
+        const string lithiumLocal = "mods/[锂] lithium-fabric-0.21.4+mc1.21.11.jar";
+        const string lithiumNext = "mods/lithium-fabric-0.24.2+mc26.1.2.jar";
+        Add(lithiumNext, PackUpdateOwnership.AuthorRenamed, false, false, local: lithiumLocal);
+        object modified = Add("mods/personal.jar", PackUpdateOwnership.PersonalModified, true, false, local: "mods/personal.jar");
+        object disabled = Add("mods/disabled.jar", PackUpdateOwnership.Disabled, true, false, local: "mods/disabled.jar.disabled");
+        object ambiguous = Add("mods/ambiguous.jar", PackUpdateOwnership.Ambiguous, true, false);
+        ((IList)Get(ambiguous, "Candidates")!).Add("mods/copy-one.jar");
+        ((IList)Get(ambiguous, "Candidates")!).Add("mods/copy-two.jar");
+        Add("mods/unknown.jar", PackUpdateOwnership.Unknown, true, false, author: false);
+        object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.18.4" });
+        Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
+        void Show(string kind) => Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, kind));
+        Border Row(string relative) => ((StackPanel)Get(preview, "Rows")!).Children.OfType<Border>().Single(box => box.ToolTip?.ToString()?.Split('\r')[0] == relative);
+        string[] Texts(DependencyObject element) => Descendants(element).OfType<TextBlock>().Select(block => block.Text).ToArray();
+        RadioButton[] Radios(Border row) => Descendants(row).OfType<RadioButton>().ToArray();
+
+        Show("Preserved");
+        Check(Texts(Row("mods/player-extra.jar")).Any(text => text.Contains("个人新增", StringComparison.Ordinal)) && Radios(Row("mods/player-extra.jar")).Length == 0,
+            "UX-C1", "personal additions missing or incorrectly offered as deletable author files");
+        Check(Texts(Row("mods/ambiguous.jar")).Any(text => text.Contains("mods/copy-one.jar", StringComparison.Ordinal) && text.Contains("mods/copy-two.jar", StringComparison.Ordinal)) && Radios(Row("mods/ambiguous.jar")).Length == 0,
+            "UX-C2", "ambiguous matches hidden or offered an unsafe author selection");
+        Check(Radios(Row("mods/unknown.jar")).Length == 0, "UX-C3", "unconfirmed ownership offered an unsafe author selection");
+        RadioButton[] modifiedChoices = Radios(Row("mods/personal.jar"));
+        Check(modifiedChoices.Length == 2 && modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked == true,
+            "UX-C4", "true conflicts must default to preserve and offer per-item choices");
+        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).IsChecked = true;
+        Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.UseAuthor && (PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.PreservePersonal,
+            "UX-C5", "author selection did not reach the original DTO or changed another conflict");
+        Show("Updated");
+        Border renamed = Row(lithiumNext);
+        Check(((StackPanel)Get(preview, "Rows")!).Children.OfType<Border>().Count() == 1 && Texts(renamed).Any(text => text.Contains(lithiumLocal, StringComparison.Ordinal) && text.Contains(lithiumNext, StringComparison.Ordinal)),
+            "UX-C6", "pure rename must display one logical update with its real local and target paths");
+        Show("Preserved");
+        modifiedChoices = Radios(Row("mods/personal.jar"));
+        Check(modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).IsChecked == true,
+            "UX-C7", "changing filters lost the explicit author choice");
+        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked = true;
+        Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.PreservePersonal, "UX-C8", "returning to preserve did not reach the original DTO");
+        RadioButton disabledAuthor = Radios(Row("mods/disabled.jar")).Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor));
+        Check(disabledAuthor.Content?.ToString()?.Contains("保持禁用", StringComparison.Ordinal) == true,
+            "UX-C9", "disabled updates did not make their disabled result explicit");
+        disabledAuthor.IsChecked = true;
+        Check((PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.UseAuthor && Property(disabled, "DestinationRelative")!.ToString() == "mods/disabled.jar.disabled",
+            "UX-C10", "choosing an author update re-enabled a disabled mod");
+        string[] header = Texts((StackPanel)Get(preview, "Header")!);
+        Check(header.Any(text => text.Contains("1.21.11 → 26.1.2", StringComparison.Ordinal)) && header.Any(text => text.Contains("0.18.4 → 0.19.3", StringComparison.Ordinal)),
+            "UX-C11", "Minecraft/loader changes omitted before and after versions");
+        Expander[] notices = Descendants((StackPanel)Get(preview, "Header")!).OfType<Expander>().ToArray();
+        Check(notices.Length == 2 && notices.Any(details => details.Header?.ToString()?.Contains("兼容性", StringComparison.Ordinal) == true && Texts(details).Any(text => text.Contains("不兼容", StringComparison.Ordinal))),
+            "UX-C12", "retained-mod compatibility evidence was not accessible in preview");
+        Render((FrameworkElement)preview, Path.Combine(folder, "modpack-ownership-and-choices.png"));
+        Check(new FileInfo(Path.Combine(folder, "modpack-ownership-and-choices.png")).Length > 8, "UX-C13", "new choices preview did not render through actual WPF");
+        Console.WriteLine("PASS native modpack-update ownership preview: UX-C1..C13 (personal additions, one pure-rename row, independent choices, disabled state, ambiguity and runtime warnings).");
+    }
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        yield return root;
+        foreach (object child in LogicalTreeHelper.GetChildren(root))
+            if (child is DependencyObject dependency)
+                foreach (DependencyObject descendant in Descendants(dependency)) yield return descendant;
     }
 
     private static object? Property(object target, string name) => Native.Property(target.GetType(), name).GetValue(target);

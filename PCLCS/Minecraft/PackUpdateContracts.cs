@@ -14,6 +14,8 @@ namespace PCLCS;
 // CE has no equivalent LF author-origin/backup transaction; no CE update policy is adopted.
 public class PackUpdateFileData {
     public string? Relative, Hash, Identity;
+    // Platform project identity and exact platform file/version identity are distinct.
+    public string? FileIdentity;
     public List<string> Urls = new();
     public string? Payload;
     public bool OptionalFile;
@@ -24,17 +26,30 @@ public class PackUpdatePackageData<TFile> where TFile : PackUpdateFileData {
     public Dictionary<string, TFile> Files = new(StringComparer.OrdinalIgnoreCase);
     public JObject? Source;
 }
+public enum PackUpdateOwnership { AuthorUnchanged, AuthorRenamed, PersonalModified, PersonalAdded, Disabled, Deleted, OptionalAbsent, Ambiguous, Unknown }
+public enum PackUpdateChoice { PreservePersonal, UseAuthor }
 public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     public string? Relative, Before;
+    public string? BaselineRelative, LocalRelative, TargetBefore;
     public TFile? Incoming;
     public bool Conflict;
     public string? Reason;
+    public PackUpdateOwnership Ownership;
+    public bool DisplayOnly, AllowAuthor = true;
+    public PackUpdateChoice Choice;
+    public List<string> Candidates = new();
+    public bool ApplyAuthor => !DisplayOnly && (!Conflict || AllowAuthor && Choice == PackUpdateChoice.UseAuthor);
+    // Updating a deliberately disabled mod never implicitly enables it.
+    public string DestinationRelative => (Relative ?? "") + (Incoming is not null && Ownership == PackUpdateOwnership.Disabled ? ".disabled" : "");
 }
 public class PackUpdatePlanData<TPackage, TChange> where TPackage : class where TChange : class {
     public string? Root;
     public TPackage? Package;
     public List<TChange> Changes = new();
     public JObject? Baseline;
+    public Dictionary<string, string?> Snapshot = new(StringComparer.OrdinalIgnoreCase);
+    public List<string> Warnings = new(), RuntimeWarnings = new();
+    public HashSet<string> ObservedModFiles = new(StringComparer.OrdinalIgnoreCase);
 }
 public sealed class PackUpdateHost<TFile, TPackage, TChange, TPlan, TNetFile>
     where TFile : PackUpdateFileData where TPackage : PackUpdatePackageData<TFile>

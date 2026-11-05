@@ -20,31 +20,34 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         }
         string root = host.GameRoot(instance);
         JObject? baseline = update.ReadManifest(host.VersionFolder(instance));
-        if (baseline is null) {
-            if (host.Message("此版本尚无作者文件记录。请选择当前版本原始整合包，以识别作者文件和个人修改。", "建立整合包记录", "选择原始包", "取消", false) != 1) throw new OperationCanceledException();
+        if (PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.RequiresBaselineRepair(baseline)) {
+            string known = baseline is null ? "" : "\r\n已记录：" + baseline["name"] + " " + baseline["version"];
+            if (host.Message("作者文件记录缺失或不完整。请选择当前版本原始整合包，以恢复作者声明并区分个人修改。" + known, "补全整合包记录", "选择原始包", "取消", false) != 1) throw new OperationCanceledException();
             TPackage original = update.ReadPackage(SelectArchive("选择当前版本原始整合包"), Path.Combine(stage, "original"), token);
-            if (!Same(host.Version(instance).VanillaName, original.Minecraft)) throw new IOException("原始整合包的 Minecraft 版本与当前版本不同，请选择正确的旧包。");
+            ValidateOriginalPackage(original, baseline, host.Version(instance).VanillaName, host.Version(instance).ModLoaderVersions);
+            original.Source = baseline?["source"] as JObject;
             baseline = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Manifest(original);
         }
         JObject? source = null;
-        if (online) archivePath = ChooseOnline(baseline, stage, token, ref source, host.Progress(task, 0.03, 0.12));
+        if (online) archivePath = ChooseOnline(baseline!, stage, token, ref source, host.Progress(task, 0.03, 0.12));
         host.SetProgress(task, 0.12);
         TPackage package = update.ReadPackage(archivePath!, Path.Combine(stage, "next"), token);
         package.Source = source;
-        TPlan plan = update.Plan(root, baseline, package);
+        TPlan plan = update.Plan(root, baseline, package, token);
         host.SetProgress(task, 0.15);
         update.DownloadChanges(plan, stage, token, (files, cancel) => host.Download(files, cancel, host.Progress(task, 0.15, 0.65)));
         host.SetProgress(task, 0.65);
         bool runtimeChanged = !Same(host.Version(instance).VanillaName, package.Minecraft) || host.Version(instance).ModLoaderVersions.Count != package.Loaders.Count ||
             package.Loaders.Any(pair => !host.Version(instance).ModLoaderVersions.ContainsKey(pair.Key) || !Same(host.Version(instance).ModLoaderVersions[pair.Key], pair.Value));
-        string summary = package.Name + " " + package.Version + "\r\n" + $"更新 {plan.Changes.Count(item => !item.Conflict)} 项，保留个人修改 {plan.Changes.Count(item => item.Conflict)} 项。" + "\r\n" +
+        Dictionary<string, string?> runtimeBefore = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string relative in new[] { host.Name(instance) + ".json", host.Name(instance) + ".jar", "PCL/config.json" })
+            runtimeBefore[relative] = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(update.Target(host.VersionFolder(instance), relative), token: token);
+        string summary = package.Name + " " + package.Version + "\r\n" + $"默认执行作者变更 {plan.Changes.Count(item => item.ApplyAuthor)} 项，保留或待确认 {plan.Changes.Count(item => !item.ApplyAuthor)} 项；冲突可在预览中逐项选择。" + "\r\n" +
             (runtimeChanged ? "Minecraft 或加载器将更新；存档会保留，请确认新版本兼容。" : "");
         if (host.Preview(summary, plan, () => host.Version(instance)) != 1) throw new OperationCanceledException();
+        update.ValidateChoices(plan, token);
         Dictionary<string, string> extras = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, string?> runtimeBefore = new(StringComparer.OrdinalIgnoreCase);
         if (runtimeChanged) {
-            foreach (string relative in new[] { host.Name(instance) + ".json", host.Name(instance) + ".jar", "PCL/config.json" })
-                runtimeBefore[relative] = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(update.Target(host.VersionFolder(instance), relative));
             string buildFolder = Path.Combine(stage, "runtime", host.Name(instance)) + "\\";
             var request = new PackUpdateRuntimeRequest { Name = host.Name(instance), BuildFolder = buildFolder, Minecraft = package.Minecraft!, Loaders = package.Loaders,
                 MinecraftFolder = Path.GetDirectoryName(Path.GetDirectoryName(host.VersionFolder(instance).TrimEnd('\\'))) + "\\" };
@@ -67,14 +70,41 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         token.ThrowIfCancellationRequested();
         if (host.HasRunningGame() || host.HasRunningSessions() || host.LaunchLoading()) throw new IOException("游戏已开始运行，未替换文件。");
         foreach (var pair in runtimeBefore)
-            if (!Same(PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(update.Target(host.VersionFolder(instance), pair.Key)), pair.Value)) throw new IOException("游戏组件或版本设置在预览后发生变化，请重新检查更新。");
+            if (!Same(PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(update.Target(host.VersionFolder(instance), pair.Key), token: token), pair.Value)) throw new IOException("游戏组件或版本设置在预览后发生变化，请重新检查更新。");
         host.SetProgress(task, 0.85);
         host.BeforeMinecraftChange(instance, host.Version(instance).VanillaName, package.Minecraft!, token);
         host.SetProgress(task, 0.87); host.CaptureHistory(instance, "整合包更新前", token);
         host.SetProgress(task, 0.9);
-        int operationCount = plan.Changes.Count(item => !item.Conflict) + extras.Count + 1;
+        update.ValidateChoices(plan, token);
+        int operationCount = plan.Changes.Where(item => item.ApplyAuthor).Sum(item => item.Incoming is null ? item.LocalRelative is null ? 0 : 1 :
+            1 + (item.LocalRelative is not null && !item.LocalRelative.Equals(item.DestinationRelative, StringComparison.OrdinalIgnoreCase) ? 1 : 0)) + extras.Count + 1;
         string backup = update.Commit(plan, host.VersionFolder(instance), token, extras, index => host.SetProgress(task, 0.9 + 0.08 * index / Math.Max(1, operationCount)));
         host.SetProgress(task, 0.98); host.SetOutput(task, backup);
         ReloadInstance(instance); host.Info("整合包更新完成，原文件备份：" + backup);
+    }
+    // A same-Minecraft archive is insufficient evidence for a legacy, possibly
+    // pruned origin record. Keep every surviving author declaration as a check.
+    private static void ValidateOriginalPackage(TPackage original, JObject? baseline, string minecraft, Dictionary<ModLoaders, string> currentLoaders) {
+        if (!Same(minecraft, original.Minecraft)) throw new IOException("原始整合包的 Minecraft 版本与当前版本不同，请选择正确的旧包。");
+        if (currentLoaders.Count != original.Loaders.Count || original.Loaders.Any(pair => !currentLoaders.TryGetValue(pair.Key, out string? value) || !Same(value, pair.Value)))
+            throw new IOException("原始整合包的加载器与当前版本不同，请选择正确的旧包。");
+        if (baseline is null) return;
+        foreach ((string key, string? value) in new[] { ("name", original.Name), ("version", original.Version), ("minecraft", original.Minecraft) })
+            if (!string.IsNullOrWhiteSpace(baseline[key]?.ToString()) && !Same(baseline[key]!.ToString(), value))
+                throw new IOException("所选旧包与已记录的整合包信息不同（" + key + "），未更改作者记录。");
+        if (baseline["loaders"] is JObject loaders && !JToken.DeepEquals(loaders, JObject.FromObject(original.Loaders)))
+            throw new IOException("所选旧包与已记录的加载器信息不同，未更改作者记录。");
+        if (baseline["files"] is not JObject files) return;
+        foreach (JProperty item in files.Properties()) {
+            if (item.Value is not JObject record || string.IsNullOrWhiteSpace(record["hash"]?.ToString())) continue;
+            if (!original.Files.TryGetValue(item.Name, out TFile? declared))
+                throw new IOException("所选旧包不能核对已记录的作者文件：" + item.Name + "。请检查是否为正确的旧包或已有记录是否损坏。");
+            string recordedHash = record["hash"]!.ToString();
+            if (!Same(recordedHash, declared.Hash) && (declared.Payload is null || !PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Matches(declared.Payload, recordedHash)))
+                throw new IOException("所选旧包无法按原记录的哈希核对作者文件：" + item.Name + "。请检查旧包、校验算法或已有记录；未使用本地修改内容补写作者基线。");
+            string? project = record["identity"]?.ToString();
+            if (!string.IsNullOrEmpty(project) && !Same(project, declared.Identity))
+                throw new IOException("所选旧包的项目来源与已记录文件不同：" + item.Name);
+        }
     }
 }

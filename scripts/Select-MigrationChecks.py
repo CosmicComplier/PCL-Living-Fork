@@ -17,7 +17,7 @@ import sys
 MAIN_BRANCH = "main"
 MIGRATION_BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java", "foundation")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java", "foundation")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -146,6 +146,30 @@ INSTANCE_CLONE_CHECKS = {
     "Test-InstanceClone", "Test-InstanceCloneGroups", "Test-ExportVersionIsolation",
     "Test-EnvironmentHistory", "Test-RecentEnvironmentChanges", "Test-EnvironmentCoverage", "Test-BackupRetention",
 }
+# Author ownership/rename/transaction fixtures execute the real pack engine.
+# Its metadata adapter consumes the shared inspector; parser changes must also
+# select the pack fixtures so dependency IDs cannot regress into mod identities.
+# Exact paths keep future, unclassified shared contracts on the full fallback.
+PACK_UPDATE_PATHS = {
+    "PCLCS/Minecraft/PackUpdateContracts.cs",
+    "PCLCS/Minecraft/PackUpdateEngine.Package.cs",
+    "PCLCS/Minecraft/PackUpdateEngine.Baseline.cs",
+    "PCLCS/Minecraft/PackUpdateEngine.Plan.cs",
+    "PCLCS/Minecraft/PackUpdateEngine.Transactions.cs",
+    "PCLCS/Minecraft/PackUpdateFlowContracts.cs",
+    "PCLCS/Minecraft/PackUpdateFlowEngine.cs",
+    "PCLCS/Minecraft/PackUpdateFlowEngine.Execute.cs",
+    "PCLCS/Platform/Windows/Modpacks/ModpackUpdatePreviewController.cs",
+}
+PACK_UPDATE_METADATA_PATH = "PCLCS/Minecraft/PackUpdateModInspection.cs"
+PACK_UPDATE_CHECKS = {"Test-ModpackUpdate", "Test-ModpackUpdateUx"}
+# History and clone use the same digest/atomic transaction contracts. Their
+# existing consumers stay selected when these shared implementations change.
+PACK_UPDATE_SHARED_PATHS = {
+    "PCLCS/Minecraft/PackUpdateContracts.cs",
+    "PCLCS/Minecraft/PackUpdateEngine.Package.cs",
+    "PCLCS/Minecraft/PackUpdateEngine.Transactions.cs",
+}
 # Exact local-inspector sources; the online/graph and launch repair/activation
 # checks consume its real report, path, version and provider contracts.
 # Toggle layout and world/modpack backup suites do not execute the inspector.
@@ -246,6 +270,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("environment-history",), (), build=False)
             elif stem == "InstanceClonePipeline":
                 include(("instance-clone",), (), build=False)
+            elif stem in {"PackUpdateThreeWay", "PackUpdateMetadata"}:
+                include(("pack-update",), (), build=False)
             elif stem == "ModDependencyInspectorPipeline":
                 include(("mod-dependencies",), (), build=False)
             elif stem == "ModDependencyOnlinePipeline":
@@ -284,8 +310,14 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(("environment-history",), ENVIRONMENT_HISTORY_CHECKS)
         elif name in INSTANCE_CLONE_PATHS:
             include(("instance-clone",), INSTANCE_CLONE_CHECKS)
+        elif name in PACK_UPDATE_SHARED_PATHS:
+            include(("pack-update", "environment-history", "instance-clone"), PACK_UPDATE_CHECKS | ENVIRONMENT_HISTORY_CHECKS | INSTANCE_CLONE_CHECKS)
+        elif name in PACK_UPDATE_PATHS:
+            include(("pack-update",), PACK_UPDATE_CHECKS)
+        elif name == PACK_UPDATE_METADATA_PATH:
+            include(("pack-update", "mod-dependencies"), PACK_UPDATE_CHECKS | MOD_DEPENDENCY_CHECKS)
         elif name in MOD_DEPENDENCY_PATHS:
-            include(("mod-dependencies",), MOD_DEPENDENCY_CHECKS)
+            include(("pack-update", "mod-dependencies"), MOD_DEPENDENCY_CHECKS | PACK_UPDATE_CHECKS)
         elif name in MOD_DEPENDENCY_ONLINE_PATHS:
             include(("mod-dependency-online",), MOD_DEPENDENCY_ONLINE_CHECKS)
         elif name == "PCLCS/Platform/Windows/Instances/KeybindingPageController.cs":

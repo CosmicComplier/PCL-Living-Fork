@@ -14,7 +14,8 @@
       "engine_only",
       "oracle",
       "inventory"
-    ]
+    ],
+    "packUpdateRouting": "Additive pack-update group and exact author-ownership/metadata source routes; existing captured scopes retained, with the new group included in complete registries."
   },
   "scopes": {
     "world-backups": {
@@ -131,6 +132,7 @@
         "world-backups",
         "environment-history",
         "instance-clone",
+        "pack-update",
         "mod-dependencies",
         "mod-dependency-online",
         "settings",
@@ -213,6 +215,7 @@
         "world-backups",
         "environment-history",
         "instance-clone",
+        "pack-update",
         "mod-dependencies",
         "mod-dependency-online",
         "settings",
@@ -270,6 +273,83 @@
       "engine_only": true,
       "oracle": true,
       "inventory": true
+    },
+    "pack-update": {
+      "full": false,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "pack-update"
+      ],
+      "windows_scripts": [
+        "Test-ModpackUpdate",
+        "Test-ModpackUpdateUx"
+      ],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "pack-update-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": [
+        "pack-update"
+      ],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "pack-update-metadata": {
+      "full": false,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "pack-update",
+        "mod-dependencies"
+      ],
+      "windows_scripts": [
+        "Test-ModpackUpdate",
+        "Test-ModpackUpdateUx",
+        "Test-LaunchDependencies",
+        "Test-DependencyActivation",
+        "Test-ModDependencies",
+        "Test-ModDependencyOnline",
+        "Test-ModDependencyGraph"
+      ],
+      "world_checks": true,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "pack-update-shared": {
+      "full": false,
+      "product_build": true,
+      "migration_run": true,
+      "groups": [
+        "environment-history",
+        "instance-clone",
+        "pack-update"
+      ],
+      "windows_scripts": [
+        "Test-ModpackUpdate",
+        "Test-ModpackUpdateUx",
+        "Test-EnvironmentHistory",
+        "Test-BackupRetention",
+        "Test-LaunchDependencies",
+        "Test-InstanceClone",
+        "Test-InstanceCloneGroups",
+        "Test-RecentEnvironmentChanges",
+        "Test-EnvironmentCoverage",
+        "Test-ExportVersionIsolation"
+      ],
+      "world_checks": true,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
     }
   },
   "legacyCases": [
@@ -410,5 +490,153 @@
     "scripts/tests/native-credentials/Program.cs",
     "scripts/tests/Test-NativeBuildCredentials.ps1",
     "scripts/tests/Test-CSharpCredentialFactories.ps1"
+  ],
+  "packUpdateCases": [
+    {
+      "label": "PCLCS/Minecraft/PackUpdateContracts.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateContracts.cs"
+      ],
+      "scope": "pack-update-shared",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateEngine.Package.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateEngine.Package.cs"
+      ],
+      "scope": "pack-update-shared",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateEngine.Baseline.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateEngine.Baseline.cs"
+      ],
+      "scope": "pack-update",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateEngine.Plan.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateEngine.Plan.cs"
+      ],
+      "scope": "pack-update",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateEngine.Transactions.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateEngine.Transactions.cs"
+      ],
+      "scope": "pack-update-shared",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateFlowContracts.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateFlowContracts.cs"
+      ],
+      "scope": "pack-update",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateFlowEngine.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateFlowEngine.cs"
+      ],
+      "scope": "pack-update",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateFlowEngine.Execute.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateFlowEngine.Execute.cs"
+      ],
+      "scope": "pack-update",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Platform/Windows/Modpacks/ModpackUpdatePreviewController.cs",
+      "paths": [
+        "PCLCS/Platform/Windows/Modpacks/ModpackUpdatePreviewController.cs"
+      ],
+      "scope": "pack-update",
+      "native": true
+    },
+    {
+      "label": "tests/PCLLF.Migration.Tests/PackUpdateThreeWayTests.cs",
+      "paths": [
+        "tests/PCLLF.Migration.Tests/PackUpdateThreeWayTests.cs"
+      ],
+      "scope": "pack-update-tests",
+      "native": false
+    },
+    {
+      "label": "tests/PCLLF.Migration.Tests/PackUpdateMetadataTests.cs",
+      "paths": [
+        "tests/PCLLF.Migration.Tests/PackUpdateMetadataTests.cs"
+      ],
+      "scope": "pack-update-tests",
+      "native": false
+    },
+    {
+      "label": "PCLCS/Minecraft/PackUpdateModInspection.cs",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateModInspection.cs"
+      ],
+      "scope": "pack-update-metadata",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/ModDependencyInspection.Archives.cs",
+      "paths": [
+        "PCLCS/Minecraft/ModDependencyInspection.Archives.cs"
+      ],
+      "scope": "pack-update-metadata",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/ModDependencyInspection.Contracts.cs",
+      "paths": [
+        "PCLCS/Minecraft/ModDependencyInspection.Contracts.cs"
+      ],
+      "scope": "pack-update-metadata",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/ModDependencyInspection.Resolution.cs",
+      "paths": [
+        "PCLCS/Minecraft/ModDependencyInspection.Resolution.cs"
+      ],
+      "scope": "pack-update-metadata",
+      "native": true
+    },
+    {
+      "label": "PCLCS/Minecraft/ModDependencyVersions.cs",
+      "paths": [
+        "PCLCS/Minecraft/ModDependencyVersions.cs"
+      ],
+      "scope": "pack-update-metadata",
+      "native": true
+    },
+    {
+      "label": "combined engine and metadata changes select a union, without duplicate groups",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateEngine.Plan.cs",
+        "PCLCS/Minecraft/PackUpdateModInspection.cs",
+        "tests/PCLLF.Migration.Tests/PackUpdateThreeWayTests.cs"
+      ],
+      "scope": "pack-update-metadata",
+      "native": true
+    },
+    {
+      "label": "unclassified future pack policy keeps the complete fallback",
+      "paths": [
+        "PCLCS/Minecraft/PackUpdateEngine.FutureShared.cs"
+      ],
+      "scope": "complete",
+      "native": true
+    }
   ]
 }
