@@ -6,8 +6,8 @@
 
 - 目标状态：`in_progress`。正式产品现为 `modern/Main` 完整 C#/.NET10 WPF，固定 LF main50/1.3.5-pre-3 的功能、资源、完整事件及 typed 桥已接通，独立于业务 VB/vbproj 构建发布。真实 Windows Debug/Release 主程序编译、54 项资源加载、完整原生包与兼容桥生成、可选联机模式编译已通过；Native两轮冷启/关闭重开与真实Registry已实际通过；备份/更新等其余运行兼容仍在验收，旧 VB 比较工程尚未退役。不能把编译成功或已迁源码当成整链通过；既有 Core/原产品/现代组件各自 Windows 证据仍按下文限定范围保留。
 - 集成分支：`migration/csharp-modern-dotnet`。初始起点`f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`保持；LF main当前同步源固定`50b028da5fcad2226d74d901a41d8c43a249bfb2`，仅只读来源，不向main提交/合并、不force。6个新提交不能整文件覆盖既已迁移的Core/typed桥。
-- 最新已验证检查点为 `5028988`：Build41940652704 的两配置各42步成功、原44消费者通过；Modern41940652692 两配置成功；Migration41940652687 为 Windows508/508、Ubuntu457/457，严格397例零差异。Native41945911030 两配置各24/25默认族通过，Release真实Registry及225/226/228启动合同、两轮正常冷启/关闭/复开通过；MMC命令断言和独立旧版升级退出观察仍失败，不能标完整Native验收成功。历史3df/7eb/4a等证据在原记录保留。
-- 当前交付批次：b3ef两配置原25族和真实旧桥四case全通过；按既定门禁切默认发布与根solution到真正C#/.NET10，旧44对照以显式ComparisonOnly保留，178业务VB/1vbproj暂未删除。新account-ui/launch-process/pack-root-install及独立真实interaction尚未通过，按实际首错修夹具/输入，保原生产与全部断言。当前默认改接已过本地配置/角色/资格检查，仍须Windows实跑，不提前标R001完成。
+- 最新Native已验证检查点为 `b3ef582`／41948882688：Debug126988068597、Release126988068654原25族全通过（总25/28），Release真实Registry、225/226/228、两轮冷启/正常关闭/复开及C7通过；独立旧桥126991328486成功，严格WinPS exit0/23与legacy/manual/parent-timeout/invalid-inputs四实际case全过。新增三族和独立Main交互仍失败/pending，不能标完整Native验收成功。原44消费者/现代组件/严格比较继续复用5028988：Build41940652704两配置各42步、Modern41940652692两配置成功、Migration41940652687 Windows508/508与Ubuntu457/457、严格397例零差异；历史失败和限定范围保留。
+- 当前交付批次：b3ef两配置原25族和真实旧桥四case全通过；按既定门禁切默认发布与根solution到真正C#/.NET10，旧44对照以显式ComparisonOnly保留，178业务VB/1vbproj暂未删除。新account-ui/launch-process/pack-root-install及独立真实interaction尚未通过，按实际首错修夹具/输入，保原生产与全部断言。默认改接54cec2d已过本地配置/角色/资格检查，仍须Windows实跑；本批已集成精确加密计数叶、真实根安装admission阶段、账号脱敏首错与有界自有悬停修复，不提前标三族/交互或R001完成。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前18组（设置／校验Loader／Java与新增foundation独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
@@ -164,6 +164,9 @@ R002/R003当前新增三条真正生产子链，并统一接为28个显式CI功�
 b3ef独立旧桥126991328486整体success：日志明示真实WinPS原Track同Handle/image严格exit0与23通过，随后legacy/manual/parent-timeout/invalid-inputs四实际case全部通过；目标真实替换/重启/正常关闭/独占文件释放及原等待/退出门禁不变。artifact13380267818保留，体积约681MB，未下载且不编造本地SHA。这个真实四case结果不外推到未选择的native-reinstall/restart-rollback、新三族或interaction。至此原默认入口切换门禁（原25族、cold/C7/资源/包与真实旧桥）已满足；Root核GitHub最终job状态后应用此前冻结的协调8文件提案，未删除VB也未移除原44门。
 
 R001默认入口现接真实C#/NET10：Build-Release→Build-NativeRelease→Build-ModernRelease，原生EXE/ZIP/旧桥/checksums四角色，唯一凭据GUID/lease/finally仍在Modern；根.sln与Modern.slnx同7真实C#项目。旧Build改为显式ComparisonOnly builder，仍以真实旧CLR4 Main执行原29 Verify步骤/44消费者，不把Native或旧桥送进CLR4反射；产物明确comparison-only。凭据失败/非法输入/并发锁旧样本改调用固定Git f4源+自有FailBuild.exe的专用fixture，禁止正常编译器或成功旧产品回退。Native workflow采用默认新入口并增加workflow_call/独立native-product并发组，原28族、独立interaction及资格块完整保留；manual reusable调用仍待真实Windows。README/现代构建说明同步Native运行时和四角色，不把此迁移树冒称已正式发行。Root实际4PSParse、两workflow actionlint、7项目读取、全部8目标与保护hash、实际离线资格3接受/32拒绝及diff均通过；默认Windows发布与显式旧对照的本次改接仍待下一CI，178业务VB/1vbproj实体未退休。
+
+
+本批收尾（承接54cec2d默认切换）：launch-process仅将原PCLDebug/SystemLaunchCount加密Int32的精确Registry平台叶接自有GUID内不透明REG_SZ文件，原Save/End增量/冷Get解密与类型往返增加真实断言，其它键仍拒绝；在嵌套FailClosed前保原primary并逐项输出有界cleanup状态。HMCL重复样本移到另一个真实Loading/taskbar/full-game根，原scheduler的Update尚未写目录时暂停，保原OCE/不二次Start/精确红Hint并确认无名称Prompt，finally放行实际负载并验证该根完整结束，全部26检查不减。account-ui只补受控stage/已知schema键/最多18方法行号与producer/post分项、Dispose前原异常类型/栈，严禁消息/值/请求/账号泄露；原45断言、guard/allowlist/锁/收尾与超时不变，根因待真实日志。外部Main observer为原click/wheel增加三次稳定UIA布局、本人映像/前台/WindowFromPoint/client证明，保存并短暂移动CI光标至唯一自有目标，finally精确Set/Get恢复；光标偏移期间不做UIA/文件操作，恢复未证时保主错并禁止后续UIA/主题回滚/receipt IO，明确失败。未增加产品调试入口、全局点击或跨程序输入。Root已核全部候选hash及独立复审，完整facade实际Main引用编译0W0E（5.36秒），UIA工具Release -warnaserror编译0W0E（2.52秒），仅计Linux交叉编译；本批实际Windows、默认发布/显式旧对照及后继交互均待新CI，不伪造通过。LF/PCL/CE固定来源和生产代码不变。
 
 本轮已推送的实现与验证检查点：
 
@@ -393,11 +396,11 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF、LF50功能/事件/typed桥独立于业务VB/designer/vbproj/resx；两配置真实构建、54资源getter/18blob、原生四角色与C7、可选LegacyLink编译通过。5028988 Native两配置23/25族、Release真实Registry/225/226/228及两轮正常冷启/关闭/复开已通过；828两配置modpack-update含专属真实下载和完整FLOW已通过，仍余MMC commands精确失败，以及完整根安装/游戏和主要连续交互，不以编译或局部夹具关闭整项 |
+| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF、LF50功能/事件/typed桥独立于业务VB/designer/vbproj/resx；两配置真实构建、54资源getter/18blob、原生四角色与C7、可选LegacyLink编译通过。b3ef Native两配置原25族、Release真实Registry/225/226/228及两轮正常冷启/关闭/复开已通过；MMC26固定合同/root+nested及modpack-update真实下载FLOW完整通过，新增账号/启动/根安装与Main交互仍待修复后Windows，不以编译或局部夹具关闭整项 |
 | N004 | in_progress | N003、C022 | 实际Main Settings/CurrentIdentify/DES→真实Windows Registry已通过13_LF值/kind、旧缓存升级/退出、非MS兼容、未知数据和原kind恢复/取消/INI/JSON保留。502 startup228又以合成13_LF raw/kind贯穿真正FormMain两轮；保fresh/GUID owner与仅本人清理。完整账号页面/切换/错误取消与真实授权、旧版升级后完整账号链未验，不读用户真实凭据 |
 | N005 | in_progress | N003、N004 | b3ef原生四角色/C7/真实cold、Registry通过，fresh旧桥126991328486整体success：真实WinPS同Handle/image严格exit0/23与legacy/manual/parent-timeout/invalid-inputs四case明示通过，原协议/等待/字节/正常关闭/锁释放保持。默认发布入口现切到Native/Modern，改接后Windows验证待执行；native-reinstall/restart-rollback未选择不计通过，无外部发布 |
 | R001 | in_progress | N003、N005 | 原25族/cold/C7与真实旧桥四case在b3ef通过后，默认Build-Release及根7项目solution已切完整C#/.NET10；唯一凭据链/四角色与原LegacyLink转发保持。旧Build仅显式ComparisonOnly执行原44，历史失败/锁fixture固定Git源。改接后默认Windows发布/manual reusable与旧对照仍待验证；178产品VB+1vbproj实体尚未退休，未以排除/改扩展名虚报清零 |
-| R002 | in_progress | R001（最终关闭依赖） | 原44/现代组件/严格比较已有证据；b3ef两配置原25族全通过，新增账号UI/进程Watcher/HMCL根安装三族失败已分配原作者修夹具，不改gold。现有MMC26项通过不外推Java/游戏/root全过程；default发布与更完整真实样本/各阶段取消回滚继续必要验证 |
+| R002 | in_progress | R001（最终关闭依赖） | 原44/现代组件/严格比较已有证据；b3ef两配置原25族全通过，新增账号UI/进程Watcher/HMCL根安装三族按b3ef首错的夹具修复/脱敏诊断已集成，原gold/45账号断言/26安装项不减，待新Windows。现有MMC26项通过不外推Java/游戏/root全过程；default发布与更完整真实样本/各阶段取消回滚继续必要验证 |
 | R003 | in_progress | R002（最终关闭依赖） | 真实主窗两轮冷启/数据哨兵、startup225/226/228、基础控件/动画及多页夹具已有Windows记录。仍欠完整账号UI/授权、真正Main→Minecraft→Watcher退出/崩溃及设置/备份恢复、根安装导航与连续主窗/滚动/焦点/hover/拖放/主题动画旧新手感；可自动化部分继续推进，真实服务/账号/游戏/硬件条件另记，不泛称全部需人工 |
 | R004 | todo | R003 | 汇总全部完成证据和剩余限制，自审最终差异与远端状态；仅在目标全部验收后标 `completed` 并暂停续跑 |
 | D001 | deferred | 当前目标完成后另立目标 | 新 MMC／Prism 组件规则、补丁语义、Java 交集、LWJGL 与 GTNH 增强 |
@@ -485,6 +488,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：推进当前Native整合包专属进程/MMC命令/旧桥退出诊断的实际Windows复验；复用5028988的23族、三启动合同、Registry、原44消费者/现代UI及双平台严格比较证据，不重复转换或从逐方法重新规划。先验证原进程Handle保留后的严格exit0/23及真实升级，确认MMC原host读取/写入边界；必要门禁通过后切换协调好的默认C#/.NET10发布链并验证，再实体退役旧VB比较工程。R002/R003的真实账号/游戏/主要交互与未运行的协议case继续显式记账；main只读核对仍为50b028d，新增MMC/性能阶段仍延后。
+下次入口：先推送54cec2d默认C#/.NET10切换与本批三族/有界悬停收尾，一次Windows验证默认发布、显式旧44对照/凭据及新链；按新日志原首错修复，保所有原断言。复用b3ef两配置原25族、三启动合同/Registry/C7/两cold及真实旧桥四case，502的原44/现代组件/双平台严格比较，不重复迁移或无范围全测。默认Windows发布与必要门禁通过后才实体退役178业务VB/1vbproj及旧比较入口；R002/R003真实授权/游戏/人手交互和未选native-reinstall/restart-rollback继续记账。main只读固定50b028d，新增MMC/性能阶段仍延后。
 
-当前仍需完成：旧VB比较树与默认旧构建退休、原验收脚本的实际Main入口全接通、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。正式C#/NET10完整产品已构建发布，不再将其描述为尚未开始；编译和当前部分功能族证据不能代替最终兼容验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
+当前仍需完成：默认C#现代发布改接后的Windows实跑、旧VB比较树实体退休、原验收脚本的实际Main入口全接通、迁移后完整GUI／真实账号／游戏启动与未选更新桥case。旧桥四实际case已通过，不重复描述为未开始。正式C#/NET10完整产品已构建发布，不再将其描述为尚未开始；编译和当前部分功能族证据不能代替最终兼容验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

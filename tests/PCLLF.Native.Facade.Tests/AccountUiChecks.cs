@@ -21,6 +21,8 @@ internal static class AccountUiChecks
         VisualAssetChecks.VerifyChild(environment);
         Native.Check(OperatingSystem.IsWindows() && Thread.CurrentThread.GetApartmentState() == ApartmentState.STA && System.Windows.Application.Current.Dispatcher.CheckAccess(), "Account UI requires the real isolated Windows STA child.");
         using AccountUiChecksScope scope = new(environment);
+        try {
+        scope.At(AccountUiChecksScope.Checkpoint.Navigation);
         PageLaunchLeft launch = scope.Launch;
         scope.SetCache("LoginPageType", 1);
         launch.RefreshPage(false, false);
@@ -32,6 +34,7 @@ internal static class AccountUiChecks
         Native.Check(accounts.ContentPresenter is not null, "The genuine Microsoft account BAML template did not resolve its presenter.");
         Native.Check(accounts.Items.Count == 3 && accounts.SelectedIndex == 0 && accounts.Items[0] is MyComboBoxItem, "Actual account selector lost add-new plus the two preserved fixture accounts.");
         Native.Check(PageLoginMs.GetLoginData().OAuthRefreshToken == "" && page.IsVaild() == "请在登录账号后再启动游戏！", "Add-new input must remain unauthenticated before starting actual login.");
+        scope.At(AccountUiChecksScope.Checkpoint.AccountSelection);
         accounts.SelectedIndex = 1;
         ModLaunch.McLoginMs first = PageLoginMs.GetLoginData();
         Native.Check(first.UserName == "FixtureA" && first.OAuthRefreshToken == "fixture-refresh-a" && Equals(accounts.ContentPresenter!.Content, "FixtureA"), "First real account selection did not reach the original DTO/presenter.");
@@ -49,6 +52,7 @@ internal static class AccountUiChecks
         scope.ReleaseRequest();
         scope.AwaitCompletion(ModBase.LoadState.Finished, () => accounts.IsEnabled && login.IsEnabled && login.Text == "登录" && scope.IsCurrent<PageLoginMsSkin>());
         Native.Check(scope.RequestCount == 6 && scope.Refreshes == 1 && scope.Hints.Count == 0, "Synthetic six-stage login did not complete exactly once through the real account host.");
+        scope.At(AccountUiChecksScope.Checkpoint.SessionChecks);
         PageLoginMsSkin skin = scope.Current<PageLoginMsSkin>();
         Native.Check(Part<TextBlock>(skin, "TextName").Text == "FixtureBUpdated", "Actual logged-in page did not display the atomically saved profile.");
         ModLaunch.McLoginMs saved = PageLoginMsSkin.GetLoginData();
@@ -59,8 +63,10 @@ internal static class AccountUiChecks
         string[] sessionKeys = scope.Store.Transactions.Skip(scope.SeedTransactionCount).Single(transaction => transaction.Contains("LoginMsJson_LF", StringComparer.Ordinal));
         Native.Check(sessionKeys.Length == 8 && sessionKeys[^1] == "CacheMsV2Migrated_LF" && scope.Store.GetValue("CacheMsV2OAuthRefresh_LF") is string cipher && cipher != "fixture-refresh-new" && !cipher.Contains("fixture-refresh-new", StringComparison.Ordinal), "Actual Microsoft session transaction lost marker-last LF mapping or stored its token as plaintext.");
 
+        scope.At(AccountUiChecksScope.Checkpoint.Logout);
         Click(Part<MyIconButton>(skin, "BtnExit"));
         scope.AwaitUi(() => scope.IsCurrent<PageLoginMs>() && scope.Refreshes == 2);
+        scope.At(AccountUiChecksScope.Checkpoint.PostLogout);
         Native.Check(ReferenceEquals(page, scope.Current<PageLoginMs>()), "Logout/navigation replaced the existing actual account page rather than using Main's page cache.");
         Native.Check(Settings.Get<string>("CacheMsV2OAuthRefresh") == "" && Settings.Get<string>("CacheMsV2Access") == "" && Settings.Get<string>("CacheMsV2Name") == "" && Settings.Get<string>("CacheMsV2Uuid") == "" && Settings.Get<string>("CacheMsV2ProfileJson") == "" && Settings.Get<long>("CacheMsV2Expires") == 0L && Settings.Get<bool>("CacheMsV2Migrated"), "Actual logout did not clear all active session values with the original types.");
         Native.Check(JToken.DeepEquals(history, JObject.Parse(Settings.Get<string>("LoginMsJson"))) && accounts.SelectedIndex == 0 && PageLoginMs.GetLoginData().OAuthRefreshToken == "", "Logout deleted saved accounts or retained an authenticated selected input.");
@@ -84,9 +90,11 @@ internal static class AccountUiChecks
                 Native.Check(scope.Loader.Error?.Message == "$native account fixture denied" && scope.Hints.Count == hints + 1 && scope.Hints[^1] == ("native account fixture denied", PCLLF.Presentation.Accounts.LegacyLoginHint.Red), "Actual failure did not retain loader error and publish the original red UI hint.");
             else Native.Check(scope.Hints.Count == hints, "Actual cancellation incorrectly published a login failure hint.");
         }
+        scope.At(AccountUiChecksScope.Checkpoint.FinalChecks);
         scope.AssertIdle();
         environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS account-ui: actual Main BAML navigation/account selection/click -> genuine Microsoft loader with six bounded synthetic HTTP responses -> genuine LF encrypted atomic account store -> logged-in page/logout; actual error and cancel preserve history and restore UI. No real account, authorization, entitlement, external HTTP, skin upload, or product cold-entry completion claimed.");
+        } catch (Exception error) { scope.ReportPrimary(error); throw; }
     }
 
     private static void Click(MyButton button) => Native.Call(typeof(MyButton), "OnClick", button, button, new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left));

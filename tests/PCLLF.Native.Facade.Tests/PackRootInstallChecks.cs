@@ -66,11 +66,22 @@ internal static partial class PackRootInstallChecks
         Check("ignore-removed", !File.Exists(Path.Combine(folder,".pclignore")));
         byte[] original = File.ReadAllBytes(Path.Combine(folder,success.Name+".json")); int starts = scope.Starts;
         Check("existing-refusal", Rejected(() => scope.Start(success)) is OperationCanceledException && scope.Starts == starts && original.SequenceEqual(File.ReadAllBytes(Path.Combine(folder,success.Name+".json"))));
+        // Existing-folder validation is intentionally earlier than taskbar
+        // admission. Exercise the taskbar refusal while the REAL first root is
+        // Loading/registered and its original scheduler has not written files.
+        var duplicate = scope.Case("RootDuplicate-1.20.1", pauseAdmission:true); var duplicateRoot = scope.Start(duplicate);
+        try {
+            scope.AwaitAdmission(duplicate,duplicateRoot);
+            starts=scope.Starts; int hints=scope.Hints.Count, prompts=scope.NamePrompts, installs=scope.InstallGameCalls;
+            Check("duplicate-refusal", Rejected(() => scope.Start(duplicate)) is OperationCanceledException && scope.Starts == starts && scope.Hints.Any(hint => hint.Text == "该整合包正在安装中！" && hint.Red));
+            Native.Check(scope.NamePrompts==prompts&&scope.InstallGameCalls==installs+1&&scope.Hints.Count==hints+1&&scope.Hints.Last()==("该整合包正在安装中！",true)&&duplicateRoot.State==ModBase.LoadState.Loading&&!Directory.Exists(duplicate.Folder),"Original duplicate must reach its actual taskbar hint after real game-plan construction, without a name prompt, second Start or target write.");
+        } finally { scope.ReleaseAdmission(duplicate); }
+        scope.Until(() => duplicateRoot.State == ModBase.LoadState.Finished,"released genuine duplicate-admission root installation"); scope.Settle(duplicateRoot);
+        Native.Check(duplicateRoot.Loaders.All(loader=>loader.State==ModBase.LoadState.Finished)&&File.ReadAllText(Path.Combine(duplicate.Folder,"config","root.txt"))=="actual-hmcl-overrides"&&File.ReadAllBytes(Path.Combine(duplicate.Folder,duplicate.Name+".jar")).SequenceEqual(scope.JarBytes)&&JObject.Parse(File.ReadAllText(Path.Combine(duplicate.Folder,duplicate.Name+".json")))["clientVersion"]?.ToString()=="1.20.1"&&!File.Exists(Path.Combine(duplicate.Folder,".pclignore")),"Released original root/game workloads did not really finish after duplicate refusal.");
         var cancel = scope.Case("RootCancel-1.20.1", hold:true); var canceled = scope.Start(cancel);
         scope.Until(() => cancel.DownloadEntered.IsSet && canceled.Loaders[0].State == ModBase.LoadState.Finished, "pack written and real metadata HTTP in flight before cancellation");
         Check("cancel-partial", File.ReadAllText(Path.Combine(cancel.Folder,"config","root.txt")) == "actual-hmcl-overrides" && File.Exists(Path.Combine(cancel.Folder,".pclignore")));
         Check("actual-cancel-network", scope.CaptureHeldTransfer(cancel,canceled) && Volatile.Read(ref ModNet.NetTaskThreadCount)>0 && scope.AllNodes(canceled).OfType<ModNet.LoaderDownload>().Any(loader => loader.State == ModBase.LoadState.Loading));
-        starts = scope.Starts; Check("duplicate-refusal", Rejected(() => scope.Start(cancel)) is OperationCanceledException && scope.Starts == starts && scope.Hints.Any(hint => hint.Text == "该整合包正在安装中！" && hint.Red));
         try { canceled.Cancel(); } finally { cancel.Release.Set(); }
         scope.Until(() => canceled.State == ModBase.LoadState.Canceled && !Directory.Exists(cancel.Folder), "actual cancellation cleanup"); scope.Settle(canceled);
         Check("actual-cancel", canceled.State == ModBase.LoadState.Canceled && scope.AllNodes(canceled).Any(loader => loader.State == ModBase.LoadState.Canceled));

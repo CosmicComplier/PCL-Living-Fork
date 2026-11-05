@@ -206,12 +206,37 @@ internal sealed partial class LaunchProcessChecksScope
             Thread.Sleep(2);
         }
     }
+    internal void RecordPrimary(Exception error)
+    {
+        if (Interlocked.CompareExchange(ref primaryFailure, error, null) is not null) return;
+        // Keep the original exception object/stack and print it before a failed
+        // safety barrier can terminate this verified isolated child.
+        try { Console.Error.WriteLine("FAIL native launch primary before bounded cleanup: " + error); }
+        catch { } // A diagnostic sink cannot replace the actual failure.
+    }
+    private void ReportCleanup(Exception error)
+    {
+        void Part(string name, Func<string> describe)
+        {
+            try { Console.Error.WriteLine("Launch cleanup " + name + ": " + describe()); }
+            catch (Exception diagnostic) { try { Console.Error.WriteLine("Launch cleanup diagnostic failed: " + name + " / " + diagnostic.GetType().Name); } catch { } }
+        }
+        Part("primary", () => primaryFailure?.ToString() ?? "No earlier exception was recorded.");
+        Part("barrier", () => $"first-start={Volatile.Read(ref firstStartReservation)} pending={Volatile.Read(ref pending)} handlers={Volatile.Read(ref activeHandlers)} scheduler-failed={schedulingFailed} generation={Volatile.Read(ref generation)}");
+        Part("plan", () => Plan is null ? "not constructed" : Plan.State + " / " + string.Join(", ", Plan.Loaders.Select(task => task.Name + "=" + task.State)));
+        Part("store", () => $"launch-count writes={Volatile.Read(ref launchCountWrites)} reads={Volatile.Read(ref launchCountReads)} exists={File.Exists(launchCountStore)}");
+        foreach (Process process in owned.Keys) Part("owned process", () => $"pid={process.Id} exited={process.HasExited} stdout-eof={outputClosed.ContainsKey(process)} stderr-eof={errorClosed.ContainsKey(process)}");
+        foreach (Thread thread in threads.Keys.Take(32)) Part("real thread", () => $"id={thread.ManagedThreadId} name={thread.Name} alive={thread.IsAlive} state={thread.ThreadState}");
+        Part("failure", error.ToString);
+    }
+
     public void Dispose()
     {
         if (disposed) return; disposed = true;
         try
         {
             DateTime deadline = DateTime.UtcNow.AddSeconds(15);
+            if (primaryFailure is not null) ReportCleanup(primaryFailure); // Before the nested FileTaskScope may fail closed itself.
             // Do not erase an active task's LastRunningThread before its
             // delegate enters. Original Run/Watcher stops on the owned child's
             // actual exit; keep startup/scheduler reservations in force.
@@ -238,7 +263,8 @@ internal sealed partial class LaunchProcessChecksScope
             // FileTaskScope constructed only after verifying the actual isolated
             // facade child and GUID output. Keep every guard/root installed if
             // a real producer cannot be proved stopped; never unwind App/GL.
-            Native.Call(typeof(FileTaskScope), "FailClosed", tasks, "Launch process/Watcher/output cleanup failed before context restoration.", error);
+            ReportCleanup(error);
+            Native.Call(typeof(FileTaskScope), "FailClosed", tasks, "Launch process/Watcher/output cleanup failed before context restoration; original primary and per-item diagnostics are recorded above.", error);
             throw;
         }
     }

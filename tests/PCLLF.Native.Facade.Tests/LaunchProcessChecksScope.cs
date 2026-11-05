@@ -34,6 +34,10 @@ internal sealed partial class LaunchProcessChecksScope : IDisposable
     private readonly Thread uiThread = Thread.CurrentThread;
     private volatile bool schedulingFailed;
     private bool disposed;
+    private Exception? primaryFailure;
+    private readonly object launchCountGate = new();
+    private string? launchCountStore;
+    private int launchCountWrites, launchCountReads;
     private ModMinecraft.McInstance instance = null!;
     private ILegacyLaunchOptions<ModMinecraft.McInstance> prepared = null!;
     internal ModLoader.LoaderCombo<object> Plan = null!;
@@ -80,6 +84,7 @@ internal sealed partial class LaunchProcessChecksScope : IDisposable
             foreach (string flag in new[] { "LaunchPersonalOptionsSync", "LaunchPersonalOptionsKeys", "LaunchRecentWorlds" }) SetCache(flag, true);
             SetCache("LaunchAdvanceGraphicCard", false); SetCache("LaunchSkinType", 0); SetCache("LaunchArgumentWindowType", 1);
             InitialLaunchCount = Settings.Get<int>("SystemLaunchCount"); SetCache("SystemLaunchCount", InitialLaunchCount);
+            InstallLaunchCountStore();
             SetCache("LaunchArgumentVisible", 3); SetCache("LaunchArgumentPriority", 1); SetCache("UiMusicStop", false); SetCache("UiMusicStart", false);
             Native.Field(typeof(ModMinecraft), "_McInstanceSelected").SetValue(null, instance);
             options = Path.Combine(instance.PathIndie, "options.txt"); Put(options, "lang:en_us\r\nkey_key.forward:key.keyboard.w\r\nfixtureUntouched:stable\r\n");
@@ -97,7 +102,7 @@ internal sealed partial class LaunchProcessChecksScope : IDisposable
             string marker = Guid.NewGuid().ToString("N"); OutputMarker = "PCLLF_CONTROLLED_STDOUT_" + marker; ErrorMarker = "PCLLF_CONTROLLED_STDERR_" + marker;
             InstallObservers(); InstallCrashBoundary();
         }
-        catch { Dispose(); throw; }
+        catch (Exception error) { RecordPrimary(error); Dispose(); throw; }
     }
 
     private static void Put(string path, string text) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, text, new UTF8Encoding(false)); }
@@ -105,6 +110,55 @@ internal sealed partial class LaunchProcessChecksScope : IDisposable
     private void Set(object owner, string name, object value) { FieldInfo field = Native.Field(owner.GetType(), name); object? before = field.GetValue(owner); restore.Push(() => field.SetValue(owner, before)); field.SetValue(owner, value); }
     private void Cache(Settings.Setting entry, string key, object value) { bool had = entry.ValueCache.TryGetValue(key, out object? before); restore.Push(() => { if (had) entry.ValueCache[key] = before!; else entry.ValueCache.TryRemove(key, out _); }); entry.ValueCache[key] = value; }
     private void SetCache(string name, object value, bool perInstance = false) => Cache(Settings.Entries[name], perInstance ? instance.PathVersion : "", value);
+    private void InstallLaunchCountStore()
+    {
+        // LF's real setting is encrypted Int32 in the open-source private
+        // Registry namespace. The platform leaf stores its REG_SZ bytes only;
+        // original Settings performs encryption, conversion, cache and +1.
+        Settings.Setting entry = Settings.Entries["SystemLaunchCount"];
+        Native.Check(entry.Key == "SystemLaunchCount" && entry.Source == Settings.Sources.Registry && entry.Encrypted &&
+            entry.Type == typeof(int) && entry.DefaultValue is int value && value == 0,
+            "Actual launch-count setting schema changed; refuse to widen Registry access.");
+        string folder = (string)Native.Static("PCL.Settings", "RegistryFolderFor", entry)!;
+        string key = (string)Native.Static("PCL.Settings", "RegistryValueName", entry)!;
+        Native.Check(folder == "PCLDebug" && key == "SystemLaunchCount" &&
+            Equals(Native.Field(Native.Type("PCL.ModSecret"), "RegFolder").GetRawConstantValue(), folder),
+            "Actual LF launch-count Registry folder/key mapping changed.");
+        string registry = @"HKEY_CURRENT_USER\Software\" + folder;
+        object backend = Native.Field(typeof(Settings), "Backend").GetValue(null)!;
+        object host = Native.Get(backend, "host")!;
+        var read = (Func<string, string, string?, string?>)Native.Get(host, "ReadRegistry")!;
+        var write = (Action<string, string, string?>)Native.Get(host, "WriteRegistry")!;
+        launchCountStore = Path.Combine(root, "platform", "SystemLaunchCount.REG_SZ"); CheckOwned(launchCountStore);
+        Native.Check(!File.Exists(launchCountStore), "Refusing an existing launch-count platform value.");
+        Set(host, "ReadRegistry", new Func<string, string, string?, string?>((actualFolder, actualKey, fallback) =>
+        {
+            if (actualFolder != registry || actualKey != key) return read(actualFolder, actualKey, fallback); // Keep the original fail guard.
+            lock (launchCountGate) { Interlocked.Increment(ref launchCountReads); return File.Exists(launchCountStore) ? File.ReadAllText(launchCountStore, Encoding.UTF8) : fallback; }
+        }));
+        Set(host, "WriteRegistry", new Action<string, string, string?>((actualFolder, actualKey, raw) =>
+        {
+            if (actualFolder != registry || actualKey != key) { write(actualFolder, actualKey, raw); return; } // Unknown keys remain forbidden.
+            Native.Check(raw is not null, "Encrypted launch-count REG_SZ must be a string.");
+            lock (launchCountGate) { Put(launchCountStore, raw!); Interlocked.Increment(ref launchCountWrites); }
+        }));
+        entry.Save(); // Genuine original SaveEntry produces the seed ciphertext.
+        Native.Check(Volatile.Read(ref launchCountWrites) == 1 && File.Exists(launchCountStore), "Original launch-count SaveEntry did not persist its owned seed.");
+    }
+    internal void CheckLaunchCountPersisted(bool launched)
+    {
+        int expected = checked(InitialLaunchCount + (launched ? 1 : 0));
+        Native.Check(Volatile.Read(ref launchCountWrites) == (launched ? 2 : 1), "Original launch End did not make exactly its one additional platform write.");
+        string raw;
+        lock (launchCountGate) raw = File.ReadAllText(launchCountStore!, Encoding.UTF8);
+        Native.Check(raw.Length > 0 && raw != expected.ToString(System.Globalization.CultureInfo.InvariantCulture), "Original launch-count crypto wrote a plaintext or empty platform value.");
+        int reads = Volatile.Read(ref launchCountReads);
+        Settings.Entries["SystemLaunchCount"].ValueCache.TryRemove("", out _);
+        object actual = Settings.Get("SystemLaunchCount");
+        Native.Check(actual is int count && count == expected && Settings.Get<int>("SystemLaunchCount") == expected && Volatile.Read(ref launchCountReads) == reads + 1,
+            "Original Settings cold Registry read/decryption did not round-trip the launch-count Int32.");
+    }
+
     private void Forbidden(string name) { Interlocked.Increment(ref forbidden); throw new InvalidOperationException("Unselected launch-process boundary: " + name); }
     private void Guard(object owner, string name)
     {

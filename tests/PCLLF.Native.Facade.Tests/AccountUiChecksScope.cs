@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -20,6 +21,9 @@ namespace PCLLF.Native.Facade.Tests;
 internal sealed class AccountUiChecksScope : IDisposable
 {
     internal enum Scenario { None, Success, Failure, Cancel }
+    internal enum Checkpoint { Constructing, Ready, Navigation, AccountSelection, BeforeScenario, WaitingRequest, WaitingCompletion, SessionChecks, Logout, PostLogout, FinalChecks, CleanupFreeze, CleanupThreads, CleanupUi, CleanupIdle }
+    private volatile Checkpoint checkpoint = Checkpoint.Constructing;
+    private int reportedForbidden;
     internal const string ProfileId = "11111111111111111111111111111111";
     internal const string Profile = "{\"id\":\"11111111111111111111111111111111\",\"name\":\"FixtureBUpdated\",\"skins\":[],\"capes\":[],\"fixture_future\":{\"preserve\":true}}";
     private readonly Stack<Action> restore = new();
@@ -105,10 +109,10 @@ internal sealed class AccountUiChecksScope : IDisposable
             Replace(accounts, "RunInThread", new Action<Action>(work => Spawn(work, "Account UI platform")));
             Replace(accounts, "RunInNewThread", new Action<Action, string>(Spawn));
             Func<string, string> readAccount = accounts.ReadString;
-            Replace(accounts, "ReadString", new Func<string, string>(key => key is "LoginMsJson" or "CacheMsV2OAuthRefresh" or "CacheMsV2Name" ? readAccount(key) : Forbidden<string>("unexpected account string read")));
-            Replace(accounts, "ReadInstanceString", new Func<string, string>(_ => Forbidden<string>("unexpected account instance read")));
-            Replace(accounts, "ReadBoolean", new Func<string, bool>(_ => Forbidden<bool>("unexpected account boolean read")));
-            Replace(accounts, "ReadInteger", new Func<string, int>(_ => Forbidden<int>("unexpected account integer read")));
+            Replace(accounts, "ReadString", new Func<string, string>(key => key is "LoginMsJson" or "CacheMsV2OAuthRefresh" or "CacheMsV2Name" ? readAccount(key) : Forbidden<string>("unexpected account string read", key)));
+            Replace(accounts, "ReadInstanceString", new Func<string, string>(key => Forbidden<string>("unexpected account instance read", key)));
+            Replace(accounts, "ReadBoolean", new Func<string, bool>(key => Forbidden<bool>("unexpected account boolean read", key)));
+            Replace(accounts, "ReadInteger", new Func<string, int>(key => Forbidden<int>("unexpected account integer read", key)));
             Func<string, Dictionary<string, object?>> accountSnapshot = accounts.AccountSnapshot;
             Replace(accounts, "AccountSnapshot", new Func<string, Dictionary<string, object?>>(prefix => prefix == "CacheMsV2" ? accountSnapshot(prefix) : Forbidden<Dictionary<string, object?>>("unexpected account snapshot")));
             Replace(accounts, "Hint", new Action<string, LegacyLoginHint>((text, kind) => Dispatch(() => Hints.Add((text, kind)))));
@@ -124,9 +128,9 @@ internal sealed class AccountUiChecksScope : IDisposable
             object host = service.GetType().GetFields(Native.Flags).Single(field => field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(LegacyLaunchHost<,,,,,,>)).GetValue(service)!;
             var snapshot = (Func<string, Dictionary<string, object?>>)Native.Get(host, "AccountSnapshot")!;
             Replace(host, "AccountSnapshot", new Func<string, Dictionary<string, object?>>(prefix => prefix == "CacheMsV2" ? snapshot(prefix) : Forbidden<Dictionary<string, object?>>("unexpected loader account snapshot")));
-            Replace(host, "ReadString", new Func<string, ModMinecraft.McInstance?, string>((_, _) => Forbidden<string>("unexpected loader string setting read")));
-            Replace(host, "ReadInteger", new Func<string, ModMinecraft.McInstance?, int>((_, _) => Forbidden<int>("unexpected loader integer setting read")));
-            Replace(host, "ReadBoolean", new Func<string, ModMinecraft.McInstance?, bool>((_, _) => Forbidden<bool>("unexpected loader boolean setting read")));
+            Replace(host, "ReadString", new Func<string, ModMinecraft.McInstance?, string>((key, _) => Forbidden<string>("unexpected loader string setting read", key)));
+            Replace(host, "ReadInteger", new Func<string, ModMinecraft.McInstance?, int>((key, _) => Forbidden<int>("unexpected loader integer setting read", key)));
+            Replace(host, "ReadBoolean", new Func<string, ModMinecraft.McInstance?, bool>((key, _) => Forbidden<bool>("unexpected loader boolean setting read", key)));
             Replace(host, "Request", new Func<LegacyLaunchRequest, string>(Request));
             Replace(host, "OAuthClientId", new Func<string>(() => "native-account-fixture-client"));
             Replace(host, "DeviceLoginPrompt", new Func<JObject, Func<LegacyLaunchDeviceResult?>>(_ => Forbidden<Func<LegacyLaunchDeviceResult?>>("unexpected device authorization")));
@@ -157,13 +161,15 @@ internal sealed class AccountUiChecksScope : IDisposable
             object panelHost = Native.Get(Native.Get(Launch, "Native")!, "host")!;
             var panelString = (Func<string, string>)Native.Get(panelHost, "ReadString")!;
             var panelInteger = (Func<string, int>)Native.Get(panelHost, "ReadInteger")!;
-            Replace(panelHost, "ReadString", new Func<string, string>(key => key == "CacheMsV2Access" ? panelString(key) : Forbidden<string>("unexpected launch-panel string setting read")));
-            Replace(panelHost, "ReadInteger", new Func<string, int>(key => key == "LoginPageType" ? panelInteger(key) : Forbidden<int>("unexpected launch-panel integer setting read")));
-            Replace(panelHost, "ReadBoolean", new Func<string, bool>(_ => Forbidden<bool>("unexpected launch-panel boolean setting read")));
+            Replace(panelHost, "ReadString", new Func<string, string>(key => key == "CacheMsV2Access" ? panelString(key) : Forbidden<string>("unexpected launch-panel string setting read", key)));
+            Replace(panelHost, "ReadInteger", new Func<string, int>(key => key == "LoginPageType" ? panelInteger(key) : Forbidden<int>("unexpected launch-panel integer setting read", key)));
+            Replace(panelHost, "ReadBoolean", new Func<string, bool>(key => Forbidden<bool>("unexpected launch-panel boolean setting read", key)));
+            checkpoint = Checkpoint.Ready;
 
         }
         catch (Exception error)
         {
+            ReportPrimary(error);
             try { StopAndDrain(); } catch (Exception cleanup) { VisualAssetChecks.FailClosed(environment, "Account constructor producers did not stop before restore.", new AggregateException(error, cleanup)); }
             Restore(); throw;
         }
@@ -203,8 +209,8 @@ internal sealed class AccountUiChecksScope : IDisposable
         var read = (Func<string, string, string?, string?>)Native.Get(host, "ReadIni")!;
         var write = (Action<string, string, string?>)Native.Get(host, "WriteIni")!;
         string file = Path.Combine(environment.Data, "account-ui", "Setup.ini"); Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        Replace(host, "ReadIni", new Func<string, string, string?, string?>((path, key, fallback) => { if (path != "Setup" || key != "HintBuy") return Forbidden<string?>("unexpected account INI read"); return read(file, key, fallback); }));
-        Replace(host, "WriteIni", new Action<string, string, string?>((path, key, value) => { if (path != "Setup" || key != "HintBuy") Forbidden("unexpected account INI write"); write(file, key, value); }));
+        Replace(host, "ReadIni", new Func<string, string, string?, string?>((path, key, fallback) => { if (path != "Setup" || key != "HintBuy") return Forbidden<string?>("unexpected account INI read", key); return read(file, key, fallback); }));
+        Replace(host, "WriteIni", new Action<string, string, string?>((path, key, value) => { if (path != "Setup" || key != "HintBuy") Forbidden("unexpected account INI write", key); write(file, key, value); }));
         restore.Push(() => Native.Static("PCL.ModBase", "IniClearCache", file));
     }
     private void CheckRegistry(string folder, string key)
@@ -215,10 +221,57 @@ internal sealed class AccountUiChecksScope : IDisposable
     internal void CheckKey(string physical)
     {
         string logical = physical.EndsWith("_LF", StringComparison.Ordinal) ? physical[..^3] : physical;
-        if (!allowed.Contains(logical) || physical != (logical == "LoginType" ? logical : logical + "_LF")) Forbidden("unexpected account physical key");
+        if (!allowed.Contains(logical) || physical != (logical == "LoginType" ? logical : logical + "_LF")) Forbidden("unexpected account physical key", logical);
     }
-    private T Forbidden<T>(string operation) { Interlocked.Increment(ref forbidden); throw new InvalidOperationException("Forbidden account fixture boundary: " + operation); }
-    private void Forbidden(string operation) => Forbidden<int>(operation);
+    private T Forbidden<T>(string operation, string? key = null) {
+        Interlocked.Increment(ref forbidden);
+        if (Interlocked.CompareExchange(ref reportedForbidden, 1, 0) == 0) {
+            try { TryReport("first-forbidden", new { Operation = operation, SchemaKey = SafeKey(key), Stack = SafeStack(new StackTrace(1, true)) }); }
+            catch { } // Even diagnostic-payload construction cannot replace the guard.
+        }
+        throw new InvalidOperationException("Forbidden account fixture boundary: " + operation);
+    }
+    private void Forbidden(string operation, string? key = null) => Forbidden<int>(operation, key);
+    private static string SafeKey(string? key) {
+        if (key is null) return "<none>";
+        string logical = key.EndsWith("_LF", StringComparison.Ordinal) ? key[..^3] : key;
+        return Native.Entries.Contains(logical) || logical is "MinecraftInstallManifest" or "JavaConfigVersion" or "JavaList" or "JavaRemovedList" or "InstanceMigratedJava" or "InstanceForcedJava" or "HintModifyInstanceWarning" ? logical : "<unknown-schema-key>";
+    }
+    private static string[] SafeStack(StackTrace trace) => (trace.GetFrames() ?? []).Take(18).Select(frame => {
+        MethodBase? method = frame.GetMethod();
+        Type? owner = method?.DeclaringType;
+        if (owner?.IsGenericType == true) owner = owner.GetGenericTypeDefinition();
+        string name = (owner?.FullName ?? "<unknown-type>") + "." + (method?.Name ?? "<unknown-method>");
+        int line = frame.GetFileLineNumber(); // Never disclose GetFileName/path or arguments.
+        if (line > 0) name += ":line " + line;
+        return name.Length <= 400 ? name : name[..400];
+    }).ToArray();
+    private static object SafeError(Exception error) => new { Type = error.GetType().FullName, Stack = SafeStack(new StackTrace(error, true)), InnerTypes = InnerTypes(error) };
+    private static string?[] InnerTypes(Exception error) {
+        List<string?> types = new();
+        for (Exception? inner = error.InnerException; inner is not null && types.Count < 4; inner = inner.InnerException) types.Add(inner.GetType().FullName);
+        return types.ToArray();
+    }
+    internal void At(Checkpoint value) => checkpoint = value;
+    internal void ReportPrimary(Exception error) => TryReportError("body-primary", error);
+    private void TryReportError(string kind, Exception error) { try { TryReport(kind, SafeError(error)); } catch { } }
+    private void TryReport(string kind, object detail) {
+        try {
+            var posts = new Dictionary<string, int>(StringComparer.Ordinal);
+            lock (postGate) foreach (var operation in posted) { string status = operation.Status.ToString(); posts[status] = posts.GetValueOrDefault(status) + 1; }
+            var owned = threads.Keys.Select(thread => new {
+                Id = thread.ManagedThreadId,
+                Name = thread.Name is "Ms Login" or "Account UI platform" or "Account loader callback" or "L/Loader Login Ms" or "Login Failed: Create Profile" ? thread.Name : "<unrecognized-owned-name>",
+                Alive = thread.IsAlive, State = thread.ThreadState.ToString()
+            }).ToArray();
+            Console.Error.WriteLine("ACCOUNT SAFE DIAGNOSTIC " + System.Text.Json.JsonSerializer.Serialize(new {
+                Kind = kind, Stage = checkpoint.ToString(), Scenario = scenario.ToString(),
+                ForbiddenCount = Volatile.Read(ref forbidden), ProducerErrorCount = producerErrors.Count,
+                LoaderState = Loader.State.ToString(), LoaderError = Loader.Error is Exception error ? SafeError(error) : null, OwnedThreads = owned, Posted = posts,
+                ProducerErrors = producerErrors.Take(3).Select(SafeError).ToArray(), Detail = detail
+            }));
+        } catch { /* Diagnostics never replace the original exception/guard. */ }
+    }
     private void Replace(object owner, string name, object value) { FieldInfo field = Native.Field(owner.GetType(), name); object? before = field.GetValue(owner); restore.Push(() => { field.SetValue(owner, before); Native.Check(ReferenceEquals(field.GetValue(owner), before), "Account seam identity restoration failed: " + name); }); field.SetValue(owner, value); }
     private void SaveField(object owner, string name) { FieldInfo field = Native.Field(owner.GetType(), name); object? before = field.GetValue(owner); restore.Push(() => field.SetValue(owner, before)); }
     private void SaveStatic(Type type, string name) { FieldInfo field = Native.Field(type, name); object? before = field.GetValue(null); restore.Push(() => field.SetValue(null, before)); }
@@ -236,7 +289,7 @@ internal sealed class AccountUiChecksScope : IDisposable
     private void Spawn(Action work, string name)
     {
         lock (startGate) {
-            Thread thread = new(() => { try { work(); } catch (Exception error) { producerErrors.Enqueue(error); } }) { Name = name };
+            Thread thread = new(() => { try { work(); } catch (Exception error) { producerErrors.Enqueue(error); TryReportError("producer-error", error); } }) { Name = name };
             threads.TryAdd(thread, 0); thread.Start();
         }
     }
@@ -245,16 +298,18 @@ internal sealed class AccountUiChecksScope : IDisposable
     internal T Current<T>() where T : FrameworkElement { Native.Check(IsCurrent<T>(), "Actual launch navigation is not " + typeof(T).Name); return (T)AccountUiChecks.Part<Panel>(Launch, "PanLogin").Children[0]; }
     internal void BeginScenario(Scenario next)
     {
+        checkpoint = Checkpoint.BeforeScenario;
         AssertIdle(); entered.Reset(); release.Reset(); Volatile.Write(ref requestCount, 0); scenario = next;
     }
     internal void ReleaseRequest() => release.Set();
-    internal void AwaitRequest() => AwaitUi(() => entered.IsSet);
+    internal void AwaitRequest() { checkpoint = Checkpoint.WaitingRequest; AwaitUi(() => entered.IsSet); }
     internal void AwaitUi(Func<bool> done)
     {
         VisualAssetChecks.Pump(() => { ObserveLoaderThread(); AdvanceAnimations(); return done(); }, "actual account UI/producer checkpoint");
     }
     internal void AwaitCompletion(ModBase.LoadState expected, Func<bool> ui)
     {
+        checkpoint = Checkpoint.WaitingCompletion;
         AwaitUi(() => Loader.State == expected && threads.Keys.All(thread => !thread.IsAlive) && ui());
         foreach (Thread thread in threads.Keys) Native.Check(thread.Join(0), "Actual account producer has not joined.");
         VisualAssetChecks.Drain();
@@ -272,8 +327,14 @@ internal sealed class AccountUiChecksScope : IDisposable
         Native.Check(Monitor.TryEnter(startGate), "An actual account producer still owns a pre-start reservation.");
         try {
             ObserveLoaderThread();
-            Native.Check(Volatile.Read(ref forbidden) == 0 && producerErrors.IsEmpty && Loader.State != ModBase.LoadState.Loading && threads.Keys.All(thread => !thread.IsAlive && thread.Join(0)), "Account scope retained forbidden IO, an uncaught producer error, or a real login/thread producer.");
-            lock (postGate) Native.Check(posted.All(operation => operation.Status == DispatcherOperationStatus.Completed), "Account scope retained an actual queued UI callback.");
+            bool idle = Volatile.Read(ref forbidden) == 0 && producerErrors.IsEmpty && Loader.State != ModBase.LoadState.Loading && threads.Keys.All(thread => !thread.IsAlive && thread.Join(0));
+            if (!idle) TryReport("idle-rejected", new { ForbiddenClear = Volatile.Read(ref forbidden) == 0, ProducerErrorsClear = producerErrors.IsEmpty, LoaderTerminal = Loader.State != ModBase.LoadState.Loading });
+            Native.Check(idle, "Account scope retained forbidden IO, an uncaught producer error, or a real login/thread producer.");
+            lock (postGate) {
+                bool completed = posted.All(operation => operation.Status == DispatcherOperationStatus.Completed);
+                if (!completed) TryReport("posted-rejected", new { Completed = false });
+                Native.Check(completed, "Account scope retained an actual queued UI callback.");
+            }
         } finally { Monitor.Exit(startGate); }
         environment.AssertNoForbiddenIo();
         AssertSharedGuard();
@@ -317,16 +378,20 @@ internal sealed class AccountUiChecksScope : IDisposable
         // behind a producer which may need its original UI input callback.
         // Once this barrier wins, no later TaskPort.Start can create a native
         // thread; an already assigned thread is retained before Cancel clears it.
+        checkpoint = Checkpoint.CleanupFreeze;
         AwaitUi(() => {
             if (!Monitor.TryEnter(startGate)) return false;
             try { startsClosed = true; ObserveLoaderThread(); Loader.Cancel(); release.Set(); return true; }
             finally { Monitor.Exit(startGate); }
         });
+        checkpoint = Checkpoint.CleanupThreads;
         AwaitUi(() => threads.Keys.All(thread => !thread.IsAlive));
         foreach (Thread thread in threads.Keys) Native.Check(thread.Join(0), "Account cleanup did not join a real producer.");
         VisualAssetChecks.Drain();
+        checkpoint = Checkpoint.CleanupUi;
         for (int i = 0; i < 40 && ModAnimation.AniGroups.Count != 0; i++) AdvanceAnimations();
         VisualAssetChecks.Drain();
+        checkpoint = Checkpoint.CleanupIdle;
         AssertIdle();
         Native.Check(ModAnimation.AniGroups.Count == 0, "Account animation callbacks did not finish before restoration.");
         Native.Check(!Launch?.IsLoaded ?? true, "Detached account fixture unexpectedly loaded its entire launch page.");
@@ -363,10 +428,10 @@ internal sealed class AccountUiChecksScope : IDisposable
 
     private sealed class RejectingConfigProvider(AccountUiChecksScope owner, string path) : MeloongCore.JsonConfigProvider(path), MeloongCore.IConfigProvider
     {
-        void MeloongCore.IConfigProvider.Set<T>(string key, T? value, bool encrypted) where T : default => owner.Forbidden("unexpected Shared config write");
-        void MeloongCore.IConfigProvider.Remove(string key) => owner.Forbidden("unexpected Shared config removal");
-        T? MeloongCore.IConfigProvider.Read<T>(string key, T? defaultValue, bool encrypted) where T : default => owner.Forbidden<T?>("unexpected Shared config read");
-        bool MeloongCore.IConfigProvider.HasValue(string key) => owner.Forbidden<bool>("unexpected Shared config probe");
+        void MeloongCore.IConfigProvider.Set<T>(string key, T? value, bool encrypted) where T : default => owner.Forbidden("unexpected Shared config write", key);
+        void MeloongCore.IConfigProvider.Remove(string key) => owner.Forbidden("unexpected Shared config removal", key);
+        T? MeloongCore.IConfigProvider.Read<T>(string key, T? defaultValue, bool encrypted) where T : default => owner.Forbidden<T?>("unexpected Shared config read", key);
+        bool MeloongCore.IConfigProvider.HasValue(string key) => owner.Forbidden<bool>("unexpected Shared config probe", key);
         void MeloongCore.IConfigProvider.DiscardCache() => owner.Forbidden("unexpected Shared config reset");
     }
 }

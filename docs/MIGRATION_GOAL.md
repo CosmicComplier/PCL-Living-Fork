@@ -2,7 +2,7 @@
 
 当前目标是将 PCLLF 已有产品实现迁移到 C#、.NET 10 和 WPF，完成功能等价、数据兼容、资源依赖、发布产物及旧版更新桥的验证。做到本目标的全部验收项后停止自动续跑。本目标不自动转入新增 MMC 兼容或性能阶段。
 
-当前状态：`in_progress`。正式modern/Main完整C#/.NET10 WPF与LF50主要功能已接，真实Windows Debug/Release构建、54资源、原生四角色、C#凭据、可选联机编译通过。b3ef两配置原25族、真实Registry/225/226/228及两轮正常冷启/关闭/复开通过，旧桥WinPS严格exit0/23与四实际升级case成功。按此门禁已切默认发布和根solution至C#现代图，改接后Windows仍待；旧VB实体仍保留比较、尚未退休。新增账号UI/进程Watcher/HMCL根安装及独立真实交互仍失败/pending，修复和真实账号/游戏/最终交互验收继续，不能计完整完成。新增MMC/性能/Rust/C++仍延后。
+当前状态：`in_progress`。正式modern/Main完整C#/.NET10 WPF与LF50主要功能已接，真实Windows Debug/Release构建、54资源、原生四角色、C#凭据、可选联机编译通过。b3ef两配置原25族、真实Registry/225/226/228及两轮正常冷启/关闭/复开通过，旧桥WinPS严格exit0/23与四实际升级case成功。按此门禁已切默认发布和根solution至C#现代图，改接后Windows仍待；旧VB实体仍保留比较、尚未退休。新增账号UI/进程Watcher/HMCL根安装及独立真实交互仍失败/pending；已按首错集成夹具修复/脱敏诊断及自有光标精确恢复，待Windows，真实账号/游戏/最终交互验收继续，不能计完整完成。新增MMC/性能/Rust/C++仍延后。
 
 完整工程背景见 [MIGRATION.md](MIGRATION.md)。可执行任务、进度、验证证据和下次入口只维护在 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)，续跑时从账本继续，不重新建立同一套计划。
 

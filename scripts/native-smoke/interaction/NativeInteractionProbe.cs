@@ -33,6 +33,7 @@ internal sealed class Probe
     private readonly Process process;
     private bool themeChanged;
     private bool identityProved;
+    private bool cursorSafe = true;
     private AutomationElement Root => AutomationElement.FromHandle(hwnd);
 
     private Probe(Dictionary<string, string> arguments)
@@ -61,13 +62,15 @@ internal sealed class Probe
             if (values.Length != 18) throw new InvalidOperationException("Expected nine named fixture arguments.");
             Dictionary<string, string> arguments = new(StringComparer.Ordinal);
             for (int i = 0; i < values.Length; i += 2) arguments.Add(values[i].TrimStart('-'), values[i + 1]);
-            probe = new Probe(arguments); probe.Guard(true); probe.identityProved = true; probe.Run(); probe.evidence["Result"] = "passed";
+            probe = new Probe(arguments); probe.Guard(true); probe.identityProved = true; probe.Run();
+            if (!probe.cursorSafe) throw new InvalidOperationException("PENDING: original CI cursor restoration was not proved.");
+            probe.evidence["Result"] = "passed";
             return 0;
         }
         catch (Exception error)
         {
             if (probe != null) { probe.evidence["Result"] = error.Message.StartsWith("PENDING:", StringComparison.Ordinal) ? "pending" : "failed"; probe.evidence["Error"] = error.GetType().Name + ": " + error.Message; }
-            if (probe?.identityProved == true)
+            if (probe?.identityProved == true && probe.cursorSafe)
             {
                 // Failure evidence only, after the same live owner/image/profile
                 // guard; never act on an unknown window or mask the primary error.
@@ -79,22 +82,38 @@ internal sealed class Probe
                 }).ToArray(); }
                 catch (Exception diagnostic) { probe.evidence["FailureUiError"] = diagnostic.GetType().Name; }
             }
+            else if (probe != null && !probe.cursorSafe) { probe.evidence["Result"] = "failed"; probe.evidence["FailureUiSkipped"] = "Cursor restoration is unproved; no subsequent UIA, Guard/file read or real UI recovery is authorized."; }
             Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1;
         }
         finally
         {
             if (probe != null)
             {
-                if (probe.themeChanged)
+                if (!probe.cursorSafe)
                 {
-                    try { probe.SetTheme("浅色", 0x24); probe.evidence["ThemeRollback"] = "restored-through-owned-real-UI"; }
-                    catch (Exception error) { probe.evidence["ThemeRollback"] = error.Message; probe.evidence["Result"] = "failed"; }
+                    // A displaced/unknown cursor forbids further UIA, real UI
+                    // rollback and file reads/writes. Emit only captured facts;
+                    // no receipt is manufactured for the outer Smoke to pass.
+                    probe.evidence["Result"] = "failed";
+                    string summary = JsonSerializer.Serialize(new { Result = "failed", probe.owner, Pass = probe.args["pass"], ProcessId = probe.pid,
+                        MainHandle = probe.hwnd.ToInt64(), PrimaryError = probe.evidence.GetValueOrDefault("Error"),
+                        CursorRestoration = probe.evidence.GetValueOrDefault("CursorRestoration"),
+                        Skipped = "UIA snapshot, Guard, theme rollback and evidence-file IO: cursor restoration unproved." });
+                    Console.Error.WriteLine("CURSOR_RESTORE_UNPROVED " + (summary.Length <= 12000 ? summary : summary[..12000]));
                 }
-                // Guard the destination again. A changed marker preserves evidence instead of writing elsewhere.
-                if (File.Exists(Path.Combine(probe.fixture, "owner.txt")) && File.ReadAllText(Path.Combine(probe.fixture, "owner.txt")) == probe.owner)
+                else
                 {
-                    probe.evidence["ElapsedMilliseconds"] = probe.clock.ElapsedMilliseconds;
-                    File.WriteAllText(probe.output, JsonSerializer.Serialize(probe.evidence, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+                    if (probe.themeChanged)
+                    {
+                        try { probe.SetTheme("浅色", 0x24); probe.evidence["ThemeRollback"] = "restored-through-owned-real-UI"; }
+                        catch (Exception error) { probe.evidence["ThemeRollback"] = error.Message; probe.evidence["Result"] = "failed"; }
+                    }
+                    // Guard the destination again. A changed marker preserves evidence instead of writing elsewhere.
+                    if (File.Exists(Path.Combine(probe.fixture, "owner.txt")) && File.ReadAllText(Path.Combine(probe.fixture, "owner.txt")) == probe.owner)
+                    {
+                        probe.evidence["ElapsedMilliseconds"] = probe.clock.ElapsedMilliseconds;
+                        File.WriteAllText(probe.output, JsonSerializer.Serialize(probe.evidence, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+                    }
                 }
                 probe.process.Dispose();
             }
@@ -164,13 +183,93 @@ internal sealed class Probe
     }
     private void Click(AutomationElement node, string step)
     {
-        Guard(); AssertAncestor(node); var r = node.Current.BoundingRectangle; var client = Native.Client(hwnd);
-        if (!Visible(node) || !client.Contains(r)) throw new InvalidOperationException("UIA click target is outside actual Main client.");
-        Native.Point point = new() { X = (int)(r.Left + r.Width / 2), Y = (int)(r.Top + r.Height / 2) };
-        if (!Native.ScreenToClient(hwnd, ref point)) throw new InvalidOperationException("Client conversion failed.");
-        IntPtr location = Native.Pack(point.X, point.Y);
-        Native.Send(hwnd, 0x0200, IntPtr.Zero, location); Native.Send(hwnd, 0x0201, new IntPtr(1), location); Native.Send(hwnd, 0x0202, IntPtr.Zero, location);
-        steps.Add(new { Action = step, Input = "WM_MOUSEMOVE/WM_LBUTTONDOWN/WM_LBUTTONUP to owned Main client only", Text = node.Current.Name, X = point.X, Y = point.Y });
+        // A posted coordinate alone does not establish WPF Mouse.DirectlyOver.
+        // Preserve the actual LF mouse event path, including down/leave/up state.
+        string text = node.Current.Name;
+        WithOwnedHover(node, step, (screen, local, bounds) =>
+        {
+            IntPtr location = Native.Pack(local.X, local.Y);
+            Native.Send(hwnd, 0x0200, IntPtr.Zero, location); Thread.Sleep(80);
+            CheckDesktopTarget(screen, bounds, cursorAtTarget: true);
+            Native.Send(hwnd, 0x0201, new IntPtr(1), location);
+            CheckDesktopTarget(screen, bounds, cursorAtTarget: true);
+            Native.Send(hwnd, 0x0202, IntPtr.Zero, location);
+            steps.Add(new { Action = step, Input = "Verified system hover, then WM_MOUSEMOVE/WM_LBUTTONDOWN/WM_LBUTTONUP to owned Main client only", Text = text, X = local.X, Y = local.Y });
+        });
+    }
+    private void WithOwnedHover(AutomationElement node, string step, Action<Native.Point, Native.Point, System.Windows.Rect> input)
+    {
+        Guard(true); AssertAncestor(node);
+        var target = node.Current.BoundingRectangle; var window = Native.Window(hwnd);
+        for (int sample = 0; sample < 3; sample++)
+        {
+            if (!Visible(node) || !node.Current.IsEnabled || !Native.Client(hwnd).Contains(target) || node.Current.BoundingRectangle != target || Native.Window(hwnd) != window)
+                throw new InvalidOperationException("PENDING: owned hover target/client bounds did not remain stable.");
+            Thread.Sleep(80);
+        }
+        Native.Point screen = new() { X = (int)(target.Left + target.Width / 2), Y = (int)(target.Top + target.Height / 2) };
+        Native.Point local = screen;
+        if (!Native.ScreenToClient(hwnd, ref local)) throw new InvalidOperationException("Client conversion failed.");
+        Guard(true);
+        // No cursor movement while a UIA/provider call may block. After this
+        // point use only bounded Win32 messages and immediate native queries;
+        // reserve twenty seconds before the outer observer's ninety-second cap.
+        if (clock.Elapsed.TotalSeconds > 70) throw new InvalidOperationException("PENDING: insufficient bounded budget to move and restore the CI cursor.");
+        if (Native.GetForegroundWindow() != hwnd)
+        {
+            if (Native.Owner(hwnd) != pid || !Native.SetForegroundWindow(hwnd)) throw new InvalidOperationException("PENDING: owned Main could not become the foreground window; observed foreground handle=" + Native.GetForegroundWindow().ToInt64() + ".");
+            Stopwatch foreground = Stopwatch.StartNew();
+            while (Native.GetForegroundWindow() != hwnd && foreground.ElapsedMilliseconds < 1000) Thread.Sleep(20);
+        }
+        CheckDesktopTarget(screen, window, cursorAtTarget: false);
+        if (!Native.GetCursorPos(out Native.Point saved)) throw CursorError("GetCursorPos before owned hover", Marshal.GetLastWin32Error());
+        steps.Add(new { Action = "cursor-saved", Target = step, X = saved.X, Y = saved.Y, TargetX = screen.X, TargetY = screen.Y, ForegroundHandle = hwnd.ToInt64(), HitHandle = Native.WindowFromPoint(screen).ToInt64(), StableTargetSamples = 3 });
+        Exception? primary = null;
+        cursorSafe = false;
+        try
+        {
+            bool moved = Native.SetCursorPos(screen.X, screen.Y); int moveError = moved ? 0 : Marshal.GetLastWin32Error();
+            steps.Add(new { Action = "cursor-moved", Target = step, RequestedX = screen.X, RequestedY = screen.Y, SetSucceeded = moved, SetWin32Error = moveError });
+            if (!moved) throw CursorError("SetCursorPos for owned hover", moveError);
+            CheckDesktopTarget(screen, window, cursorAtTarget: true);
+            input(screen, local, window);
+        }
+        catch (Exception error) { primary = error; throw; }
+        finally
+        {
+            // Restoration is independent of product/UIA availability. A failed
+            // Set/Get or mismatched position is pending, never a passed hover.
+            bool set = false, get = false; int setError = 0, getError = 0; Native.Point restored = default; Exception? restoreError = null;
+            try
+            {
+                set = Native.SetCursorPos(saved.X, saved.Y); setError = set ? 0 : Marshal.GetLastWin32Error();
+                get = Native.GetCursorPos(out restored); getError = get ? 0 : Marshal.GetLastWin32Error();
+            }
+            catch (Exception error) { restoreError = error; }
+            bool same = set && get && restored.X == saved.X && restored.Y == saved.Y;
+            cursorSafe = same;
+            var receipt = new { Action = "cursor-restored", Target = step, Restored = same, RequestedX = saved.X, RequestedY = saved.Y, ObservedX = restored.X, ObservedY = restored.Y, SetSucceeded = set, SetWin32Error = setError, GetSucceeded = get, GetWin32Error = getError, RestoreError = restoreError?.GetType().Name + (restoreError is null ? "" : ": " + restoreError.Message) };
+            steps.Add(receipt); evidence["CursorRestoration"] = receipt;
+            if (!same && primary is null) throw new InvalidOperationException("PENDING: original CI cursor restoration was not proved; SetCursorPos Win32=" + setError + ", GetCursorPos Win32=" + getError + ".", restoreError);
+        }
+    }
+    private static InvalidOperationException CursorError(string action, int error) => new("PENDING: " + action + " failed in this CI windowstation; Win32=" + error + " (" + new System.ComponentModel.Win32Exception(error).Message + ").");
+    private void CheckDesktopTarget(Native.Point screen, System.Windows.Rect window, bool cursorAtTarget)
+    {
+        // No UIA/file/dispatcher calls while the system cursor is displaced.
+        process.Refresh(); StringBuilder image = new(32768); uint count = (uint)image.Capacity;
+        IntPtr foreground = Native.GetForegroundWindow(), hit = Native.WindowFromPoint(screen);
+        if (process.HasExited || Native.Owner(hwnd) != pid || !Native.QueryFullProcessImageName(process.Handle, 0, image, ref count) || !string.Equals(image.ToString(), exe, StringComparison.OrdinalIgnoreCase) ||
+            foreground != hwnd || hit != hwnd || Native.Window(hwnd) != window || !Native.Client(hwnd).Contains(new System.Windows.Point(screen.X, screen.Y)))
+        {
+            steps.Add(new { Action = "owned-hover-proof-failed", ExpectedMainHandle = hwnd.ToInt64(), ForegroundHandle = foreground.ToInt64(), HitHandle = hit.ToInt64(), TargetX = screen.X, TargetY = screen.Y });
+            throw new InvalidOperationException("PENDING: foreground/hit-test/image/owner/client proof changed before owned mouse input.");
+        }
+        if (cursorAtTarget)
+        {
+            if (!Native.GetCursorPos(out Native.Point current)) throw CursorError("GetCursorPos during owned hover", Marshal.GetLastWin32Error());
+            if (current.X != screen.X || current.Y != screen.Y) throw new InvalidOperationException("PENDING: CI cursor did not reach the uniquely verified owned target.");
+        }
     }
     private void Wait(Func<bool> check, string description, int timeout = 7000)
     {
@@ -260,14 +359,17 @@ internal sealed class Probe
         var scroll = Unique(n => n.Current.AutomationId == "PanBack" && n.TryGetCurrentPattern(ScrollPattern.Pattern, out _) && n.Current.BoundingRectangle.Left > Native.Client(hwnd).Left + 150, "personalization PanBack ScrollPattern");
         ScrollPattern pattern = (ScrollPattern)scroll.GetCurrentPattern(ScrollPattern.Pattern);
         if (!pattern.Current.VerticallyScrollable || pattern.Current.VerticalScrollPercent > 1) throw new InvalidOperationException("PENDING: personalization has no provable top/scrollable content.");
-        double before = pattern.Current.VerticalScrollPercent; var rect = scroll.Current.BoundingRectangle;
-        if (!Native.Client(hwnd).Contains(rect)) throw new InvalidOperationException("Scroll target is outside actual Main client.");
-        Native.Point point = new() { X = (int)(rect.Left + rect.Width / 2), Y = (int)(rect.Top + rect.Height / 2) }; var local = point;
-        if (!Native.ScreenToClient(hwnd, ref local)) throw new InvalidOperationException("Scroll client conversion failed.");
-        Guard(); Native.Send(hwnd, 0x0200, IntPtr.Zero, Native.Pack(local.X, local.Y)); Native.Send(hwnd, 0x020A, new IntPtr(unchecked((int)0xFE980000)), Native.Pack(point.X, point.Y));
+        double before = pattern.Current.VerticalScrollPercent;
+        WithOwnedHover(scroll, "wheel-down", (screen, local, bounds) => {
+            Native.Send(hwnd, 0x0200, IntPtr.Zero, Native.Pack(local.X, local.Y)); Thread.Sleep(80); CheckDesktopTarget(screen, bounds, cursorAtTarget: true);
+            Native.Send(hwnd, 0x020A, new IntPtr(unchecked((int)0xFE980000)), Native.Pack(screen.X, screen.Y));
+        });
         Wait(() => pattern.Current.VerticalScrollPercent > before + .1, "real wheel message changed ScrollPattern offset"); Stable("wheel-down");
         double after = pattern.Current.VerticalScrollPercent; Capture("wheel-down");
-        Guard(); Native.Send(hwnd, 0x020A, new IntPtr(0x01680000), Native.Pack(point.X, point.Y));
+        WithOwnedHover(scroll, "wheel-up", (screen, local, bounds) => {
+            Native.Send(hwnd, 0x0200, IntPtr.Zero, Native.Pack(local.X, local.Y)); Thread.Sleep(80); CheckDesktopTarget(screen, bounds, cursorAtTarget: true);
+            Native.Send(hwnd, 0x020A, new IntPtr(0x01680000), Native.Pack(screen.X, screen.Y));
+        });
         Wait(() => pattern.Current.VerticalScrollPercent < after - .1, "real reverse wheel changed ScrollPattern offset"); Stable("wheel-up"); Capture("wheel-up");
         steps.Add(new { Action = "wheel", BeforePercent = before, AfterPercent = after, ReturnedPercent = pattern.Current.VerticalScrollPercent, Input = "owned WM_MOUSEWHEEL +/-360" });
         // Return to the safe launch page; no download/login/update/link/UAC/clear action exists here.
@@ -286,6 +388,11 @@ internal static class Native
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll")] internal static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] internal static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref Point point);
