@@ -160,6 +160,7 @@ public sealed class LegacyMainWindowHost<TStack, TInstance, TAnimation>
     public Func<MyPageLeftView> NewBlankLeft = null!;
     public Func<object, string> HelpTitle = null!;
     public Func<bool> HasDownloadingTask = null!, HasLaunchOperation = null!, HasRunningMinecraft = null!;
+    public Func<bool> HasBlockingFileOperation = () => false;
     public Func<IEnumerable<Action>> TaskbarCancels = null!, WatcherKills = null!;
     public Action CancelLaunchOperation = null!, MusicPause = null!, MusicNext = null!;
     public Func<bool, bool, bool> LinkTryExit = null!;

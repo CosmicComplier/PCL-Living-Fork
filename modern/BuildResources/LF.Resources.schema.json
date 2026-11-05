@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "basename": "PCL.Resources",
   "nativeMainProject": "../modern/Main/PCL-Living-Fork.Modern.csproj",
   "provenance": {
@@ -9,22 +9,6 @@
     "license": "LICENCE"
   },
   "payloads": [
-    {
-      "key": "CacheCow.Client",
-      "source": "Resources/CacheCow.Client.dll"
-    },
-    {
-      "key": "CacheCow.Client.FileStore",
-      "source": "Resources/CacheCow.Client.FileStore.dll"
-    },
-    {
-      "key": "CacheCow.Common",
-      "source": "Resources/CacheCow.Common.dll"
-    },
-    {
-      "key": "ThrottleDebounce",
-      "source": "Resources/ThrottleDebounce.dll"
-    },
     {
       "key": "Custom",
       "source": "resources/custom.xaml"
@@ -38,39 +22,8 @@
       "source": "Resources/Help.zip"
     },
     {
-      "key": "Imazen.WebP",
-      "source": "Resources/Imazen.WebP.dll"
-    },
-    {
       "key": "libwebp64",
       "source": "Resources/libwebp64.dll"
-    },
-    {
-      "key": "MeloongCore"
-    },
-    {
-      "key": "Microsoft.Win32.Registry"
-    },
-    {
-      "key": "NAudio",
-      "source": "Resources/NAudio.dll"
-    },
-    {
-      "key": "Newtonsoft.Json"
-    },
-    {
-      "key": "Ookii.Dialogs.Wpf",
-      "source": "resources/ookii.dialogs.wpf.dll"
-    },
-    {
-      "key": "PCLCS"
-    },
-    {
-      "key": "PCLLF.Presentation"
-    },
-    {
-      "key": "System.Net.Http.Formatting",
-      "source": "Resources/System.Net.Http.Formatting.dll"
     },
     {
       "key": "Transformer",
@@ -78,22 +31,6 @@
     }
   ],
   "typedProperties": [
-    {
-      "name": "CacheCow_Client",
-      "key": "CacheCow.Client"
-    },
-    {
-      "name": "CacheCow_Client_FileStore",
-      "key": "CacheCow.Client.FileStore"
-    },
-    {
-      "name": "CacheCow_Common",
-      "key": "CacheCow.Common"
-    },
-    {
-      "name": "ThrottleDebounce",
-      "key": "ThrottleDebounce"
-    },
     {
       "name": "Custom",
       "key": "Custom"
@@ -107,51 +44,28 @@
       "key": "Help"
     },
     {
-      "name": "Imazen_WebP",
-      "key": "Imazen.WebP"
-    },
-    {
       "name": "libwebp64",
       "key": "libwebp64"
     },
     {
-      "name": "MeloongCore",
-      "key": "MeloongCore"
-    },
-    {
-      "name": "NAudio",
-      "key": "NAudio"
-    },
-    {
-      "name": "Newtonsoft_Json",
-      "key": "Newtonsoft.Json"
-    },
-    {
-      "name": "Ookii_Dialogs_Wpf",
-      "key": "Ookii.Dialogs.Wpf"
-    },
-    {
-      "name": "PCLCS",
-      "key": "PCLCS"
-    },
-    {
-      "name": "System_Net_Http_Formatting",
-      "key": "System.Net.Http.Formatting"
-    },
-    {
       "name": "Transformer",
       "key": "Transformer"
-    },
-    {
-      "name": "Microsoft_Win32_Registry",
-      "key": "Microsoft.Win32.Registry"
-    },
-    {
-      "name": "PCLLF_Presentation",
-      "key": "PCLLF.Presentation"
     }
   ],
   "excludedKeys": [
-    "MeloongCore.Wpf"
+    "MeloongCore.Wpf",
+    "CacheCow.Client",
+    "CacheCow.Client.FileStore",
+    "CacheCow.Common",
+    "ThrottleDebounce",
+    "Imazen.WebP",
+    "MeloongCore",
+    "Microsoft.Win32.Registry",
+    "NAudio",
+    "Newtonsoft.Json",
+    "Ookii.Dialogs.Wpf",
+    "PCLCS",
+    "PCLLF.Presentation",
+    "System.Net.Http.Formatting"
   ]
 }

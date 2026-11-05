@@ -54,21 +54,20 @@ internal static class ControlOriginalChecks
             Native.Check(control.Assembly == Native.Main, "Original control bound away from actual Main: " + control.FullName);
         FieldInfo bound = (FieldInfo)Native.Field(typeof(ControlMigratedChecks), "LastTick").GetValue(null)!;
         Native.Check(bound.DeclaringType!.Assembly == Native.Main, "Compiled control verifier did not bind original AniLastTick to actual Main.");
-        var manager = (ResourceManager)Native.Property(Native.Type("PCL.My.Resources.Resources"), "ResourceManager").GetValue(null)!;
-        VerifyEmbedded(manager, "PCLLF.Presentation", typeof(MyButtonView).Assembly);
-        VerifyEmbedded(manager, "PCLCS", typeof(CustomEventCollection).BaseType!.Assembly);
+        VerifyDependency("PCLLF.Presentation", typeof(MyButtonView).Assembly);
+        VerifyDependency("PCLCS", typeof(CustomEventCollection).BaseType!.Assembly);
         string mainReference = Path.Combine(AppContext.BaseDirectory, "LivingPCL.dll");
         VerifyMetadata(File.ReadAllBytes(mainReference), Native.Main, "actual Main compiler/staged reference");
         Native.Check(Native.Full(Native.Main.Location) == Native.Full(mainReference), "Actual Main was rebound outside its own isolated staged reference.");
     }
-    private static void VerifyEmbedded(ResourceManager manager, string key, Assembly loaded)
+    private static void VerifyDependency(string key, Assembly loaded)
     {
         Native.Check(loaded.GetName().Name == key, "Unexpected actual control dependency: " + loaded.FullName);
-        byte[] bytes = manager.GetObject(key, CultureInfo.InvariantCulture) as byte[] ?? throw new InvalidOperationException("Missing genuine Main embedded dependency: " + key);
         string reference = Path.Combine(AppContext.BaseDirectory, key + ".dll");
-        Native.Check(bytes.Length > 0 && SHA256.HashData(bytes).SequenceEqual(SHA256.HashData(File.ReadAllBytes(reference))), "Embedded actual Main dependency bytes differ from the staged build reference: " + key);
+        byte[] bytes = File.ReadAllBytes(reference);
+        Native.Check(bytes.Length > 0 && Native.Full(loaded.Location) == Native.Full(reference), "Actual Main dependency did not use the staged build reference: " + key);
         VerifyMetadata(bytes, loaded, key);
-        Console.WriteLine("PASS actual Main control binding " + key + ": embedded SHA256=" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() + ", runtime MVID=" + loaded.ManifestModule.ModuleVersionId + "; facade runtime Location=" + loaded.Location + ". Native cold/memory-only loading is validated by its separate genuine EXE gate.");
+        Console.WriteLine("PASS actual Main control binding " + key + ": dependency SHA256=" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() + ", runtime MVID=" + loaded.ManifestModule.ModuleVersionId + "; facade runtime Location=" + loaded.Location + ". Native cold/memory-only loading is validated by its separate genuine EXE gate.");
     }
     private static void VerifyMetadata(byte[] bytes, Assembly loaded, string label)
     {

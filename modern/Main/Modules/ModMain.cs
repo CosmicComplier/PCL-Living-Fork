@@ -71,6 +71,7 @@ namespace PCL
         public static PageSetupLaunch FrmSetupLaunch;
         public static PageSetupUI FrmSetupUI;
         public static PageSetupSystem FrmSetupSystem;
+        public static PageSetupUpdate FrmSetupUpdate;
 #if LEGACY_LINK
         public static PageSetupLink FrmSetupLink;
 #endif

@@ -2,21 +2,12 @@ name: Build
 
 on:
   push:
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!LICENCE'
-      - '!LICENSE'
-      - '!NOTICE.md'
+    branches: [main, migration/csharp-modern-dotnet]
   pull_request:
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!LICENCE'
-      - '!LICENSE'
-      - '!NOTICE.md'
+    branches: [main, migration/csharp-modern-dotnet]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +18,6 @@ jobs:
   native-product:
     # One canonical genuine Native build and complete original LF acceptance.
     name: LF CSharp NET10 WPF product and original consumer acceptance
-    if: github.ref == 'refs/heads/migration/csharp-modern-dotnet' || (github.event_name == 'pull_request' && github.base_ref == 'migration/csharp-modern-dotnet')
     permissions:
       contents: read
       actions: read

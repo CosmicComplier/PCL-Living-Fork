@@ -2,27 +2,12 @@ name: Migration validation
 
 on:
   push:
-    branches:
-      - migration/csharp-modern-dotnet
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!LICENCE'
-      - '!LICENSE'
-      - '!NOTICE.md'
-      - 'docs/migration/source-inventory.baseline.json'
+    branches: [main, migration/csharp-modern-dotnet]
   pull_request:
-    branches:
-      - migration/csharp-modern-dotnet
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!LICENCE'
-      - '!LICENSE'
-      - '!NOTICE.md'
-      - 'docs/migration/source-inventory.baseline.json'
+    branches: [main, migration/csharp-modern-dotnet]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -32,7 +17,6 @@ jobs:
   select:
     name: Select affected checks (manual dispatch runs all)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/migration/csharp-modern-dotnet'
     outputs:
       product_build: ${{ steps.scope.outputs.product_build }}
       migration_run: ${{ steps.scope.outputs.migration_run }}
@@ -159,3 +143,21 @@ jobs:
           name: migration-source-inventory-${{ matrix.os }}
           path: artifacts/migration/source-inventory.baseline.json
           if-no-files-found: error
+
+  gate:
+    name: Migration validation gate
+    if: always()
+    needs: [select, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Require the actual selected validation result
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+          VALIDATION_SELECTED: ${{ needs.select.outputs.migration_run }}
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+        run: python scripts/Check-CiGate.py

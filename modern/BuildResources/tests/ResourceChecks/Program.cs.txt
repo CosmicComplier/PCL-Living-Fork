@@ -20,7 +20,7 @@ static class Program {
         return values;
     }
     static void Check(Dictionary<string, byte[]> actual, Dictionary<string, string> expected, string stage) {
-        Require(actual.Count == 18 && actual.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expected.Keys), stage + " key set changed");
+        Require(actual.Count == 5 && actual.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(expected.Keys), stage + " key set changed");
         foreach (var pair in actual) Require(Hash(pair.Value) == expected[pair.Key], stage + " bytes/BOM changed: " + pair.Key);
         Require(!actual.ContainsKey("MeloongCore.Wpf"), stage + " includes retired Wpf");
     }
@@ -50,8 +50,8 @@ static class Program {
             Require(getter.CanRead && !getter.CanWrite && getter.PropertyType == typeof(byte[]), "Typed getter shape changed");
         }
         if (args[4] == "defer-windows-getters") {
-            Console.WriteLine("PASS 18 generated blobs + 18 actual Main blobs and actual getter metadata");
-            Console.WriteLine("PENDING 54 actual Main getter calls and Culture/ResourceManager runtime checks; rerun on Windows without --defer-windows-getters");
+            Console.WriteLine("PASS 5 generated blobs + 5 actual Main blobs and actual getter metadata");
+            Console.WriteLine("PENDING 15 actual Main getter calls and Culture/ResourceManager runtime checks; rerun on Windows without --defer-windows-getters");
             return;
         }
         Require(args[4] == "full", "Unknown reader mode");
@@ -70,7 +70,7 @@ static class Program {
                 }
             }
         } finally { culture.SetValue(null, null); }
-        Require(count == 54 && manager.GetObject("MeloongCore.Wpf") is null, "Culture/retired-key contract changed");
-        Console.WriteLine("PASS 18 generated blobs + 18 actual Main blobs, 54 actual Main getters, Culture/ResourceManager; no replacement production types");
+        Require(count == 15 && manager.GetObject("MeloongCore.Wpf") is null, "Culture/retired-key contract changed");
+        Console.WriteLine("PASS 5 generated blobs + 5 actual Main blobs, 15 actual Main getters, Culture/ResourceManager; no replacement production types");
     }
 }

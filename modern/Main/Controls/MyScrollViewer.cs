@@ -34,7 +34,7 @@ namespace PCL
         }
         protected override void RefreshBack()
         {
-            ModMain.FrmMain.BtnExtraBack.ShowRefresh();
+            ModMain.FrmMain?.BtnExtraBack?.ShowRefresh();
         }
     }
 }

@@ -30,6 +30,7 @@ internal static class ModpackUpdateChecks
     {
         string root = Path.Combine(environment.Data, "modpack-update-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        ModpackArchiveEncodingChecks.Run(root);
         TransactionFixtures(root);
         Console.WriteLine("PASS native modpack-update transaction: MP-01..MP-20 (real archive/JSON/merge/backup/recovery and path guards).");
         ModpackUpdateUxChecks.Run(root);

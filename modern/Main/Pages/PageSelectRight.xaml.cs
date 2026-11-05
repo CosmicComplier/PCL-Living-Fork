@@ -97,7 +97,8 @@ namespace PCL
                 SetButtons = new Action<global::System.Windows.FrameworkElement, global::System.Collections.Generic.IEnumerable<global::System.Windows.FrameworkElement>>((Row, Buttons) => ((global::PCL.MyListItem)Row).Buttons = Buttons.Cast<MyIconButton>().ToArray()),
                 BindClick = new Action<global::System.Windows.FrameworkElement, global::System.Action<global::System.Windows.FrameworkElement, global::System.EventArgs>>((Row, Click) => ((global::PCL.MyListItem)Row).Click += (Sender, Args) => Click((global::System.Windows.FrameworkElement)Sender, Args)),
                 BindRightClick = new Action<global::System.Windows.FrameworkElement, global::System.Action>((Row, Click) => Row.MouseRightButtonUp += (_, __) => Click()),
-                WriteIni = new Action<global::System.String, global::System.String, global::System.Object>((File, Key, Value) => global::PCL.ModBase.WriteIni(File, Key, Conversions.ToString(Value)))
+                WriteIni = new Action<global::System.String, global::System.String, global::System.Object>((File, Key, Value) => global::PCL.ModBase.WriteIni(File, Key, Conversions.ToString(Value))),
+                DeleteConfirmed = DeleteInstanceInBackground
             };
         }
 
@@ -290,6 +291,47 @@ namespace PCL
         public static void DeleteInstance(global::PCL.MyListItem Item, global::PCL.ModMinecraft.McInstance Instance)
         {
             global::PCLCS.InstanceSelectionPageController<global::PCL.ModMinecraft.McInstance, global::PCL.ModMinecraft.McInstance.McInstanceState, global::PCL.ModMinecraft.McInstanceCardType, global::PCL.InstanceCloneGroupNode, global::PCL.InstanceCloneGroupSet>.Delete(Item, Instance, global::PCL.PageSelectRight.CreateHost((global::PCL.PageSelectRight)null));
+        }
+
+        internal static IWorker BeginInstanceDeletion(ModMinecraft.McInstance instance, bool recycle, Action completed)
+        {
+            string path = instance.PathVersion;
+            string name = instance.Name;
+            var dispatcher = System.Windows.Application.Current.Dispatcher;
+            return InstanceDeletionOperation.Start(
+                () => InstanceFolderDeletion.Delete(path, recycle, RecycleInstanceFolder),
+                worker => ModMinecraft.McInstanceLock.TryAcquire(worker, path),
+                worker => ModMinecraft.McInstanceLock.Release(worker, path),
+                work => dispatcher.InvokeAsync(work),
+                () => {
+                    try { completed(); }
+                    catch (Exception error) { Logger.Error(error, "删除完成后刷新版本列表失败", LogBehavior.Alert); }
+                },
+                error => Logger.Error(error, "删除版本 " + name + " 失败", LogBehavior.Alert),
+                () => ModMain.Hint("已取消删除版本 " + name + "。", ModMain.HintType.Blue));
+        }
+        private static void RecycleInstanceFolder(string path)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo failure = null;
+            void Recycle()
+            {
+                try { Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(path, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                    Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin, Microsoft.VisualBasic.FileIO.UICancelOption.ThrowException); }
+                catch (Exception error) { failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error); }
+            }
+            if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA) Recycle();
+            else
+            {
+                var thread = new Thread(Recycle) { IsBackground = true, Name = "Recycle Minecraft Instance" };
+                thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
+            }
+            failure?.Throw();
+        }
+        internal static void DeleteInstanceInBackground(ModMinecraft.McInstance instance, bool recycle, Action completed)
+        {
+            if (BeginInstanceDeletion(instance, recycle, completed) is null)
+                ModMain.Hint("该版本正在被修改，请稍后再删除！", ModMain.HintType.Red);
+            else ModMain.Hint("正在删除版本 " + instance.Name + "……", ModMain.HintType.Blue);
         }
 
         internal static global::PCL.ModMinecraft.McInstance ResolveDeleteTarget(global::PCL.MyListItem Item, global::PCL.ModMinecraft.McInstance Expected)

@@ -45,7 +45,7 @@ internal sealed class FixtureEnvironment : IDisposable
             VerifyMainBaml();
             object info = Native.Property(application.GetType(), "Info").GetValue(application)!;
             Native.Check((string)Native.Property(info.GetType(), "AssemblyName").GetValue(info)! == Native.Main.GetName().Name, "My.Application.Info used the TestHost entry identity.");
-            string[] keys = ["CacheCow.Client", "CacheCow.Client.FileStore", "CacheCow.Common", "ThrottleDebounce", "Custom", "ForgeInstaller", "Help", "Imazen.WebP", "libwebp64", "MeloongCore", "Microsoft.Win32.Registry", "NAudio", "Newtonsoft.Json", "Ookii.Dialogs.Wpf", "PCLCS", "PCLLF.Presentation", "System.Net.Http.Formatting", "Transformer"];
+            string[] keys = ["Custom", "ForgeInstaller", "Help", "libwebp64", "Transformer"];
             var manager = (System.Resources.ResourceManager)Native.Property(Native.Type("PCL.My.Resources.Resources"), "ResourceManager").GetValue(null)!;
             foreach (string key in keys)
             {
@@ -54,6 +54,8 @@ internal sealed class FixtureEnvironment : IDisposable
             }
 
             Native.Check(manager.GetObject("MeloongCore.Wpf", System.Globalization.CultureInfo.InvariantCulture)is null, "Retired WPF assembly was rebound into modern resources.");
+            foreach (string key in new[] { "CacheCow.Client", "CacheCow.Client.FileStore", "CacheCow.Common", "ThrottleDebounce", "Imazen.WebP", "MeloongCore", "Microsoft.Win32.Registry", "NAudio", "Newtonsoft.Json", "Ookii.Dialogs.Wpf", "PCLCS", "PCLLF.Presentation", "System.Net.Http.Formatting" })
+                Native.Check(manager.GetObject(key, System.Globalization.CultureInfo.InvariantCulture) is null, "Duplicate managed payload is still embedded: " + key);
             AssertNoForbiddenIo();
         }
         catch

@@ -18,8 +18,7 @@ internal static partial class LauncherLifecycleChecks
         try
         {
             Check("activation:27", (IntPtr)Native.Static("PCL.LauncherWindowActivation", "FindWindowW", null, title)! == window);
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            byte[] ansi = Encoding.GetEncoding(1252).GetBytes(title + "\0"); IntPtr buffer = Marshal.AllocHGlobal(ansi.Length);
+            byte[] ansi = CodePagesEncodingProvider.Instance.GetEncoding(1252)!.GetBytes(title + "\0"); IntPtr buffer = Marshal.AllocHGlobal(ansi.Length);
             try { Marshal.Copy(ansi, 0, buffer, ansi.Length); Check("activation:32", FindWindowA(IntPtr.Zero, buffer) == IntPtr.Zero); }
             finally { Marshal.FreeHGlobal(buffer); }
         }

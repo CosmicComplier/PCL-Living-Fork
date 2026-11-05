@@ -193,6 +193,8 @@
                         <RowDefinition Height="60" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="60" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Java Launch Wrapper" TextWrapping="Wrap" FontWeight="Bold" />
@@ -276,6 +278,11 @@
                                     local:CustomEventService.EventType="打开网页" local:CustomEventService.EventData="https://github.com/HMCL-dev/HMCL/tree/main/minecraft/libraries/HMCLTransformerDiscoveryService" />
                     <local:MyButton Grid.Row="21" Grid.Column="3" MinWidth="140" Text="查看许可文档" Padding="13,0" Margin="0,7,20,18" HorizontalAlignment="Left"
                                     local:CustomEventService.EventType="打开网页" local:CustomEventService.EventData="https://github.com/HMCL-dev/HMCL/blob/main/LICENSE" />
+                    <TextBlock Grid.Row="22" Grid.Column="0" Text="Markdig" TextWrapping="Wrap" FontWeight="Bold" />
+                    <TextBlock Grid.Row="22" Grid.Column="2" Grid.ColumnSpan="2" Text="Copyright © 2016–2026 Alexandre Mutel&#xa;Licensed under the BSD 2-Clause License." TextWrapping="Wrap" />
+                    <Expander Grid.Row="23" Grid.Column="2" Grid.ColumnSpan="2" Header="查看 Markdig 完整许可" Margin="0,7,0,18">
+                        <TextBlock x:Name="LabMarkdigLicense" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"/>
+                    </Expander>
                 </Grid>
             </local:MyCard>
         </StackPanel>

@@ -25,6 +25,9 @@ namespace PCL
         {
             __LfAttachOwnHandles();
             this.InitializeComponent();
+            using var license = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/LivingPCL;component/Licenses/Markdig.txt")).Stream;
+            using var reader = new System.IO.StreamReader(license);
+            LabMarkdigLicense.Text = reader.ReadToEnd();
         }
 
         private void PageOtherAbout_Loaded(object sender, RoutedEventArgs e)

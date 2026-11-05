@@ -12,11 +12,14 @@ namespace PCL
         /// <inheritdoc/>
         public override string Format(string Text, LogLevel Level, string FilePath, Exception Ex)
         {
-            Text = base.Format(Text, Level, FilePath, Ex);
+            Text = ModernizeRuntimeMessage(base.Format(Text, Level, FilePath, Ex));
             Text = ModMinecraft.FilterUserName(ModMinecraft.FilterAccessToken(Text, '*'), '*');
             return Text;
         }
         private bool _HandleBehavior_FirstTrigger = true;
+        internal static string ModernizeRuntimeMessage(string text) => text?.Replace(
+            "运行环境存在问题。请尝试重新安装 .NET Framework 4.8 然后再试。若无法安装，请先卸载较新版本的 .NET Framework，然后再尝试安装。",
+            "启动器组件未能正确加载，请重新解压完整构建，并查看日志中的具体错误。");
 
         /// <inheritdoc/>
         public override void HandleBehavior(string RawMessage, string FormattedMessage, LogBehavior Behavior, Exception Ex)
@@ -25,9 +28,9 @@ namespace PCL
                 return;
             base.HandleBehavior(RawMessage, FormattedMessage, Behavior, Ex);
             string BriefText = Ex is null ? RawMessage : (RawMessage is null ? "" : $"{RawMessage}：") + Ex.GetDisplay(false);
-            BriefText = ModMinecraft.FilterUserName(ModMinecraft.FilterAccessToken(BriefText, '*'), '*');
+            BriefText = ModernizeRuntimeMessage(ModMinecraft.FilterUserName(ModMinecraft.FilterAccessToken(BriefText, '*'), '*'));
             string DetailText = Ex is null ? RawMessage : (RawMessage is null ? "" : $"{RawMessage}：") + Ex.GetDisplay(true);
-            DetailText = ModMinecraft.FilterUserName(ModMinecraft.FilterAccessToken(DetailText, '*'), '*');
+            DetailText = ModernizeRuntimeMessage(ModMinecraft.FilterUserName(ModMinecraft.FilterAccessToken(DetailText, '*'), '*'));
             switch (Behavior)
             {
                 case LogBehavior.None:

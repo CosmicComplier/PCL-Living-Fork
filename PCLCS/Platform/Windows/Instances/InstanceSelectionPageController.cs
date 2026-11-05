@@ -37,6 +37,7 @@ public sealed class InstanceSelectionPageHost<TInstance, TCard> where TInstance 
     public Action<FrameworkElement, Action<FrameworkElement, EventArgs>> BindClick = null!;
     public Action<FrameworkElement, Action> BindRightClick = null!;
     public Action<string, string, object> WriteIni = null!;
+    public Action<TInstance, bool, Action> DeleteConfirmed = null!;
 }
 // Complete LF PageSelectRight workflow, including clone groups and guarded deletion.
 // LF source and LICENCE; C012 clone presenter is reused directly, not reconstructed or copied.
@@ -119,12 +120,18 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
             DirectoryInfo savesFolder = DirectoryUtils.GetInfo(instance.PathIndie + "saves\\");
             List<string> saves = hintIndie && savesFolder.Exists ? savesFolder.EnumerateDirectories().OrderByDescending(save => save.LastWriteTime).Select(save => $"{save.Name}（上次修改：{StringUtils.FormatTimeSpan(save.LastWriteTime - DateTime.Now, false)}）").ToList() : new();
             int choice = host.Message(new SelectionPageMessage { Text = $"你确定要{(shift ? "永久" : "")}删除版本 {instance.Name} 吗？" + (hintIndie ? "\r\n该版本对应的存档、资源包、Mod 等文件也将被一并删除！" : "") + (saves.Any() ? "\r\n\r\n这会删除以下存档：\r\n· " + string.Join("\r\n· ", saves) : ""), Title = "版本删除确认", Button2 = "取消", IsWarn = true });
-            switch (choice) { case 1: instance.ResetSettingsCache(); DirectoryUtils.Delete(instance.PathVersion, !shift); host.Hint("版本 " + instance.Name + " 已删除！", SelectionPageHint.Green); break; case 2: return; default: return; }
-            host.SetInstances(WithoutDeletedInstance(host.Instances(), instance.PathVersion));
-            TInstance? next = SelectionAfterDelete(host.SelectedInstance(), instance.PathVersion);
-            if (!ReferenceEquals(next, host.SelectedInstance())) host.SetSelectedInstance(next);
-            if (host.InstancePage() is not null && PathUtils.IsSame(host.InstancePage()!.PathVersion, instance.PathVersion)) host.SetInstancePage(null);
-            host.ForceRefresh(); host.RefreshInstances(true);
+            if (choice != 1) return;
+            TInstance target = instance;
+            target.ResetSettingsCache();
+            host.DeleteConfirmed(target, !shift, () => {
+                host.Hint("版本 " + target.Name + " 已删除！", SelectionPageHint.Green);
+                host.SetInstances(WithoutDeletedInstance(host.Instances(), target.PathVersion));
+                TInstance? current = host.SelectedInstance();
+                TInstance? next = SelectionAfterDelete(current, target.PathVersion);
+                if (!ReferenceEquals(next, current)) host.SetSelectedInstance(next);
+                if (host.InstancePage() is TInstance shown && PathUtils.IsSame(shown.PathVersion, target.PathVersion)) host.SetInstancePage(null);
+                host.ForceRefresh(); host.RefreshInstances(true);
+            });
         } catch (OperationCanceledException error) { Logger.Warn(error, "删除版本 " + (instance?.Name ?? "未知版本") + " 被主动取消"); }
         catch (Exception error) { Logger.Error(error, "删除版本 " + (instance?.Name ?? "未知版本") + " 失败", LogBehavior.Alert); }
     }

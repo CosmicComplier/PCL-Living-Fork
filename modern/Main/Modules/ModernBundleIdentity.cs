@@ -124,18 +124,37 @@ internal static class ModernBundleIdentity
         using (JsonDocument runtime = JsonDocument.Parse(ReadBytes(file, config.Offset, checked((int)config.Size)), new JsonDocumentOptions { MaxDepth = 16 }))
         {
             JsonElement options = runtime.RootElement.GetProperty("runtimeOptions");
-            if (!options.TryGetProperty("tfm", out JsonElement tfm) || tfm.GetString() != "net10.0" || options.TryGetProperty("framework", out _) || options.TryGetProperty("frameworks", out _) ||
-                !options.TryGetProperty("includedFrameworks", out JsonElement frameworks) || frameworks.ValueKind != JsonValueKind.Array ||
+            if (!options.TryGetProperty("tfm", out JsonElement tfm) || tfm.GetString() != "net10.0" || options.TryGetProperty("framework", out _))
+                throw Bad("The payload must declare the supported NET10 runtime.");
+            bool selfContained = options.TryGetProperty("includedFrameworks", out JsonElement included);
+            bool dependent = options.TryGetProperty("frameworks", out JsonElement required);
+            if (selfContained == dependent) throw Bad("The payload must declare exactly one runtime deployment mode.");
+            JsonElement frameworks = selfContained ? included : required;
+            if (frameworks.ValueKind != JsonValueKind.Array ||
                 !frameworks.EnumerateArray().Any(value => value.TryGetProperty("name", out JsonElement name) && name.GetString() == "Microsoft.NETCore.App" &&
                     value.TryGetProperty("version", out JsonElement version) && Version.TryParse(version.GetString(), out Version? parsed) && parsed.Major == 10))
-                throw Bad("The payload must be a self-contained NET10 publish.");
+                throw Bad("The payload requires NET10.");
+            if (dependent)
+            {
+                // Slim LF is a WindowsDesktop product, not an arbitrary console
+                // apphost or an undeclared runtime. Keep the PE/entry checks below.
+                var names = new HashSet<string>(StringComparer.Ordinal);
+                foreach (JsonElement framework in frameworks.EnumerateArray())
+                {
+                    if (!framework.TryGetProperty("name", out JsonElement name) || !names.Add(name.GetString() ?? "") ||
+                        !framework.TryGetProperty("version", out JsonElement version) || !Version.TryParse(version.GetString(), out Version? parsed) ||
+                        parsed.Major != 10 || parsed.Minor != 0) throw Bad("Unsupported slim runtime dependency.");
+                }
+                if (!names.SetEquals(new[] { "Microsoft.NETCore.App", "Microsoft.WindowsDesktop.App" }))
+                    throw Bad("Slim LF requires the NET10 WindowsDesktop runtime.");
+            }
         }
         // The actual apphost binding string lies in its original PE image, never
         // inferred from the renamed on-disk executable or a VersionInfo caption.
         byte[] binding = StrictUtf8.GetBytes(app.Path + "\0");
         if (host.AsSpan().IndexOf(binding) < 0) throw Bad("The apphost does not bind this entry DLL.");
         if (app.Size > MaxEntryBytes) throw Bad("Entry assembly exceeds the supported bound.");
-        using MemoryStream image = new(ReadBytes(file, app.Offset, checked((int)app.Size)), writable: false);
+        using MemoryStream image = new(ReadPayload(file, app.Offset, app.Size), writable: false);
         using PEReader entryPe = new(image);
         if (!entryPe.HasMetadata || entryPe.PEHeaders.CorHeader is null || (entryPe.PEHeaders.CorHeader.Flags & CorFlags.NativeEntryPoint) != 0)
             throw Bad("The entry must be a real managed assembly.");
@@ -198,6 +217,35 @@ internal static class ModernBundleIdentity
         }
         if (product is null || !framework10) throw Bad("Missing actual NET10 entry product metadata.");
         return new Identity(identity, product, assembly.Version, fileVersion, productVersion, app.Path, headerOffset, app.Offset, app.Size);
+    }
+    internal static byte[] ReadEntryAssembly(string path, Identity identity)
+    {
+        using FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return ReadPayload(file, identity.EntryOffset, identity.EntrySize);
+    }
+    internal static byte[] ReadBundledAssembly(string path, string modulePath)
+    {
+        Identity identity = Read(path);
+        using FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using BinaryReader reader = new(file, StrictUtf8, leaveOpen: true);
+        file.Position = identity.HeaderOffset;
+        _ = reader.ReadUInt64();
+        int count = reader.ReadInt32();
+        _ = ReadString(reader, 12);
+        file.Position += 40;
+        for (int index = 0; index < count; index++)
+        {
+            long offset = reader.ReadInt64(), size = reader.ReadInt64();
+            _ = reader.ReadInt64();
+            byte type = reader.ReadByte(); string name = ReadString(reader, 1024);
+            if (type == 1 && name == modulePath) return ReadPayload(file, offset, size);
+        }
+        throw Bad("The requested managed bundle module is absent.");
+    }
+    private static byte[] ReadPayload(FileStream file, long offset, long size)
+    {
+        if (size <= 0 || size > MaxEntryBytes) throw Bad("Invalid bounded assembly payload size.");
+        return ReadBytes(file, offset, checked((int)size));
     }
     private static Entry Unique(List<Entry> entries, string path, byte type)
     {

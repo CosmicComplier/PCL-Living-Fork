@@ -6,6 +6,7 @@
  [string]$NativeInspectorProject,
  [string]$NativeUpdaterSource,
  [switch]$BridgeOnly,
+ [switch]$OfficialRelease,
  [switch]$EnableLegacyLink
 )
 # Build/package only. This script never publishes a GitHub release, starts a
@@ -22,7 +23,7 @@ try{
  $payloadFolder=Join-Path $temporary 'Payload'
  # Keep the original C# credential generator/lease/cleanup boundary for the
  # actual Main publish. The wrapper owns the one credential GUID lifecycle.
- & (Join-Path $PSScriptRoot 'Build-ModernRelease.ps1') -Configuration $Configuration -OutputPath $payloadFolder -DotnetPath $DotNetPath -ProjectPath $NativeProjectPath -NativePayload -EnableLegacyLink:$EnableLegacyLink
+ & (Join-Path $PSScriptRoot 'Build-ModernRelease.ps1') -Configuration $Configuration -OutputPath $payloadFolder -DotnetPath $DotNetPath -ProjectPath $NativeProjectPath -NativePayload -OfficialRelease:$OfficialRelease -EnableLegacyLink:$EnableLegacyLink
  $payload=Join-Path $payloadFolder 'LivingPCL.exe'
  if(-not [IO.File]::Exists($payload)){throw 'Native publish did not produce LivingPCL.exe'}
  $sidecars=@(Get-ChildItem -LiteralPath $payloadFolder -File|Where-Object Name -ne 'LivingPCL.exe')
@@ -35,7 +36,7 @@ try{
  $identity=($identityJson -join "`n")|ConvertFrom-Json
  if($identity.AssemblyName -ne 'LivingPCL' -or $identity.Product -ne 'PCL Living Fork'){throw 'Native payload branding/assembly identity mismatch'}
  $productVersion=$identity.ProductVersion
- if($productVersion -notmatch '\A\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\z'){throw 'The actual entry has an invalid product version'}
+ if($productVersion -ne 'dev_edition' -and $productVersion -notmatch '\A\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\z'){throw 'The actual entry has an invalid product version'}
  $canonicalName='PCL-Living-Fork-'+$productVersion+'.exe'
  $canonical=Join-Path $temporary $canonicalName
  & (Join-Path $PSScriptRoot 'Build-UpdateBridge.ps1') -ExecutablePath $payload -OutputPath $canonical -DotNetPath $DotNetPath -NativeInspectorProject $NativeInspectorProject -NativeUpdaterSource $NativeUpdaterSource

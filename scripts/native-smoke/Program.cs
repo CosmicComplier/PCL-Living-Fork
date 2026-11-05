@@ -13,7 +13,7 @@ using System.Text.Json;
 using PCL;
 
 // The original one-argument mode only reads trusted CI artifact metadata.
-// The optional startup-fixture mode loads the actual embedded Core/Shared
+// The optional startup-fixture mode loads the actual bundled Core/Shared
 // crypto leaf; it never loads Main/App/WPF, Settings or credential code.
 // The production bounded bundle reader is linked once.
 bool startupSentinels=args.Length==4 && args[0]=="--startup-sentinels";
@@ -21,8 +21,7 @@ if(args.Length!=1 && !startupSentinels)throw new ArgumentException("Provide the 
 try {
  string path=Path.GetFullPath(startupSentinels?args[1]:args[0]);var identity=ModernBundleIdentity.Read(path);
  if(identity.AssemblyName!="LivingPCL" || identity.Product!="PCL Living Fork")throw new InvalidDataException("Not the normal LF native product.");
- using FileStream file=new(path,FileMode.Open,FileAccess.Read,FileShare.Read);
- byte[] bytes=new byte[checked((int)identity.EntrySize)];file.Position=identity.EntryOffset;file.ReadExactly(bytes);
+ byte[] bytes=ModernBundleIdentity.ReadEntryAssembly(path,identity);
  using MemoryStream image=new(bytes,false);using PEReader pe=new(image);MetadataReader metadata=pe.GetMetadataReader();
  int token=pe.PEHeaders.CorHeader!.EntryPointTokenOrRelativeVirtualAddress;
  MethodDefinition main=metadata.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(token&0xffffff));
@@ -55,20 +54,23 @@ try {
   using MemoryStream raw=new(block.GetContent(offset+4,length).ToArray(),false);using ResourceReader reader=new(raw);
   var keys=new HashSet<string>(StringComparer.Ordinal);IDictionaryEnumerator enumerator=reader.GetEnumerator();while(enumerator.MoveNext()) {
    string key=(string)enumerator.Key;keys.Add(key);
-   if(startupSentinels && resourceName=="PCL.Resources.resources" && key is "PCLCS" or "MeloongCore" or "Newtonsoft.Json") {
-    if(enumerator.Value is not byte[] module || module.Length<1 || module.Length>16*1024*1024)throw new InvalidDataException("Invalid actual startup crypto module payload.");
-    startupModules.Add(key,module);
-   }
+
   }
   resources.Add(resourceName,keys);
  }
  if(!resources.TryGetValue("PCL.Resources.resources",out var payloads))throw new InvalidDataException("Actual LF ResourceManager resource is missing.");
- foreach(string key in new[]{"PCLCS","PCLLF.Presentation","MeloongCore","Newtonsoft.Json"})if(!payloads.Contains(key))throw new InvalidDataException("Actual Main runtime resource missing: "+key);
+ if(!payloads.SetEquals(new[]{"Custom","ForgeInstaller","Help","libwebp64","Transformer"}))throw new InvalidDataException("Unexpected actual LF payload set.");
+ foreach(string key in new[]{"PCLCS","PCLLF.Presentation","MeloongCore","Newtonsoft.Json"}) {
+  byte[] module=ModernBundleIdentity.ReadBundledAssembly(path,key+".dll");
+  if(module.Length<1 || module.Length>16*1024*1024)throw new InvalidDataException("Invalid actual bundled dependency.");
+  if(startupSentinels && key!="PCLLF.Presentation")startupModules.Add(key,module);
+ }
+
  var wpf=resources.Where(pair=>pair.Key.EndsWith(".g.resources",StringComparison.Ordinal)).Select(pair=>pair.Value).Single();
  var normalized=new HashSet<string>(wpf.Select(key=>key.ToLowerInvariant()),StringComparer.Ordinal);
  string[] required={"application.baml","formmain.baml","pages/pagelaunch/pagelaunchleft.baml","pages/pagelaunch/pagelaunchright.baml","pages/pagesetup/pagesetupui.baml","resources/font.ttf","images/branding/livingpcl.ico"};
  foreach(string key in required)if(!normalized.Contains(key))throw new InvalidDataException("Actual product BAML/font/brand resource missing: "+key);
- file.Position=0;string hash=Convert.ToHexString(SHA256.HashData(file)).ToLowerInvariant();
+ using FileStream file=File.OpenRead(path);string hash=Convert.ToHexString(SHA256.HashData(file)).ToLowerInvariant();
  if(startupSentinels) {
   if(!OperatingSystem.IsWindows())throw new PlatformNotSupportedException("Actual startup sentinel generation requires Windows; synthetic-only probes call the explicit private test seam.");
   Console.WriteLine(JsonSerializer.Serialize(StartupSentinels.Create(startupModules,args[2],args[3],hash)));
@@ -110,7 +112,7 @@ internal static class StartupSentinels {
    ["CacheMsV2ProfileJson"]="{\"id\":\"00000000000000000000000000000002\",\"name\":\"SyntheticCurrent\",\"future\":{\"keep\":true}}",["CacheMsV2Uuid"]="00000000000000000000000000000002",["CacheMsV2Name"]="SyntheticCurrent",["CacheMsV2Expires"]="9999999999"
   };
   var records=plain.Select(pair=>new {logicalName=pair.Key,physicalName=pair.Key+"_LF",kind="String",raw=pair.Key=="CacheMsV2Migrated"?pair.Value:Cipher(pair.Value)}).ToArray();
-  return new {kind="PCLLF.NativeStartupSyntheticAccounts",schemaVersion=1,fixtureId,seed,nativeSha256=nativeSha,coreSha256=Convert.ToHexString(SHA256.HashData(modules["PCLCS"])).ToLowerInvariant(),sharedSha256=Convert.ToHexString(SHA256.HashData(modules["MeloongCore"])).ToLowerInvariant(),records,scope="Synthetic-only data generated by actual embedded Core crypto; no Main/App/WPF or credential factory invoked. Hardware value and derived device identity are never returned."};
+  return new {kind="PCLLF.NativeStartupSyntheticAccounts",schemaVersion=1,fixtureId,seed,nativeSha256=nativeSha,coreSha256=Convert.ToHexString(SHA256.HashData(modules["PCLCS"])).ToLowerInvariant(),sharedSha256=Convert.ToHexString(SHA256.HashData(modules["MeloongCore"])).ToLowerInvariant(),records,scope="Synthetic-only data generated by actual bundled Core crypto; no Main/App/WPF or credential factory invoked. Hardware value and derived device identity are never returned."};
  }
  private sealed class StartupCoreContext : AssemblyLoadContext,IDisposable {
   private readonly Dictionary<string,byte[]> modules;

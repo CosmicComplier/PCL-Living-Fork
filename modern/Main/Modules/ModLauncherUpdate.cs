@@ -27,6 +27,8 @@ namespace PCL
         internal const string CnbPreviewManifestUrl = ModBase.LauncherCnbUrl + "/-/git/raw/updates/latest-preview.json";
         internal const string GitHubLatestUrl = "https://api.github.com/repos/" + Repository + "/releases/latest";
         internal const string GitHubReleaseListUrl = "https://api.github.com/repos/" + Repository + "/releases?per_page=30";
+        private const string GitHubReleaseCatalogUrl = "https://api.github.com/repos/" + Repository + "/releases?per_page=100";
+        private const string CnbReleaseCatalogUrl = ModBase.LauncherCnbUrl + "/-/releases?page_size=100";
         private static int CheckRunning;
 
         internal enum UpdateSource { Cnb = 0, GitHub = 1 }
@@ -67,7 +69,9 @@ namespace PCL
         internal sealed class UpdateTransport
         {
             internal Func<string, JObject> ReadJson = Url => JObject.Parse(ModNet.NetRequestByClient(Url, Accept: "application/json", Timeout: 5000, RequireJson: true));
-            internal Func<string, JArray> ReadReleaseList = Url => JArray.Parse(ModNet.NetRequestByClient(Url, Accept: "application/json", Timeout: 5000, RequireJson: true));
+            internal Func<string, JArray> ReadReleaseList = Url => JArray.Parse(ModNet.NetRequestByClient(Url,
+                Accept: Url.StartsWith(ModBase.LauncherCnbUrl + "/", StringComparison.Ordinal) ? "application/vnd.cnb.api+json" : "application/json",
+                Timeout: 5000, RequireJson: true));
             internal Func<string, string> ReadText = Url => ModNet.NetRequestByClient(Url, Timeout: 8000);
             internal Action<string, string, FileChecker> Download = DownloadWithTask;
         }
@@ -83,6 +87,12 @@ namespace PCL
         }
         internal static int CompareReleaseVersions(string First, string Second)
         {
+            bool firstDev = First == "dev_edition", secondDev = Second == "dev_edition";
+            if (firstDev || secondDev)
+            {
+                int baseline = CompareReleaseVersions(firstDev ? ModBase.ReleaseBaselineVersion : First, secondDev ? ModBase.ReleaseBaselineVersion : Second);
+                return baseline != 0 ? baseline : firstDev == secondDev ? 0 : firstDev ? 1 : -1;
+            }
             Version A = null, B = null; string AP = null, BP = null;
             if (!ParseReleaseVersion(First, ref A, ref AP) || !ParseReleaseVersion(Second, ref B, ref BP)) throw new ArgumentException("发布版本号无效。");
             int Result = A.CompareTo(B);
@@ -107,6 +117,7 @@ namespace PCL
         }
         internal static bool NewerReleaseForChannel(string Tag, string Current, UpdateChannel Channel)
         {
+            if (Current == "dev_edition") Current = ModBase.ReleaseBaselineVersion;
             Version Core = null; string Preview = null;
             if (!ParseReleaseVersion(Tag, ref Core, ref Preview) || (Preview != "" && Channel == UpdateChannel.Stable)) return false;
             if (!ParseReleaseVersion(Current, ref Core, ref Preview)) return false;
@@ -167,7 +178,7 @@ namespace PCL
             if (Asset is null || !ValidAssetUrl(Asset["browser_download_url"]?.ToString())) throw new Exception("发布中没有可信的校验文件。");
             return Asset;
         }
-        private static void ValidateReleaseInfo(JObject Info, bool Cnb, UpdateChannel Channel)
+        private static void ValidateReleaseMetadata(JObject Info, UpdateChannel Channel)
         {
             Version Parsed = null; string Preview = null;
             if (Info is null || !ParseReleaseVersion(Info["tag_name"]?.ToString(), ref Parsed, ref Preview)) throw new Exception("发布标签不是可识别的版本号。");
@@ -175,6 +186,10 @@ namespace PCL
                 if (Info[Field] is null || Info[Field].Type != JTokenType.Boolean) throw new Exception("更新源的发布状态无效。");
             if ((bool)Info["draft"] || (Channel == UpdateChannel.Stable && (bool)Info["prerelease"])) throw new Exception("更新源尚无符合当前通道的发布。");
             if ((bool)Info["prerelease"] != (Preview != "")) throw new Exception("发布标记与版本号不一致。");
+        }
+        private static void ValidateReleaseInfo(JObject Info, bool Cnb, UpdateChannel Channel)
+        {
+            ValidateReleaseMetadata(Info, Channel);
             JObject Executable = ReleaseExecutable(Info), Manifest = HashAsset(Info);
             if (Executable["size"]?.Type != JTokenType.Integer || (long)Executable["size"] <= 0 || (long)Executable["size"] > 1024L * 1024 * 1024) throw new Exception("更新附件大小无效。");
             foreach (JObject Asset in new[] { Executable, Manifest })
@@ -188,6 +203,67 @@ namespace PCL
         }
         internal static JObject FindLatestRelease(string Current, UpdateTransport Transport = null)
             => FindLatestReleaseForSource(Current, PreferredUpdateSource(), Transport);
+        internal static List<JObject> GetPageReleases(UpdateSource source, UpdateChannel channel, UpdateTransport transport = null)
+        {
+            transport ??= new UpdateTransport();
+            Exception failure = null;
+            foreach (UpdateSource selected in new[] { source, source == UpdateSource.Cnb ? UpdateSource.GitHub : UpdateSource.Cnb })
+            {
+                try
+                {
+                    var releases = new List<JObject>();
+                    var seenPages = new HashSet<string>(StringComparer.Ordinal);
+                    for (int page = 1; ; page++)
+                    {
+                        string endpoint = selected == UpdateSource.GitHub ? GitHubReleaseCatalogUrl : CnbReleaseCatalogUrl;
+                        JArray entries = transport.ReadReleaseList(endpoint + "&page=" + page);
+                        if (entries.Count == 0) break;
+                        string fingerprint = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(entries.ToString(Newtonsoft.Json.Formatting.None))));
+                        if (!seenPages.Add(fingerprint)) throw new Exception("更新源重复返回同一页，未能读取完整版本列表。");
+                        foreach (JObject candidate in entries.OfType<JObject>())
+                        {
+                            try { ValidateReleaseMetadata(candidate, channel); releases.Add((JObject)candidate.DeepClone()); }
+                            catch (Exception error) { error.ThrowIfCanceled(); }
+                        }
+                        if (entries.Count < 100) break;
+                    }
+                    return releases.GroupBy(value => value["tag_name"]!.ToString(), StringComparer.OrdinalIgnoreCase).Select(group => group.First()).ToList();
+                }
+                catch (Exception error) { error.ThrowIfCanceled(); failure = error; }
+            }
+            throw new Exception("未能读取完整版本列表，请稍后重试或切换更新源。", failure);
+        }
+        internal static bool CanInstallPageRelease(JObject release)
+        {
+            try
+            {
+                bool cnb = new Uri(ReleaseExecutable(release)["browser_download_url"]!.ToString()).Host == "cnb.cool";
+                ValidateReleaseInfo(release, cnb, UpdateChannel.StableAndPrerelease);
+                return true;
+            }
+            catch (Exception error) { error.ThrowIfCanceled(); return false; }
+        }
+        internal static void RequestSelectedUpdate(JObject release, UpdateSource source)
+        {
+            if (Interlocked.CompareExchange(ref CheckRunning, 1, 0) != 0) { ModMain.Hint("正在检查或准备更新，请稍候……"); return; }
+            JObject selected = (JObject)release.DeepClone();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    bool cnb = new Uri(ReleaseExecutable(selected)["browser_download_url"]!.ToString()).Host == "cnb.cool";
+                    ValidateReleaseInfo(selected, cnb, PreferredUpdateChannel());
+                    if (!NewerReleaseForChannel(selected["tag_name"]!.ToString(), ModBase.VersionBaseName, PreferredUpdateChannel())) { ModMain.Hint("当前没有更新的版本。"); return; }
+                    UpdatePromptView view = null;
+                    if (ModMain.MyMsgBoxConfirmContent("请选择本次更新的下载源。", "更新 PCL Living Fork", "下载并更新", () => { view = new UpdatePromptView(selected["tag_name"]!.ToString(), source); return view; }, "取消", IsWarn: false) != 1) return;
+                    UpdateSource downloadSource = source;
+                    ModBase.RunInUiWait(() => downloadSource = view.SelectedSource);
+                    DownloadAndUpdate(selected, downloadSource);
+                }
+                catch (Exception error) { UpdateFailure(PclLogger.ModernizeRuntimeMessage(error.GetDisplay(false))); }
+                finally { Interlocked.Exchange(ref CheckRunning, 0); }
+            });
+        }
         internal static JObject FindLatestReleaseForSource(string Current, UpdateSource Source, UpdateTransport Transport = null)
             => FindLatestReleaseForChannel(Current, Source, PreferredUpdateChannel(), Transport);
         internal static JObject FindLatestReleaseForChannel(string Current, UpdateSource Source, UpdateChannel Channel, UpdateTransport Transport = null)
@@ -351,6 +427,7 @@ namespace PCL
         {
             try
             {
+                if (InstanceDeletionOperation.HasActiveOperations) throw new Exception("版本删除尚未完成，请稍后再更新启动器。");
                 string Folder = Path.Combine(Paths.Base, "PCL", "Updates"); Directory.CreateDirectory(Folder);
                 string Staged = Path.Combine(Folder, ModBase.LauncherExecutableName);
                 ModMain.Hint("正在下载 PCL Living Fork 更新……");
@@ -358,10 +435,11 @@ namespace PCL
                 if (ModNet.HasDownloadingTask()) throw new Exception("仍有下载任务正在进行。请等待任务结束后重试更新。");
                 string Target = Process.GetCurrentProcess().MainModule.FileName;
                 string Arguments = $"--livingpcl-update {Process.GetCurrentProcess().Id} \"{Path.GetFileName(Target)}\" {ExpectedHash}";
+                using IDisposable ShutdownReservation = InstanceDeletionOperation.TryReserveShutdown() ?? throw new Exception("版本删除尚未完成，请稍后再更新启动器。");
                 var Helper = Process.Start(new ProcessStartInfo(Staged, Arguments) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Folder });
                 if (Helper is null) throw new Exception("无法启动更新替换程序。");
                 if (Helper.WaitForExit(500)) throw new Exception("更新替换程序未能正常启动。");
-                ModBase.RunInUi(() => ModMain.FrmMain.EndProgram(SendWarning: false));
+                ModBase.RunInUiWait(() => ModMain.FrmMain.EndProgram(SendWarning: false));
             }
             catch (OperationCanceledException) { ModMain.Hint("已取消启动器更新。"); }
             catch (ThreadInterruptedException) { ModMain.Hint("已取消启动器更新。"); }

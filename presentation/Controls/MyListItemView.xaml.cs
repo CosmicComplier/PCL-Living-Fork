@@ -175,7 +175,7 @@ public partial class MyListItemView : Grid {
             ColumnLogo.Width = new GridLength((Same(logo, "") ? 0 : 34) + (Height < 40 ? 0 : 4));
         }
     }
-    private bool IsBitmapLogo() => (logo?.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ?? false) || (logo?.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ?? false) || (logo?.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ?? false);
+    private bool IsBitmapLogo() => (logo?.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ?? false) || (logo?.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ?? false) || (logo?.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ?? false) || (logo?.EndsWith(".ico", StringComparison.OrdinalIgnoreCase) ?? false);
     private double logoScale = 1;
     public double LogoScale { get => logoScale; set { logoScale = value; if (PathLogo is not null) PathLogo.RenderTransform = new ScaleTransform(LogoScale, LogoScale); } }
     public bool LogoClickable { get; set; }

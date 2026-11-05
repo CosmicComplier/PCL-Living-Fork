@@ -270,6 +270,7 @@ public sealed class LegacyPageSetupLaunchView {
 }
 
 public sealed class LegacyPageSetupSystemView {
+    public bool UpdatesOnSeparatePage;
     public Func<MyComboBoxView> ComboLauncherUpdateSource = null!, ComboLauncherUpdateChannel = null!;
     public Func<Func<bool>> ConfirmPrereleaseUpdates = null!;
     public Func<DependencyObject> Page = null!;

@@ -2,47 +2,12 @@ name: Modern .NET 10 WPF
 
 on:
   push:
-    branches:
-      - migration/csharp-modern-dotnet
-    paths:
-      - 'PCLCS/**'
-      - 'modern/**'
-      # Complete Main/tooling-only edits execute in native-main.yml. They are
-      # not inputs of this independent Core/Presentation component test graph.
-      - '!modern/Main/**'
-      - '!modern/BuildEvents/**'
-      - '!modern/BuildResources/**'
-      - '!modern/ThirdParty/**'
-      - 'presentation/**'
-      - 'MeloongCore'
-      - 'MeloongCore/**'
-      - '.gitmodules'
-      - 'tests/PCLLF.Modern.Wpf.Tests/**'
-      - 'tests/PCLLF.Windows.Tests/**'
-      - 'scripts/Test-ScreenshotGallery.ps1'
-      - 'scripts/Test-KeybindingGroups.ps1'
-      - '.github/workflows/modern-wpf.yml'
+    branches: [main, migration/csharp-modern-dotnet]
   pull_request:
-    branches:
-      - migration/csharp-modern-dotnet
-    paths:
-      - 'PCLCS/**'
-      - 'modern/**'
-      # Complete Main/tooling-only edits execute in native-main.yml. They are
-      # not inputs of this independent Core/Presentation component test graph.
-      - '!modern/Main/**'
-      - '!modern/BuildEvents/**'
-      - '!modern/BuildResources/**'
-      - '!modern/ThirdParty/**'
-      - 'presentation/**'
-      - 'MeloongCore'
-      - 'MeloongCore/**'
-      - '.gitmodules'
-      - 'tests/PCLLF.Modern.Wpf.Tests/**'
-      - 'tests/PCLLF.Windows.Tests/**'
-      - 'scripts/Test-ScreenshotGallery.ps1'
-      - 'scripts/Test-KeybindingGroups.ps1'
-      - '.github/workflows/modern-wpf.yml'
+    branches: [main, migration/csharp-modern-dotnet]
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -55,7 +20,6 @@ concurrency:
 jobs:
   modern-wpf:
     name: Modern WPF (${{ matrix.configuration }})
-    if: github.ref == 'refs/heads/migration/csharp-modern-dotnet' || (github.event_name == 'pull_request' && github.base_ref == 'migration/csharp-modern-dotnet')
     runs-on: windows-latest
     timeout-minutes: 20
     strategy:
@@ -134,3 +98,21 @@ jobs:
           name: modern-wpf-${{ matrix.configuration }}
           path: artifacts/modern-wpf/${{ matrix.configuration }}/
           if-no-files-found: warn
+
+  gate:
+    name: Modern WPF gate
+    if: always()
+    needs: [modern-wpf]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Require the actual selected validation result
+        env:
+          SELECTION_RESULT: success
+          VALIDATION_SELECTED: 'true'
+          VALIDATION_RESULT: ${{ needs.modern-wpf.result }}
+        run: python scripts/Check-CiGate.py

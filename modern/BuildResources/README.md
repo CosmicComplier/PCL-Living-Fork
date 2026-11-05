@@ -1,5 +1,13 @@
-The native resource generator reads `LF.Resources.schema.json` and the actual C# Main project's explicit `Resource` items. It does not read legacy VB, vbproj or resx schemas. The retained `--lf-project` argument supplies only the fixed vendor resource root; `--schema` and `--native-project` are optional explicit overrides.
+# Native resource contract
 
-The schema pins the 18 byte-array keys and typed getter order. Modern Core, Presentation, Shared, Newtonsoft and Windows Registry always come from the actual caller-selected artifacts; identity/framework/reference-assembly checks remain mandatory. Fixed vendor payloads are read as bytes. `MeloongCore.Wpf` stays excluded. Pack asset paths and links come from Native Main, including its real night background.
+The C# product embeds five runtime data/native payloads: `Custom`, `ForgeInstaller`, `Help`, `libwebp64`, and `Transformer`. Managed assemblies are supplied by the .NET dependency graph or the single-file bundle, with no second copy in `PCL.Resources`.
 
-Changing keys/interfaces requires explicit schema/code review. Generated getters preserve `PCL.Resources`, `ResourceManager` and `Culture`; the manifest records schema/project hashes and pinned LF provenance. No old-source parsing or placeholder payload is available as a fallback.
+The version 2 schema pins the five byte-array keys/getters and records excluded managed keys. `ResourceManager` and `Culture` remain compatible. Native WPF pack assets are read from the real project and retain their separate inventory.
+
+On Windows with SDK 10, run:
+
+```text
+python modern/BuildResources/tests/Test-NativeResources.py --main modern/Main/bin/Release/net10.0-windows/win-x64/LivingPCL.dll --dotnet <dotnet>
+```
+
+The test checks five generated/Main payloads, 15 real getter calls under three cultures, pack assets, vendor-only inputs and seven actual CLI rejection cases. `--defer-windows-getters` explicitly reports the Windows getter checks pending on Linux. Managed dependency identity and bundled bytes are checked separately by the native smoke/credential gates.

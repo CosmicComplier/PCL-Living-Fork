@@ -29,6 +29,7 @@ public sealed class LegacyPageSetupSystemController {
     // delegates nor update-channel host delegates. Its original Reload remains
     // valid. Native LF50 supplies the complete contract; any partial wiring fails.
     private bool HasUpdateSelection() {
+        if (View.UpdatesOnSeparatePage) return false;
         bool noView = View.ComboLauncherUpdateSource is null && View.ComboLauncherUpdateChannel is null && View.ConfirmPrereleaseUpdates is null;
         bool noHost = host.PreferredUpdateChannel is null && host.ChangeUpdateChannel is null;
         if (noView && noHost) {
@@ -72,7 +73,7 @@ public sealed class LegacyPageSetupSystemController {
     public void Loaded() {
         View.PanBack().ScrollToHome();
         RefreshModpackSwitch();
-        View.LabLauncherVersion().Text = host.LauncherDisplayName() + " " + host.LauncherVersion();
+        if (!View.UpdatesOnSeparatePage) View.LabLauncherVersion().Text = host.LauncherDisplayName() + " " + host.LauncherVersion();
         if (loaded) return;
         loaded = true;
         Common.AddAnimationSuppression(1);
@@ -81,7 +82,7 @@ public sealed class LegacyPageSetupSystemController {
     }
     public void Reload() {
         Common.RefreshSettings(View.Page()); RefreshUpdateChannel(); RefreshModpackSwitch();
-        View.LabLauncherVersion().Text = host.LauncherDisplayName() + " " + host.LauncherVersion();
+        if (!View.UpdatesOnSeparatePage) View.LabLauncherVersion().Text = host.LauncherDisplayName() + " " + host.LauncherVersion();
     }
     public void RefreshModpackSwitch() {
         View.CheckModpackMode().Checked = host.ModpackEnabled();

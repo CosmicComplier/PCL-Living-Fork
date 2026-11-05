@@ -11,9 +11,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 
-ARTIFACTS = {"core": ("PCLCS", "PCLCS.dll"), "presentation": ("PCLLF.Presentation", "PCLLF.Presentation.dll"),
-             "shared": ("MeloongCore", "MeloongCore.dll"), "json": ("Newtonsoft.Json", "Newtonsoft.Json.dll"),
-             "registry": ("Microsoft.Win32.Registry", "Microsoft.Win32.Registry.dll")}
+ARTIFACTS = {}
 
 
 def digest(path):
@@ -56,7 +54,7 @@ def main():
     parser.add_argument("--native-project", type=Path, default=repository / "modern/Main/PCL-Living-Fork.Modern.csproj")
     parser.add_argument("--reference-assembly", type=Path)
     parser.add_argument("--defer-windows-getters", action="store_true",
-                        help="Explicit Linux-only byte/metadata pass; report 54 actual Windows getters pending")
+                        help="Explicit Linux-only byte/metadata pass; report 15 actual Windows getters pending")
     for name in ARTIFACTS:
         parser.add_argument("--" + name, type=Path)
     args = parser.parse_args()
@@ -67,11 +65,7 @@ def main():
     expected = {key: digest(artifacts[name]) for name, (key, _) in ARTIFACTS.items()}
     fixed = {row["key"]: locate(args.assets, row["source"]) for row in spec["payloads"] if "source" in row}
     expected.update({key: digest(path) for key, path in fixed.items()})
-    assert len(expected) == 18
-    dotnet_path = Path(shutil.which(args.dotnet) or args.dotnet).resolve()
-    candidates = sorted(dotnet_path.parent.glob("packs/Microsoft.NETCore.App.Ref/10.*/ref/net10.0/Microsoft.Win32.Registry.dll"))
-    reference = args.reference_assembly or (candidates[-1] if candidates else None)
-    assert reference and reference.is_file(), "Supply actual SDK reference assembly with --reference-assembly"
+    assert len(expected) == 5
     # All generated/fixture outputs are temporary. Actual Main and dynamic binaries are never copied.
     with tempfile.TemporaryDirectory(prefix="pcllf-native-resources-") as temporary:
         root = Path(temporary)
@@ -87,7 +81,7 @@ def main():
         output = root / "generated"
         generate(output)
         report = json.loads((output / "resource-manifest.json").read_text())
-        assert report["resourceCount"] == 18 and report["typedProperties"] == {p["name"]: p["key"] for p in spec["typedProperties"]}
+        assert report["resourceCount"] == 5 and report["typedProperties"] == {p["name"]: p["key"] for p in spec["typedProperties"]}
         assert {p["key"]: p["sha256"] for p in report["payloads"] if "sha256" in p} == expected
         project = ET.parse(args.native_project)
         logical = {next((c.text for c in item if c.tag.rsplit("}", 1)[-1] == "Link"), item.get("Include")) for item in project.iter() if item.tag.rsplit("}", 1)[-1] == "Resource"}
@@ -116,9 +110,7 @@ def main():
         assert digest(isolated / "PCL.Resources.resources") == digest(output / "PCL.Resources.resources"), "Vendor-only binary changed"
         print("PASS vendor-only input contains no VB/vbproj/resx; binary and input BOM bytes retained")
         reject = root / "rejected"
-        generate(reject, "Do not embed a reference assembly", registry=reference)
-        generate(reject, "PCLCS must use .NETCoreApp,Version=v10.0", core=artifacts["shared"])
-        generate(reject, "Wrong actual assembly identity for PCLCS", core=artifacts["presentation"])
+        generate(reject, "Unknown resource generator option", registry="unused-managed-payload")
         help_file = vendor / next(p["source"] for p in spec["payloads"] if p["key"] == "Help")
         original = help_file.read_bytes()
         try:
@@ -127,6 +119,7 @@ def main():
         finally:
             help_file.write_bytes(original)
         for name, modify, diagnostic in (
+            ("managed-payload", lambda s: s["payloads"][0].update(key="PCLCS"), "Invalid native LF payload key"),
             ("duplicate-key", lambda s: s["payloads"].__setitem__(1, s["payloads"][0]), "Duplicate LF key"),
             ("duplicate-property", lambda s: s["typedProperties"].__setitem__(1, s["typedProperties"][0]), "Invalid native typed resource interface"),
             ("unsupported-type", lambda s: s["payloads"][0].update(type="System.String"), "JsonException")):
@@ -143,7 +136,7 @@ def main():
         fixture = root / "DuplicateAssets.csproj"
         ET.ElementTree(duplicate).write(fixture, encoding="utf-8")
         generate(reject, "Ambiguous or conditional native resource inventory", **{"native-project": fixture})
-        print("PASS 8 actual CLI rejections: reference/framework/identity/empty payload/duplicate key/property/unsupported type/duplicate asset")
+        print("PASS 7 actual CLI rejections: unknown option/managed payload/empty payload/duplicate key/property/unsupported type/duplicate asset")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,6 @@ permissions:
 jobs:
   select:
     name: Select native product inputs
-    if: github.ref == 'refs/heads/migration/csharp-modern-dotnet' || (github.event_name == 'pull_request' && github.base_ref == 'migration/csharp-modern-dotnet')
     runs-on: ubuntu-latest
     outputs:
       native_run: ${{ steps.scope.outputs.native_run }}
@@ -41,6 +40,7 @@ jobs:
         if: steps.scope.outputs.native_run == 'true'
         run: |
           python -m pip install --disable-pip-version-check PyYAML==6.0.2
+          python scripts/tests/Test-MainCiGates.py
           pwsh -NoLogo -NoProfile -NonInteractive -Command 'if ($PSVersionTable.PSEdition -cne "Core" -or $PSVersionTable.PSVersion.Major -lt 7) { throw "PowerShell 7 Core is required." }; $PSVersionTable.PSVersion.ToString()'
           python scripts/tests/Test-NativeUpgradeQualification.py --powershell pwsh
       - name: Upload the native selection evidence
@@ -180,13 +180,7 @@ jobs:
         if: ${{ !cancelled() && steps.main.outcome == 'success' }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $resourceManifest = Join-Path $env:GITHUB_WORKSPACE "modern/Main/obj/$env:NATIVE_CONFIGURATION/net10.0-windows/LFResources/resource-manifest.json"
-          $resources = Get-Content -LiteralPath $resourceManifest -Raw | ConvertFrom-Json
-          $registry = @($resources.payloads | Where-Object { $_.key -ceq 'Microsoft.Win32.Registry' })
-          if ($registry.Count -ne 1 -or -not [IO.File]::Exists($registry[0].source)) { throw 'The actual Main .NET10 Registry resource input is missing.' }
-          # This is the implementation selected by the real .NET10 generator,
-          # never PowerShell's own runtime or a framework reference assembly.
-          python modern/BuildResources/tests/Test-NativeResources.py --main "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/LivingPCL.dll" --generator "modern/BuildResources/bin/$env:NATIVE_CONFIGURATION/net10.0/ResourceGenerator.dll" --registry $registry[0].source --dotnet (Get-Command dotnet).Source
+          python modern/BuildResources/tests/Test-NativeResources.py --main "modern/Main/bin/$env:NATIVE_CONFIGURATION/net10.0-windows/LivingPCL.dll" --generator "modern/BuildResources/bin/$env:NATIVE_CONFIGURATION/net10.0/ResourceGenerator.dll" --dotnet (Get-Command dotnet).Source
           if ($LASTEXITCODE -ne 0) { throw 'Native resource bytes/getters/culture or VB-free input checks failed.' }
 
       - name: Build the isolated actual Main facade checks
@@ -357,7 +351,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
           $failedGroups = @()
-          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies', 'dependency-graph', 'toolbox', 'visual-assets', 'launcher-lifecycle', 'modpack-mode', 'review-fixes', 'migrated-controls', 'map-install-recycle', 'resource-updates', 'mmc-import-contract', 'launch-process', 'pack-root-install', 'account-ui')
+          $registeredJson = & dotnet run --project tests/PCLLF.Native.Facade.Tests/PCLLF.Native.Facade.Tests.csproj --configuration $env:NATIVE_CONFIGURATION --no-build -- --list-groups
+          if ($LASTEXITCODE -ne 0) { throw 'The real facade host did not enumerate its registered groups.' }
+          $registered = @(($registeredJson -join "`n") | ConvertFrom-Json)
+          if ($registered.Count -eq 0 -or $registered -notcontains 'registry-data' -or @($registered | Where-Object { $_ -notmatch '^[a-z0-9-]+$' }).Count -ne 0 -or @($registered | Select-Object -Unique).Count -ne $registered.Count) { throw 'The facade group registry is empty or invalid.' }
+          # Registry data owns its dedicated fresh-profile step above.
+          $groups = @($registered | Where-Object { $_ -ne 'registry-data' })
           foreach ($group in $groups) {
             # Every family owns its real STA child and temporary state. A
             # failed theme family must not hide file/dependency acceptance.
@@ -626,3 +625,27 @@ jobs:
           path: artifacts/native-upgrade/
           if-no-files-found: warn
           retention-days: 7
+
+  gate:
+    name: Native product gate
+    if: always()
+    needs: [select, native, native-upgrade]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Require the actual selected validation result
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+          VALIDATION_SELECTED: ${{ needs.select.outputs.native_run }}
+          VALIDATION_RESULT: ${{ needs.native.result }}
+        run: python scripts/Check-CiGate.py
+      - name: Require genuine legacy to native upgrade acceptance
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+          VALIDATION_SELECTED: ${{ needs.select.outputs.native_run }}
+          VALIDATION_RESULT: ${{ needs.native-upgrade.result }}
+        run: python scripts/Check-CiGate.py

@@ -8,6 +8,8 @@ internal static class Program
     private static readonly Dictionary<string, Action<FixtureEnvironment>> Cases = new(StringComparer.Ordinal)
     {
         ["map-details"] = MapResourceChecks.MapDetails,
+        ["instance-delete"] = InstanceDeletionChecks.Run,
+        ["launcher-update-page"] = LauncherUpdatePageChecks.Run,
         ["resource-entry"] = MapResourceChecks.ResourceEntries,
         ["world-details"] = WorldChecks.Run,
         ["registry-names"] = RegistryChecks.Run,
@@ -44,6 +46,11 @@ internal static class Program
         {
             if (!OperatingSystem.IsWindows())
                 throw new PlatformNotSupportedException("This host requires a real Windows .NET10/WPF runtime.");
+            if (args.SequenceEqual(new[] { "--list-groups" }, StringComparer.Ordinal))
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(Cases.Keys.ToArray()));
+                return 0;
+            }
             if (args.Contains("--modpack-download-child", StringComparer.Ordinal))
                 return ModpackDownloadProcess.RunChild(args);
             if (BackupResourceChecks.TryRunIdleChild(args, out int backupIdleExit))

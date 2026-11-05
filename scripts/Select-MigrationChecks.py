@@ -14,7 +14,8 @@ import re
 import subprocess
 import sys
 
-BRANCH = "migration/csharp-modern-dotnet"
+MAIN_BRANCH = "main"
+MIGRATION_BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
           "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java", "foundation")
 # Resources is a fixed feature alias, not every group appended after the first five.
@@ -73,18 +74,18 @@ RESOURCE_CHECKS = {"Test-InstanceResources", "Test-MapInstallAndRecycle", "Test-
 # These UI files serve the resource page and its existing offscreen consumers.
 # Exact paths keep unrelated/future platform contracts on the full fallback.
 RESOURCE_PAGE_PATHS = {
-    "PCLCS/Platform/Windows/ResourcePageContracts.cs",
-    "PCLCS/Platform/Windows/ResourcePageController.cs",
-    "PCLCS/Platform/Windows/ResourcePageController.Recycle.cs",
-    "PCLCS/Platform/Windows/ResourcePageController.Backups.cs",
+    "PCLCS/Platform/Windows/Resources/ResourcePageContracts.cs",
+    "PCLCS/Platform/Windows/Resources/ResourcePageController.cs",
+    "PCLCS/Platform/Windows/Resources/ResourcePageController.Recycle.cs",
+    "PCLCS/Platform/Windows/Resources/ResourcePageController.Backups.cs",
     "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.xaml.vb",
     "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.Recycle.vb",
     "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.Backups.vb",
     "Plain Craft Launcher 2/Pages/PageInstance/PageInstanceResources.xaml",
 }
 RESOURCE_IMAGE_PATHS = {
-    "PCLCS/Platform/Windows/ResourceThumbnailController.cs",
-    "PCLCS/Platform/Windows/InstanceResourceImages.cs",
+    "PCLCS/Platform/Windows/Resources/ResourceThumbnailController.cs",
+    "PCLCS/Platform/Windows/Resources/InstanceResourceImages.cs",
     "Plain Craft Launcher 2/Pages/PageInstance/MyScreenshotItem.xaml.vb",
     "Plain Craft Launcher 2/Pages/PageInstance/MyScreenshotItem.xaml",
 }
@@ -134,8 +135,8 @@ INSTANCE_CLONE_PATHS = {
     "PCLCS/Minecraft/InstanceCloneGroupsEngine.cs",
     "PCLCS/Minecraft/InstanceCloneExportIsolation.cs",
     "PCLCS/Minecraft/InstanceCloneWorkflow.cs",
-    "PCLCS/Platform/Windows/InstanceClonePageController.cs",
-    "PCLCS/Platform/Windows/InstanceCloneSelectionPresenter.cs",
+    "PCLCS/Platform/Windows/Instances/InstanceClonePageController.cs",
+    "PCLCS/Platform/Windows/Instances/InstanceCloneSelectionPresenter.cs",
     "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloner.vb",
     "Plain Craft Launcher 2/Modules/Minecraft/InstanceCloneGroups.vb",
     "Plain Craft Launcher 2/Modules/Minecraft/ExportedVersionIsolation.vb",
@@ -287,9 +288,9 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(("mod-dependencies",), MOD_DEPENDENCY_CHECKS)
         elif name in MOD_DEPENDENCY_ONLINE_PATHS:
             include(("mod-dependency-online",), MOD_DEPENDENCY_ONLINE_CHECKS)
-        elif name == "PCLCS/Platform/Windows/KeybindingPageController.cs":
+        elif name == "PCLCS/Platform/Windows/Instances/KeybindingPageController.cs":
             include(("keybindings",), {"Test-LocalGameFeatures", "Test-GameFeatureRegressions", "Test-KeybindingGroups"})
-        elif name in {"PCLCS/Platform/Windows/RecentWorldPageController.cs", "PCLCS/Platform/Windows/RecentWorldQuickPlay.cs"}:
+        elif name in {"PCLCS/Platform/Windows/Instances/RecentWorldPageController.cs", "PCLCS/Platform/Windows/Instances/RecentWorldQuickPlay.cs"}:
             # These exact controllers own only the recent-world card chain.
             # PageLaunchRight remains a shared account/launch VB page and keeps
             # the conservative full fallback for future edits outside that chain.
@@ -368,15 +369,27 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
 
 def event_selection(event_file: str) -> tuple[list[str], bool, str]:
     event = json.loads(Path(event_file).read_text(encoding="utf-8"))
+    if not isinstance(event, dict):
+        raise ValueError("GitHub event must be an object")
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     pr = event.get("pull_request")
-    migration = (pr.get("base", {}).get("ref") == BRANCH) if isinstance(pr, dict) else (
-        os.environ.get("GITHUB_REF", event.get("ref", "")) == "refs/heads/" + BRANCH)
-    if not migration:
-        return [], True, "non-migration branch keeps complete product checks"
     if event_name == "workflow_dispatch":
         return [], True, "manual complete checkpoint"
-    if isinstance(pr, dict):
+    if event_name == "merge_group":
+        return [], True, "merge queue combined snapshot: complete checkpoint"
+    if event_name not in {"push", "pull_request"}:
+        return [], True, "unknown event: complete checkpoint"
+    if event_name == "pull_request":
+        if not isinstance(pr, dict) or not isinstance(pr.get("base"), dict) or not isinstance(pr.get("head"), dict):
+            return [], True, "malformed PR context: complete checkpoint"
+        branch = pr["base"].get("ref")
+    else:
+        branch = os.environ.get("GITHUB_REF", event.get("ref", "")).removeprefix("refs/heads/")
+    if branch == MAIN_BRANCH:
+        return [], True, "main integration requires complete product and migration checks"
+    if branch != MIGRATION_BRANCH:
+        return [], True, "unrecognized integration context: complete checkpoint"
+    if event_name == "pull_request":
         base, head = pr.get("base", {}).get("sha"), pr.get("head", {}).get("sha")
         # PR comparison includes only the proposed delta, not unrelated base commits.
         separator = "..."

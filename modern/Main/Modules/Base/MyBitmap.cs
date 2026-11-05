@@ -9,7 +9,7 @@ namespace PCL
     public class MyBitmap : LegacyBitmap
     {
 
-        private static readonly LegacyBitmapHost BitmapHost = new LegacyBitmapHost(typeof(MyBitmap).Assembly.GetName().Name, Key => (System.Drawing.Bitmap)My.MyWpfExtension.Application.TryFindResource(Key), (ErrorValue, Message) => Logger.Warn(ErrorValue, Message));
+        private static readonly LegacyBitmapHost BitmapHost = new LegacyBitmapHost(typeof(MyBitmap).Assembly.GetName().Name, Key => (System.Drawing.Bitmap)My.MyWpfExtension.Application.TryFindResource(Key), (ErrorValue, Message) => Logger.Warn(ErrorValue, Message), Application.PrepareWebP);
 
         public MyBitmap() : base()
         {

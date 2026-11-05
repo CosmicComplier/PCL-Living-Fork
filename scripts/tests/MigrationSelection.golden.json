@@ -279,7 +279,7 @@
       "native": true
     },
     {
-      "path": "PCLCS/Platform/Windows/ResourcePageController.cs",
+      "path": "PCLCS/Platform/Windows/Resources/ResourcePageController.cs",
       "scope": "resource-page",
       "native": true
     },

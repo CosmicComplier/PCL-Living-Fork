@@ -56,6 +56,7 @@ public class LegacyBitmap {
 #pragma warning restore CA2022
                 input.Seek(0, SeekOrigin.Begin);
                 if (header[0] == 82 && header[1] == 73) {
+                    host.PrepareWebP?.Invoke();
                     // LF dispatches on these first two bytes, not a new format probe.
                     byte[] fileBytes = new byte[input.Length];
                     // Keep LF's single FileUtils FileStream read and zero-filled

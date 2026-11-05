@@ -53,12 +53,11 @@ internal static partial class ModpackModeChecks {
         PageSetupSystem system = scope.Keep((PageSetupSystem)left.PageGet((FormMain.PageSubType)3)); M(166, system.GetType().FullName == "PCL.PageSetupSystem" && system.FindName("CheckModpackMode") is not null); system.Reload(); M(171, Part<UIElement>(system,"CheckModpackMode").Visibility == Visibility.Visible);
         CheckUpdateSelectionWiring(system);
         scope.SetCache("LivingModpackExported",false); Native.Call(system.GetType(),"RefreshModpackSwitch",system); M(174, Part<UIElement>(system,"CheckModpackMode").Visibility == Visibility.Collapsed && Part<UIElement>(system,"LabModpackMode").Visibility == Visibility.Collapsed);
-        // Source-site 177 adapts only Native to fixed LF50 50b028da5fcad2226d74d901a41d8c43a249bfb2:
-        // Pages/PageSetup/PageSetupSystem.xaml places LabLauncherVersion at row 0.
-        // The retained f4 comparison tree and original PowerShell gold stay at row 2; never accept both.
-        scope.SetCache("LivingModpackExported",true); Native.Call(system.GetType(),"RefreshModpackSwitch",system); M(177, Part<TextBlock>(system,"LabLauncherVersion").Text.StartsWith(brand + " ",StringComparison.Ordinal) && Grid.GetRow(Part<UIElement>(system,"LabLauncherVersion")) == 0);
+        // The user moved version/source/channel controls to the dedicated sidebar page.
+        PageSetupUpdate update = scope.Keep(new PageSetupUpdate());
+        scope.SetCache("LivingModpackExported",true); Native.Call(system.GetType(),"RefreshModpackSwitch",system); M(177, Part<TextBlock>(update,"LabCurrentVersion").Text == ModBase.VersionBaseName && Grid.GetRow(Part<UIElement>(update,"LabCurrentVersion")) == 0);
         foreach (var preference in preferences) M(178, Equals(preference.Value,Cached(preference.Key)));
-        DependencyObject? normalCard = Part<FrameworkElement>(system,"LabLauncherVersion").Parent; while (normalCard is FrameworkElement parent && normalCard.GetType().FullName != "PCL.MyCard") normalCard = parent.Parent; M(236, normalCard is MyCard); M(237, system.FindName("PanDonate") is null);
+        DependencyObject? normalCard = Part<FrameworkElement>(update,"LabCurrentVersion").Parent; while (normalCard is FrameworkElement parent && normalCard.GetType().FullName != "PCL.MyCard") normalCard = parent.Parent; M(236, normalCard is MyCard); M(237, system.FindName("PanDonate") is null);
         PageInstanceExport export = scope.Keep(new PageInstanceExport()); MyCheckBox packOption = Part<MyCheckBox>(export,"CheckOptionsModpackMode"); M(181, packOption.Checked && ((PCLCS.ModpackExportOptionData)packOption.Tag).DefaultChecked);
         Part<MyCheckBox>(export,"CheckOptionsPcl").Checked = false; M(183, ((FrameworkElement)packOption.Parent).Visibility == Visibility.Collapsed); Part<MyCheckBox>(export,"CheckOptionsPcl").Checked = true; M(185, ((FrameworkElement)packOption.Parent).Visibility == Visibility.Visible);
         return (export,overview);
@@ -66,6 +65,12 @@ internal static partial class ModpackModeChecks {
     private static void CheckUpdateSelectionWiring(PageSetupSystem system) {
         var controller = (PCLCS.LegacyPageSetupSystemController)Native.Property(system.GetType(), "Controller").GetValue(system)!;
         var view = controller.View;
+        if (view.UpdatesOnSeparatePage) {
+            Native.Check(system.FindName("ComboLauncherUpdateSource") is null && system.FindName("ComboLauncherUpdateChannel") is null,
+                "Update selectors were duplicated on Other settings after sidebar migration.");
+            controller.RefreshUpdateChannel();
+            return;
+        }
         var host = (PCLCS.LegacySetupSystemHost)Native.Field(controller.GetType(), "host").GetValue(controller)!;
         var source = view.ComboLauncherUpdateSource; var channel = view.ComboLauncherUpdateChannel;
         var confirmation = view.ConfirmPrereleaseUpdates; var preferred = host.PreferredUpdateChannel; var change = host.ChangeUpdateChannel;

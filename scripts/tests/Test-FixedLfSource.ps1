@@ -46,7 +46,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize the isolated object-reading fixture.' }
     $common = (& git -C $RepositoryRoot rev-parse --git-common-dir).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Actual baseline object database is unavailable.' }
-    $objects = Join-Path ([IO.Path]::GetFullPath((Join-Path $RepositoryRoot $common))) 'objects'
+    $commonPath = if ([IO.Path]::IsPathRooted($common)) { $common } else { Join-Path $RepositoryRoot $common }
+    $objects = Join-Path ([IO.Path]::GetFullPath($commonPath)) 'objects'
     # Git alternates is a byte-oriented LF-delimited file, including on Windows.
     # Environment.NewLine would append CR to the object directory on that platform.
     $alternatesPath = Join-Path $isolated '.git/objects/info/alternates'

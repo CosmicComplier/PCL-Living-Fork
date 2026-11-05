@@ -37,7 +37,6 @@
     <Page Include="../../presentation/Dialogs/*.xaml" Link="Dialogs/%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Accounts/**/*.cs" Link="Accounts/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../presentation/Foundation/**/*.cs" Link="Foundation/%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Foundation/LegacyPackMetadataNumberFormatting.cs" />
     <Page Include="../../presentation/Controls/*.xaml" Link="Controls/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>

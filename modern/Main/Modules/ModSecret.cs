@@ -199,7 +199,15 @@ namespace PCL
         }
         internal static void UpdateCheckByButton()
         {
-            global::PCL.ModLauncherUpdate.CheckForUpdates(false);
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is null) return;
+            void Open()
+            {
+                if (ModMain.FrmMain is null) return;
+                if (ModMain.FrmMain.PageRight is PageSetupUpdate update) update.RefreshReleases();
+                else ModMain.FrmMain.PageChange(FormMain.PageType.Setup, FormMain.PageSubType.SetupUpdate);
+            }
+            if (dispatcher.CheckAccess()) Open(); else dispatcher.InvokeAsync(Open);
         }
         #if LEGACY_LINK
         // LF's original open-source legacy link configuration hook.

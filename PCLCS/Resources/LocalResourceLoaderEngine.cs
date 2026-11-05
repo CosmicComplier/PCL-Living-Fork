@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using MeloongCore;
@@ -93,10 +94,15 @@ public sealed partial class LocalResourceLoaderEngine<TLocal, TProject, TVersion
         ModLoaders loaders = task.Input().Target.ModLoaders;
         foreach (TLocal entry in task.Input().ModList) {
             if (task.IsCanceled()) return;
-            string key = entry.ModrinthHash + task.Input().Target.VanillaName + loaders;
-            if (cache.ContainsKey(key)) {
-                entry.FromJson((JObject)cache[key]!);
-                if (entry.OnlineDataLoaded && DateTime.Now - cache[key]!["Project"]!["CacheTime"]!.ToObject<DateTime>() < new TimeSpan(6, 0, 0)) continue;
+            string prefix = entry.ModrinthHash + task.Input().Target.VanillaName;
+            string key = prefix + ((int)loaders).ToString(CultureInfo.InvariantCulture);
+            JToken? cached = cache[key] ?? cache[prefix + loaders];
+            if (cached is not null) {
+                // VB '& enum' persisted its numeric value. Also preserve caches
+                // written by the early C# migration using enum names.
+                if (cache[key] is null) cache[key] = cached.DeepClone();
+                entry.FromJson((JObject)cached);
+                if (entry.OnlineDataLoaded && DateTime.Now - cached["Project"]!["CacheTime"]!.ToObject<DateTime>() < new TimeSpan(6, 0, 0)) continue;
             }
             mods.Add(entry);
         }
@@ -126,7 +132,7 @@ public sealed partial class LocalResourceLoaderEngine<TLocal, TProject, TVersion
         if (task.IsCanceled()) return;
         foreach (TLocal entry in mods) {
             entry.OnlineDataLoaded = !failed;
-            cache[entry.ModrinthHash + vanillaVersion + loaders] = entry.ToJson();
+            cache[entry.ModrinthHash + vanillaVersion + ((int)loaders).ToString(CultureInfo.InvariantCulture)] = entry.ToJson();
         }
         FileUtils.Write(host.TempPath() + @"Cache\LocalMod.json", cache.ToString(host.DebugMode() ? Formatting.Indented : Formatting.None));
         if (task.IsCanceled()) return;

@@ -27,6 +27,10 @@ internal sealed class ReviewFixesWorkflowChecks(Action<int, bool, string?> asser
             string[] patterns = CiPatterns(workflow, eventName);
             foreach (string path in buildInputs) C(267, CiPath(patterns, path), eventName + " " + path);
         }
+        // Integration workflows intentionally have no path filter. Retain the
+        // original ordered include/exclude parser coverage with explicit input.
+        string[] filtered = CiPatterns("on:\n  push:\n    paths:\n      - '**'\n      - '!docs/**'\n  pull_request:\n", "push");
+        Require(CiPath(filtered, "future/nested/input.cs") && !CiPath(filtered, "docs/fixture.md"), "Ordered CI include/exclude parsing changed.");
         string python = OperatingSystem.IsWindows() ? "python" : "python3";
         JsonElement Selection(params string[] arguments)
         {

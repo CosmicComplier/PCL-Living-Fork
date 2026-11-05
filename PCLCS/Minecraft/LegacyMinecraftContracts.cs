@@ -144,6 +144,11 @@ public sealed class LegacyMinecraftInstanceLocks(ConcurrentDictionary<string, Le
         return true;
     }
     public bool IsLocked(string? instancePath) => instancePath != null && lockedPaths.ContainsKey(PathUtils.ForCompare(instancePath));
+    public void Release(IWorker worker, string instancePath) {
+        string path = PathUtils.ForCompare(instancePath);
+        if (lockedPaths.TryGetValue(path, out LegacyMinecraftInstanceLease? held) && ReferenceEquals(held.Worker, worker))
+            ((ICollection<KeyValuePair<string, LegacyMinecraftInstanceLease>>)lockedPaths).Remove(new KeyValuePair<string, LegacyMinecraftInstanceLease>(path, held));
+    }
     public bool BlocksNavigation(string? instancePath) => instancePath != null && lockedPaths.TryGetValue(PathUtils.ForCompare(instancePath), out LegacyMinecraftInstanceLease? held) && held.BlocksNavigation;
 }
 

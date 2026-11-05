@@ -22,6 +22,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--workflow',type=Path,default=repository/'.github/workflows/native-main.yml')
     parser.add_argument('--powershell',default='pwsh')
+    parser.add_argument('--allow-missing-symlink-privilege', action='store_true',
+                        help='Local Windows diagnostics only: report the symlink case PENDING on WinError 1314; CI remains strict by default')
     args=parser.parse_args()
     workflow=args.workflow.resolve()
     assert workflow.is_file(),'Actual Native Main workflow is missing'
@@ -128,7 +130,14 @@ def main():
         run('package-payload-tampered',lambda d,e:(d/'package/LivingPCL.exe').write_bytes(b'changed non executable'),False)
         def symlinkReceipt(d,e):
          f=d/'smoke'/('NativeSmoke-'+'a'*32)/'evidence.json';target=d/'safe-copy.json';shutil.copy2(f,target);f.unlink();f.symlink_to(target)
-        run('evidence-reparse-symlink',symlinkReceipt,False)
+        pending=[]
+        try:
+            run('evidence-reparse-symlink',symlinkReceipt,False)
+        except OSError as error:
+            if not args.allow_missing_symlink_privilege or os.name!='nt' or getattr(error,'winerror',None)!=1314:
+                raise
+            pending.append('evidence-reparse-symlink')
+            print('PENDING evidence-reparse-symlink: local Windows token lacks symbolic-link privilege; default CI does not defer this case')
         # Static GitHub dependency/condition contract, not an Actions runner simulation.
         condition=w['jobs']['native-upgrade']['if'];assert "!cancelled()" in condition and "needs.native.result == 'failure'" in condition and "needs.native.result == 'success'" in condition
         assert 'continue-on-error' not in w['jobs']['native'] and not any(s.get('continue-on-error') for s in w['jobs']['native']['steps'])
@@ -138,7 +147,8 @@ def main():
         consumerIndex=next(i for i,s in enumerate(w['jobs']['native-upgrade']['steps']) if s.get('id')=='upgrade_inputs');legacyIndex=next(i for i,s in enumerate(w['jobs']['native-upgrade']['steps']) if s['name']=='Download and verify the fixed original legacy product artifact');assert consumerIndex<legacyIndex
         print('PASS workflow status, seven actual gates, always upload and fail-closed-before-old-download order')
         summary={'scope':'Actual workflow producer/consumer blocks and explicitly NON-EXECUTABLE offline fixtures only; no Windows product/bridge acceptance claimed','cases':cases,'counts':{'qualified':sum(c['expected']=='qualified' for c in cases),'rejected':sum(c['expected']!='qualified' for c in cases)}}
-        assert summary['counts']=={'qualified':3,'rejected':32},summary
+        summary['pending']=pending
+        assert summary['counts']=={'qualified':3,'rejected':32-len(pending)},summary
         assert w['jobs']['native']['strategy']['fail-fast'] is False
         upgrade=w['jobs']['native-upgrade']['steps']
         assert not w['jobs']['native-upgrade'].get('continue-on-error') and not upgrade[consumerIndex].get('continue-on-error')

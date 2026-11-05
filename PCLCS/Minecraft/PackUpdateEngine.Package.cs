@@ -73,7 +73,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     public TPackage ReadPackage(string archivePath, string stage, CancellationToken token, Func<string, HttpMethod?, string?, JToken>? request = null) {
         if (request is null) request = host.Request;
         TPackage result = host.CreatePackage();
-        using (ZipArchive archive = ZipFile.OpenRead(archivePath)) {
+        using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Read, InstanceResourcePackageRules.EntryNameEncoding())) {
             ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(item => item.FullName == "modrinth.index.json" || item.FullName == "manifest.json");
             if (entry is null) {
                 var entries = archive.Entries.Where(item => item.FullName.Split('/').Length == 2 && new[] { "modrinth.index.json", "manifest.json" }.Contains(item.Name)).ToList();

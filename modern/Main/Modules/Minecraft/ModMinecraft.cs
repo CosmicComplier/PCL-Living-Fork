@@ -255,6 +255,7 @@ namespace PCL
 
         public sealed class McInstanceLock
         {
+            internal static void Release(IWorker Worker, string InstancePath) => Native.Release(Worker, InstancePath);
             private static readonly global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::PCLCS.LegacyMinecraftInstanceLease> LockedPaths = new global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::PCLCS.LegacyMinecraftInstanceLease>(global::System.StringComparer.OrdinalIgnoreCase);
             private static readonly global::PCLCS.LegacyMinecraftInstanceLocks Native = new global::PCLCS.LegacyMinecraftInstanceLocks(global::PCL.ModMinecraft.McInstanceLock.LockedPaths);
             internal static bool IsAnyLocked

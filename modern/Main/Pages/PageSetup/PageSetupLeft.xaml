@@ -36,5 +36,6 @@
                 </x:Array>
             </local:MyListItem.Buttons>
         </local:MyListItem>
+        <local:MyListItem x:Name="ItemUpdate" IsScaleAnimationEnabled="False" Tag="4" MinPaddingRight="35" Height="36" VerticalAlignment="Top" Title="更新" Type="RadioBox" LogoScale="0.9" />
     </StackPanel>
 </local:MyPageLeft>

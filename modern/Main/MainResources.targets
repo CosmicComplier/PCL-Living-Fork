@@ -1,49 +1,21 @@
 <Project>
-  <!-- Import into the actual C# native Main. This creates real LF resources;
-       it does not create an Application, replace source or provide fallback DLLs. -->
+  <!-- Managed dependencies use the normal .NET graph/bundle. -->
   <PropertyGroup>
     <LFOriginalProjectDirectory Condition="'$(LFOriginalProjectDirectory)'==''">$(MSBuildThisFileDirectory)../../Plain Craft Launcher 2</LFOriginalProjectDirectory>
     <LFResourceGeneratorProject Condition="'$(LFResourceGeneratorProject)'==''">$(MSBuildThisFileDirectory)../BuildResources/ResourceGenerator.csproj</LFResourceGeneratorProject>
     <LFResourceGeneratorAssembly Condition="'$(LFResourceGeneratorAssembly)'==''">$(MSBuildThisFileDirectory)../BuildResources/bin/$(Configuration)/net10.0/ResourceGenerator.dll</LFResourceGeneratorAssembly>
     <LFGeneratedResourceDirectory Condition="'$(LFGeneratedResourceDirectory)'==''">$(MSBuildProjectDirectory)/obj/$(Configuration)/$(TargetFramework)/LFResources</LFGeneratedResourceDirectory>
-    <!-- Use the CLI-selected host even when the SDK is invoked by absolute path. -->
     <LFResourceDotNetHost Condition="'$(LFResourceDotNetHost)'=='' And '$(DOTNET_HOST_PATH)'!=''">$(DOTNET_HOST_PATH)</LFResourceDotNetHost>
     <LFResourceDotNetHost Condition="'$(LFResourceDotNetHost)'==''">dotnet</LFResourceDotNetHost>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Exclude the converter's generated old-framework interface; one actual
-         resource class is emitted, with the original basename/type/getters. -->
     <Compile Remove="My Project/Resources.Designer.cs;$(MSBuildProjectDirectory)/My Project/Resources.Designer.cs" />
     <Compile Include="$(LFGeneratedResourceDirectory)/Resources.Designer.cs" />
     <EmbeddedResource Include="$(LFGeneratedResourceDirectory)/PCL.Resources.resources" LogicalName="PCL.Resources.resources" />
   </ItemGroup>
   <Target Name="GenerateLFModernResources" BeforeTargets="GenerateTemporaryTargetAssembly;AssignTargetPaths" DependsOnTargets="ResolveReferences">
     <MSBuild Projects="$(LFResourceGeneratorProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration)" RemoveProperties="TargetFramework;TargetFrameworks;RuntimeIdentifier;SelfContained;PublishSingleFile;PublishTrimmed;PublishReadyToRun" />
-    <ItemGroup>
-      <!-- Runtime implementation items only, never ReferencePathWithRefAssemblies. -->
-      <_LFCorePayload Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)'=='PCLCS' And '%(Extension)'=='.dll'" />
-      <_LFPresentationPayload Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)'=='PCLLF.Presentation' And '%(Extension)'=='.dll'" />
-      <_LFSharedPayload Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)'=='MeloongCore' And '%(Extension)'=='.dll'" />
-      <_LFJsonPayload Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)'=='Newtonsoft.Json' And '%(Extension)'=='.dll'" />
-      <!-- Actual SDK-restored Windows implementation, never framework refs or
-           the build host's Linux PNSE Registry assembly. Publish's resolved
-           runtime pack metadata is authoritative for the produced win-x64 app. -->
-      <_LFRegistryPayload Include="@(RuntimePackAsset)" Condition="'%(Filename)'=='Microsoft.Win32.Registry' And '%(Extension)'=='.dll' And '%(AssetType)'=='runtime' And '%(RuntimeIdentifier)'=='win-x64' And '%(NuGetPackageId)'=='Microsoft.NETCore.App.Runtime.win-x64'" />
-    </ItemGroup>
-    <PropertyGroup>
-      <LFModernCoreAssembly Condition="'$(LFModernCoreAssembly)'==''">@(_LFCorePayload)</LFModernCoreAssembly>
-      <LFModernPresentationAssembly Condition="'$(LFModernPresentationAssembly)'==''">@(_LFPresentationPayload)</LFModernPresentationAssembly>
-      <LFModernSharedAssembly Condition="'$(LFModernSharedAssembly)'==''">@(_LFSharedPayload)</LFModernSharedAssembly>
-      <LFModernJsonAssembly Condition="'$(LFModernJsonAssembly)'==''">@(_LFJsonPayload)</LFModernJsonAssembly>
-      <LFModernRegistryAssembly Condition="'$(LFModernRegistryAssembly)'=='' And '@(_LFRegistryPayload->Count())'=='1'">@(_LFRegistryPayload)</LFModernRegistryAssembly>
-      <!-- Without a resolved win-x64 runtime pack, Windows builds keep the
-           generator's existing actual Windows .NET10 runtime default. Linux
-           framework-dependent builds must explicitly supply a real Windows
-           runtime asset; there is no Linux/ref/empty fallback. -->
-      <_LFRegistryArgument Condition="'$(LFModernRegistryAssembly)'!=''">--registry &quot;$(LFModernRegistryAssembly)&quot;</_LFRegistryArgument>
-    </PropertyGroup>
-    <Error Condition="!Exists('$(LFModernCoreAssembly)') Or !Exists('$(LFModernPresentationAssembly)') Or !Exists('$(LFModernSharedAssembly)') Or !Exists('$(LFModernJsonAssembly)')" Text="Missing actual modern runtime resource dependency; build the native Core/Presentation/Shared/JSON graph first." />
-    <Exec Command="&quot;$(LFResourceDotNetHost)&quot; &quot;$(LFResourceGeneratorAssembly)&quot; --lf-project &quot;$(LFOriginalProjectDirectory)&quot; --output &quot;$(LFGeneratedResourceDirectory)&quot; --core &quot;$(LFModernCoreAssembly)&quot; --presentation &quot;$(LFModernPresentationAssembly)&quot; --shared &quot;$(LFModernSharedAssembly)&quot; --json &quot;$(LFModernJsonAssembly)&quot; $(_LFRegistryArgument)" />
+    <Exec Command="&quot;$(LFResourceDotNetHost)&quot; &quot;$(LFResourceGeneratorAssembly)&quot; --lf-project &quot;$(LFOriginalProjectDirectory)&quot; --output &quot;$(LFGeneratedResourceDirectory)&quot;" />
     <ItemGroup>
       <FileWrites Include="$(LFGeneratedResourceDirectory)/PCL.Resources.resources;$(LFGeneratedResourceDirectory)/Resources.Designer.cs;$(LFGeneratedResourceDirectory)/Resources.resx;$(LFGeneratedResourceDirectory)/resource-manifest.json;$(LFGeneratedResourceDirectory)/LF.PackResources.props" />
     </ItemGroup>

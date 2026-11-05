@@ -129,18 +129,25 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
     }
     public void Delete() {
         if (host.ModpackEnabled()) return;
+        TInstance? target = null;
         try {
-            if (host.Locked(host.Instance())) { host.HintRed("该版本正在被修改，请稍后再删除！"); return; }
-            bool shift = host.Shift(); bool hintIndie = Convert.ToInt32(host.Instance().State) != 0 && !Same(host.Instance().PathIndie, host.MinecraftFolder());
-            DirectoryInfo folder = DirectoryUtils.GetInfo(host.Instance().PathIndie + @"saves\");
+            target = host.Instance();
+            if (host.Locked(target)) { host.HintRed("该版本正在被修改，请稍后再删除！"); return; }
+            bool shift = host.Shift(); bool hintIndie = Convert.ToInt32(target.State) != 0 && !Same(target.PathIndie, host.MinecraftFolder());
+            DirectoryInfo folder = DirectoryUtils.GetInfo(target.PathIndie + @"saves\");
             List<string> saves = hintIndie && folder.Exists ? folder.EnumerateDirectories().OrderByDescending(save => save.LastWriteTime).Select(save => $"{save.Name}（上次修改：{StringUtils.FormatTimeSpan(save.LastWriteTime - DateTime.Now, false)}）").ToList() : new List<string>();
-            string text = $"你确定要{(shift ? "永久" : "")}删除版本 {host.Instance().Name} 吗？" + (hintIndie ? "\r\n该版本对应的存档、资源包、Mod 等文件也将被一并删除！" + (saves.Any() ? "\r\n\r\n这会删除以下存档：\r\n· " + string.Join("\r\n· ", saves) : "") : "");
-            switch (host.Confirm(text, "版本删除确认", hintIndie || shift)) {
-                case 1: host.Instance().ResetSettingsCache(); DirectoryUtils.Delete(host.Instance().PathVersion, !shift); host.HintGreen("已删除版本 " + host.Instance().Name + "！"); break;
-                case 2: return;
-            }
-            host.RefreshInstanceList(); host.PageBack();
-        } catch (OperationCanceledException ex) { host.Warn(ex, $"删除版本 {host.Instance().Name} 被主动取消"); }
-        catch (Exception ex) { host.ErrorAlert(ex, $"删除版本 {host.Instance().Name} 失败"); }
+            string text = $"你确定要{(shift ? "永久" : "")}删除版本 {target.Name} 吗？" + (hintIndie ? "\r\n该版本对应的存档、资源包、Mod 等文件也将被一并删除！" + (saves.Any() ? "\r\n\r\n这会删除以下存档：\r\n· " + string.Join("\r\n· ", saves) : "") : "");
+            if (host.Confirm(text, "版本删除确认", hintIndie || shift) != 1) return;
+            string targetPath = target.PathVersion;
+            target.ResetSettingsCache();
+            host.DeleteConfirmed(target, !shift, () => {
+                host.HintGreen("已删除版本 " + target.Name + "！");
+                host.RefreshInstanceList();
+                // Browsing another instance during deletion must not navigate
+                // that newer page away when the original operation completes.
+                if (host.IsCurrentPage() && host.Instance() is TInstance current && PathUtils.IsSame(current.PathVersion, targetPath)) host.PageBack();
+            });
+        } catch (OperationCanceledException ex) { host.Warn(ex, $"删除版本 {target?.Name ?? "未知版本"} 被主动取消"); }
+        catch (Exception ex) { host.ErrorAlert(ex, $"删除版本 {target?.Name ?? "未知版本"} 失败"); }
     }
 }

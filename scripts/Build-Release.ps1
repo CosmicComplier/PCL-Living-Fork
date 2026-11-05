@@ -3,18 +3,24 @@ param(
     [string]$OutputPath,
     [string]$DotNetPath = 'dotnet',
     [string]$NativeProjectPath,
+    [switch]$Slim,
+    [switch]$OfficialRelease,
     [switch]$EnableLegacyLink
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $project = if ($NativeProjectPath) { [IO.Path]::GetFullPath($NativeProjectPath) } else { Join-Path $projectRoot 'modern/Main/PCL-Living-Fork.Modern.csproj' }
 $output = if ($OutputPath) { [IO.Path]::GetFullPath($OutputPath) } else { Join-Path $projectRoot ('artifacts/release/' + $Configuration) }
+if ($Slim) {
+    & (Join-Path $PSScriptRoot 'Build-SlimRelease.ps1') -ProjectPath $project -OutputPath $output -Configuration $Configuration -DotNetPath $DotNetPath -OfficialRelease:$OfficialRelease -EnableLegacyLink:$EnableLegacyLink
+    return
+}
 # The native publisher owns the package/identity checks. Its modern inner
 # publisher owns the ONLY C# credential GUID, build lease and finally cleanup.
 # Historical credential-failure fixtures have a separate explicit test helper;
 # this default entry never selects a business VB/vbproj or the managed bridge as Main.
 Write-Output ('Building full LF C#/.NET10 ' + $Configuration + ' product: ' + $project)
-& (Join-Path $PSScriptRoot 'Build-NativeRelease.ps1') -NativeProjectPath $project -OutputPath $output -Configuration $Configuration -DotNetPath $DotNetPath -EnableLegacyLink:$EnableLegacyLink
+& (Join-Path $PSScriptRoot 'Build-NativeRelease.ps1') -NativeProjectPath $project -OutputPath $output -Configuration $Configuration -DotNetPath $DotNetPath -OfficialRelease:$OfficialRelease -EnableLegacyLink:$EnableLegacyLink
 $indexPath = Join-Path $output 'NativeRelease.Artifacts.json'
 $index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
 $expected = @('native-exe', 'native-zip', 'legacy-bridge', 'checksums')

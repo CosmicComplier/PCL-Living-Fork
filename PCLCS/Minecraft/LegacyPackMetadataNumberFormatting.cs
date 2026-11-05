@@ -5,13 +5,13 @@ using System.Numerics;
 namespace PCLCS;
 
 /// <summary>有限 double 的旧 G15／G17 候选；R 的回读选择由调用方另行完成。</summary>
-internal static class LegacyPackMetadataNumberFormatting {
+public static class LegacyPackMetadataNumberFormatting {
     // Independent exact-rational reconstruction for the LF CLR4 observations.
     // Same-source semantic reference (MIT): dotnet/coreclr
     // abbb8f685929c7aeaa087dae46fedc1bc2af4b17, number.cpp RoundNumber /
     // FormatGeneral. Its DoubleToNumber delegates to CRT _ecvt: this is not a
     // port of that CRT, and unmeasured cases remain subject to the real LF oracle.
-    internal static string Format(double value, int precision, CultureInfo culture) {
+    public static string Format(double value, int precision, CultureInfo culture) {
         if (precision != 15 && precision != 17) throw new ArgumentOutOfRangeException(nameof(precision));
         if (culture is null) throw new ArgumentNullException(nameof(culture));
         if (double.IsNaN(value) || double.IsInfinity(value)) throw new ArgumentOutOfRangeException(nameof(value));

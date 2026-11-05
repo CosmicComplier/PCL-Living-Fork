@@ -25,6 +25,9 @@ internal static class MapResourceChecks
             Native.Set(item, "ResourceType", ResourceTypes.Map);
             Native.Set(item, "Id", game);
             Native.Set(item, "FileName", "map.zip");
+            Native.Set(item, "Display", "Fixture " + game);
+            Native.Set(item, "ReleaseDate", DateTime.UtcNow.AddDays(-1));
+            Native.Property(version, "ReleaseTypeCode").SetValue(item, 1);
             Native.Set(item, "GameVersions", new List<string> { game });
             Native.Set(item, "DownloadUrls", new List<string> { "https://example.invalid/native-facade/map.zip" });
             items.Add(item);
@@ -59,10 +62,68 @@ internal static class MapResourceChecks
         object controller = Native.Field(detail, "Controller").GetValue(page)!;
         Native.Check(controller is not null && controller.GetType().Assembly.GetName().Name == "PCLCS" && controller.GetType().GetGenericArguments()[0] == project.GetType() && controller.GetType().GetGenericArguments()[1] == version, "Page adapter did not use the actual production controller and actual Main models.");
         Native.Check(ReferenceEquals(projectState.GetValue(page), project), "Detail adapter created a second project store.");
+        DetailCardRendering(page, controller!, project, items);
+    }
+
+    private static void DetailCardRendering(object page, object controller, object project, IList versions)
+    {
+        object host = Native.Get(controller, "host")!;
+        var setBuilder = (Action<PCL.MyCard, Action<System.Windows.Controls.StackPanel>>)Native.Get(host, "SetBuilder")!;
+        var stack = new System.Windows.Controls.StackPanel();
+        var card = new PCL.MyCard { SwapControl = stack };
+        card.Children.Add(stack);
+        int built = 0;
+        setBuilder(card, actual => { Native.Check(ReferenceEquals(actual, stack), "Builder received a different panel."); built++; actual.Children.Add(new System.Windows.Controls.TextBlock { Text = "fixture" }); });
+        card.BuildContent(); card.BuildContent();
+        Native.Check(built == 1 && stack.Children.Count == 1, "Actual Main card builder failed or duplicated its content.");
+
+        var view = new ResourceDetailPageView
+        {
+            Filter = new System.Windows.Controls.StackPanel(), Results = new System.Windows.Controls.StackPanel(), Intro = new System.Windows.Controls.StackPanel(),
+            FilterCard = new System.Windows.Controls.Border(), Alternative = new System.Windows.Controls.TextBlock(), Wiki = new System.Windows.Controls.Button(),
+            AlternativeText = _ => { }, WebText = _ => { }, ScrollHome = () => { }
+        };
+        // Replace only the detached page's viewport and navigation boundary.
+        // Cards, lazy builders, sorting, version-row construction and filtering
+        // continue through the genuine Main delegates and Core controller.
+        Native.Set(host, "View", (Func<ResourceDetailPageView>)(() => view));
+        Native.Set(host, "HasArguments", (Func<bool>)(() => false));
+        foreach (ResourceTypes type in new[] { ResourceTypes.Mod, ResourceTypes.ModPack, ResourceTypes.Map, ResourceTypes.DataPack, ResourceTypes.ResourcePack, ResourceTypes.Shader })
+        {
+            Native.Set(project, "Types", type);
+            Native.Set(controller, "TargetResourceType", type);
+            Native.Set(controller, "VersionFilter", null);
+            foreach (object version in versions) Native.Set(version, "ResourceType", type);
+            Native.Call(controller.GetType(), "UpdateFilterResult", controller);
+            Native.Check(view.Results.Children.Count == 2, "Download detail lost its version cards for " + type);
+            foreach (PCL.MyCard result in view.Results.Children)
+            {
+                Native.Check(result.IsSwapped, "Multi-card results did not retain lazy collapsed state.");
+                result.IsSwapped = false;
+                var panel = (System.Windows.Controls.StackPanel)result.SwapControl!;
+                Native.Check(panel.Tag is null && panel.Children.Count >= 2, "Expanding a real download card left its version list empty.");
+                var rows = panel.Children.OfType<PCL.MyVirtualizingElement<PCL.MyListItem>>().ToList();
+                Native.Check(rows.Count == 1, "Download card did not contain its actual version row.");
+                foreach (var row in rows) Native.Check(row.Init().Tag is PCL.ResourceVersion, "Download version row did not materialize its genuine file model.");
+                int count = panel.Children.Count;
+                result.BuildContent();
+                Native.Check(panel.Children.Count == count, "Rebuilding a download card duplicated versions.");
+            }
+            Native.Set(controller, "VersionFilter", "1.20.1");
+            Native.Call(controller.GetType(), "UpdateFilterResult", controller);
+            Native.Check(view.Results.Children.Count == 1, "Version filter did not select one download card.");
+            var selected = (PCL.MyCard)view.Results.Children[0];
+            Native.Check(!selected.IsSwapped && ((System.Windows.Controls.StackPanel)selected.SwapControl!).Children.Count >= 2, "Single filtered card did not build its versions automatically.");
+            Native.Call(controller.GetType(), "LoadOnFinish", controller);
+            Native.Check(view.Filter.Children.Count == 3 && view.Results.Children.Count == 2, "Actual filter-button initialization did not restore the complete version list.");
+        }
+        Console.WriteLine("PASS actual Main download detail: typed builder adaptation, six resource types, deferred expansion, single-card selection and filter-button rendering.");
     }
 
     internal static void ResourceEntries(FixtureEnvironment fixture)
     {
+        DesktopCompatibilityChecks.SearchAndLegacyEncoding(fixture.Root);
+        LocalResourceCacheCompatibilityChecks.Run(fixture.Root);
         Type module = Native.Type("PCL.ModMain");
         object queue = Native.Field(module, "WaitingMyMsgBox").GetValue(null)!;
         Native.Check((int)Native.Property(queue.GetType(), "Count").GetValue(queue)! == 0, "Unexpected existing dialog queue.");

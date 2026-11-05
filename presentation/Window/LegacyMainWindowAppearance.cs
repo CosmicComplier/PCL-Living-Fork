@@ -17,12 +17,14 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
     where TStack : class, ILegacyMainPageStack, new() where TInstance : class where TAnimation : struct {
     public void Closing(CancelEventArgs args) { EndProgram(true); args.Cancel = true; }
     public void EndProgram(bool sendWarning) {
+        if (host.HasBlockingFileOperation()) { Hint("版本文件处理尚未完成，请稍候再退出。", LegacyMainHint.Red); return; }
         if (host.HasDownloadingTask()) {
             if (sendWarning && Message("还有下载任务尚未完成，是否确定退出？", second: "取消") == 2) return;
             RunThread(() => { Logger.Info("正在强行停止任务"); foreach (Action cancel in host.TaskbarCancels().ToList()) cancel(); }, "强行停止下载任务");
         }
         if (host.LegacyLink && host.LinkTryExit(!sendWarning, true)) return;
         host.UiWait(() => {
+            if (host.HasBlockingFileOperation()) { Hint("版本文件处理尚未完成，请稍候再退出。", LegacyMainHint.Red); return; }
             Window.IsHitTestVisible = false;
             if (view.PanBack().RenderTransform is null) {
                 TranslateTransform position = new(0, 0); RotateTransform rotation = new(0); ScaleTransform scale = new(1, 1);

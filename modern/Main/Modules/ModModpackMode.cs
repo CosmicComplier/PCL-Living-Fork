@@ -144,6 +144,7 @@ namespace PCL
         }
         internal static global::PCL.FormMain.PageSubType NormalizeSetupPage(global::PCL.FormMain.PageSubType Page)
         {
+            if (Page == FormMain.PageSubType.SetupUpdate) return Page;
             return ((global::PCL.FormMain.PageSubType)(global::PCL.ModModpackMode.Service.NormalizeSetupPage((global::System.Int32)Page)));
         }
         internal static global::System.Boolean BlocksPage(global::PCL.FormMain.PageType Page)

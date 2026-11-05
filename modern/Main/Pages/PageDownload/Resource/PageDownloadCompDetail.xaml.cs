@@ -79,7 +79,7 @@ namespace PCL
                 FilterChecked = new Action<global::System.Windows.FrameworkElement, global::System.Boolean>((Button, Value) => ((global::PCL.MyRadioButton)Button).Checked = Value),
                 SwappedHeight = new Func<global::System.Double>(() => global::PCLLF.Presentation.Controls.MyCardView.SwapedHeight),
                 Card = global::PCL.PageDownloadResourceDetail.CreateVersionCard,
-                SetBuilder = new Action<global::PCL.MyCard, global::System.Action<global::System.Windows.Controls.StackPanel>>((Card, Build) => Card.SetContentBuilder((global::System.Action<global::System.Windows.Controls.Panel>)Build)),
+                SetBuilder = (Card, Build) => Card.SetContentBuilder(Panel => Build((StackPanel)Panel)),
                 CardTitle = new Func<global::PCL.MyCard, global::System.String>(Card => Card.Title),
                 BuildCard = new Action<global::PCL.MyCard>(Card => Card.BuildContent()),
                 SwapCard = new Action<global::PCL.MyCard, global::System.Boolean>((Card, Value) => Card.IsSwapped = Value),

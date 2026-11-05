@@ -362,58 +362,43 @@ namespace PCL
                 Logger.Error(ex, $"当前 .NET 运行环境异常，请安装或修复 .NET 10 Desktop Runtime！{Constants.vbCrLf}请使用与启动器架构一致的 Windows Desktop Runtime 安装程序。", LogBehavior.AlertThenCrash);
             }
         }
-        private string[] _Prefixes;
-        private ConcurrentDictionary<string, Lazy<Assembly>> _LoadedAssemblies; // 缓存
 
         // 动态 DLL 加载
-        private Application() // 这里必须尽早调用，且不能使用任何库，否则加载 MeloongCore 就会导致崩溃
+        private Application()
         {
+            // LF's legacy text/ZIP readers require the Windows code pages before
+            // any instance, pack or server-script parsing can start.
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             // VB Me Handles subscriptions precede the original constructor statements.
             Startup += Application_Startup;
             SessionEnding += Application_SessionEnding;
             DispatcherUnhandledException += Application_DispatcherUnhandledException;
-            // Original constructor-local Static values belong to this Application instance;
-            // do not move their initialization before the WPF base constructor.
-            _Prefixes = new[] { "NAudio", "Newtonsoft.Json", "Ookii.Dialogs.Wpf", "Imazen.WebP", "CacheCow.Common", "CacheCow.Client.FileStore", "CacheCow.Client", "ThrottleDebounce", "System.Net.Http.Formatting", "Microsoft.Win32.Registry", "PCLCS", "PCLLF.Presentation", "MeloongCore" };
-            _LoadedAssemblies = new ConcurrentDictionary<string, Lazy<Assembly>>(StringComparer.Ordinal);
-            AppDomain.CurrentDomain.AssemblyResolve += (sender, Args) =>
-        {
-            // Never redirect the retired WPF identity to the broader MeloongCore prefix.
-            if (Args.Name == "MeloongCore.Wpf" || Args.Name == "MeloongCore.Wpf.resources" || Args.Name.StartsWith("MeloongCore.Wpf,", StringComparison.Ordinal) || Args.Name.StartsWith("MeloongCore.Wpf.resources,", StringComparison.Ordinal))
-                return null;
-            // Let ResourceManager fall back to the neutral embedded BAML when this optional satellite is absent.
-            if (Args.Name == "PCLLF.Presentation.resources" || Args.Name.StartsWith("PCLLF.Presentation.resources,", StringComparison.Ordinal))
-                return null;
-            string Prefix = _Prefixes.FirstOrDefault(p => Args.Name.StartsWith(p, StringComparison.Ordinal));
-            if (Prefix is null)
-                return null;
-            var LazyAssembly = _LoadedAssemblies.GetOrAdd(Prefix, p => new Lazy<Assembly>(() =>
-        {
-                var LoadedAssembly = Assembly.Load((byte[])My.Resources.Resources.ResourceManager.GetObject(p));
-                if (p == "Imazen.WebP")
-                    ExtractLibwebp(); // WebP 特判
-                return LoadedAssembly;
-            }, LazyThreadSafetyMode.ExecutionAndPublication));
-            return LazyAssembly.Value;
-        };
+            // Managed dependencies are resolved once by the .NET host from the
+            // dependency graph/bundle. Only the native WebP payload is embedded.
         }
-        private static void ExtractLibwebp() // 这个方法会调用 ModBase，进而调用 MeloongCore，所以不能放在 New 里
+        private static readonly Lazy<bool> WebPReady = new Lazy<bool>(() =>
         {
-            string arglpPathName = PathUtils.RemoveSlashSuffix(ModBase.PathPure.Value);
-            Application.SetDllDirectory(ref arglpPathName);
+            // .NET's normal resolver can load Imazen without AssemblyResolve.
+            // Bind its native dependency explicitly at the real WebP boundary.
+            string nativePath = Path.Combine(ModBase.PathPure.Value, "libwebp.dll");
+            ModBase.ExtractResources(nativePath, "libwebp64");
+            IntPtr module = NativeLibrary.Load(nativePath);
             try
             {
-                ModBase.ExtractResources(ModBase.PathPure.Value + "libwebp.dll", "libwebp64");
+                NativeLibrary.SetDllImportResolver(typeof(Imazen.WebP.SimpleDecoder).Assembly,
+                    (name, assembly, searchPath) =>
+                        name.Equals("libwebp", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("libwebp.dll", StringComparison.OrdinalIgnoreCase) ? module : IntPtr.Zero);
             }
-            catch (Exception ex)
+            catch
             {
-                Logger.Warn(ex, "写入 libwebp.dll 失败"); // 防止同时加载多个图片时，同时写入文件导致文件占用，进而导致崩溃
+                NativeLibrary.Free(module);
+                throw;
             }
-        }
-#pragma warning disable CS0618 // Preserve the original Windows VBByRefStr input/copy-back ABI.
-        [DllImport("kernel32", EntryPoint = "SetDllDirectoryA", CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Winapi, ExactSpelling = true, SetLastError = true, BestFitMapping = false, ThrowOnUnmappableChar = false)]
-        private static extern bool SetDllDirectory([MarshalAs(UnmanagedType.VBByRefStr)] ref string lpPathName);
-#pragma warning restore CS0618
+            // Cached P/Invoke entry points require this handle until process exit.
+            return true;
+        }, LazyThreadSafetyMode.ExecutionAndPublication);
+        internal static void PrepareWebP() => _ = WebPReady.Value;
 
         // 控件模板事件
         private void MyIconButton_Click(object sender, EventArgs e)

@@ -126,7 +126,9 @@ namespace PCL
                 Explorer = new Action<global::System.String>(Path => global::PCL.ModBase.OpenExplorer(Path)),
                 Error = new Action<global::System.Exception, global::System.String>((Err, Text) => global::MeloongCore.Logger.Error(Err, Text)),
                 ErrorAlert = new Action<global::System.Exception, global::System.String>((Err, Text) => global::MeloongCore.Logger.Error(Err, Text, global::MeloongCore.LogBehavior.Alert)),
-                Warn = new Action<global::System.Exception, global::System.String>((Err, Text) => global::MeloongCore.Logger.Warn(Err, Text))
+                Warn = new Action<global::System.Exception, global::System.String>((Err, Text) => global::MeloongCore.Logger.Warn(Err, Text)),
+                DeleteConfirmed = PageSelectRight.DeleteInstanceInBackground,
+                IsCurrentPage = () => ReferenceEquals(ModMain.FrmMain?.PageRight, this)
             };
         }
 

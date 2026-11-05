@@ -82,6 +82,50 @@ internal static partial class NativeUpdateChecks
             (int)Call("CompareReleaseVersions", "v1.3.5", "v1.3.5-pre-10")! > 0,
             "LF50 stable/prerelease ordering changed.");
         Pass("REL-01", "all four original Test-Release comparisons and LF50 stable/prerelease ordering");
+        Native.Check(!Bool("NewerReleaseForChannel", "v" + PCL.ModBase.ReleaseBaselineVersion, "dev_edition", preview) &&
+            Bool("NewerReleaseForChannel", "v1.3.5", "dev_edition", stable) &&
+            !Bool("NewerReleaseForChannel", "dev_edition", "1.3.4", preview), "Development edition was treated as a public version or downgraded to its baseline.");
+        object pageTransport = Activator.CreateInstance(Native.Type(Updater + "+UpdateTransport"), true)!;
+        Native.Set(pageTransport, "ReadReleaseList", (Func<string, JArray>)(_ => new JArray(Release("v1.3.4", 10, false), Release("v1.3.5", 10, false), Release("v1.3.5-pre-3", 10, false), Release("dev_edition", 10, false))));
+        object githubSource = Native.Enum(Updater + "+UpdateSource", "GitHub")!;
+        var stableRows = (List<JObject>)Call("GetPageReleases", githubSource, stable, pageTransport)!;
+        var previewRows = (List<JObject>)Call("GetPageReleases", githubSource, preview, pageTransport)!;
+        Native.Check(stableRows.Count == 2 && previewRows.Count == 3 && previewRows.All(value => value["tag_name"]!.ToString() != "dev_edition"), "Update-page catalogue did not validate public tags and channel eligibility.");
+        var firstPage = new JArray(Enumerable.Range(0, 100).Select(index => Release("v1.2." + index, 10, false)));
+        JObject historical = Release("v1.1.0", 10, false); historical["assets"] = new JArray();
+        JObject draft = Release("v1.4.0", 10, false); draft["draft"] = true;
+        var secondPage = new JArray(Release("v1.2.0", 10, false), Release("v1.3.5-pre-10", 10, false), historical, draft, Release("dev_edition", 10, false));
+        var pagesRead = new List<string>();
+        Native.Set(pageTransport, "ReadReleaseList", (Func<string, JArray>)(url =>
+        {
+            pagesRead.Add(url);
+            Native.Check(url.Contains("per_page=100", StringComparison.Ordinal), "Release catalogue uses a truncated page size.");
+            return url.EndsWith("&page=1", StringComparison.Ordinal) ? firstPage : url.EndsWith("&page=2", StringComparison.Ordinal) ? secondPage : throw new InvalidOperationException("Unexpected release page.");
+        }));
+        var allPages = (List<JObject>)Call("GetPageReleases", githubSource, preview, pageTransport)!;
+        Native.Check(allPages.Count == 102 && pagesRead.Count == 2 && allPages.Any(value => value["tag_name"]!.ToString() == "v1.1.0") &&
+            allPages.Select(value => value["tag_name"]!.ToString()).Distinct().Count() == 102 && !Bool("CanInstallPageRelease", historical),
+            "Catalogue omitted later pages/history-only releases or exposed an unusable update.");
+        object cnbSource = Native.Enum(Updater + "+UpdateSource", "Cnb")!;
+        Native.Set(pageTransport, "ReadReleaseList", (Func<string, JArray>)(url =>
+        {
+            Native.Check(url.StartsWith("https://cnb.cool/", StringComparison.Ordinal) && url.Contains("page_size=100&page=1", StringComparison.Ordinal), "CNB catalogue did not use its public paginated endpoint.");
+            return new JArray(Release("v1.3.4", 10));
+        }));
+        Native.Check(((List<JObject>)Call("GetPageReleases", cnbSource, preview, pageTransport)!).Count == 1, "CNB only supports the latest manifest instead of the release catalogue.");
+        pagesRead.Clear();
+        Native.Set(pageTransport, "ReadReleaseList", (Func<string, JArray>)(url =>
+        {
+            pagesRead.Add(url);
+            if (url.StartsWith("https://cnb.cool/", StringComparison.Ordinal)) return new JArray(Release("v1.3.4", 10));
+            if (url.EndsWith("&page=1", StringComparison.Ordinal)) return firstPage;
+            throw new IOException("Fixture second-page failure");
+        }));
+        var fallbackRows = (List<JObject>)Call("GetPageReleases", githubSource, preview, pageTransport)!;
+        Native.Check(fallbackRows.Count == 1 && fallbackRows[0]["tag_name"]!.ToString() == "v1.3.4" && pagesRead.Count == 3, "Partial release catalogue was reported as complete instead of retrying the other source.");
+        Native.Set(pageTransport, "ReadReleaseList", (Func<string, JArray>)(_ => throw new IOException("Fixture catalogue unavailable")));
+        Reject(() => Call("GetPageReleases", githubSource, preview, pageTransport), "Incomplete catalogue was replaced by a latest-only list.");
+        Pass("CAT-01", "paginated public CNB/GitHub catalogues, deduplication, draft/dev exclusion, history-only releases and complete-source fallback");
 
         foreach (string url in new[]
         {

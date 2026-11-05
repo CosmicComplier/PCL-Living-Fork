@@ -24,6 +24,7 @@ internal static class VisualAssetChecks
         VerifyChild(environment);
         Native.Check(OperatingSystem.IsWindows() && Thread.CurrentThread.GetApartmentState() == ApartmentState.STA && Application.Current.Dispatcher.CheckAccess(), "Actual Windows STA required for visual assets.");
         Seen.Clear(); Executions.Clear();
+        DesktopCompatibilityChecks.WebP(environment.Root);
         using (Scope scope = new(environment))
         {
             VisualAssetBackgroundChecks.Run(scope);

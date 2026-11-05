@@ -73,20 +73,11 @@ internal static class Program
         object identity = Call(Method(reader, "Read"), nativePath)!;
         object? Get(string name) => identity.GetType().GetProperty(name)!.GetValue(identity);
         Check((string?)Get("AssemblyName") == "LivingPCL" && (string?)Get("Product") == "PCL Living Fork", "Bundle did not identify the genuine LF product.");
-        long offset = (long)Get("EntryOffset")!, length = (long)Get("EntrySize")!;
+        long length = (long)Get("EntrySize")!;
         Check(length == new FileInfo(mainPath).Length && length > 0 && length <= 64L * 1024 * 1024, "Native embedded Main length differs from the tested module.");
-        using FileStream input = File.OpenRead(nativePath);
-        input.Position = offset;
-        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        byte[] buffer = new byte[128 * 1024];
-        for (long remaining = length; remaining > 0;)
-        {
-            int count = input.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
-            if (count == 0) throw new EndOfStreamException("Bound native Main entry ended early.");
-            hash.AppendData(buffer, 0, count); remaining -= count;
-        }
+        byte[] entry = (byte[])Call(Method(reader, "ReadEntryAssembly"), nativePath, identity)!;
         using FileStream tested = File.OpenRead(mainPath);
-        Check(hash.GetHashAndReset().AsSpan().SequenceEqual(SHA256.HashData(tested)), "Native bundle contains a different Main module; no credential result may be attributed to it.");
+        Check(SHA256.HashData(entry).AsSpan().SequenceEqual(SHA256.HashData(tested)), "Native bundle contains a different Main module; no credential result may be attributed to it.");
     }
     private static void Exercise(Assembly assembly, string[] binaries, bool keyless)
     {

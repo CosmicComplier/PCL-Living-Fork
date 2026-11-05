@@ -54,4 +54,6 @@ public sealed class InstanceOverallPageHost<TInstance, TItem, TCombo>
     public Action RefreshDownload = null!, RibbleDownload = null!, PageBack = null!;
     public Action<string> Hint = null!, HintRed = null!, HintGreen = null!, HintBlue = null!, Explorer = null!;
     public Action<Exception, string> Error = null!, ErrorAlert = null!, Warn = null!;
+    public Action<TInstance, bool, Action> DeleteConfirmed = null!;
+    public Func<bool> IsCurrentPage = () => true;
 }

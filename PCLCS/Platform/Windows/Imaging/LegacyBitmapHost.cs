@@ -9,12 +9,14 @@ public sealed class LegacyBitmapHost {
     public readonly string ResourceAssemblyName;
     public readonly Func<string?, DrawingBitmap?> FindBitmapResource;
     public readonly Action<Exception, string> Warn;
+    public readonly Action? PrepareWebP;
 
     public LegacyBitmapHost(string resourceAssemblyName, Func<string?, DrawingBitmap?> findBitmapResource,
-        Action<Exception, string> warn) {
+        Action<Exception, string> warn, Action? prepareWebP = null) {
         ResourceAssemblyName = resourceAssemblyName;
         FindBitmapResource = findBitmapResource;
         Warn = warn;
+        PrepareWebP = prepareWebP;
     }
 
     // Native C# owners provide the same actual resource dictionary and warning sink.

@@ -105,9 +105,9 @@ def main() -> int:
         git("commit", "--quiet", "-m", "selection fixture native input")
         native_head = git("rev-parse", "HEAD")
 
-        def event(data: dict, event_name: str, *, scope: str, native: bool, label: str, paths: list[str]) -> None:
+        def event(data: dict, event_name: str, *, scope: str, native: bool, label: str, paths: list[str], ref: str | None = None) -> None:
             event_file.write_text(json.dumps(data), encoding="utf-8")
-            environment = ENV | {"GITHUB_EVENT_NAME": event_name, "GITHUB_REF": "refs/heads/" + BRANCH}
+            environment = ENV | {"GITHUB_EVENT_NAME": event_name, "GITHUB_REF": ref or "refs/heads/" + BRANCH}
             plan = cli(extra=["--event-file", str(event_file)], cwd=fixture, env=environment)
             expect(plan, scope, native, label, paths)
 
@@ -128,6 +128,19 @@ def main() -> int:
         event({"pull_request": {"base": {"ref": BRANCH, "sha": diverged_base}, "head": {"sha": native_head}}},
               "pull_request", scope="no-checks", native=True, label="actual PR triple-dot excludes unrelated diverged base changes", paths=[native_path])
         event({}, "workflow_dispatch", scope="complete", native=True, label="manual checkpoint retains both complete graphs", paths=[])
+        event({"before": initial, "after": native_head}, "push", scope="complete", native=True,
+              label="main push runs the complete product and migration graphs", paths=[], ref="refs/heads/main")
+        event({"before": native_head, "after": native_head}, "push", scope="complete", native=True,
+              label="main empty or documentation-only push cannot skip the product gate", paths=[], ref="refs/heads/main")
+        event({"pull_request": {"base": {"ref": "main", "sha": diverged_base}, "head": {"sha": native_head}}},
+              "pull_request", scope="complete", native=True, label="main PR runs complete acceptance instead of affected-only checks", paths=[], ref="refs/pull/7/merge")
+        event({"merge_group": {"base_ref": "refs/heads/main", "base_sha": initial, "head_sha": native_head}},
+              "merge_group", scope="complete", native=True, label="main merge queue runs the complete combined snapshot", paths=[], ref="refs/heads/gh-readonly-queue/main/pr-7-fixture")
+        event({}, "workflow_dispatch", scope="complete", native=True, label="manual feature-branch checkpoint cannot be skipped", paths=[], ref="refs/heads/codex/ci-fixture")
+        event({"before": initial, "after": native_head}, "unknown_event", scope="complete", native=True,
+              label="unknown event cannot request incremental checks", paths=[])
+        event({"pull_request": {"base": [], "head": {"sha": native_head}}}, "pull_request", scope="complete", native=True,
+              label="malformed PR branch context falls back to complete checks", paths=[])
         event({"before": "0" * 40, "after": native_head}, "push", scope="complete", native=True,
               label="initial diff base fails closed", paths=[])
         event({"before": "f" * 40, "after": native_head}, "push", scope="complete", native=True,
