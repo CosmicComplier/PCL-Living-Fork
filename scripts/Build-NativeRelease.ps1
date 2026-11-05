@@ -5,7 +5,8 @@
  [string]$DotNetPath='dotnet',
  [string]$NativeInspectorProject,
  [string]$NativeUpdaterSource,
- [switch]$BridgeOnly
+ [switch]$BridgeOnly,
+ [switch]$EnableLegacyLink
 )
 # Build/package only. This script never publishes a GitHub release, starts a
 # launcher, applies updates, reads user data, or supplies build credentials.
@@ -21,7 +22,7 @@ try{
  $payloadFolder=Join-Path $temporary 'Payload'
  # Keep the original C# credential generator/lease/cleanup boundary for the
  # actual Main publish. The wrapper owns the one credential GUID lifecycle.
- & (Join-Path $PSScriptRoot 'Build-ModernRelease.ps1') -Configuration $Configuration -OutputPath $payloadFolder -DotnetPath $DotNetPath -ProjectPath $NativeProjectPath -NativePayload
+ & (Join-Path $PSScriptRoot 'Build-ModernRelease.ps1') -Configuration $Configuration -OutputPath $payloadFolder -DotnetPath $DotNetPath -ProjectPath $NativeProjectPath -NativePayload -EnableLegacyLink:$EnableLegacyLink
  $payload=Join-Path $payloadFolder 'LivingPCL.exe'
  if(-not [IO.File]::Exists($payload)){throw 'Native publish did not produce LivingPCL.exe'}
  $sidecars=@(Get-ChildItem -LiteralPath $payloadFolder -File|Where-Object Name -ne 'LivingPCL.exe')

@@ -24,6 +24,12 @@ internal sealed class MmcImportScope : IDisposable
     private readonly ConcurrentDictionary<Thread, byte> threads = new();
     private readonly List<TaskLoader> workloads = new();
     private readonly List<string> temporary = new();
+    // Bounded observations of synthetic MMC keys only; delegates/results and
+    // exceptions stay original. No extra disk reads or global logger changes.
+    private readonly ConcurrentQueue<IniObservation> iniTrace = new();
+    private int iniTraceCount;
+    private readonly record struct IniObservation(string Operation, string File, string Key,
+        string State, string? Value, string? ErrorType, string? ErrorMessage);
     internal readonly List<Request> Requests = new();
     internal readonly List<(ComboLoader Loader, string Folder)> Plans = new();
     internal readonly List<ModpackMessage> Messages = new();
@@ -41,6 +47,26 @@ internal sealed class MmcImportScope : IDisposable
             Native.Check(!Directory.Exists(Root), "Refusing existing MMC contract fixture."); Directory.CreateDirectory(Root);
             Game = Path.Combine(Root, "minecraft") + Path.DirectorySeparatorChar; Directory.CreateDirectory(Game); tasks.SelectMinecraft(Game);
             object engine = Native.Field(typeof(ModModpack), "Service").GetValue(null)!; host = Native.Get(engine, "host")!;
+            var readBoolean = (Func<string, string, bool, bool>)Native.Get(host, "ReadIniBoolean")!;
+            Set("ReadIniBoolean", new Func<string, string, bool, bool>((file, key, fallback) => {
+                ObserveIni("ReadIniBoolean", file, key, "call", fallback ? "true" : "false");
+                try { bool result = readBoolean(file, key, fallback); ObserveIni("ReadIniBoolean", file, key, "returned", result ? "true" : "false"); return result; }
+                catch (Exception error) { ObserveIni("ReadIniBoolean", file, key, "threw", null, error); throw; }
+            }));
+            var readIni = (Func<string, string, string?, string?>)Native.Get(host, "ReadIni")!;
+            Set("ReadIni", new Func<string, string, string?, string?>((file, key, fallback) => {
+                ObserveIni("ReadIni", file, key, "call", fallback);
+                try { string? result = readIni(file, key, fallback); ObserveIni("ReadIni", file, key, "returned", result); return result; }
+                catch (Exception error) { ObserveIni("ReadIni", file, key, "threw", null, error); throw; }
+            }));
+            var writeIni = (Action<string, string, object>)Native.Get(host, "WriteIni")!;
+            Set("WriteIni", new Action<string, string, object>((file, key, value) => {
+                // The selected command is string data; never invoke arbitrary
+                // object ToString() or replace the value sent to production.
+                ObserveIni("WriteIni", file, key, "call", value as string);
+                try { writeIni(file, key, value); ObserveIni("WriteIni", file, key, "returned", value as string); }
+                catch (Exception error) { ObserveIni("WriteIni", file, key, "threw", null, error); throw; }
+            }));
             Set("RequestTempFolder", new Func<string>(() => { string folder = Path.Combine(Root, "temp", Guid.NewGuid().ToString("N")) + Path.DirectorySeparatorChar; Directory.CreateDirectory(folder); temporary.Add(folder); return folder; }));
             var names = (Func<string, ModpackNameValidator>)Native.Get(host, "NameValidator")!;
             Set("NameValidator", new Func<string, ModpackNameValidator>(folder => { ModpackNameValidator real = names(folder); return new() { Validate = value => { LastCandidate = value ?? ""; return real.Validate(value); }, Prompt = () => { PromptCount++; return PromptResult; } }; }));
@@ -64,6 +90,25 @@ internal sealed class MmcImportScope : IDisposable
             var cache = Settings.Entries["LaunchAdvanceJvm"].ValueCache; bool had = cache.TryGetValue("", out object? before);
             restore.Push(() => { if (had) cache[""] = before!; else cache.TryRemove("", out _); }); cache[""] = "-Dglobal=kept";
         } catch { Dispose(); throw; }
+    }
+    private void ObserveIni(string operation, string file, string key, string state, string? value, Exception? error = null) {
+        if (key is not ("OverrideCommands" or "PreLaunchCommand" or "VersionAdvanceRun")) return;
+        string prefix = Root + Path.DirectorySeparatorChar;
+        // Existing production paths are absolute under this owned fixture.
+        // Pure lexical filtering adds no filesystem accesses or error fallback.
+        if (!file.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+            file.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Contains("..")) return;
+        if (Interlocked.Increment(ref iniTraceCount) > 48) return;
+        static string? Bound(string? text) => text is { Length: > 1024 } ? text[..1024] + "<truncated>" : text;
+        iniTrace.Enqueue(new(operation, Bound(file[prefix.Length..])!, key, state,
+            Bound(value), error?.GetType().FullName, Bound(error?.Message)));
+    }
+    private void FlushIniTrace() {
+        // Called after the actual worker completion barrier, before its original
+        // assertions; output failure is not swallowed or treated as a pass.
+        Console.WriteLine("DIAG MMC synthetic host ini events=" + iniTrace.Count);
+        while (iniTrace.TryDequeue(out IniObservation item))
+            Console.WriteLine("DIAG MMC synthetic host ini " + System.Text.Json.JsonSerializer.Serialize(item));
     }
     internal int MessageResult = 2;
     private void Set(string name, object value) { FieldInfo field = Native.Field(host.GetType(), name); object? before = field.GetValue(host); restore.Push(() => field.SetValue(host, before)); field.SetValue(host, value); }
@@ -97,6 +142,7 @@ internal sealed class MmcImportScope : IDisposable
             if (task.State != ModBase.LoadState.Loading && threads.Keys.All(thread => ReferenceEquals(thread, Thread.CurrentThread) || !thread.IsAlive)) break;
             if (DateTime.UtcNow >= deadline) throw new TimeoutException("Real MMC pack thread did not finish."); Thread.Sleep(2);
         }
+        FlushIniTrace();
         Native.Check(task.State == ModBase.LoadState.Finished, "Actual MMC pack workload failed: " + task.Error);
     }
     internal void ExecuteCanceled(TaskLoader task) {

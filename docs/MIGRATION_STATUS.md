@@ -6,7 +6,7 @@
 
 - 目标状态：`in_progress`。正式产品现为 `modern/Main` 完整 C#/.NET10 WPF，固定 LF main50/1.3.5-pre-3 的功能、资源、完整事件及 typed 桥已接通，独立于业务 VB/vbproj 构建发布。真实 Windows Debug/Release 主程序编译、54 项资源加载、完整原生包与兼容桥生成、可选联机模式编译已通过；Native两轮冷启/关闭重开与真实Registry已实际通过；备份/更新等其余运行兼容仍在验收，旧 VB 比较工程尚未退役。不能把编译成功或已迁源码当成整链通过；既有 Core/原产品/现代组件各自 Windows 证据仍按下文限定范围保留。
 - 集成分支：`migration/csharp-modern-dotnet`。初始起点`f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`保持；LF main当前同步源固定`50b028da5fcad2226d74d901a41d8c43a249bfb2`，仅只读来源，不向main提交/合并、不force。6个新提交不能整文件覆盖既已迁移的Core/typed桥。
-- 最新已验证检查点为 `5028988`：Build41940652704 的两配置各42步成功、原44消费者通过；Modern41940652692 两配置成功；Migration41940652687 为 Windows508/508、Ubuntu457/457，严格397例零差异。Native41940652713 两配置各23/25默认族通过，Release真实Registry及225/226/228启动合同、两轮正常冷启/关闭/复开通过；整合包测试宿主退出和MMC命令断言仍失败，独立旧版升级仍失败，不能标完整Native验收成功。历史3df/7eb/4a等证据在原记录保留。
+- 最新已验证检查点为 `5028988`：Build41940652704 的两配置各42步成功、原44消费者通过；Modern41940652692 两配置成功；Migration41940652687 为 Windows508/508、Ubuntu457/457，严格397例零差异。Native41943601945 两配置各24/25默认族通过，Release真实Registry及225/226/228启动合同、两轮正常冷启/关闭/复开通过；MMC命令断言和独立旧版升级退出观察仍失败，不能标完整Native验收成功。历史3df/7eb/4a等证据在原记录保留。
 - 当前交付批次：收尾真实Native功能链与旧版升级。整合包loopback下载已隔离到保留真实guard的专属进程，只有全部原UX/IO/线程/句柄/监听器屏障与nonce/PID/root/Main SHA/MVID完成凭据通过，父进程才执行明确的本人进程终止并要求-1及双EOF；其余事务/FLOW仍正常退出。MMC保原输入/固定期望，仅在失败时输出GUID合成实际配置/缓存/磁盘诊断。合并后Native宿主Release严格编译0W0E，新协议Windows待验；生产网络循环、取消与预算未改。默认发布切换及178产品VB/1vbproj实体退役仍未执行。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前18组（设置／校验Loader／Java与新增foundation独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
@@ -138,6 +138,12 @@ Java升级格式窄适配已接：仅PCLCS/Java.cs的Version字段局部JsonConv
 独立旧桥126963951026：当前Release取包/重绑/hash与固定旧artifact前置均成功，真实旧Parent6140正常关闭，helper8616已替换目标且restart8756通过新Main就绪检查；191,554,445字节的目标SHA与本次NativeProof一致，新Log1无E、上一轮Java版本对象错误未复现。但helper/bridge的15秒等待或退出码条件失败，缺逐项值，四case整体仍失败，不能外推其余case通过。artifact13375769075已下载核实253,197,284字节，SHA256 `646450f32df64247b1c5492e2038820ba8e78c8f177131ca18333174c575bd80`；目标SHA256 `899c73b93cb558311fbf5652a215d271d1b181c99cc545d605f57df48f3cdd1f`，new Log1真实记录Java17(17.0.20.1)可用。canonical bridge PID和两个退出值未留，不能补猜。现已只展开原交接条件，helper wait15秒/exit0后才尝试bridge wait15秒/exit0，失败时只读本人进程/窗口/目标与替换暂存路径；不增加跳过的等待、不改22原函数/清理/断言。PowerShell ParseFile零错及22原函数正文一致已验；新Windows结果待回收，不猜生产故障。
 
 当前下载宿主修复只拆UX-P1..P4真实loopback到独立GUID子进程，原全部检查与真实瞬时线程/文件独占/服务器收尾先完成，永久manager仍前台且guard不恢复。父核精确绑定凭据后预期终止本人子进程（明确不是自然exit0），要求-1、双流EOF、空stderr；早退、无/坏凭据、活动负载、超时或清理错仍失败。真实同一receipt verifier的1合法/16破坏所有权或屏障样本通过，合并后实际Native宿主严格跨编0W0E；这两项不算Windows运行。MMC固定gold/Config/26检查点和生产不改，仅加合成限域有界诊断。完整新Windows验收仍待执行。
+
+`7013b6c`/`8289080` 的新Native41943601945：Release126970610533／Debug126970610350均24/25族成功。modpack-update已真实通过专属loopback子进程的原UX/网络/文件/监听器屏障、三原前台manager与本人预期-1终止/双EOF，并继续通过原事务/preview/FLOW和正常外宿主退出，不能再记该族超时。仅MMC commands仍失败；两配置实际diagnostic都是actual空、cachedOverride=true、cachedCommand完整、convertedConfig保留原值，物理Setup.ini无VersionAdvanceRun行，尚不支持改输入/期望或全局cache规范化。当前窄加原host三个delegate透明观察，在真实负载/线程结束后输出原bool/command读取及WriteIni调用/返回/原异常；每调用只执行原委托一次，不改输入/值/异常，合成Root三个key限域48条/每字段1024，无额外文件或logger改动。合并后真实Main引用的Native宿主严格跨编0W0E，新Windows调用细节仍待回收。
+
+828独立旧桥126973474205已得到精确失败条件：helper2064 WaitForExit(15000)=true且HasExited=true，但PowerShell观察ExitCode=null；bridge7072已退出0（因原短路未进入第二wait），restart3996仍正常运行，目标SHA256 `66e0d8e946a4e43d22657970c1a3db82766c232af10bc27940fcb3329d63a2f1`匹配native proof且无替换残留。helper唯独由GetProcessById观察且未提前保留Handle；bridge来自Process.Start，restart由真实映像查询提前保留原Handle。现Track-Process立即取得非零原Handle并持同一Process至原finally.Dispose，失败仍拒绝；没有接受null、改变0门禁或15/20秒预算/四参协议。新增实际WinPS前置从唯一真实Track函数AST运行自有nonce/PID进程的严格int exit0/23与同原Handle映像核验；两侧ready/release原子发布，unpinned仅作诊断。PS解析/原生专用路由实际通过，Windows进程回归与四case升级仍待，artifact13377737280可追溯但未声称已下载核SHA。
+
+R001必要前置先接Native→Modern的EnableLegacyLink可选参数转发，默认false不变，唯一C#凭据GUID/lease/finally仍在Modern。私有实际生产wrapper的默认前后合同、原生调用AST false/true、exit23/非法输入/并发锁与清理已通过；完整可选模式Windows发布仍待。默认Build-Release/根solution/旧Build job及VB实体未改；历史凭据fixture/ComparisonOnly迁接保留到协调切换，避免为前置稿重复无关原44全测。
 
 本轮已推送的实现与验证检查点：
 
@@ -367,11 +373,11 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N001 | done | G002、G003 | [兼容审计](migration/DOTNET10_COMPATIBILITY.md) 已完成工程／依赖清单、12 项门禁与小批次建议；仅表示审计交付，实际现代运行验证仍由 N002–N005／R002 关闭 |
 | N002 | in_progress | N001 | N002a先落实LF当前真实全C#库／WPF组件的独立现代工程、完整依赖图与Windows运行，不等全部Base／Loader先迁；剩余C024／C025及后续新增源的现代兼容仍随整链验证，不能以本批关闭整个现代迁移 |
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
-| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF、LF50功能/事件/typed桥独立于业务VB/designer/vbproj/resx；两配置真实构建、54资源getter/18blob、原生四角色与C7、可选LegacyLink编译通过。5028988 Native两配置23/25族、Release真实Registry/225/226/228及两轮正常冷启/关闭/复开已通过；仍余modpack-update永久前台线程测试收尾、MMC commands精确失败，以及完整根安装/游戏和主要连续交互，不以编译或局部夹具关闭整项 |
+| N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF、LF50功能/事件/typed桥独立于业务VB/designer/vbproj/resx；两配置真实构建、54资源getter/18blob、原生四角色与C7、可选LegacyLink编译通过。5028988 Native两配置23/25族、Release真实Registry/225/226/228及两轮正常冷启/关闭/复开已通过；828两配置modpack-update含专属真实下载和完整FLOW已通过，仍余MMC commands精确失败，以及完整根安装/游戏和主要连续交互，不以编译或局部夹具关闭整项 |
 | N004 | in_progress | N003、C022 | 实际Main Settings/CurrentIdentify/DES→真实Windows Registry已通过13_LF值/kind、旧缓存升级/退出、非MS兼容、未知数据和原kind恢复/取消/INI/JSON保留。502 startup228又以合成13_LF raw/kind贯穿真正FormMain两轮；保fresh/GUID owner与仅本人清理。完整账号页面/切换/错误取消与真实授权、旧版升级后完整账号链未验，不读用户真实凭据 |
 | N005 | in_progress | N003、N004 | NativeEXE/ZIP/canonical managed旧桥/四角色SHA索引、GUID凭据清理与C7、实际冷启/关闭/复开已通过。502旧桥126963951026取得同run合格包/固定真实旧EXE，old6140正常关闭、helper8616四参替换、restart8756就绪且旧Java17缓存无E、目标SHA匹配；helper/bridge等待或退出码仍失败，默认legacy/manual/parent-timeout/invalid-inputs未全通过。仅补逐项诊断，原15秒短路预算/exit0/目标SHA/清理不变；native-reinstall及restart-rollback未选不计通过，无外部发布 |
 | R001 | in_progress | N003、N005 | 正式完整现代产品不编译/读取业务VB或vbproj，原联机可选图真实C#接线。9个source-mode调用者现接固定Git对象/17源/对应许可与provenance，f4原行为/a1 ABI适配/LF50独立算法作用域明确；9参数+导出/拒绝实际通过；bc8旧Build两配置在Windows alternates的CRLF路径误读前置失败，已窄修字节格式，df4 Windows固定源/原凭据已通过；仍欠新默认发布验证。旧Build默认VB构建及产品实体、vendor字节/许可归属尚未退休；待Native复开/旧桥必要门禁通过后统一切换，不靠排除/改扩展名虚报清零 |
-| R002 | in_progress | R001（最终关闭依赖） | 原44消费者、现代组件/动画与双平台严格比较已有成功；实际Main默认25族已有23族通过，2族及真实旧桥仍失败。现有格式根安装/库/Java/受控下载与根取消回滚、固定普通/已有MMC样本仍待整链验证；只复用已验边界，不拿旧产品44绿替代Native失败 |
+| R002 | in_progress | R001（最终关闭依赖） | 原44消费者、现代组件/动画与双平台严格比较已有成功；实际Main默认25族已有24族通过，MMC及真实旧桥退出观察仍失败。现有格式根安装/库/Java/受控下载与根取消回滚、固定普通/已有MMC样本仍待整链验证；只复用已验边界，不拿旧产品44绿替代Native失败 |
 | R003 | in_progress | R002（最终关闭依赖） | 真实主窗两轮冷启/数据哨兵、startup225/226/228、基础控件/动画及多页夹具已有Windows记录。仍欠完整账号UI/授权、真正Main→Minecraft→Watcher退出/崩溃及设置/备份恢复、根安装导航与连续主窗/滚动/焦点/hover/拖放/主题动画旧新手感；可自动化部分继续推进，真实服务/账号/游戏/硬件条件另记，不泛称全部需人工 |
 | R004 | todo | R003 | 汇总全部完成证据和剩余限制，自审最终差异与远端状态；仅在目标全部验收后标 `completed` 并暂停续跑 |
 | D001 | deferred | 当前目标完成后另立目标 | 新 MMC／Prism 组件规则、补丁语义、Java 交集、LWJGL 与 GTNH 增强 |
@@ -459,6 +465,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：推进当前Native整合包专属进程/MMC命令/旧桥退出诊断的实际Windows复验；复用5028988的23族、三启动合同、Registry、原44消费者/现代UI及双平台严格比较证据，不重复转换或从逐方法重新规划。先取得真实helper/bridge等待与退出值、确认MMC实际配置/写回差异；必要门禁通过后切换协调好的默认C#/.NET10发布链并验证，再实体退役旧VB比较工程。R002/R003的真实账号/游戏/主要交互与未运行的协议case继续显式记账；main只读核对仍为50b028d，新增MMC/性能阶段仍延后。
+下次入口：推进当前Native整合包专属进程/MMC命令/旧桥退出诊断的实际Windows复验；复用5028988的23族、三启动合同、Registry、原44消费者/现代UI及双平台严格比较证据，不重复转换或从逐方法重新规划。先验证原进程Handle保留后的严格exit0/23及真实升级，确认MMC原host读取/写入边界；必要门禁通过后切换协调好的默认C#/.NET10发布链并验证，再实体退役旧VB比较工程。R002/R003的真实账号/游戏/主要交互与未运行的协议case继续显式记账；main只读核对仍为50b028d，新增MMC/性能阶段仍延后。
 
 当前仍需完成：旧VB比较树与默认旧构建退休、原验收脚本的实际Main入口全接通、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。正式C#/NET10完整产品已构建发布，不再将其描述为尚未开始；编译和当前部分功能族证据不能代替最终兼容验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。

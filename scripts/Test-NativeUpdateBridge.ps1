@@ -68,7 +68,7 @@ function Test-ClosedLogGeneration([byte[]]$bytes,[int]$processId) {
 }
 function Check-Log([string]$text,[string]$notice){if($text -match '(?m)^\d{2}:\d{2}:\d{2}\.\d{3} E '){throw 'Actual Main logged an Error.'};foreach($match in [regex]::Matches($text,'(?:普通|选择|输入)弹窗：([^\r\n]+)')){if($match.Groups[1].Value.Trim() -cne $notice){Pending ('Unexpected actual dialog; never auto-clicked: '+$match.Groups[1].Value)}};if($text -match '主窗体加载完成前出现意料外的等待弹窗|处理等待中的弹窗失败|弹窗初始化失败|弹窗加载失败'){throw 'Actual initialization/dialog failed.'}}
 function Start-Owned([string]$path,[string]$arguments=''){$info=[Diagnostics.ProcessStartInfo]::new($path,$arguments);$info.UseShellExecute=$false;$info.WorkingDirectory=$script:differentCwd;$info.EnvironmentVariables['DOTNET_BUNDLE_EXTRACT_BASE_DIR']=Join-Path $fixture 'BundleExtract';$info.EnvironmentVariables['PCL_UPDATE_BRIDGE_NO_UI']='1';$process=[Diagnostics.Process]::Start($info);if($null -eq $process){throw 'Owned actual entry did not start.'};$ownedProcesses.Add($process);return $process}
-function Track-Process([int]$processId){$process=[Diagnostics.Process]::GetProcessById($processId);$ownedProcesses.Add($process);return $process}
+function Track-Process([int]$processId){$process=[Diagnostics.Process]::GetProcessById($processId);try{[IntPtr]$trackedHandle=$process.Handle;if($trackedHandle -eq [IntPtr]::Zero){throw 'Tracked actual entry has no retained process handle.'};$ownedProcesses.Add($process);return $process}catch{$process.Dispose();throw}}
 function Assert-OwnedProcessImage([object]$image,[string]$expectedPath){
  if(-not $image.QuerySucceeded){throw ('QueryFullProcessImageNameW failed for the actual process handle: Win32='+$image.Win32Error+'; '+$image.QueryErrorType+'; '+$image.QueryError)}
  if([string]::IsNullOrEmpty($image.Path) -or -not [string]::Equals($image.Path,$expectedPath,[StringComparison]::OrdinalIgnoreCase)){throw ('Actual process image differs from owned target. Expected='+$expectedPath+'; QueryFullProcessImageNameW='+$image.Path+'; MainModule(diagnostic only)='+$image.LegacyMainModulePath)}
@@ -152,6 +152,9 @@ try {
  Add-Type -Path (Join-Path $SmokeSupportRoot 'NativeSmokeWin32.cs') -ReferencedAssemblies System.Drawing.dll
  Add-Type -Path (Join-Path $SmokeSupportRoot 'NativeSmokeFileRelease.cs')
  Add-Type -Path (Join-Path $PSScriptRoot 'native-upgrade/NativeUpdateWin32.cs')
+ # Exercise the exact tracking function with harmless owned exit0/23 children
+ # under this real Windows PowerShell before starting the original protocol.
+ & (Join-Path $PSScriptRoot 'native-upgrade/Test-TrackedProcess.ps1') -TrackingScriptPath $PSCommandPath -EvidenceRoot (Join-Path $fixture 'tracked-process-regression') -SmokeSupportRoot $SmokeSupportRoot
  $oldNotice=$legacyProof.details.displayName+' '+$legacyProof.details.versionBaseName+' 版本说明';$newNotice=$nativeProof.displayName+' '+$nativeProof.versionBaseName+' 版本说明'
  foreach($case in $Cases){
   if($case -eq 'invalid-inputs'){

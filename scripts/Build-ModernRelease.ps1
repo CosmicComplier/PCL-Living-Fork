@@ -3,7 +3,8 @@
     [string]$OutputPath,
     [string]$DotnetPath = 'dotnet',
     [string]$ProjectPath,
-    [switch]$NativePayload
+    [switch]$NativePayload,
+    [switch]$EnableLegacyLink
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
@@ -34,6 +35,7 @@ try {
             '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:EnableCompressionInSingleFile=false',
             '-p:PublishReadyToRun=false', '-p:PublishTrimmed=false', '-p:DebugType=none', '-p:DebugSymbols=false')
     }
+    if ($EnableLegacyLink) { $publishArgs += '-p:EnableLegacyLink=true' }
     if ($OutputPath) { $publishArgs += @('--output', $OutputPath) }
     & $DotnetPath @publishArgs
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
