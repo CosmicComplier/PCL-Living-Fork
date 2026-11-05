@@ -102,11 +102,32 @@ internal sealed class MapInstallResourceScope : IDisposable
             Thread.Sleep(2);
         }
     }
+    private void ReleaseNeverStartedPageRegistrations()
+    {
+        // These original pages deliberately use PageLoaderInit(AutoRun:false).
+        // LF LoaderTask.Cancel is a no-op in Waiting; an unstarted page loader
+        // cannot satisfy FileTaskScope's real started-root terminal barrier.
+        // Remove only this known registration after page/unload/UI quiescence,
+        // never turn a Waiting task into a fake Canceled/Finished task.
+        var roots = (HashSet<ModLoader.LoaderBase>)Native.Get(tasks, "createdRoots")!;
+        foreach (object page in pages)
+        {
+            ModLoader.LoaderBase loader = (ModLoader.LoaderBase)Native.Get(page, "ResourceLoader")!;
+            Thread? thread = (Thread?)Native.Field(loader.GetType(), "LastRunningThread").GetValue(loader);
+            if (loader.State != ModBase.LoadState.Waiting || thread is not null) continue;
+            Native.Check(page is FrameworkElement view && !view.IsLoaded,
+                "A loaded resource page cannot release its unstarted-loader registration.");
+            Native.Check(roots.Remove(loader), "Known unstarted page loader lost its fixture registration.");
+            Console.WriteLine("DIAG map/resource released never-started page registration: " + loader.Name +
+                "; State=" + loader.State + "; LastRunningThread=null; IsLoaded=false; actual started loaders remain tracked.");
+        }
+    }
     public void Dispose()
     {
         try {
             foreach(object page in pages) { Native.Call(page.GetType(),"PageUnloaded",page); ((MyPageRight)page).PageOnForceExit(); }
             WaitUntil(()=>pages.All(page=>{object controller=Native.Get(page,"Controller")!;return !(bool)Native.Get(controller,"Busy")!&&!(bool)Native.Get(controller,"Checking")!&&Native.Get(controller,"Operation") is null&&Native.Get(controller,"OnlineCancellation") is null;}));
+            ReleaseNeverStartedPageRegistrations();
             tasks.FinishActualTasks(); Native.Check(Volatile.Read(ref forbiddenOnline)==0,"Recycle guard observed an unintended online lookup, even if Main caught its error."); fixture.AssertNoForbiddenIo();
             while(restore.Count>0)restore.Pop()();tasks.Dispose();
         }

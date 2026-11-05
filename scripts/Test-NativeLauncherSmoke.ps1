@@ -10,8 +10,9 @@ param(
  [ValidateRange(10,120)][int]$StartupTimeoutSeconds=60,
  [ValidateRange(3,30)][int]$CloseTimeoutSeconds=15
 )
-# CI-only, actual native Main entry. No product Assembly.Load/entry reflection,
-# Startup bypass, update acceptance, dialog clicking, account credential, UAC or
+# CI-only, actual native Main entry. The observer never loads Main/App/WPF;
+# only the metadata helper opt-in crypto leaf generates synthetic account data.
+# No Startup bypass, update acceptance, dialog clicking, real credential, UAC or
 # external release action. Requires fresh disposable Windows CI profile/machine.
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path $PSScriptRoot -Parent
@@ -34,7 +35,9 @@ $id=[Guid]::NewGuid().ToString('N');$fixture=Join-Path $EvidenceRoot ('NativeSmo
 $install=Join-Path $fixture 'Install with spaces';$differentCwd=Join-Path $fixture 'Different cwd';$cache=Join-Path $fixture 'Cache'
 $installed=Join-Path $install 'LivingPCL Native Smoke.exe';$log=Join-Path $install 'PCL/Log1.txt';$marker='__PclLfNativeSmokeOwner'
 $ownedRegistry=[Collections.Generic.List[string]]::new();$ownedAppData=$null;$nativeProcess=$null;$ownProcessStopped=$true
+$accountSentinels=@();$startupSeed='native-smoke-seed-'+$id;$startupMutexObserver=$null
 $evidence=[ordered]@{Result='pending';Scope='Actual product native cold start/WM_CLOSE/reopen, not complete functional regression';FixtureId=$id;InputExe=$ExecutablePath;MainProject=[IO.Path]::GetFullPath($NativeProjectPath);Runs=@();ForcedCleanup=$false;CleanupErrors=@();UserInteractive=[Environment]::UserInteractive;ObserverSessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId}
+$evidence.StartupContracts=[ordered]@{ImportOrdering='pending';V2Preservation='pending';Accounts=[ordered]@{Count=0;CheckedPhases=@();CryptoSubject='Exact embedded Core/Shared only; no Main/App/WPF is loaded by the generator.'}}
 function Pending([string]$reason){$evidence.Result='pending';throw ('PENDING: '+$reason)}
 function Existing-Key([string]$name){foreach($view in @([Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64)){$base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser,$view);try{$node=$base.OpenSubKey($name,$false);if($null -ne $node){$node.Dispose();return $true}}finally{$base.Dispose()}};return $false}
 function Existing-Mutex([string]$name){try{$gate=[Threading.Mutex]::OpenExisting($name);$gate.Dispose();return $true}catch [Threading.WaitHandleCannotBeOpenedException]{return $false}}
@@ -113,6 +116,49 @@ function Test-SafeUtilityImportExclusion {
  $record.Result='passed';$script:nativeProcess.Dispose();$script:nativeProcess=$null
 }
 
+function Open-OwnedRegistry([string]$name,[bool]$writable){
+ if(-not $ownedRegistry.Contains($name)){throw 'Not an owned startup Registry namespace.'}
+ $node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($name,$writable)
+ if($null -eq $node){throw 'Owned startup Registry namespace disappeared.'}
+ if($node.GetValue($marker,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -cne $id){$node.Dispose();throw 'Owned startup Registry marker changed.'}
+ return $node
+}
+function Assert-StartupAccounts([string]$phase){
+ if($accountSentinels.Count -ne 13){throw 'All thirteen reviewed LF Microsoft sentinels are mandatory.'}
+ $node=Open-OwnedRegistry 'Software\PCL' $false
+ try{
+  if($node.GetValue('Identify',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -cne $startupSeed -or $node.GetValueKind('Identify') -ne [Microsoft.Win32.RegistryValueKind]::String){throw 'Synthetic identity seed changed during genuine startup.'}
+  foreach($record in $accountSentinels){
+   $raw=$node.GetValue($record.physicalName,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+   if($raw -isnot [string] -or $raw -cne $record.raw -or $node.GetValueKind($record.physicalName) -ne [Microsoft.Win32.RegistryValueKind]::String){throw ('Genuine startup changed an authoritative LF account raw value/kind: '+$record.logicalName+' / '+$phase)}
+  }
+ }finally{$node.Dispose()}
+ $evidence.StartupContracts.Accounts.CheckedPhases+=,$phase
+}
+
+function Test-MutexBeforeImport([object]$observer){
+ $row=[ordered]@{Result='pending';ExpectedExitCode=2;OwnActivationHandle=$observer.Handle;OwnActivationCaption=$observer.Caption}
+ $evidence.StartupContracts.MutexProbe=$row
+ $before=$observer.ActivationMessages;Assert-SyntheticPreferenceImport $false 'before-mutex-probe';Assert-StartupAccounts 'before-mutex-probe'
+ $info=[Diagnostics.ProcessStartInfo]::new($installed);$info.UseShellExecute=$false;$info.WorkingDirectory=$differentCwd
+ $info.EnvironmentVariables['DOTNET_BUNDLE_EXTRACT_BASE_DIR']=Join-Path $fixture 'BundleExtract'
+ $script:nativeProcess=[Diagnostics.Process]::Start($info);if($null -eq $script:nativeProcess){throw 'Genuine mutex-contender Main did not start.'};$row.ProcessId=$script:nativeProcess.Id
+ $row.ImageIdentity=[PclLfNativeSmoke.Win32]::ObserveProcessImage($script:nativeProcess,$false);Assert-OwnedProcessImage $row.ImageIdentity $installed
+ $watch=[Diagnostics.Stopwatch]::StartNew()
+ while(-not $script:nativeProcess.HasExited -and $watch.ElapsedMilliseconds -lt 15000){
+  $observer.PumpOwnMessages()
+  $windows=@([PclLfNativeSmoke.Win32]::Windows($script:nativeProcess.Id))
+  if($windows.Count -ne 0){$evidence.Result='pending';throw ('Unexpected actual competing Main window; never auto-clicked: '+$windows[0].Title+' / '+$windows[0].ClassName)}
+  Start-Sleep -Milliseconds 25;$script:nativeProcess.Refresh()
+ }
+ $observer.PumpOwnMessages()
+ if(-not $script:nativeProcess.HasExited){throw 'Genuine competing Main exceeded its bounded rejection observer.'}
+ $row.ElapsedMilliseconds=$watch.ElapsedMilliseconds;$row.ExitCode=$script:nativeProcess.ExitCode;$row.ActivationMessages=$observer.ActivationMessages-$before
+ if($row.ExitCode -ne 2 -or $row.ActivationMessages -ne 1){throw 'The actual blocked Main did not preserve one original 6402 activation and Exit2 before preferences could import.'}
+ Assert-SyntheticPreferenceImport $false 'after-mutex-probe';Assert-StartupAccounts 'after-mutex-probe'
+ $row.Result='passed';$script:nativeProcess.Dispose();$script:nativeProcess=$null
+}
+
 try{
  foreach($directory in @($fixture,$install,$differentCwd,$cache)){[IO.Directory]::CreateDirectory($directory)|Out-Null}
  [IO.File]::WriteAllText((Join-Path $fixture 'owner.txt'),$id)
@@ -139,11 +185,12 @@ try{
   try{if($node.ValueCount -ne 0 -or $node.SubKeyCount -ne 0){Pending 'Profile store appeared concurrently; refusing to modify it.'};$node.SetValue($marker,$id,[Microsoft.Win32.RegistryValueKind]::String);$ownedRegistry.Add($keyName)}finally{$node.Dispose()}
  }
  $node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\PCL',$true)
- try{$node.SetValue('SystemSystemCache',$cache+'\',[Microsoft.Win32.RegistryValueKind]::String);$node.SetValue('LaunchFolders','Smoke Fixture>'+[IO.Path]::Combine($install,'.minecraft')+'\',[Microsoft.Win32.RegistryValueKind]::String)}finally{$node.Dispose()}
+ try{$node.SetValue('Identify',$startupSeed,[Microsoft.Win32.RegistryValueKind]::String);$node.SetValue('SystemSystemCache',$cache+'\',[Microsoft.Win32.RegistryValueKind]::String);$node.SetValue('LaunchFolders','Smoke Fixture>'+[IO.Path]::Combine($install,'.minecraft')+'\',[Microsoft.Win32.RegistryValueKind]::String)}finally{$node.Dispose()}
  $node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\PCLDebug',$true)
  try{$node.SetValue('SystemEulaVersion','2',[Microsoft.Win32.RegistryValueKind]::String);$node.SetValue('ToolDownloadThread','9',[Microsoft.Win32.RegistryValueKind]::String)}finally{$node.Dispose()}
  # A synthetic already-accepted local test state, not a click accepting terms.
- # No encrypted/online account value is seeded: original default is empty Legacy.
+ # Only valid synthetic LF account ciphertext is seeded below; LoginType is Legacy.
+ # No real account token/profile is read or used, and no authentication is requested.
  $ownedAppData=Join-Path $appData 'PCL';[IO.Directory]::CreateDirectory($ownedAppData)|Out-Null;[IO.File]::WriteAllText((Join-Path $ownedAppData $marker),$id)
  [IO.Directory]::CreateDirectory((Join-Path $install '.minecraft/versions'))|Out-Null
  [IO.Directory]::CreateDirectory((Join-Path $install 'PCL'))|Out-Null
@@ -153,7 +200,37 @@ try{
  if((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash.ToLowerInvariant() -cne $proof.sha256){throw 'Installed fixture bytes differ from actual candidate preflight.'}
  Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeWin32.cs') -ReferencedAssemblies System.Drawing.dll
  Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeFileRelease.cs')
+ Add-Type -Path (Join-Path $PSScriptRoot 'native-smoke/NativeSmokeStartupMutex.cs')
+ $packetJson=& $DotNetPath (Join-Path $tools 'NativeSmokeFixture.dll') --startup-sentinels $ExecutablePath $id $startupSeed
+ if($LASTEXITCODE -ne 0){throw 'Actual embedded Core could not generate valid synthetic startup ciphertext.'}
+ $packet=($packetJson -join "`n")|ConvertFrom-Json
+ if($packet.kind -cne 'PCLLF.NativeStartupSyntheticAccounts' -or $packet.schemaVersion -ne 1 -or $packet.fixtureId -cne $id -or $packet.seed -cne $startupSeed -or $packet.nativeSha256 -cne $proof.sha256 -or $packet.coreSha256 -cnotmatch '\A[0-9a-f]{64}\z' -or $packet.sharedSha256 -cnotmatch '\A[0-9a-f]{64}\z'){throw 'Startup synthetic packet is not bound to the exact genuine native Main and current fixture.'}
+ $expectedNames=@('LoginMsJson','CacheMsOAuthRefresh','CacheMsAccess','CacheMsProfileJson','CacheMsUuid','CacheMsName','CacheMsV2Migrated','CacheMsV2OAuthRefresh','CacheMsV2Access','CacheMsV2ProfileJson','CacheMsV2Uuid','CacheMsV2Name','CacheMsV2Expires')
+ $accountSentinels=@($packet.records)
+ if($accountSentinels.Count -ne 13 -or @($accountSentinels|ForEach-Object {$_.logicalName}|Sort-Object -Unique).Count -ne 13 -or @($expectedNames|Where-Object {$_ -cnotin @($accountSentinels|ForEach-Object {$_.logicalName})}).Count -ne 0){throw 'Startup packet must contain exactly the thirteen reviewed LF logical names.'}
+ $node=Open-OwnedRegistry 'Software\PCL' $true
+ try{
+  $node.SetValue('LoginType','0',[Microsoft.Win32.RegistryValueKind]::String)
+  foreach($record in $accountSentinels){
+   if($record.physicalName -cne ($record.logicalName+'_LF') -or $record.kind -cne 'String' -or $record.raw -isnot [string] -or $record.raw.Length -eq 0){throw 'Invalid startup account physical-name/kind/cipher contract.'}
+   if($null -ne $node.GetValue($record.physicalName,$null)){throw 'An account record appeared concurrently in the owned namespace.'}
+   $node.SetValue($record.physicalName,$record.raw,[Microsoft.Win32.RegistryValueKind]::String)
+  }
+ }finally{$node.Dispose()}
+ $evidence.StartupContracts.Accounts.Count=13;$evidence.StartupContracts.Accounts.CoreSha256=$packet.coreSha256;$evidence.StartupContracts.Accounts.SharedSha256=$packet.sharedSha256
+ Assert-StartupAccounts 'before-genuine-entry';Assert-SyntheticPreferenceImport $false 'before-genuine-entry'
+ # On failure, keep these real locks/HWND until the existing outer cleanup
+ # has proved the owned product process stopped. Never release a live context.
+ $startupMutexObserver=[PclLfNativeSmoke.StartupMutexFixture]::new($id)
+ Test-MutexBeforeImport $startupMutexObserver
+ $evidence.StartupContracts.ImportOrdering='blocked-before-import'
+ $beforeUtility=$startupMutexObserver.ActivationMessages
  Test-SafeUtilityImportExclusion
+ $startupMutexObserver.PumpOwnMessages()
+ if($startupMutexObserver.ActivationMessages -ne $beforeUtility){throw 'The safe utility incorrectly entered the normal single-instance path.'}
+ Assert-StartupAccounts 'after-safe-utility'
+ $startupMutexObserver.Dispose();$startupMutexObserver=$null
+ foreach($name in $mutexNames){Check-Mutex $name $false}
  $previousLogHash=$null
  foreach($pass in @(1,2)){
   $run=[ordered]@{Pass=$pass;ActualExe=$installed;WorkingDirectory=$differentCwd;NormalExit=$false;ExpectedInformationNoticeVisible=$false};$evidence.Runs+=,$run
@@ -187,6 +264,7 @@ try{
   $run.ExpectedInformationNoticeVisible=$text.Contains('普通弹窗：'+$expectedNotice)
   foreach($name in $mutexNames){Check-Mutex $name $true}
   Assert-SyntheticPreferenceImport $true ('normal-ready-'+$pass)
+  Assert-StartupAccounts ('normal-ready-'+$pass);$run.AuthoritativeAccountsPreservedAtReady=$true
   $run.SyntheticPreferenceImportObserved=$true
   $run.Screenshot=[PclLfNativeSmoke.Win32]::CaptureOwnWindow($mainWindow.Handle,(Join-Path $fixture ('main-'+$pass+'.png')))
   if($pass -eq 2){$rotated=Join-Path $install 'PCL/Log2.txt';if(-not [IO.File]::Exists($rotated) -or (Hash-OwnedFile $rotated) -cne $previousLogHash){throw 'Reopen did not preserve original LF log rotation.'}}
@@ -206,12 +284,14 @@ try{
   [IO.File]::WriteAllText((Join-Path $fixture ('file-release-'+$pass+'-diagnostics.json')),($release|ConvertTo-Json -Depth 7),[Text.UTF8Encoding]::new($false))
   Write-Output ('Actual Native exclusive file release: '+($release|ConvertTo-Json -Depth 7 -Compress))
   if(-not $release.Succeeded){throw ('Actual owned EXE failed exclusive ReadWrite/FileShare.None release within close deadline: '+$release.ErrorType+'; Win32='+$release.LastWin32Error+'; HResult='+$release.LastHResult+'; '+$release.Error)}
+  Assert-StartupAccounts ('normal-close-'+$pass);$run.AuthoritativeAccountsPreservedAfterClose=$true
   if([IO.File]::ReadAllText($gameSentinel) -cne $id -or -not [IO.File]::ReadAllText((Join-Path $install 'PCL/Setup.ini')).Contains('NativeSmokeSentinel:'+$id)){throw 'Actual startup/close lost fixture settings/game sentinel.'}
   $updateFolder=Join-Path $install 'PCL/Updates';if([IO.Directory]::Exists($updateFolder) -and @([IO.Directory]::EnumerateFiles($updateFolder,'*.exe',[IO.SearchOption]::AllDirectories)).Count -gt 0){throw 'An update payload appeared without any acceptance action.'}
   Copy-Item -LiteralPath $log -Destination (Join-Path $fixture ('startup-'+$pass+'.log'))
   $previousLogHash=Hash-OwnedFile $log
  }
- $evidence.Result='passed';$evidence.Limit='Cold actual Main HWND visible in the CI windowstation/normal close/reopen only; noninteractive sessions are recorded, not claimed as human desktop interaction. Known OpenSource version information is observed, never clicked; no navigation/font/interaction/update-bridge completion inferred.'
+ $evidence.StartupContracts.ImportOrdering='passed-blocked-then-normal-import';$evidence.StartupContracts.V2Preservation='passed-two-real-FormMain-startups'
+ $evidence.Result='passed';$evidence.Limit='Cold actual Main HWND visible in the CI windowstation/normal close/reopen only; noninteractive sessions are recorded, not claimed as human desktop interaction. Known OpenSource version information is observed, never clicked. Mutex-before-import, the safe official-update refusal and raw authoritative LF account preservation are checked; GPU/memory utilities, authentication, navigation/font feel and update-bridge completion are not inferred.'
 }catch{if($evidence.Result -ne 'pending' -or $_.Exception.Message -notlike 'PENDING:*'){$evidence.Result='failed'};$evidence.Error=$_.Exception.Message;throw}
 finally{
  try{
@@ -221,6 +301,10 @@ finally{
   if($diagnosticLog.Length -gt 0){Write-OwnedCloseDiagnostic $diagnosticExit $diagnosticLog 'before-cleanup'}
  }catch{$evidence.CleanupErrors+=('Owned bounded diagnostics: '+$_.Exception.Message);Write-Output ('Native diagnostic collection failed: '+$_.Exception.Message)}
  if($null -ne $nativeProcess){try{if(-not $nativeProcess.HasExited){[void]$nativeProcess.CloseMainWindow();if(-not $nativeProcess.WaitForExit(3000)){$evidence.ForcedCleanup=$true;$nativeProcess.Kill();[void]$nativeProcess.WaitForExit(5000)}};$ownProcessStopped=$nativeProcess.HasExited;if(-not $ownProcessStopped){$evidence.CleanupErrors+='Own launcher is still alive; preserve fixture profile.'}}catch{$ownProcessStopped=$false;$evidence.CleanupErrors+=('Own process cleanup: '+$_.Exception.Message)}finally{$nativeProcess.Dispose()}}
+ if($null -ne $startupMutexObserver){
+  if($ownProcessStopped){try{$startupMutexObserver.Dispose();$startupMutexObserver=$null}catch{$evidence.CleanupErrors+=('Owned startup mutex/HWND cleanup: '+$_.Exception.Message)}}
+  else{$evidence.CleanupErrors+='Startup mutex/HWND context retained because owned process stop was not proved.'}
+ }
  # Delete only initially absent stores owned by this fixture marker. Never back
  # up/read/restore a real user's profile or delete an unmarked changed store.
  if($ownProcessStopped){foreach($keyName in $ownedRegistry){try{$node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($keyName,$false);$matches=$false;try{$matches=$null -ne $node -and $node.GetValue($marker) -ceq $id}finally{if($null -ne $node){$node.Dispose()}};if($matches){[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyName)}else{$evidence.CleanupErrors+=('Registry owner marker changed: '+$keyName)}}catch{$evidence.CleanupErrors+=('Registry cleanup: '+$keyName+' / '+$_.Exception.Message)}}
@@ -230,4 +314,4 @@ finally{
  if([IO.Directory]::Exists($fixture)){[IO.File]::WriteAllText((Join-Path $fixture 'evidence.json'),($evidence|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false));Write-Output ('Native Main smoke evidence: '+(Join-Path $fixture 'evidence.json'))}
 }
 if($evidence.Result -ne 'passed'){throw ('Native Main smoke '+$evidence.Result+'; see evidence.json')}
-Write-Output 'PASS actual native PCL.Application Main: real startup/BAML/visible HWND in CI windowstation/log stages, WM_CLOSE normal controller exit, session/file locks, reopen/log rotation, safe --update exclusion and synthetic preference/data preservation. No update accepted.'
+Write-Output 'PASS actual native PCL.Application Main: real startup/BAML/visible HWND in CI windowstation/log stages, WM_CLOSE normal controller exit, session/file locks, reopen/log rotation, safe --update exclusion, mutex-before-import and thirteen synthetic LF account raw values/kinds preserved. No update accepted.'

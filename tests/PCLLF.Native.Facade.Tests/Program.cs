@@ -31,7 +31,8 @@ internal static class Program
         ["review-fixes"] = ReviewFixesChecks.Run,
         ["migrated-controls"] = ControlOriginalChecks.Run,
         ["map-install-recycle"] = MapInstallChecks.Run,
-        ["resource-updates"] = ResourceUpdateChecks.Run
+        ["resource-updates"] = ResourceUpdateChecks.Run,
+        ["mmc-import-contract"] = MmcImportChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)
@@ -97,6 +98,9 @@ internal static class Program
         Directory.CreateDirectory(root);
         string output = Path.Combine(root, "output");
         Process? process = null;
+        Task<string>? stdout = null, stderr = null;
+        Exception? primaryFailure = null;
+        bool outputPrinted = false;
         try
         {
             CopyOutput(AppContext.BaseDirectory, output);
@@ -111,45 +115,107 @@ internal static class Program
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
-            foreach (string argument in args)
-                start.ArgumentList.Add(argument);
-            start.ArgumentList.Add("--isolated");
-            start.ArgumentList.Add("--fixture");
-            start.ArgumentList.Add(root);
+            foreach (string argument in args) start.ArgumentList.Add(argument);
+            start.ArgumentList.Add("--isolated"); start.ArgumentList.Add("--fixture"); start.ArgumentList.Add(root);
             process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the actual facade child.");
-            Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
-            if (!process.WaitForExit(60000))
-            {
-                process.Kill(true);
-                process.WaitForExit(5000);
-                throw new TimeoutException("Native facade host exceeded60 seconds.");
-            }
-
-            Console.Write(stdout.GetAwaiter().GetResult());
-            Console.Error.Write(stderr.GetAwaiter().GetResult());
+            Stopwatch run = Stopwatch.StartNew();
+            int Remaining() => Math.Max(0, 60000 - checked((int)run.ElapsedMilliseconds));
+            stdout = process.StandardOutput.ReadToEndAsync(); ObserveFault(stdout);
+            stderr = process.StandardError.ReadToEndAsync(); ObserveFault(stderr);
+            Task[] drains = [stdout, stderr];
+            if (!process.WaitForExit(Remaining()) || !Task.WaitAll(drains, Remaining()) || run.ElapsedMilliseconds >= 60000)
+                throw new TimeoutException("Native facade host/output exceeded the same60-second deadline.");
+            Console.Write(stdout.GetAwaiter().GetResult()); Console.Error.Write(stderr.GetAwaiter().GetResult());
+            outputPrinted = true;
             return process.ExitCode;
         }
+        catch (Exception failure) { primaryFailure = failure; throw; }
         finally
         {
+            List<Exception> cleanupErrors = new();
+            void Cleanup(string phase, Action action)
+            {
+                try { action(); }
+                catch (Exception failure) { cleanupErrors.Add(new InvalidOperationException("Native child cleanup: " + phase, failure)); }
+            }
+            bool canDelete = process is null;
             if (process is not null)
             {
+                Stopwatch cleanup = Stopwatch.StartNew();
+                int Remaining() => Math.Max(0, 5000 - checked((int)cleanup.ElapsedMilliseconds));
+                bool stopped = false, settled = false;
+                Task[] drains = new Task?[] { stdout, stderr }.OfType<Task>().ToArray();
+                void ObserveDrains(int milliseconds)
+                {
+                    try { Task.WaitAll(drains, milliseconds); }
+                    catch (AggregateException) { /* Record each actual read fault below after both readers close. */ }
+                    catch (Exception failure) { cleanupErrors.Add(new InvalidOperationException("Native child output observation failed.", failure)); }
+                }
                 try
                 {
-                    if (!process.HasExited)
+                    Cleanup("terminate only owned process", () => { if (!process.HasExited) process.Kill(true); });
+                    // A kill/HasExited race must not skip a real exit observation.
+                    Cleanup("observe owned process exit", () => stopped = process.WaitForExit(Remaining()));
+                    // Give normal EOF a small part of the SAME cleanup budget;
+                    // descendants holding a pipe must not consume all five seconds.
+                    if (stopped) ObserveDrains(Math.Min(250, Remaining()));
+                    try { Cleanup("close stdout reader", () => process.StandardOutput.Dispose()); }
+                    finally { Cleanup("close stderr reader", () => process.StandardError.Dispose()); }
+                    ObserveDrains(Remaining());
+                    settled = stdout is not null && stderr is not null && drains.All(drain => drain.IsCompleted);
+                    foreach (Task drain in drains)
                     {
-                        process.Kill(true);
-                        process.WaitForExit(5000);
+                        if (drain.IsFaulted) cleanupErrors.Add(new InvalidOperationException("Native child output read failed.", drain.Exception));
+                        else if (drain.IsCanceled) cleanupErrors.Add(new TaskCanceledException("Native child output read was canceled.", null, default));
+                    }
+                    if (!stopped) cleanupErrors.Add(new InvalidOperationException("Owned Native child exit was not established; retain its GUID fixture and live guards."));
+                    if (!settled) cleanupErrors.Add(new TimeoutException("Owned Native child stdout/stderr did not both settle; retain its GUID fixture."));
+                    if (cleanup.ElapsedMilliseconds >= 5000) cleanupErrors.Add(new TimeoutException("Native child cleanup exceeded the same five-second deadline."));
+                    if (!outputPrinted)
+                    {
+                        Cleanup("write failure metadata", () => Console.Error.WriteLine("Native child failure evidence: groups=" + string.Join(',', ReadGroups(args)) +
+                            "; PID=" + process.Id + "; stopped=" + stopped + "; settled=" + settled + "; stdout=" + stdout?.Status + "; stderr=" + stderr?.Status));
+                        Cleanup("write complete stdout tail", () => PrintTail(stdout, "stdout"));
+                        Cleanup("write complete stderr tail", () => PrintTail(stderr, "stderr"));
                     }
                 }
-                finally
-                {
-                    process.Dispose();
-                }
+                finally { Cleanup("dispose owned process handle", process.Dispose); }
+                // Failed/canceled reads and cleanup faults are not acceptance.
+                // Unresolved ownership must never authorize deleting the context.
+                canDelete = stopped && settled && cleanupErrors.Count == 0;
             }
-
-            ValidateRoot(root);
-            if (Directory.Exists(root))
-                Directory.Delete(root, true);
+            if (canDelete)
+                Cleanup("validate and remove stopped fixture", () => { ValidateRoot(root); if (Directory.Exists(root)) Directory.Delete(root, true); });
+            if (!canDelete || cleanupErrors.Count > 0)
+                Cleanup("report retained fixture", () => Console.Error.WriteLine("Native child fixture retained after incomplete/failed cleanup: " + root));
+            if (cleanupErrors.Count > 0)
+            {
+                if (primaryFailure is null) throw new AggregateException("Native child cleanup failed; no successful acceptance is reported.", cleanupErrors);
+                // The original exception is already rethrowing with its stack.
+                // Preserve it even when cleanup or these diagnostics fail.
+                try { Console.Error.WriteLine("Native cleanup faults after primary " + primaryFailure.GetType().Name + ": " +
+                    string.Join(" | ", cleanupErrors.Select(failure => failure.ToString()))); }
+                catch (Exception diagnosticFailure) { cleanupErrors.Add(diagnosticFailure); }
+            }
+        }
+        static void ObserveFault(Task task) => _ = task.ContinueWith(done => { _ = done.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        static void PrintTail(Task<string>? task, string channel)
+        {
+            if (task?.IsCompletedSuccessfully != true) return;
+            string text = task.GetAwaiter().GetResult();
+            bool truncated = text.Length > 65536;
+            int first = Math.Max(0, text.Length - 65536);
+            if (first > 0 && char.IsLowSurrogate(text[first])) first++;
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(text.AsSpan(first).ToString());
+            int start = Math.Max(0, bytes.Length - 65536);
+            if (start > 0)
+            {
+                truncated = true;
+                while (start < bytes.Length && (bytes[start] & 0xc0) == 0x80) start++;
+            }
+            string tail = System.Text.Encoding.UTF8.GetString(bytes.AsSpan(start));
+            Console.Error.WriteLine("Native child " + channel + " tail:\n" + (truncated ? "<truncated to final65536 UTF-8 bytes>\n" : "") + tail);
         }
     }
 

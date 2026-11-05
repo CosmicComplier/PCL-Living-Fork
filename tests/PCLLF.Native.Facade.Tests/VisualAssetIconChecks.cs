@@ -34,7 +34,7 @@ internal static class VisualAssetIconChecks
                 VisualAssetChecks.Check("icon", 107, Helper("ToStorageUri", value) == expected, file + " input=" + value);
         }
         foreach (string custom in Custom) VisualAssetChecks.Check("icon", 111, Helper("ToStorageUri", custom) == custom, custom);
-        string setup = Path.Combine(root, "versions/old/PCL/Setup.ini");
+        string setup = Path.Combine(root, "versions", "old", "PCL", "Setup.ini");
         string bad = Living + "Blocks/Fabric.png", good = Official + "Blocks/Fabric.png";
         foreach (string customFlag in new[] { "True", "False" })
         {
@@ -47,7 +47,7 @@ internal static class VisualAssetIconChecks
             Put(setup, custom); string before = File.ReadAllText(setup);
             VisualAssetChecks.Check("icon", 122, Helper("ReadVersionLogo", setup, "") == custom && File.ReadAllText(setup) == before);
         }
-        string fresh = Path.Combine(root, "versions/new/PCL/Setup.ini");
+        string fresh = Path.Combine(root, "versions", "new", "PCL", "Setup.ini");
         VisualAssetChecks.Check("icon", 125, Helper("ReadVersionLogo", fresh, "fallback") == "fallback" && !File.Exists(fresh));
         Native.Static("PCL.MinecraftLogoCompatibility", "WriteVersionLogo", fresh, Living + "Blocks/Grass.png");
         VisualAssetChecks.Check("icon", 127, Read(fresh, "Logo") == Official + "Blocks/Grass.png");
@@ -59,7 +59,7 @@ internal static class VisualAssetIconChecks
             VisualAssetChecks.Check("icon", 134, Read(fresh, "Logo") == Official + "Blocks/Grass.png");
         }
         string sharedA = Path.Combine(root, "shared-a"), sharedB = Path.Combine(root, "shared-b");
-        string brokenA = Path.Combine(sharedA, "versions/a/PCL/Setup.ini"), brokenB = Path.Combine(sharedB, "versions/b/PCL/Setup.ini"), unicodeSetup = Path.Combine(sharedB, "versions/unicode/PCL/Setup.ini"), lockedSetup = Path.Combine(sharedA, "versions/locked/PCL/Setup.ini"), customSetup = Path.Combine(sharedA, "versions/custom/PCL/Setup.ini");
+        string brokenA = Path.Combine(sharedA, "versions", "a", "PCL", "Setup.ini"), brokenB = Path.Combine(sharedB, "versions", "b", "PCL", "Setup.ini"), unicodeSetup = Path.Combine(sharedB, "versions", "unicode", "PCL", "Setup.ini"), lockedSetup = Path.Combine(sharedA, "versions", "locked", "PCL", "Setup.ini"), customSetup = Path.Combine(sharedA, "versions", "custom", "PCL", "Setup.ini");
         Put(brokenA, bad, "False"); Put(brokenB, bad); Put(lockedSetup, bad); Put(customSetup, "https://example.invalid/custom.png");
         Directory.CreateDirectory(Path.GetDirectoryName(unicodeSetup)!);
         string unicodeText = $"# comments-preserve\r\nLogo:{bad}\r\nLogoCustom:True\r\nUnrelated:preserve\r\n";
@@ -83,19 +83,19 @@ internal static class VisualAssetIconChecks
     }
     private static void Instances(string root)
     {
-        ModMinecraft.McInstance property = new(Path.Combine(root, "versions/property"));
+        ModMinecraft.McInstance property = new(Path.Combine(root, "versions", "property"));
         foreach (string custom in Custom)
         {
             property.Logo = custom;
             VisualAssetChecks.Check("icon", 173, (string?)Native.Property(property.GetType(), "LogoForStorage").GetValue(property) == custom);
         }
-        string firstFolder = Path.Combine(root, "first/versions/1.20.1"); Directory.CreateDirectory(firstFolder);
+        string firstFolder = Path.Combine(root, "first", "versions", "1.20.1"); Directory.CreateDirectory(firstFolder);
         File.WriteAllText(Path.Combine(firstFolder, "1.20.1.json"), "{\"id\":\"1.20.1\",\"mainClass\":\"net.minecraft.client.main.Main\",\"type\":\"release\",\"releaseTime\":\"2023-06-12T13:25:51+00:00\",\"libraries\":[]}");
         ModMinecraft.McInstance first = new(firstFolder); first.Load();
-        VisualAssetChecks.Check("icon", 181, Read(Path.Combine(firstFolder, "PCL/Setup.ini"), "Logo") == Official + "Blocks/Grass.png");
-        string mcRoot = Path.Combine(root, "cached"), setup = Path.Combine(mcRoot, "versions/cached/PCL/Setup.ini");
+        VisualAssetChecks.Check("icon", 181, Read(Path.Combine(firstFolder, "PCL", "Setup.ini"), "Logo") == Official + "Blocks/Grass.png");
+        string mcRoot = Path.Combine(root, "cached"), setup = Path.Combine(mcRoot, "versions", "cached", "PCL", "Setup.ini");
         Put(setup, Living + "Blocks/GrassPath.png"); File.AppendAllText(setup, "State:1\r\nInfo:fixture\r\nVersionVanillaName:1.20.1\r\nReleaseTime:2023-06-12 13:25\r\n"); Clear(setup);
-        File.WriteAllText(Path.Combine(mcRoot, "versions/cached/cached.json"), "{\"id\":\"1.20.1\",\"mainClass\":\"net.minecraft.client.main.Main\",\"type\":\"release\"}");
+        File.WriteAllText(Path.Combine(mcRoot, "versions", "cached", "cached.json"), "{\"id\":\"1.20.1\",\"mainClass\":\"net.minecraft.client.main.Main\",\"type\":\"release\"}");
         string cards = Path.Combine(mcRoot, "PCL.ini"); File.WriteAllText(cards, "CardCount:1\r\nCardKey1:3\r\nCardValue1:cached:\r\nVersion:cached\r\nUnrelated:preserve\r\n"); string before = File.ReadAllText(cards);
         object? result = Native.Static("PCL.ModMinecraft", "InitMcInstanceListWithCache", mcRoot + "\\");
         VisualAssetChecks.Check("icon", 192, result is IDictionary dictionary && dictionary.Count == 1);

@@ -16,17 +16,58 @@ namespace PCLLF.Native.Facade.Tests;
 // and notification primitives are controlled; none of the algorithm is copied.
 internal static class ModpackUpdateFlowChecks
 {
+    private static readonly System.Diagnostics.Stopwatch TraceClock = new();
+    private static int traceCount;
+    private static string lastStage = "not-started";
+    private static void TraceStage(string stage)
+    {
+        Volatile.Write(ref lastStage, stage);
+        if (Interlocked.Increment(ref traceCount) > 128) return;
+        Console.WriteLine("DIAG native modpack FLOW stage=" + stage + "; thread=" + Environment.CurrentManagedThreadId + "; elapsedMs=" + TraceClock.ElapsedMilliseconds);
+        Console.Out.Flush();
+    }
+    // Existing local waits already have one absolute ten-second deadline.
+    // A DispatcherTimer cannot preempt a synchronous UI callback/monitor wait;
+    // fail ONLY the verified child without unwinding any live platform guards.
+    private sealed class DeadlineGuard : IDisposable
+    {
+        private readonly DateTime deadline;
+        private readonly string operation;
+        private readonly System.Threading.Timer timer;
+        private int state; // 0 waiting, 1 proven returned in budget, 2 expired.
+        internal DeadlineGuard(DateTime deadline, string operation)
+        {
+            ModpackUpdateCleanup.VerifyIsolatedChild(); this.deadline = deadline; this.operation = operation;
+            int due = checked((int)Math.Ceiling((deadline - DateTime.UtcNow).TotalMilliseconds));
+            if (due <= 0) ModpackUpdateCleanup.TerminateChild("FLOW deadline expired before " + operation + "; last stage=" + Volatile.Read(ref lastStage));
+            timer = new System.Threading.Timer(_ => Expire(), null, Math.Max(1, due), Timeout.Infinite);
+        }
+        private void Expire()
+        {
+            if (Interlocked.CompareExchange(ref state, 2, 0) == 0)
+                ModpackUpdateCleanup.TerminateChild("FLOW existing absolute deadline expired in " + operation + "; last stage=" + Volatile.Read(ref lastStage));
+        }
+        public void Dispose()
+        {
+            if (DateTime.UtcNow >= deadline) Expire();
+            if (Interlocked.CompareExchange(ref state, 1, 0) != 0)
+                ModpackUpdateCleanup.TerminateChild("FLOW deadline could not be disarmed after " + operation + "; last stage=" + Volatile.Read(ref lastStage));
+            timer.Dispose();
+        }
+    }
     internal static void Run(FixtureEnvironment environment, string fixtureRoot)
     {
         ModpackUpdateCleanup.VerifyIsolatedChild();
+        TraceClock.Restart(); traceCount = 0; TraceStage("run-enter");
         // Disposed AFTER FileTaskScope, so every actual producer and posted
         // reload callback has finished before the account primitive/cache restores.
-        using ReloadAccountStore accounts = new(environment);
-        using FileTaskScope scope = new(environment);
+        using ReloadAccountStore accounts = new(environment); TraceStage("account-scope-installed");
+        using FileTaskScope scope = new(environment); TraceStage("file-task-scope-installed");
         string root = Path.Combine(fixtureRoot, "flow"); Directory.CreateDirectory(root);
         string minecraft = Path.Combine(root, "minecraft"); scope.SelectMinecraft(minecraft);
         _ = FileTaskShell.Install();
         using LiveFlow flow = new(root);
+        TraceStage("fixtures-installed");
         ModMinecraft.McInstance blocked = Instance(minecraft, "guard-1.20.1");
         string next = Pack(root, "flow-next", new() { ["config/author.txt"] = "new-author", ["config/personal.txt"] = "new-default" }, fabric: false);
         flow.Archives.Enqueue(next);
@@ -50,7 +91,7 @@ internal static class ModpackUpdateFlowChecks
         ModMinecraft.McInstance missing = Instance(minecraft, "no-origin-1.20.1");
         flow.Archives.Enqueue(next); flow.Confirm = (_, _, _, _, _) => 2;
         flow.Preview = _ => throw new InvalidOperationException("Refused baseline must not reach preview.");
-        flow.Start(missing); flow.WaitStopped();
+        TraceStage("baseline-refusal-start"); flow.Start(missing); flow.WaitStopped(); TraceStage("baseline-refusal-stopped");
         Check(flow.Messages.Count == 1 && flow.Messages[0] == "建立整合包记录" && flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded, "FLOW-02", "baseline refusal was not real cancellation");
         Check(Update("ReadManifest", missing.PathVersion) is null && !File.Exists(Path.Combine(missing.PathIndie, "config/author.txt")), "FLOW-02-bytes", "baseline refusal wrote author files/manifest");
 
@@ -64,7 +105,7 @@ internal static class ModpackUpdateFlowChecks
         flow.Confirm = (_, _, _, _, _) => 1;
         object? shown = null;
         flow.Preview = plan => { shown = plan; return 2; };
-        flow.Start(declined); flow.WaitStopped();
+        TraceStage("preview-refusal-start"); flow.Start(declined); flow.WaitStopped(); TraceStage("preview-refusal-stopped");
         Check(shown is not null && shown.GetType().Assembly == Native.Main && Changes(shown).Any(Conflict), "FLOW-03-plan", "preview did not receive actual personal-preserving plan");
         Check(flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded && flow.Messages.SequenceEqual(new[] { "建立整合包记录" }), "FLOW-03", "preview rejection did not cancel after establishing the correct origin");
         Check(File.ReadAllText(Path.Combine(declined.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(declined.PathIndie, "config/personal.txt")) == "my-edit" && Update("ReadManifest", declined.PathVersion) is null, "FLOW-03-bytes", "refused preview committed files or persisted origin");
@@ -85,7 +126,7 @@ internal static class ModpackUpdateFlowChecks
         };
         try
         {
-            flow.Start(canceled);
+            TraceStage("held-cancel-start"); flow.Start(canceled);
             Until(() => entered.IsSet, "FLOW-04-enter");
             flow.Combo!.Cancel();
             Until(() => flow.Step!.State == ModBase.LoadState.Canceled, "FLOW-04-cancel-token");
@@ -93,7 +134,7 @@ internal static class ModpackUpdateFlowChecks
             Check(File.ReadAllText(Path.Combine(canceled.PathIndie, "config/author.txt")) == "old-author", "FLOW-04-bytes", "held confirmation already wrote target bytes");
         }
         finally { release.Set(); }
-        flow.WaitStopped();
+        flow.WaitStopped(); TraceStage("held-cancel-stopped");
         Check(!flow.Worker!.LastSucceeded && File.ReadAllText(Path.Combine(canceled.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(canceled.PathIndie, "config/personal.txt")) == "my-edit" && File.ReadAllText(Path.Combine(canceled.PathVersion, "PCL", "ModpackOrigin.json")) == canceledOrigin, "FLOW-05", "real canceled flow changed author/personal/origin bytes");
         Check(!Directory.Exists(Path.Combine(canceled.PathVersion, "PCL", "PackUpdateBackups")), "FLOW-05-backup", "cancellation before commit created a transaction");
 
@@ -113,7 +154,7 @@ internal static class ModpackUpdateFlowChecks
             return 1;
         };
         int infos = flow.Infos.Count;
-        flow.Start(accepted); flow.WaitStopped();
+        TraceStage("accepted-start"); flow.Start(accepted); flow.WaitStopped(); TraceStage("accepted-stopped");
         Check(flow.Worker!.LastSucceeded && flow.Step!.State == ModBase.LoadState.Finished && previews == 1 && flow.Infos.Count == infos + 1, "FLOW-06", "accepted real workflow did not finish: " + flow.Step.Error);
         Check(File.ReadAllText(Path.Combine(accepted.PathIndie, "config/author.txt")) == "new-author" && File.ReadAllText(Path.Combine(accepted.PathIndie, "config/personal.txt")) == "my-edit", "FLOW-07", "accepted workflow lost author update or personal modification");
         string backup = flow.Step.Output;
@@ -122,8 +163,10 @@ internal static class ModpackUpdateFlowChecks
         Check(((IEnumerable<JObject>)Native.Static("PCL.EnvironmentHistory", "Points", accepted.PathVersion)!).Any(point => point["label"]?.ToString() == "整合包更新前"), "FLOW-08-history", "real pre-update environment snapshot missing");
         Check(PageInstanceLeft.Instance is not null && !ReferenceEquals(PageInstanceLeft.Instance, accepted) && Native.Full(PageInstanceLeft.Instance.PathVersion) == Native.Full(accepted.PathVersion) && ReferenceEquals(PageInstanceLeft.Instance, ModMinecraft.McInstanceSelected), "FLOW-08-reload", "actual selected/page instance was not reloaded together");
         Check(!((IEnumerable<string>)Update("Pending", accepted.PathVersion)!).Any() && !flow.Updating && !ModMinecraft.McInstanceLock.IsLocked(accepted), "FLOW-08-release", "successful actual workload left pending state/Active/lease");
-        scope.FinishActualTasks();
-        accounts.AssertUsed();
+        TraceStage("common-barrier-enter");
+        using (DeadlineGuard deadlineGuard = new(DateTime.UtcNow.AddSeconds(10), "common actual-task completion barrier")) scope.FinishActualTasks();
+        TraceStage("common-barrier-return");
+        accounts.AssertUsed(); TraceStage("account-read-contract-return");
         environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS native modpack-update workflow: FLOW-01..08 (genuine admission lease, baseline/preview refusals, guarded cancellation, history/commit/reload).");
     }
@@ -273,6 +316,7 @@ internal static class ModpackUpdateFlowChecks
     private static void Until(Func<bool> done, string id) => Until(done, id, DateTime.UtcNow.AddSeconds(10));
     private static void Until(Func<bool> done, string id, DateTime deadline)
     {
+        using DeadlineGuard deadlineGuard = new(deadline, "Until " + id);
         while (!done()) { Check(DateTime.UtcNow < deadline, id, "actual workload/callback did not reach expected state"); Pump(deadline); Thread.Sleep(2); }
         Pump(deadline);
     }
@@ -317,7 +361,12 @@ internal static class ModpackUpdateFlowChecks
             var createStep = (Func<string, Action<ModLoader.LoaderTask<string, string>>, ModLoader.LoaderTask<string, string>>)Native.Get(host, "CreateStep")!;
             Replace("CreateStep", new Func<string, Action<ModLoader.LoaderTask<string, string>>, ModLoader.LoaderTask<string, string>>((name, work) =>
             {
-                Step = createStep(name, current => { workloadThreads.Add(Thread.CurrentThread); work(current); });
+                Step = createStep(name, current => {
+                    workloadThreads.Add(Thread.CurrentThread); TraceStage("step-body-enter");
+                    try { work(current); TraceStage("step-body-return"); }
+                    catch (Exception error) { TraceStage("step-body-throw-" + error.GetType().Name); throw; }
+                    finally { TraceStage("step-body-finally"); }
+                });
                 steps.Add(Step); return Step;
             }));
             var createWorker = (Func<ModLoader.LoaderCombo<string>, string, RedoableWorker>)Native.Get(host, "CreateWorker")!;
@@ -328,9 +377,29 @@ internal static class ModpackUpdateFlowChecks
             var onStopped = (Action<RedoableWorker, Action>)Native.Get(host, "OnStopped")!;
             Replace("OnStopped", new Action<RedoableWorker, Action>((worker, release) => onStopped(worker, () =>
             {
+                TraceStage("worker-stopped-enter");
                 release(); // The actual Active release, after the actual lease's earlier handler.
-                stopped.TryAdd(worker, 0);
+                stopped.TryAdd(worker, 0); TraceStage("worker-stopped-tail");
             })));
+            var setProgress = (Action<ModLoader.LoaderTask<string, string>, double>)Native.Get(host, "SetProgress")!;
+            Replace("SetProgress", new Action<ModLoader.LoaderTask<string, string>, double>((task, value) => {
+                string step = "progress-" + value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                TraceStage(step + "-before"); setProgress(task, value); TraceStage(step + "-return");
+            }));
+            var reset = (Action<ModMinecraft.McInstance>)Native.Get(host, "ResetSettings")!;
+            Replace("ResetSettings", new Action<ModMinecraft.McInstance>(instance => { TraceStage("reload-reset-before"); reset(instance); TraceStage("reload-reset-return"); }));
+            var load = (Func<string, ModMinecraft.McInstance>)Native.Get(host, "LoadInstance")!;
+            Replace("LoadInstance", new Func<string, ModMinecraft.McInstance>(folder => { TraceStage("reload-load-before"); var value = load(folder); TraceStage("reload-load-return"); return value; }));
+            var uiWait = (Action<Action>)Native.Get(host, "UiWait")!;
+            Replace("UiWait", new Action<Action>(work => { TraceStage("uiwait-request"); uiWait(() => { TraceStage("uiwait-callback-enter"); work(); TraceStage("uiwait-callback-return"); }); TraceStage("uiwait-dispatch-return"); }));
+            var setPage = (Action<ModMinecraft.McInstance>)Native.Get(host, "SetPageInstance")!;
+            Replace("SetPageInstance", new Action<ModMinecraft.McInstance>(value => { TraceStage("reload-page-before"); setPage(value); TraceStage("reload-page-return"); }));
+            var setSelected = (Action<ModMinecraft.McInstance>)Native.Get(host, "SetSelectedInstance")!;
+            Replace("SetSelectedInstance", new Action<ModMinecraft.McInstance>(value => { TraceStage("reload-selected-before"); setSelected(value); TraceStage("reload-selected-return"); }));
+            var beforeChange = (Action<ModMinecraft.McInstance, string, string, CancellationToken>)Native.Get(host, "BeforeMinecraftChange")!;
+            Replace("BeforeMinecraftChange", new Action<ModMinecraft.McInstance, string, string, CancellationToken>((value, oldVersion, newVersion, token) => { TraceStage("history-before-change-enter"); beforeChange(value, oldVersion, newVersion, token); TraceStage("history-before-change-return"); }));
+            var captureHistory = (Action<ModMinecraft.McInstance, string, CancellationToken>)Native.Get(host, "CaptureHistory")!;
+            Replace("CaptureHistory", new Action<ModMinecraft.McInstance, string, CancellationToken>((value, caption, token) => { TraceStage("history-capture-enter"); captureHistory(value, caption, token); TraceStage("history-capture-return"); }));
             Check(!Updating, "FLOW-initial-active", "another real update is already active");
         }
         private Func<string, TPlan, Func<McVersion>, int> CreatePreview<TPlan>() => (_, plan, _) => Preview(plan!);
@@ -343,27 +412,35 @@ internal static class ModpackUpdateFlowChecks
         internal void Start(ModMinecraft.McInstance instance)
         {
             Native.Check(Thread.CurrentThread.GetApartmentState() == ApartmentState.STA, "Native update fixture requires actual WPF STA.");
-            Native.Static("PCL.ModpackUpdateFlow", "Start", instance, false);
+            TraceStage("actual-start-enter"); Native.Static("PCL.ModpackUpdateFlow", "Start", instance, false); TraceStage("actual-start-return");
         }
         internal void WaitStopped()
         {
             Check(Worker is not null && Step is not null && Combo is not null, "FLOW-worker", "actual workflow did not create its real worker/step/combo");
             DateTime deadline = DateTime.UtcNow.AddSeconds(10);
-            Until(() => !Worker!.Running && stopped.ContainsKey(Worker) && !Updating && !AnyLocked && workloadThreads.All(thread => !thread.IsAlive) && steps.All(step => step.LastRunningThread?.IsAlive != true), "FLOW-stopped", deadline);
+            using DeadlineGuard deadlineGuard = new(deadline, "WaitStopped");
+            TraceStage("wait-stopped-enter");
+            // Stopped is published only after the real worker has left its terminal
+            // monitor/Progress callbacks and the actual lease/Active release has run.
+            // Check this concurrent signal first; pumping UI must not block on
+            // Running while that same worker can still synchronously await UI.
+            Until(() => stopped.ContainsKey(Worker!) && !Worker!.Running && !Updating && !AnyLocked && workloadThreads.All(thread => !thread.IsAlive) && steps.All(step => step.LastRunningThread?.IsAlive != true), "FLOW-stopped", deadline);
             Check(Step!.State is ModBase.LoadState.Finished or ModBase.LoadState.Canceled or ModBase.LoadState.Failed, "FLOW-step-terminal", "real worker stopped with an unfinished step");
-            Pump(deadline);
+            Pump(deadline); TraceStage("wait-stopped-return");
         }
         public void Dispose()
         {
             try
             {
+                DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+                using DeadlineGuard deadlineGuard = new(deadline, "LiveFlow.Dispose");
+                TraceStage("live-cleanup-enter");
                 foreach (RedoableWorker worker in workers)
-                    if (worker.Running) { combos[worker].Cancel(); worker.Cancel(); }
-                bool Quiescent() => workers.All(worker => !worker.Running && stopped.ContainsKey(worker)) &&
+                    if (!stopped.ContainsKey(worker) && worker.Running) { combos[worker].Cancel(); worker.Cancel(); }
+                bool Quiescent() => workers.All(worker => stopped.ContainsKey(worker) && !worker.Running) &&
                     workloadThreads.All(thread => !thread.IsAlive) && steps.All(step => step.LastRunningThread?.IsAlive != true) &&
                     !Updating && !AnyLocked && ModMinecraft.McInstanceListLoader.State != ModBase.LoadState.Loading &&
                     ModMinecraft.McInstanceListLoader.LastRunningThread?.IsAlive != true;
-                DateTime deadline = DateTime.UtcNow.AddSeconds(10);
                 while (true)
                 {
                     // Actual producer threads must return before their terminal
@@ -380,7 +457,9 @@ internal static class ModpackUpdateFlowChecks
             }
             // No finally: a timeout must never pop production delegates and then
             // allow FileTaskScope to restore roots while real work is still alive.
+            TraceStage("live-cleanup-quiescent");
             while (restore.Count > 0) restore.Pop()();
+            TraceStage("live-cleanup-restored");
         }
     }
 }

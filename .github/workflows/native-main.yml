@@ -345,7 +345,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
           $failedGroups = @()
-          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies', 'dependency-graph', 'toolbox', 'visual-assets', 'launcher-lifecycle', 'modpack-mode', 'review-fixes', 'migrated-controls', 'map-install-recycle', 'resource-updates')
+          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies', 'dependency-graph', 'toolbox', 'visual-assets', 'launcher-lifecycle', 'modpack-mode', 'review-fixes', 'migrated-controls', 'map-install-recycle', 'resource-updates', 'mmc-import-contract')
           foreach ($group in $groups) {
             # Every family owns its real STA child and temporary state. A
             # failed theme family must not hide file/dependency acceptance.

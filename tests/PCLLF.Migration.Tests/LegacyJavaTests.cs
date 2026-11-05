@@ -18,6 +18,7 @@ internal static class LegacyJavaTests {
         yield return ("java forced and automatic selection preserve checked cache order without fallback", () => RunChild("selection"));
         yield return ("java refresh uses the real worker wait cancellation and manual invalidation boundaries", () => RunChild("worker"));
         yield return ("java Mojang parsing download plans and canceled waits retain cleanup semantics", () => RunChild("download"));
+        yield return ("java cache reads historical Version objects without changing current JSON or failure recovery", () => RunChild("cache-format"));
     }
 
     // Program forwards only this exact protocol before any group touches Configs.
@@ -34,6 +35,7 @@ internal static class LegacyJavaTests {
                     case "selection": Selection(fixture); break;
                     case "worker": Worker(fixture); break;
                     case "download": Download(fixture); break;
+                    case "cache-format": CacheFormat(fixture); break;
                     default: throw new ArgumentException("Unknown Java child case: " + args[1]);
                 }
             }
@@ -76,6 +78,51 @@ internal static class LegacyJavaTests {
                 Require(child.WaitForExit(3000), "Java child remained alive after termination.");
             }
         }
+    }
+
+    private static void CacheFormat(Fixture f) {
+        JObject LegacyVersion(int major, int minor, int build, int revision) => new() {
+            ["Major"] = major, ["Minor"] = minor, ["Build"] = build, ["Revision"] = revision,
+            ["MajorRevision"] = revision >> 16, ["MinorRevision"] = unchecked((short)revision), ["future"] = new JObject { ["keep"] = "version-data" }
+        };
+        JObject RootFor(JToken? version, bool omit = false) {
+            JObject java = new() { ["Folder"] = Path.Combine(f.Root, "cached-java"), ["futureJava"] = new JObject { ["keep"] = "entry-data" } };
+            if (!omit) java["Version"] = version?.DeepClone() ?? JValue.CreateNull();
+            return new JObject { ["JavaConfigVersion"] = Versions.JavaConfigVersion, ["JavaList"] = new JArray(java), ["unrelated"] = new JObject { ["keep"] = "unknown-root" } };
+        }
+        void Load(JObject json) {
+            f.Provider.Save(); File.WriteAllText(f.GlobalConfigPath, json.ToString(Newtonsoft.Json.Formatting.Indented)); f.Provider.DiscardCache();
+        }
+        void Read(JToken? version, Version? expected, bool omit = false) {
+            JObject json = RootFor(version, omit); Load(json); byte[] before = File.ReadAllBytes(f.GlobalConfigPath); int starts = f.Starts;
+            var list = Configs.JavaList.Get()!;
+            Require(list.Count == 1 && Equals(list[0].Version, expected), "Actual Java cache lost historical/string/null Version data.");
+            f.Engine.JavaInit(); f.Provider.Save();
+            Require(f.Starts == starts && File.ReadAllBytes(f.GlobalConfigPath).SequenceEqual(before), "Reading a valid Java cache rewrote bytes/unknown data or triggered a search.");
+            Require(JToken.DeepEquals(JObject.Parse(File.ReadAllText(f.GlobalConfigPath)), json), "Valid Java cache read changed unknown root/entry/version members.");
+        }
+        Read(LegacyVersion(17, 0, 20, 1), new Version(17, 0, 20, 1));
+        Read(LegacyVersion(8, 0, -1, -1), new Version(8, 0));
+        Read(LegacyVersion(21, 0, 9, -1), new Version(21, 0, 9));
+        Read(new JValue("21.0.9.0"), new Version(21, 0, 9, 0));
+        Read(new JValue("17.0"), new Version(17, 0)); Read(new JValue(""), null); Read(null, null); Read(null, null, true);
+        // Writes deliberately retain the current .NET serializer representation;
+        // the compatibility reader itself never normalizes the original file.
+        var current = Configs.JavaList.Get()!; current[0].Version = new Version(17, 0, 20, 1); Configs.JavaList.Set(current); f.Provider.Save();
+        JObject written = JObject.Parse(File.ReadAllText(f.GlobalConfigPath));
+        Require((string?)written["JavaList"]![0]!["Version"] == "17.0.20.1" && (string?)written["unrelated"]!["keep"] == "unknown-root", "Current Java write contract or unrelated data changed.");
+        List<JToken> bad = [new JValue("not-a-version"), new JValue(17), new JValue(true), new JArray(17, 0), new JObject(), LegacyVersion(-1, 0, 0, 0), LegacyVersion(17, -1, 0, 0), LegacyVersion(17, 0, -2, 0), LegacyVersion(17, 0, -1, 0)];
+        JObject missing = LegacyVersion(17, 0, 0, 0); missing.Remove("Minor"); bad.Add(missing);
+        JObject fraction = LegacyVersion(17, 0, 0, 0); fraction["Build"] = 0.5; bad.Add(fraction);
+        JObject overflow = LegacyVersion(17, 0, 0, 0); overflow["Major"] = (long)int.MaxValue + 1; bad.Add(overflow);
+        foreach (JToken token in bad) {
+            Load(RootFor(token)); bool rejected = false;
+            try { _ = Configs.JavaList.Get(); } catch (Newtonsoft.Json.JsonSerializationException) { rejected = true; }
+            Require(rejected, "Malformed Java cache unexpectedly became a usable version: " + token.Type);
+            f.Engine.JavaInit(); f.Provider.Save();
+            Require(!Configs.JavaList.HasValue() && (string?)JObject.Parse(File.ReadAllText(f.GlobalConfigPath))["unrelated"]!["keep"] == "unknown-root", "Original JavaInit malformed-cache reset boundary or unrelated data changed.");
+        }
+        Console.WriteLine("PASS actual Java cache read: historical four-component objects, modern strings/null/missing, unchanged raw/unknown data/current writes and twelve original invalid/reset boundaries. No Java executable or network.");
     }
 
     private static void Requirements(Fixture f) {

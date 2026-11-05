@@ -59,7 +59,7 @@ internal static partial class ModpackModeChecks {
         scope.SetCache("LivingModpackExported",true); Native.Call(system.GetType(),"RefreshModpackSwitch",system); M(177, Part<TextBlock>(system,"LabLauncherVersion").Text.StartsWith(brand + " ",StringComparison.Ordinal) && Grid.GetRow(Part<UIElement>(system,"LabLauncherVersion")) == 0);
         foreach (var preference in preferences) M(178, Equals(preference.Value,Cached(preference.Key)));
         DependencyObject? normalCard = Part<FrameworkElement>(system,"LabLauncherVersion").Parent; while (normalCard is FrameworkElement parent && normalCard.GetType().FullName != "PCL.MyCard") normalCard = parent.Parent; M(236, normalCard is MyCard); M(237, system.FindName("PanDonate") is null);
-        PageInstanceExport export = scope.Keep(new PageInstanceExport()); MyCheckBox packOption = Part<MyCheckBox>(export,"CheckOptionsModpackMode"); M(181, packOption.Checked && (bool)Native.Get(packOption.Tag,"DefaultChecked")!);
+        PageInstanceExport export = scope.Keep(new PageInstanceExport()); MyCheckBox packOption = Part<MyCheckBox>(export,"CheckOptionsModpackMode"); M(181, packOption.Checked && ((PCLCS.ModpackExportOptionData)packOption.Tag).DefaultChecked);
         Part<MyCheckBox>(export,"CheckOptionsPcl").Checked = false; M(183, ((FrameworkElement)packOption.Parent).Visibility == Visibility.Collapsed); Part<MyCheckBox>(export,"CheckOptionsPcl").Checked = true; M(185, ((FrameworkElement)packOption.Parent).Visibility == Visibility.Visible);
         return (export,overview);
     }

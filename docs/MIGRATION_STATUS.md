@@ -127,6 +127,12 @@ R001固定历史读取前置已接：9个真实source-mode调用者改读Git固�
 
 真实启动合同继续复用原Smoke：新增安全`--update`拒绝实际进程，严格image/15秒/无可见窗口/Fail=1，前后自有PCLDebug合成偏好与official迁移标记必须不变，随后原两轮正常Main反向证明该偏好可迁移。原两轮cold/close/reopen全部保留，不执行GPU/memory/替换helper；新增utility未知窗口直接pending失败，不调用未定义辅助函数。此226运行样本待Windows，mutex-before-import225和V2贯穿FormMain228仍明确待补，未拿历史source见证冒称当前运行。
 
+`27eb95f` 的Windows回执已收：Build41936480171的Release126946173037／Debug126946173152均整体success，原44消费者恢复通过；Modern41936480055的Release126946097959／Debug126946098469均success。Native41936480022两配置（Release126946467080／Debug126946467102）实际通过20/24默认族，含已修backup-resources/local-features及新dependency-graph/toolbox/launcher-lifecycle/review-fixes/migrated-controls/resource-updates；Release另真实Registry通过，C#凭据七门禁两配置成功，新增真实`--update`拒绝/不导入与原两轮正常Main导入/关闭复开全部成功。四族仍失败且不记通过：modpack-update父60秒超时且旧父未转出child输出；visual-assets原icon162混合路径cache；modpack-mode误以字段读实际ExportOption.DefaultChecked属性；map40主体已通过但把AutoRun:false、Waiting/nullThread页面Loader登记为必须终止任务，原Cancel对Waiting无操作导致cleanup截止失败。当前窄修保全部原判断：路径拆组件、真实属性读取、仅卸载及实际生产者/UI收尾后解除明确从未启动的page-loader登记；全局Cancel/Quiescent/预算不变。父进程退出与双流共用60秒，故障保已完成流有界尾以免诊断丢失；Flow保40原Check及真实account scope，新增有界阶段和原10秒verified-child截止，先真实Stopped信号后读可能取monitor的Running，实际超时原因与结果仍待新Windows证据。
+
+独立旧桥126949960221再次真正运行：旧Parent7992正常关闭、真实Helper4204四参、目标restart8220均记录，新旧日志世代误判已越过。新Log1实际E为LegacyJavaService初始化缓存失败，JsonSerializationException指出旧Java版本对象与现代System.Version字符串读取合同不兼容；这是必要生产数据迁移差异，不是新增Java选择规则。artifact13375296501已下载258984375bytes核SHA，旧原始AppData config已按原cleanup移除，未伪称取得不存在的完整旧JSON；下一兼容适配只限Java缓存Version字段，原E门禁继续保留，整个旧版升级仍未通过。
+
+Java升级格式窄适配已接：仅PCLCS/Java.cs的Version字段局部JsonConverter接受旧System.Version四整数对象（合法-1尾部）、当前字符串/null/缺省，CanWrite=false保持现有写法；global JSON、Shared及Java选择规则不动。真实配置提供器→Configs.JavaList.Get→JavaInit的legacy-java新增cache-format隔离child，八种合法/空样本读后原文件bytes/未知根/entry/version均不变，当前Set仍字符串，十二坏样本继续原异常/reset并保未知根。同一真实Core/provider/夹具只换回原Java.cs的counterexample实际复现System.Version对象到字符串错误及Path[0].Version.Major，说明不是实现镜像；完整旧Windows缓存未保存的限制继续保留。新增225/228复用真正Smoke双mutex/自有hidden6402 HWND及已校验native包内实际Core/Shared的SourceIdentify/DES，生成仅合成13_LF raw/kind；原226与两轮正常Main全部保留。纯CLR工具与NET48 helper严格编译及协议/身份合同已过，当前硬件/Windows竞争启动/真实FormMain贯穿仍待下一CI，不预填通过。现有MMC新增25号族仅验实际Main原parser/typed request/pack负载与26固定合同，game install seam明确隔离，不计库/Java/HTTP/game/完整根任务安装或取消回滚。
+
 本轮已推送的实现与验证检查点：
 
 | 检查点 | 修改及实际验证 |
@@ -357,7 +363,7 @@ b7c8172已验：Modern [41831770480](https://github.com/DDZmumo/PCL-Living-Fork/
 | N002a | done | B001、G003 | b7493b8真实52源／4资源＋3f输入fixture修复，Modern41804541772两配置各11步通过：真实NET10／Shared加载、精确反斜线资源与bytes、图片冻结／流释放、同源缩略图与按键实际保存；旧Frame两消费者复验通过。只关闭当前Core/WPF组件，不关闭整个N002／主产品 |
 | N003 | in_progress | N002、C031 | 正式modern/Main完整C#/.NET10 WPF与固定LF50功能/事件/typed桥已接，不读业务VB/designer/vbproj/resx；18键现代schema与57实际资产/manifest，默认及原LegacyLink开启图均真实Windows编译。db718两配置54资源、原生包、原9族及Release真实Registry成功；首次真实完整产品可见HWND/正常关闭也通过。df4两轮真实冷启/关闭重开/日志轮转/锁与独占、Registry、原9族/完整克隆/环境历史/启动依赖通过；余下3族fixture修复、新4族和旧版升级待Windows；主要交互/最终等价未完，不以编译/源码完成关闭整项 |
 | N004 | in_progress | N003、C022 | db718 Release真实registry-data成功：actual Main Settings/CurrentIdentify/DES→Windows adapter，13个_LF值/种类与外来哨兵、同namespace旧缓存升级/退出、非MS迁移、原kind恢复/取消/INI与JSON未知数据均实际通过，sole/fresh hosted/GUID owner和仅本人清理保留。完整旧版升级后的账号/UI链仍待R003，不读取真实用户凭据；内存77断言与本次真实Registry证据分开记录 |
-| N005 | in_progress | N003、N004 | 真实NativeEXE/ZIP/canonical managed旧桥/四角色SHA索引与GUID凭据清理已在db718两配置通过，原四参不改；实际身份11、Registry与原9族成功。db718首轮独占曾通过；bc8首轮精确映像/真HWND/-1关闭/mutex通过，但其EXE独占立即遇共享冲突，未运行复开，现保原close预算补32/33限时释放与只读持有者诊断。df4两轮cold/独占释放和六资格通过，升级真旧EXE已启动但版本说明检查pending，四参替换/回滚仍未验；24默认族与Registry独立，新增四族待Windows，三旧族修复待验。后继第7凭据门禁已接待Windows，无外部发布 |
+| N005 | in_progress | N003、N004 | 真实NativeEXE/ZIP/canonical managed旧桥/四角色SHA索引与GUID凭据清理已在db718两配置通过，原四参不改；实际身份11、Registry与原9族成功。db718首轮独占曾通过；bc8首轮精确映像/真HWND/-1关闭/mutex通过，但其EXE独占立即遇共享冲突，未运行复开，现保原close预算补32/33限时释放与只读持有者诊断。df4两轮cold/独占释放和六资格通过，升级真旧EXE已启动但版本说明检查pending，四参替换/回滚仍未验；25默认族与Registry独立，新增四族待Windows，三旧族修复待验。后继第7凭据门禁已接待Windows，无外部发布 |
 | R001 | in_progress | N003、N005 | 正式完整现代产品不编译/读取业务VB或vbproj，原联机可选图真实C#接线。9个source-mode调用者现接固定Git对象/17源/对应许可与provenance，f4原行为/a1 ABI适配/LF50独立算法作用域明确；9参数+导出/拒绝实际通过；bc8旧Build两配置在Windows alternates的CRLF路径误读前置失败，已窄修字节格式，df4 Windows固定源/原凭据已通过；仍欠新默认发布验证。旧Build默认VB构建及产品实体、vendor字节/许可归属尚未退休；待Native复开/旧桥必要门禁通过后统一切换，不靠排除/改扩展名虚报清零 |
 | R002 | todo | R001 | 迁移后的完整 Windows Debug／Release 自动化回归、现有 MMC 和普通整合包样本；每项保存真实命令、提交和 CI 结果 |
 | R003 | todo | R002 | 实际 Windows 运行与新旧 UI 对照；账号、游戏启动／退出、文件中断恢复、按钮、滚动、页面及动画行为验收 |
@@ -447,6 +453,6 @@ C007 当前只拆已勘查的实际入口，后续导入／导出／扫描／图
 | C007d1a | `745f0b8` 已推送；345／377、严格190／56／40大小探针、Windows各41步与原私有入口全通过；独立终审／零警告编译通过，实际Frame确认1280为1.3 KB、fr-FR为1,3 KB，long.Max仍8589934592 GB | 本批完成；JSON／IO／Icon未在此批迁，不以a完成关闭d1母项 |
 | C007d1b | 三批实现已推送且真实397／56、367／399、Windows各41步通过；独立交叉审查、原R尾零缓冲回归与固定MIT来源／artifact证据齐全，前两次严格失败保留 | 本批纯JSON→Detail完成；不是整个Store／全域数字／现代WPF完成，原IO／Icon／catch继续d2 |
 
-下次入口：核对当前提交的Native Windows实际结果，优先收尾原生冷启/关闭重开、真实Registry、24个实际Main族与独立旧版升级；Modern41914145939与Migration41923482100已验范围复用；复用df4两轮cold/Registry及12族实际通过范围，先处理余下3族修复/新增4族与旧桥日志归属问题。正式完整C# Main和固定LF50已在远端，不重复转换或回到逐方法规划。R001接通固定历史source-mode读取后，在Native/旧桥必要门禁通过时统一退役旧VB工程；备份还原/整合包更新/实例克隆的原验收继续适配实际Main，R002/R003未运行范围保持记账。main最新只读核对仍为50b028d，不改main，不执行新增MMC/性能阶段。
+下次入口：核对当前提交的Native Windows实际结果，优先收尾原生冷启/关闭重开、真实Registry、25个实际Main族与独立旧版升级；Modern41914145939与Migration41923482100已验范围复用；复用df4两轮cold/Registry及12族实际通过范围，先处理余下3族修复/新增4族与旧桥日志归属问题。正式完整C# Main和固定LF50已在远端，不重复转换或回到逐方法规划。R001接通固定历史source-mode读取后，在Native/旧桥必要门禁通过时统一退役旧VB工程；备份还原/整合包更新/实例克隆的原验收继续适配实际Main，R002/R003未运行范围保持记账。main最新只读核对仍为50b028d，不改main，不执行新增MMC/性能阶段。
 
 当前仍需完成：旧VB比较树与默认旧构建退休、原验收脚本的实际Main入口全接通、迁移后完整 GUI／真实账号／游戏启动与旧更新桥验收。正式C#/NET10完整产品已构建发布，不再将其描述为尚未开始；编译和当前部分功能族证据不能代替最终兼容验收。初始与 C001 检查点均有独立通过证据，后续任务仍须对各自提交重新验证；N001 审计交付不代表这些运行门禁已经通过。
