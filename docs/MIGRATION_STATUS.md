@@ -6,7 +6,7 @@
 
 - 目标状态：`in_progress`。正式产品现为 `modern/Main` 完整 C#/.NET10 WPF，固定 LF main50/1.3.5-pre-3 的功能、资源、完整事件及 typed 桥已接通，独立于业务 VB/vbproj 构建发布。真实 Windows Debug/Release 主程序编译、54 项资源加载、完整原生包与兼容桥生成、可选联机模式编译已通过；Native两轮冷启/关闭重开与真实Registry已实际通过；备份/更新等其余运行兼容仍在验收，旧 VB 比较工程尚未退役。不能把编译成功或已迁源码当成整链通过；既有 Core/原产品/现代组件各自 Windows 证据仍按下文限定范围保留。
 - 集成分支：`migration/csharp-modern-dotnet`。初始起点`f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`保持；LF main当前同步源固定`50b028da5fcad2226d74d901a41d8c43a249bfb2`，仅只读来源，不向main提交/合并、不force。6个新提交不能整文件覆盖既已迁移的Core/typed桥。
-- 最新已验证检查点为 `5028988`：Build41940652704 的两配置各42步成功、原44消费者通过；Modern41940652692 两配置成功；Migration41940652687 为 Windows508/508、Ubuntu457/457，严格397例零差异。Native41943601945 两配置各24/25默认族通过，Release真实Registry及225/226/228启动合同、两轮正常冷启/关闭/复开通过；MMC命令断言和独立旧版升级退出观察仍失败，不能标完整Native验收成功。历史3df/7eb/4a等证据在原记录保留。
+- 最新已验证检查点为 `5028988`：Build41940652704 的两配置各42步成功、原44消费者通过；Modern41940652692 两配置成功；Migration41940652687 为 Windows508/508、Ubuntu457/457，严格397例零差异。Native41945911030 两配置各24/25默认族通过，Release真实Registry及225/226/228启动合同、两轮正常冷启/关闭/复开通过；MMC命令断言和独立旧版升级退出观察仍失败，不能标完整Native验收成功。历史3df/7eb/4a等证据在原记录保留。
 - 当前交付批次：收尾真实Native功能链与旧版升级。整合包loopback下载已隔离到保留真实guard的专属进程，只有全部原UX/IO/线程/句柄/监听器屏障与nonce/PID/root/Main SHA/MVID完成凭据通过，父进程才执行明确的本人进程终止并要求-1及双EOF；其余事务/FLOW仍正常退出。MMC保原输入/固定期望，仅在失败时输出GUID合成实际配置/缓存/磁盘诊断。合并后Native宿主Release严格编译0W0E，新协议Windows待验；生产网络循环、取消与预算未改。默认发布切换及178产品VB/1vbproj实体退役仍未执行。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前18组（设置／校验Loader／Java与新增foundation独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
@@ -144,6 +144,10 @@ Java升级格式窄适配已接：仅PCLCS/Java.cs的Version字段局部JsonConv
 828独立旧桥126973474205已得到精确失败条件：helper2064 WaitForExit(15000)=true且HasExited=true，但PowerShell观察ExitCode=null；bridge7072已退出0（因原短路未进入第二wait），restart3996仍正常运行，目标SHA256 `66e0d8e946a4e43d22657970c1a3db82766c232af10bc27940fcb3329d63a2f1`匹配native proof且无替换残留。helper唯独由GetProcessById观察且未提前保留Handle；bridge来自Process.Start，restart由真实映像查询提前保留原Handle。现Track-Process立即取得非零原Handle并持同一Process至原finally.Dispose，失败仍拒绝；没有接受null、改变0门禁或15/20秒预算/四参协议。新增实际WinPS前置从唯一真实Track函数AST运行自有nonce/PID进程的严格int exit0/23与同原Handle映像核验；两侧ready/release原子发布，unpinned仅作诊断。PS解析/原生专用路由实际通过，Windows进程回归与四case升级仍待，artifact13377737280可追溯但未声称已下载核SHA。
 
 R001必要前置先接Native→Modern的EnableLegacyLink可选参数转发，默认false不变，唯一C#凭据GUID/lease/finally仍在Modern。私有实际生产wrapper的默认前后合同、原生调用AST false/true、exit23/非法输入/并发锁与清理已通过；完整可选模式Windows发布仍待。默认Build-Release/根solution/旧Build job及VB实体未改；历史凭据fixture/ComparisonOnly迁接保留到协调切换，避免为前置稿重复无关原44全测。
+
+`f68321a` 的Native41945911030（Debug126978198633／Release126978198689）两配置仍24/25；MMC三原host调用均真实返回且无异常：OverrideCommands=true，PreLaunchCommand完整，WriteIni参数严格等原gold、returned成功；目标相对路径实际为minecraft双反斜杠versions。源码确认Scope.Game已追加尾分隔符，FileTaskScope.SelectMinecraft又无条件追加一次，违反本夹具向helper传裸路径的约定。现仅去Game那一处追加并早断言真实McFolderSelected等于Game加一条分隔符；保原trace、26检查点/ZIP输入/精确命令及生产INI精确路径缓存不变。后续物理覆盖的完整时序未宣称已观察，完整Windows MMC结果仍待。
+
+f683独立旧桥126981275171在新增WinPS前置通过第一个pinned exit0后，unpinned对照给上轮声明为IntPtr的beforeHandle赋null，触发真实类型转换错误，四协议case尚未执行。现仅把该未使用control哨兵设IntPtr.Zero；真实pin/原Handle/严格int0与23/原子ready-release/时间与协议全部不变。本机真实PS语言复现原异常并验证交替赋值修复，仍不计Windows0/23进程或完整旧桥通过。MMC首个完整跨编曾在编译出DLL后因/tmp满额复制失败，不冒称成功；主执行者合并新源后的真正facade全Build已0W0E。两旧证据ZIP仅转存空闲workspace卷并逐字节SHA核验、原路径保留符号链接，不删除源码或未知数据。
 
 本轮已推送的实现与验证检查点：
 

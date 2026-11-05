@@ -45,7 +45,8 @@ internal sealed class MmcImportScope : IDisposable
         try {
             Root = Path.Combine(tasks.Root, "mmc-import-contract");
             Native.Check(!Directory.Exists(Root), "Refusing existing MMC contract fixture."); Directory.CreateDirectory(Root);
-            Game = Path.Combine(Root, "minecraft") + Path.DirectorySeparatorChar; Directory.CreateDirectory(Game); tasks.SelectMinecraft(Game);
+            Game = Path.Combine(Root, "minecraft"); Directory.CreateDirectory(Game); tasks.SelectMinecraft(Game);
+            Native.Check(ModMinecraft.McFolderSelected == Game + Path.DirectorySeparatorChar, "MMC fixture must select its root with exactly the FileTaskScope-owned trailing separator.");
             object engine = Native.Field(typeof(ModModpack), "Service").GetValue(null)!; host = Native.Get(engine, "host")!;
             var readBoolean = (Func<string, string, bool, bool>)Native.Get(host, "ReadIniBoolean")!;
             Set("ReadIniBoolean", new Func<string, string, bool, bool>((file, key, fallback) => {

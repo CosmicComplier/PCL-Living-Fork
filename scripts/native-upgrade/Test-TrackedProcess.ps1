@@ -50,7 +50,7 @@ public static class TYPE_NAME {
    $watch=[Diagnostics.Stopwatch]::StartNew();while(-not [IO.File]::Exists($ready)){if($started.HasExited -or $watch.ElapsedMilliseconds -ge 5000){throw 'Owned regression child did not reach its nonce/PID readiness barrier.'};Start-Sleep -Milliseconds 10}
    if([IO.File]::ReadAllText($ready) -cne ($id+'|'+$started.Id)){throw 'Owned regression child readiness identity differs.'}
    if($pin){$observed=Track-Process $started.Id;[IntPtr]$beforeHandle=$observed.Handle;$image=[PclLfNativeSmoke.Win32]::ObserveProcessImage($observed,$false);if(-not $image.QuerySucceeded -or -not [string]::Equals($image.Path,$executable,[StringComparison]::OrdinalIgnoreCase)){throw 'Pinned original process handle does not identify the owned actual image.'}}
-   else{$observed=[Diagnostics.Process]::GetProcessById($started.Id);$ownedProcesses.Add($observed);$beforeHandle=$null;$image=$null}
+   else{$observed=[Diagnostics.Process]::GetProcessById($started.Id);$ownedProcesses.Add($observed);$beforeHandle=[IntPtr]::Zero;$image=$null}
    [IO.File]::WriteAllText($release+'.pending',$id);[IO.File]::Move($release+'.pending',$release)
    $finished=$observed.WaitForExit(5000);$exit=$observed.ExitCode
    $record=[ordered]@{Name=$caseName;ProcessId=$started.Id;ExpectedExitCode=$code;WaitCompleted=$finished;ExitCode=$exit;ExitCodeType=$(if($null -eq $exit){$null}else{$exit.GetType().FullName});OriginalHandleRetained=$null;Image=$image;Result='diagnostic-control'}
