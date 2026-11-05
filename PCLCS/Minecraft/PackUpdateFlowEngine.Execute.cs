@@ -45,6 +45,14 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         string summary = package.Name + " " + package.Version + "\r\n" + $"默认执行作者变更 {plan.Changes.Count(item => item.ApplyAuthor)} 项，保留或待确认 {plan.Changes.Count(item => !item.ApplyAuthor)} 项；冲突可在预览中逐项选择。" + "\r\n" +
             (runtimeChanged ? "Minecraft 或加载器将更新；存档会保留，请确认新版本兼容。" : "");
         if (host.Preview(summary, plan, () => host.Version(instance)) != 1) throw new OperationCanceledException();
+        PackDependencyGraphResult dependencies = update.CheckDependencies(plan, token);
+        plan.DependencyCheck = dependencies;
+        if (dependencies.HasErrors) throw new IOException("所选更新后的模组组合存在依赖或冲突问题，未提交更新。请调整作者版本与个人覆盖的选择：\r\n" + string.Join("\r\n", dependencies.Errors));
+        if (dependencies.HasUnknown) {
+            if (host.Message("以下声明无法完整确认，未据此宣称兼容。请核对所选作者版本、个人模组及目标运行时：\r\n" + string.Join("\r\n", dependencies.Warnings),
+                "更新组合兼容性待确认", "仍然更新", "取消", true) != 1) throw new OperationCanceledException();
+            plan.AllowUnverifiedDependencies = true;
+        }
         update.ValidateChoices(plan, token);
         Dictionary<string, string> extras = new(StringComparer.OrdinalIgnoreCase);
         if (runtimeChanged) {

@@ -79,6 +79,13 @@ internal static class ModpackUpdateChecks
         };
         Update("DownloadChanges", plan, Path.Combine(root, "downloads"), CancellationToken.None, download);
         Check(downloads == 1, "MP-03", "unchanged or conflicting files downloaded");
+        // Historical transaction fixtures deliberately use text as .jar bytes.
+        // Preserve that byte-level oracle, while requiring explicit acknowledgement
+        // rather than pretending these files have verified loader metadata.
+        var graph = (PCLCS.PackDependencyGraphResult)Get(plan, "DependencyCheck")!;
+        Check(graph.HasUnknown && !graph.HasErrors, "MP-graph-unknown", "Text JAR fixture must be reported as unverified.");
+        Reject(() => Update("Commit", plan, version, CancellationToken.None, null, null), "MP-graph-confirm", "Unverified loader metadata committed without confirmation.");
+        Set(plan, "AllowUnverifiedDependencies", true);
         string backup = (string)Update("Commit", plan, version, CancellationToken.None, null, null)!;
         (string path, string text)[] expected =
         {

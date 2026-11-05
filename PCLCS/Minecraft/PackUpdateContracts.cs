@@ -49,6 +49,9 @@ public class PackUpdatePlanData<TPackage, TChange> where TPackage : class where 
     public JObject? Baseline;
     public Dictionary<string, string?> Snapshot = new(StringComparer.OrdinalIgnoreCase);
     public List<string> Warnings = new(), RuntimeWarnings = new();
+    // Unknown declarations require an explicit acknowledgement, never an implicit compatibility claim.
+    public bool AllowUnverifiedDependencies;
+    public PackDependencyGraphResult? DependencyCheck;
     public HashSet<string> ObservedModFiles = new(StringComparer.OrdinalIgnoreCase);
 }
 public sealed class PackUpdateHost<TFile, TPackage, TChange, TPlan, TNetFile>

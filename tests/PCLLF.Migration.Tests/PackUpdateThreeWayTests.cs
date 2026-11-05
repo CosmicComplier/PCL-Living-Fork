@@ -16,7 +16,7 @@ internal static class PackUpdateThreeWayTests {
         yield return ("pack update one physical jar cannot satisfy two old author declarations with the same hash", SharedAuthorHash);
         yield return ("pack update two changed disabled variants are ambiguous and cannot be chosen automatically", AmbiguousDisabledVariants);
         yield return ("pack update explicit author selection upgrades disabled bytes without enabling the mod", UpgradeDisabledSelection);
-        yield return ("pack update personal mod ids and valid provided aliases block incoming conflicts without deleting additions", PersonalModAndAliasCollisions);
+        yield return ("pack update personal own-id conflicts block while alias ambiguity needs explicit confirmation without deleting additions", PersonalModAndAliasCollisions);
         yield return ("pack update no-project overrides use old and new loader contexts when associating an upgrade", LoaderContextTransition);
         yield return ("pack update multiple old or new files from one platform project are not paired arbitrarily", AmbiguousProjectVersions);
         yield return ("pack update author removals delete unchanged files and retain personal modifications", AuthorRemoval);
@@ -49,6 +49,11 @@ internal static class PackUpdateThreeWayTests {
             Require(!change.Conflict && change.ApplyAuthor, "Shared minecraft/neoforge dependency was treated as a mod collision: " + change.Reason);
         }
         Require(!plan.Changes.Any(c => c.Relative == decay.Relative && c.Ownership == PackUpdateOwnership.PersonalAdded), "An unchanged author jar was described as a personal addition.");
+        var graph = f.Engine.CheckDependencies(plan);
+        Require(!graph.HasErrors && graph.HasUnknown && graph.Warnings.Any(text => text.Contains("javafml")), "NeoForge language-loader uncertainty must be explicit, not a duplicate-mod error or assumed compatibility.");
+        Throws<IOException>(() => f.Commit(plan));
+        f.Has(ae2); f.Has(flux); f.Has(decay); f.Absent(newAe2.Relative); f.Absent(newFlux.Relative);
+        plan.AllowUnverifiedDependencies = true;
         f.Commit(plan);
         f.Has(newAe2); f.Has(newFlux); f.Has(decay); f.Absent(ae2.Relative); f.Absent(flux.Relative);
         Require(Directory.GetFiles(f.Path("mods"), "*.jar").Length == 3, "Upgrade left duplicate old versions.");
@@ -144,7 +149,15 @@ internal static class PackUpdateThreeWayTests {
             Change update = Incoming(plan, next.Relative);
             Require(update.Conflict && !update.AllowAuthor && !update.ApplyAuthor, "Multiple matching copies must not choose or delete a candidate automatically.");
             Require(plan.Changes.Any(c => c.Ownership == PackUpdateOwnership.Ambiguous), "Duplicate copies were not explicitly reported as ambiguous.");
-            f.Commit(plan); f.Absent(next.Relative);
+            f.WriteManifest(Manifest(original));
+            byte[] manifestBefore = File.ReadAllBytes(f.ManifestPath);
+            var bytesBefore = Directory.GetFiles(f.Path("mods"), "*.jar").ToDictionary(path => path, File.ReadAllBytes);
+            Require(f.Engine.CheckDependencies(plan).HasErrors, "Real duplicate active copies were reduced to unknown-only metadata.");
+            plan.AllowUnverifiedDependencies = true;
+            Throws<IOException>(() => f.Commit(plan));
+            Require(File.ReadAllBytes(f.ManifestPath).SequenceEqual(manifestBefore), "Rejecting duplicate active copies changed the author manifest.");
+            foreach (var before in bytesBefore) Require(File.ReadAllBytes(before.Key).SequenceEqual(before.Value), "Rejecting duplicate active copies changed local bytes: " + before.Key);
+            f.Absent(next.Relative);
             Require(Directory.GetFiles(f.Path("mods"), "*.jar").Length == 2, "An ambiguous hash match deleted one of the user's copies.");
         }
     }
@@ -224,14 +237,23 @@ internal static class PackUpdateThreeWayTests {
             var empty = f.Package([]); f.Install(extra);
             Plan plan = f.Plan(empty, f.Package([incoming])); f.Stage(plan);
             Change change = Incoming(plan, incoming.Relative);
-            Require(change.Conflict && !change.AllowAuthor && !change.ApplyAuthor, "An incoming own id/provided alias ignored an independently added personal mod.");
             Require(!plan.Changes.Any(c => c.ApplyAuthor && c.LocalRelative == extra.Relative), "A personal addition entered the automatic deletion transaction.");
-            change.Choice = PackUpdateChoice.UseAuthor; Throws<IOException>(() => f.Engine.ValidateChoices(plan));
-            change.Choice = PackUpdateChoice.PreservePersonal; f.Commit(plan);
-            f.Has(extra); f.Absent(incoming.Relative);
+            if (kind == 0) {
+                Require(change.Conflict && !change.AllowAuthor && !change.ApplyAuthor, "An incoming own ID ignored an independently added personal mod.");
+                change.Choice = PackUpdateChoice.UseAuthor; Throws<IOException>(() => f.Engine.ValidateChoices(plan));
+                change.Choice = PackUpdateChoice.PreservePersonal; f.Commit(plan);
+                f.Has(extra); f.Absent(incoming.Relative);
+            } else {
+                Require(!change.Conflict && change.ApplyAuthor, "A valid provided alias was flattened into a hard duplicate-own-ID conflict.");
+                var graph = f.Engine.CheckDependencies(plan);
+                Require(!graph.HasErrors && graph.HasUnknown && graph.Warnings.Any(text => text.Contains("shared_id") && text.Contains("提供")), "Alias provider ambiguity was not visible as unverified loader behavior.");
+                Throws<IOException>(() => f.Commit(plan)); f.Has(extra); f.Absent(incoming.Relative);
+                plan.AllowUnverifiedDependencies = true;
+                f.Commit(plan); f.Has(extra); f.Has(incoming);
+            }
             JObject manifest = f.Engine.ReadManifest(f.Game)!;
             Require(manifest["files"]?[extra.Relative] is null, "A preserved personal addition became an author-owned file.");
-            Require(manifest["files"]?[incoming.Relative]?["state"]?.ToString() != "installed", "A blocked incoming author file was recorded as installed.");
+            Require(kind == 0 ? manifest["files"]?[incoming.Relative]?["state"]?.ToString() != "installed" : manifest["files"]?[incoming.Relative]?["state"]?.ToString() == "installed", "The author record did not distinguish a blocked own-ID collision from an explicitly confirmed alias provider.");
         }
     }
 
@@ -248,6 +270,10 @@ internal static class PackUpdateThreeWayTests {
             Change change = Incoming(plan, next.Relative);
             Require(change.BaselineRelative == old.Relative && change.LocalRelative == old.Relative && !change.Conflict && change.ApplyAuthor, "A proven old author override was not associated using the old loader context.");
             Require(!plan.Changes.Any(c => c.BaselineRelative == old.Relative && c.Incoming is null && !c.DisplayOnly), "Loader transition split the related upgrade into a separate removal and addition.");
+            var graph = f.Engine.CheckDependencies(plan);
+            Require(!graph.HasErrors && graph.HasUnknown && graph.Warnings.Any(text => text.Contains("javafml")), "NeoForge language-loader uncertainty must be explicit after correctly associating old and new metadata contexts.");
+            Throws<IOException>(() => f.Commit(plan)); f.Has(old); f.Absent(next.Relative);
+            plan.AllowUnverifiedDependencies = true;
             f.Commit(plan); f.Has(next); f.Absent(old.Relative);
         }
     }
@@ -353,6 +379,10 @@ internal static class PackUpdateThreeWayTests {
         Plan plan = f.Plan(empty, f.Package([next])); f.Stage(plan);
         Require(!Incoming(plan, next.Relative).Conflict, "Unknown metadata was used as positive duplicate evidence.");
         Require(plan.Warnings.Count > 0 || plan.RuntimeWarnings.Count > 0 || plan.Changes.Any(c => c.Relative == extra.Relative && (c.Ownership == PackUpdateOwnership.Unknown || c.Reason!.Contains("无法"))), "Unknown metadata was not made visible.");
+        var graph = f.Engine.CheckDependencies(plan);
+        Require(graph.HasUnknown && !graph.HasErrors, "Unrecognized metadata became either a proven duplicate or an assumed compatible file.");
+        Throws<IOException>(() => f.Commit(plan)); f.Has(extra); f.Absent(next.Relative);
+        plan.AllowUnverifiedDependencies = true;
         f.Commit(plan); f.Has(extra); f.Has(next);
     }
 
@@ -478,9 +508,18 @@ internal static class PackUpdateThreeWayTests {
             Spec second = new("mods/second-new.jar", alias ? FabricAlias("other_mod", "1.0", "shared_id") : Fabric("shared_id", "2.0"), "secondproject");
             var empty = f.Package([]); Plan plan = f.Plan(empty, f.Package([first, second])); f.Stage(plan);
             Change a = Incoming(plan, first.Relative), b = Incoming(plan, second.Relative);
-            Require(a.Conflict && b.Conflict && !a.ApplyAuthor && !b.ApplyAuthor, "Conflicting new author ids or aliases were not both visible as conflicts before preview.");
-            a.Choice = b.Choice = PackUpdateChoice.UseAuthor; Throws<IOException>(() => f.Engine.ValidateChoices(plan));
-            b.Choice = PackUpdateChoice.PreservePersonal; f.Commit(plan); f.Has(first); f.Absent(second.Relative);
+            if (!alias) {
+                Require(a.Conflict && b.Conflict && !a.ApplyAuthor && !b.ApplyAuthor, "Conflicting new author own IDs were not both visible as conflicts before preview.");
+                a.Choice = b.Choice = PackUpdateChoice.UseAuthor; Throws<IOException>(() => f.Engine.ValidateChoices(plan));
+                b.Choice = PackUpdateChoice.PreservePersonal; f.Commit(plan); f.Has(first); f.Absent(second.Relative);
+            } else {
+                Require(!a.Conflict && !b.Conflict && a.ApplyAuthor && b.ApplyAuthor, "Provided aliases were treated as duplicate own IDs instead of separately evaluated loader behavior.");
+                var graph = f.Engine.CheckDependencies(plan);
+                Require(!graph.HasErrors && graph.HasUnknown && graph.Warnings.Any(text => text.Contains("shared_id") && text.Contains("提供")), "The incoming alias-provider ambiguity was not visible before preview.");
+                Throws<IOException>(() => f.Commit(plan)); f.Absent(first.Relative); f.Absent(second.Relative);
+                plan.AllowUnverifiedDependencies = true;
+                f.Commit(plan); f.Has(first); f.Has(second);
+            }
         }
         using (Context f = new()) {
             Spec oldA = new("mods/a-old.jar", Fabric("a_old", "1.0"), "projectA");

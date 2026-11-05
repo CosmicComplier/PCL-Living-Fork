@@ -99,8 +99,44 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
         return Regex.IsMatch(text, @"[<>~^*]|(?:^|\.)[xX](?:$|\.)") || (text.Contains(",") && (text.StartsWith("[") || text.StartsWith("(")));
     }
     public void ResetIndexLookups() => cached.Clear();
+    private static DependencyReplacementData? FindAuthorReplacement(TReport report, string platform, string project) {
+        PackDependencyOrigin? origin = report.PackOrigin;
+        if (origin?.IsPack != true || !origin.Complete) return null;
+        string identity = platform.ToLowerInvariant() + ":" + project;
+        var files = origin.Files.Where(file => string.Equals(file.Identity, identity, StringComparison.Ordinal) &&
+            !file.Disabled && file.LocalRelative is not null && file.ActualHash is not null &&
+            file.Role is PackDependencyFileRole.AuthorUnchanged or PackDependencyFileRole.AuthorRenamed).ToArray();
+        if (files.Length != 1) return null;
+        PackDependencyFile declared = files[0];
+        string source = Path.Combine(origin.GameRoot, declared.LocalRelative!.Replace('/', Path.DirectorySeparatorChar));
+        bool personalMismatch = report.Issues.Any(issue => issue.KindValue == ModDependencyIssueKind.VersionMismatch &&
+            issue.Requirement?.KindValue == ModDependencyKind.Required && origin.IsPersonal(issue.Owner.RootPath) &&
+            issue.RelatedMods.Any(mod => SameFilePath(mod.RootPath, source)));
+        if (!personalMismatch) return null;
+        return new() { Source = source, BeforeHash = declared.ActualHash!, AuthorRelative = declared.Relative, ProjectIdentity = identity };
+    }
+    private static bool NeedsPersonalRepair(TReport report, string path) {
+        bool ActiveOwner(TMod owner) => owner.Enabled && !owner.IsCandidate && SameFilePath(owner.RootPath, path);
+        return report.Issues.Any(issue => ActiveOwner(issue.Owner) && issue.Requirement?.KindValue == ModDependencyKind.Required &&
+                issue.KindValue is ModDependencyIssueKind.MissingRequired or ModDependencyIssueKind.VersionMismatch) ||
+            report.Edges.Any(edge => ActiveOwner(edge.Owner) && edge.Requirement.KindValue == ModDependencyKind.Required &&
+                (edge.Requirement.IsUnknown || edge.Evaluated && edge.StateValue != ModDependencyMatchState.Satisfied)) ||
+            report.Mods.Where(ActiveOwner).Any(owner => owner.Dependencies.Any(requirement =>
+                requirement.KindValue == ModDependencyKind.Required && requirement.IsUnknown));
+    }
     public TPlan BuildPlan(string root, TReport report, CancellationToken token, TOptions? options = null) {
         TPlan result = Prepare(root, report, token);
+        PackDependencyOrigin? origin = report.PackOrigin?.IsPack == true ? report.PackOrigin : null;
+        HashSet<string>? personalRepairRoots = null;
+        if (origin is not null) {
+            if (!origin.Complete) return result;
+            // Freeze locally proven needs before platform enrichment can introduce
+            // project-level declarations that the loaded combination already fulfils.
+            TReport eligibility = result.Enables.Count == 0 ? report : WithEnabledFiles(report, result.Enables.Select(item => item.Source), token);
+            personalRepairRoots = new(eligibility.Mods.Where(value => value.Enabled && !value.IsNested && origin.IsPersonal(value.RootPath) &&
+                NeedsPersonalRepair(eligibility, value.RootPath)).Select(value => FilePathKey(value.RootPath)), StringComparer.Ordinal);
+            if (personalRepairRoots.Count == 0) return result;
+        }
         if (!report.Mods.Any(value => value.Enabled)) return result;
         if (report.Issues.Any(value => value.KindValue == ModDependencyIssueKind.LoaderMismatch)) {
             result.Items.Clear(); result.Enables.Clear();
@@ -130,7 +166,8 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
             .Where(value => value.IsExact).Select(value => Key(value.Platform, value.ProjectId)), StringComparer.Ordinal);
         Queue<Requirement> pending = new();
         HashSet<string> flexibleProjects = new(StringComparer.Ordinal);
-        foreach (TOnlineFile file in report.OnlineFiles.Where(value => value.Enabled)) {
+        foreach (TOnlineFile file in report.OnlineFiles.Where(value => value.Enabled &&
+            (personalRepairRoots is null || personalRepairRoots.Contains(FilePathKey(value.FullPath))))) {
             List<TOnlineProject> matches = file.Matches.Where(value => value.IsExact).OrderBy(value => SameText(value.Platform, "Modrinth") ? 0 : 1).ToList();
             if (matches.Count == 0) continue;
             TOnlineProject match = matches[0];
@@ -168,7 +205,12 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
                 if (!ValidId(need.Platform, need.Project)) continue;
                 string identity = Key(need.Platform, need.Project);
                 string? fixedVersion = flexibleProjects.Contains(identity) ? "" : need.Version;
-                if (existing.Contains(identity)) continue;
+                DependencyReplacementData? replacement = FindAuthorReplacement(report, need.Platform, need.Project);
+                if (existing.Contains(identity) && replacement is null) continue;
+                if (origin?.ProtectsProject(need.Platform, need.Project) == true && replacement is null) {
+                    result.Notes.Add("前置属于作者组合，未找到可唯一验证的活动作者版本可替换：" + need.Project + "。请核对原包、可选组件或个人模组版本。");
+                    continue;
+                }
                 if (disabled.Contains(identity)) {
                     List<TOnlineFile> disabledFiles = report.OnlineFiles.Where(value => !value.Enabled && value.Matches.Any(match => match.IsExact && SameText(match.Platform, need.Platform) && SameText(match.ProjectId, need.Project))).ToList();
                     if (disabledFiles.Any(value => result.Enables.Any(enableItem => SameFilePath(enableItem.Source, value.FullPath)))) continue;
@@ -212,7 +254,9 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
                 }
                 entry = candidates.OrderBy(value => host.ReleaseType(value.Version)).ThenByDescending(value => host.ReleaseDate(value.Version)).FirstOrDefault();
                 if (entry is null) { result.Notes.Add("没有找到匹配当前游戏版本和加载器的可下载前置：" + S(project[SameText(need.Platform, "Modrinth") ? "title" : "name"])); continue; }
-                if (SameText(fixedVersion, "")) entry.Alternatives.AddRange(candidates.Where(value => !ReferenceEquals(value, entry)).OrderBy(value => host.ReleaseType(value.Version)).ThenByDescending(value => host.ReleaseDate(value.Version)).Take(7));
+                entry.Replacement = replacement;
+                if (replacement is not null) result.Notes.Add("拟替换作者版本 " + Path.GetFileName(replacement.Source) + " → " + host.FileName(entry.Version) + "；须明确确认并通过整包完整依赖与冲突验证，保留作者原始基线。");
+                if (replacement is null && SameText(fixedVersion, "")) entry.Alternatives.AddRange(candidates.Where(value => !ReferenceEquals(value, entry)).OrderBy(value => host.ReleaseType(value.Version)).ThenByDescending(value => host.ReleaseDate(value.Version)).Take(7));
                 entry.RequiredBy.Add(need.Owner); selected.Add(identity, entry); result.Items.Add(entry);
                 foreach (Requirement dependency in Required(entry.Raw, entry.Platform, entry.Name)) {
                     if (string.IsNullOrEmpty(dependency.Version)) flexibleProjects.Add(Key(dependency.Platform, dependency.Project));

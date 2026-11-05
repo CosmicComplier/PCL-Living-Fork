@@ -132,6 +132,7 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
         public int OnlineRequests;
         public DateTime OnlineCheckedAtUtc;
         public List<TOnlineFile> OnlineFiles = new();
+        [JsonIgnore] public PackDependencyOrigin? PackOrigin;
         public List<string> OnlineNotes = new();
         public Dictionary<string, List<TEdge>> ReverseDependencies = new(StringComparer.Ordinal);
         public bool HasErrors => Issues.Any(issue => issue.IsError);

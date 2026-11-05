@@ -43,6 +43,8 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
         List<string> actions = new();
         if (plan.Enables.Count > 0) actions.Add(plan.Enables.Count + " 个前置已安装但禁用");
         if (plan.Items.Count > 0) actions.Add(plan.Items.Count + " 个必需前置待补全");
+        if (report.PackOrigin?.NeedsAttention == true) actions.Add("整合包作者文件需要核对");
+        if (report.PackOrigin?.IsPack == true && report.MetadataIncomplete) actions.Add("部分模组声明尚未确认");
         if (actions.Count == 0) {
             int environmentCount = report.Issues.Where(item => item.IsError && item.Requirement is not null).Select(item => RuntimeOwnerId(item.Requirement!.Id, report.Context)).Where(id => id != "").Distinct().Count();
             int modCount = report.Issues.Count(item => item.IsError && (item.Requirement is null || RuntimeOwnerId(item.Requirement.Id, report.Context) == ""));
@@ -66,8 +68,23 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
                 "这些模组需要它：" + Referrers(item.RequiredBy) + "\r\n点击「启用并启动」即可恢复使用。", item.Owner)).ToList();
             AddGroup(groups, "可启用的必需前置（" + entries.Count + " 个文件）", entries, false, host);
         }
-        if (plan.Items.Count > 0) {
-            List<Tuple<string?, string?, TMod?>> entries = plan.Items.Select(item => Tuple.Create<string?, string?, TMod?>(item.Name,
+        if (report.PackOrigin?.IsPack == true) {
+            PackDependencyOrigin origin = report.PackOrigin;
+            groups.Children.Add(host.CreateWarningHint(origin.Complete ?
+                "已识别完整作者基线。优先保留整合包组合；个人模组使用已有前置，必要的作者版本替换须确认并通过完整依赖与冲突检查。作者清单不等于兼容性保证。" :
+                "整合包作者记录缺失、不完整或无法确认。本次仅检查和报告，不自动添加、启用或替换模组；请使用正确的原始整合包补录记录。", new Thickness(3, 3, 7, 10)));
+            var differences = origin.Files.Where(file => file.Role is not (PackDependencyFileRole.AuthorUnchanged or PackDependencyFileRole.AuthorRenamed or PackDependencyFileRole.PersonalAdded)).ToList();
+            if (differences.Count > 0) AddGroup(groups, "作者文件与本地状态（" + differences.Count + "）", differences.Select(file =>
+                Tuple.Create<string?, string?, TMod?>(file.LocalRelative ?? file.Relative, OriginState(file.Role), null)).ToList(), true, host, true);
+            foreach (string note in origin.Notes.Distinct(StringComparer.Ordinal))
+                groups.Children.Add(host.CreateWarningHint(note, new Thickness(3, 3, 7, 10)));
+        }
+        var replacements = plan.Items.Where(item => item.Replacement is not null).ToList();
+        if (replacements.Count > 0) AddGroup(groups, "需确认的作者模组版本替换（" + replacements.Count + "）", replacements.Select(item =>
+            Tuple.Create<string?, string?, TMod?>(item.Name, "原文件：" + System.IO.Path.GetFileName(item.Replacement!.Source) +
+                "\r\n候选：" + host.VersionDisplay(item.Version) + "\r\n验证整合包与个人模组的完整组合后再替换；存在冲突或无法确认时不会执行。原作者基线保留，替换记录为个人覆盖。", null)).ToList(), true, host, true);
+        if (plan.Items.Any(item => item.Replacement is null)) {
+            List<Tuple<string?, string?, TMod?>> entries = plan.Items.Where(item => item.Replacement is null).Select(item => Tuple.Create<string?, string?, TMod?>(item.Name,
                 "候选：" + host.VersionDisplay(item.Version) + "\r\n需要它：" + Referrers(item.RequiredBy) +
                 (item.Alternatives.Count > 0 ? "\r\n将校验实际兼容性，必要时尝试较早版本" : ""), null)).ToList();
             AddGroup(groups, "可补全的必需前置（" + entries.Count + "）", entries, false, host);
@@ -120,6 +137,14 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
     private static string RequirementDisplay(TDependency requirement, TContext context) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.RequirementDisplay(requirement, context);
 
     private static string Referrers(List<string> names) => string.Join("、", names.Take(3)) + (names.Count > 3 ? " 等 " + names.Count + " 个模组" : "");
+    private static string OriginState(PackDependencyFileRole role) => role switch {
+        PackDependencyFileRole.AuthorModified => "个人覆盖或修改；原作者哈希仍保留，实际依赖由当前文件检查",
+        PackDependencyFileRole.AuthorDisabled => "作者组件已禁用，本次不会自动启用",
+        PackDependencyFileRole.AuthorMissing => "作者文件缺失，请使用正确原包核对修复",
+        PackDependencyFileRole.OptionalAbsent => "作者可选组件未安装，保留当前选择",
+        PackDependencyFileRole.Ambiguous => "归属存在多个候选，请先确认",
+        _ => "文件来源无法确认，不自动修改"
+    };
 
     private static string? Describe(TIssue issue) {
         TDependency? requirement = issue.Requirement;

@@ -157,9 +157,11 @@ public sealed class LegacyLaunchDependencyContext { public Func<CancellationToke
 public sealed class LegacyLaunchDependencyReport {
     public object Source = null!;
     public Func<bool> ReadHasErrors = null!, WasAccepted = null!;
+    public Func<bool>? ReadNeedsAttention;
     public Action Accept = null!;
     public Func<CancellationToken, LegacyLaunchDependencyPlan> BuildAutoFill = null!, BuildActivation = null!;
     public bool HasErrors => ReadHasErrors();
+    public bool NeedsAttention => ReadNeedsAttention?.Invoke() ?? HasErrors;
 }
 public sealed class LegacyLaunchDependencyPlan {
     public object Source = null!;
@@ -167,6 +169,7 @@ public sealed class LegacyLaunchDependencyPlan {
     public Action<string> WriteCaption = null!;
     public Func<int> ReadItemsCount = null!, ReadEnablesCount = null!;
     public Func<CancellationToken, int> Install = null!;
+    public Action? ConfirmAuthorReplacement;
     public string Root => ReadRoot();
     public string ActionText => ReadActionText();
     public int ItemsCount => ReadItemsCount();

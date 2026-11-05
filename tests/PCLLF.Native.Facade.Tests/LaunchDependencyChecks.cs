@@ -18,6 +18,7 @@ internal static class LaunchDependencyChecks
             .Concat([Native.Type("PCL.ModDependencyOnline+LookupOptions"), Native.Type("PCL.ModDependencyOnline+LookupCache")]).ToArray();
         foreach (Type type in types) Native.Check(type.Assembly == Native.Main, "Launch fixture must use real Main DTOs: " + type);
         Native.Call(typeof(DependencyCases<,,,,,,,,,,,>).MakeGenericType(types), "Launch", null, environment);
+        PackLaunchOriginChecks.Run(environment);
     }
 }
 

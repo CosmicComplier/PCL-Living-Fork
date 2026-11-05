@@ -26,7 +26,7 @@ public sealed partial class LegacyLaunchEngine<TInstance, TState, TCard, TOption
         plan.Caption = target.Name;
         if (loader.IsCanceled || token.IsCancellationRequested) return;
         bool canRepair = plan.ItemsCount > 0 || plan.EnablesCount > 0;
-        if (!canRepair && !report.HasErrors) return;
+        if (!canRepair && !report.NeedsAttention) return;
         int choice = 0;
         host.DispatchWait(() => {
             if (loader.IsCanceledWithThread(checkThread) || token.IsCancellationRequested) return;
@@ -36,10 +36,11 @@ public sealed partial class LegacyLaunchEngine<TInstance, TState, TCard, TOption
         if (choice == 2) throw new OperationCanceledException();
         if (choice == 3) { report.Accept(); return; }
         if (choice == 1 && canRepair) {
+            plan.ConfirmAuthorReplacement?.Invoke();
             InstallLaunchDependencies(target, plan, token);
             token.ThrowIfCancellationRequested();
             report = context.Inspect(token);
-            if (!report.HasErrors) return;
+            if (!report.NeedsAttention) return;
             host.DispatchWait(() => { if (!token.IsCancellationRequested) choice = host.ConfirmDependencies(report, null, true); });
             token.ThrowIfCancellationRequested();
             if (choice == 2) throw new OperationCanceledException();

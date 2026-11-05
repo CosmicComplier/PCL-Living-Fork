@@ -44,17 +44,31 @@ schema 1 可读，但旧版首次记录可能裁掉缺失或已修改文件，�
 
 ## 验证与玩家验收
 
+### 启动检查与个人覆盖
+
+启动检查从实例版本目录读取作者清单，从实际隔离游戏目录读取模组；二者可以位于不同目录。完整 schema 2 才能确认作者声明之外的个人新增。旧 schema、损坏记录或只有原包清单线索时仍可报告实际依赖问题，但不自动修改来源无法确认的组合。作者清单是来源证据，不会豁免已知依赖错误。
+
+作者原组合本身不会仅因平台列出依赖而补装。个人新增文件先使用整合包已有、实际满足要求的前置，包括加载器选中的嵌套提供者；已经满足时不额外查询和下载顶层替代文件。确有未满足的个人必需依赖时，才规划补全，或在用户确认后启用已禁用的个人前置；作者禁用／未选组件不自动启用。
+
+个人模组需要更换作者前置版本时，只有能唯一确认原作者文件和平台项目的情况才准备替换候选。界面明确显示原文件、候选及“验证并替换后启动”。确认后以整合包和个人模组的最终完整组合检查依赖、版本、加载器、自身 ID 与提供关系；有确定错误或仍无法确认的声明就不自动替换，也不在失败后静默换另一个作者版本。
+
+已确认的替换、新前置、旧文件处理以及 `files[作者路径].local` 的个人覆盖记录共用备份／回滚事务。原作者 `hash`、`identity`、`fileIdentity` 不变，新增个人前置不进入作者清单。下次整包升级仍比较旧作者声明、本地覆盖和新作者声明；兼容的新版作者文件可以重新采用，保留覆盖则继续记录真实本地路径，不以本地内容冒充作者原版。
+
+整包更新也检查最终选择形成的完整模组图。作者新版或移除操作会破坏个人模组依赖时，可以在预览保留当前版本，再重新检查组合。确定错误拒绝提交；无法确认的声明须另行明确确认，不能称为已经验证兼容。来源文件、模组内容与运行时变化会使旧接受记录或暂存方案失效，包括同大小、同修改时间的内容替换。
+
+当前来源分析对无法按加载上下文完整归属的版本子目录采取只读策略，不将其额外文件自动认作个人新增。声明层面验证也不涵盖模组未声明的运行时冲突，实际整包仍需实机检查。
+
 核心 fixture 使用真实生产引擎、有效 JAR 与有效整合包，只替换网络运输。运行：
 
 ```powershell
-dotnet run --project tests/PCLLF.Migration.Tests -c Release -- --group pack-update --group mod-dependencies --group environment-history --group instance-clone
+dotnet run --project tests/PCLLF.Migration.Tests -c Release -- --group pack-update --group mod-dependencies --group mod-dependency-online --group environment-history --group instance-clone
 python scripts/tests/Test-MigrationSelection.py
 ```
 
 Windows 产品构建后，实际 Main／WPF 预览与更新任务回归入口：
 
 ```powershell
-dotnet run --project tests/PCLLF.Native.Facade.Tests -c Release --no-build -- --groups modpack-update
+dotnet run --project tests/PCLLF.Native.Facade.Tests -c Release --no-build -- --groups modpack-update,launch-dependencies
 ```
 
 Windows 实际运行和玩家完整整包验收分别记账；Linux 交叉编译不作为 Windows 运行通过。玩家验收应检查 AQS 升级后的最终文件列表、Lithium 单份纯改名的升级结果、个人新增／禁用状态、选项与运行时告警，以及再次更新时的归属。没有取得玩家完整包时，不宣称已验证其实际游戏兼容性。
