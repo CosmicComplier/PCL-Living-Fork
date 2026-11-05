@@ -51,5 +51,29 @@ try{
  if($hostPanel.Background.Color -ne [Windows.Media.Colors]::White){throw 'Plain mode depends on the colorful-background preference'}
  $entry.ValueCache['']=0;$render.Invoke($null,@($hostPanel,$image))|Out-Null
  if($hostPanel.Background.Color -ne [Windows.Media.Color]::FromRgb(245,245,245) -or $image.Visibility -ne 'Visible'){throw 'Existing non-colorful mode changed'}
- Write-Output 'PASS: saved native selector, repeated global white/image switching, image preference preservation and native settings layout.'
+ $settings['UiLauncherColorMode'].ValueCache['']=1
+ $asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
+ foreach($mode in @(1,0,1,0)){
+  $entry.ValueCache['']=$mode;$render.Invoke($null,@($hostPanel,$image))|Out-Null
+  if($hostPanel.Background.Color.R -gt 80 -or $image.Visibility.ToString() -ne $(if($mode -eq 1){'Collapsed'}else{'Visible'})){throw 'Dark plain/image background retained a light surface or lost its saved mode'}
+  if([Math]::Abs($image.Opacity-([double]$savedOpacity/1000*0.32)) -gt 0.001 -or $settings['UiBackgroundOpacity'].ValueCache[''] -ne $savedOpacity -or -not [object]::ReferenceEquals($image.Background,$savedImage)){throw 'Dark image dimming changed the original opacity preference or picture'}
+ }
+ $settings['UiLauncherColorMode'].ValueCache['']=0;$asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
+ $render.Invoke($null,@($hostPanel,$image))|Out-Null
+ if([Math]::Abs($image.Opacity-([double]$savedOpacity/1000)) -gt 0.001){throw 'Returning to light mode did not restore the saved picture opacity'}
+ $theme=$asm.GetType('PCL.ModTheme');$builtIn=[Windows.Controls.Canvas]::new();$entry.ValueCache['']=0
+ $theme.GetMethod('UseDefaultBackground',$flags).Invoke($null,@($builtIn))|Out-Null
+ $day=$builtIn.Background.ImageSource;$builtIn.Background.Stretch='Fill';$builtIn.Background.AlignmentX='Left'
+ if($day.PixelWidth -lt 1000 -or -not $theme.GetMethod('DefaultBackgroundResource',$flags).Invoke($null,@()).EndsWith('/DefaultBackground.png')){throw 'Built-in day background did not load as an embedded image'}
+ $settings['UiLauncherColorMode'].ValueCache['']=1;$asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
+ $render.Invoke($null,@($hostPanel,$builtIn))|Out-Null
+ if([object]::ReferenceEquals($builtIn.Background.ImageSource,$day) -or $builtIn.Background.ImageSource.PixelWidth -lt 1000 -or -not $theme.GetMethod('DefaultBackgroundResource',$flags).Invoke($null,@()).EndsWith('/DefaultBackgroundNight.png')){throw 'Dark theme did not swap the built-in illustration to the night variant'}
+ if([Math]::Abs($builtIn.Opacity-([double]$savedOpacity/1000)) -gt 0.001 -or $builtIn.Background.Stretch -ne 'Fill' -or $builtIn.Background.AlignmentX -ne 'Left'){throw 'The night artwork was over-dimmed or lost its saved image layout'}
+ $settings['UiLauncherColorMode'].ValueCache['']=0;$asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
+ $render.Invoke($null,@($hostPanel,$builtIn))|Out-Null
+ if(-not $theme.GetMethod('DefaultBackgroundResource',$flags).Invoke($null,@()).EndsWith('/DefaultBackground.png')){throw 'Returning to light theme did not restore the original day illustration'}
+ $theme.GetMethod('MarkCustomBackground',$flags).Invoke($null,@($builtIn))|Out-Null;$builtIn.Background=$savedImage
+ $settings['UiLauncherColorMode'].ValueCache['']=1;$asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null;$render.Invoke($null,@($hostPanel,$builtIn))|Out-Null
+ if(-not [object]::ReferenceEquals($builtIn.Background,$savedImage)){throw 'Theme switching replaced a custom background image'}
+ Write-Output 'PASS: global plain/image modes, preserved custom image preferences, embedded day/night artwork switching, retained layout and proper night exposure.'
 }finally{$app.Shutdown()}

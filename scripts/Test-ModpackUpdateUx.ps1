@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath,[string]$PreviewDirectory,[switch]$ProgressOnly)
+﻿param([Parameter(Mandatory=$true)][string]$ExecutablePath,[string]$PreviewDirectory,[switch]$ProgressOnly,[int]$ColorMode=0)
 # Native controls and a throttled loopback download; no real game directories or external network.
 $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'Use powershell -NoProfile -STA.'}
@@ -13,7 +13,10 @@ $references+=Join-Path ${env:ProgramFiles(x86)} 'Reference Assemblies/Microsoft/
 $asm=[Reflection.Assembly]::LoadFrom($ExecutablePath);$flags=[Reflection.BindingFlags]'Public,NonPublic,Static,Instance'
 $settings=$asm.GetType('PCL.Settings').GetField('Entries').GetValue($null)
 foreach($entry in $settings.Values){$entry.ValueCache['']=$entry.DefaultValue};$settings['Identify'].ValueCache['']='modpack-update-ux-fixture'
+$settings['UiLauncherColorMode'].ValueCache['']=$ColorMode
 $app=[Activator]::CreateInstance($asm.GetType('PCL.Application'),$true);$app.InitializeComponent()
+$asm.GetType('PCL.ModSecret').GetMethod('ThemeRefresh',$flags).Invoke($null,@(0))|Out-Null
+if($ColorMode -eq 1 -and $app.Resources['ColorBrushWhite'].Color.R -gt 100){throw 'Dark preview did not apply the dark palette'}
 [Windows.Application].GetField('_startupUri',[Reflection.BindingFlags]'NonPublic,Instance').SetValue($app,$null)
 $app.remove_Startup([Delegate]::CreateDelegate([Windows.StartupEventHandler],$app,$asm.GetType('PCL.Application').GetMethod('Application_Startup',$flags)))
 $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Threading.DispatcherUnhandledExceptionEventHandler],$app,$asm.GetType('PCL.Application').GetMethod('Application_DispatcherUnhandledException',$flags)))
@@ -85,7 +88,7 @@ function Call($type,$name,[object[]]$arguments){
 function Read($value,$name){$property=$value.GetType().GetProperty($name,$flags);if($property){return ,$property.GetValue($value,$null)};return ,$value.GetType().GetField($name,$flags).GetValue($value)}
 function Construct($name,[object[]]$arguments){$ctor=$asm.GetType('PCL.'+$name,$true).GetConstructors($flags)|Where-Object {$_.GetParameters().Count -eq $arguments.Count}|Select-Object -First 1;$values=New-Object object[] $arguments.Count;for($i=0;$i -lt $values.Length;$i++){$values[$i]=$arguments[$i].PSObject.BaseObject};return ,$ctor.Invoke($values)}
 function Render($element,$name,$width=820,$height=640){
- $hostPanel=[Windows.Controls.Grid]::new();$hostPanel.Background=[Windows.Media.BrushConverter]::new().ConvertFromString('#e7effb');$hostPanel.Children.Add($element)|Out-Null
+ $hostPanel=[Windows.Controls.Grid]::new();$hostPanel.Background=if($ColorMode -eq 1){$app.Resources['ColorBrushBackground']}else{[Windows.Media.BrushConverter]::new().ConvertFromString('#e7effb')};$hostPanel.Children.Add($element)|Out-Null
  $hostPanel.Measure([Windows.Size]::new($width,$height));$hostPanel.Arrange([Windows.Rect]::new(0,0,$width,$height));$hostPanel.UpdateLayout()
  if(-not $PreviewDirectory){$hostPanel.Children.Clear();return}
  [IO.Directory]::CreateDirectory([IO.Path]::GetFullPath($PreviewDirectory))|Out-Null

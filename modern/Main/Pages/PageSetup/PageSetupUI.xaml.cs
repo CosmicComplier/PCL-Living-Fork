@@ -39,6 +39,12 @@ namespace PCL
         private static global::System.Boolean _HiddenForceShow = false;
         public PageSetupUI()
         {
+            Initialized += (_, _) =>
+            {
+                ModAnimation.AniControlEnabled += 1;
+                try { SettingService.RefreshSettings(ComboLauncherColorMode); }
+                finally { ModAnimation.AniControlEnabled -= 1; }
+            };
             __LfAttachOwnHandles();
             this.InitializeComponent();
         }

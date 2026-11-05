@@ -120,7 +120,7 @@ End Module
   $references+=Join-Path $root 'MeloongCore/Shared/bin/MeloongCore.dll'
   $references+=$core
   $references+=Join-Path $framework 'Facades/netstandard.dll'
-  $compilerArgs=@('/nologo','/target:library','/rootnamespace:PCL','/imports:System,System.Collections.Generic,System.Diagnostics,System.Linq,System.Threading,Newtonsoft.Json.Linq,MeloongCore',('/out:'+$output),('/sdkpath:'+$framework),('/reference:'+($references -join ',')),(Join-Path $fixture 'Engine.vb'),(Join-Path $fixture 'LocalGameData.vb'),(Join-Path $fixture 'Stubs.vb'))
+  $compilerArgs=@('/nologo','/target:library','/rootnamespace:PCL','/imports:System,System.Collections.Generic,System.Diagnostics,System.Linq,System.Threading,Newtonsoft.Json.Linq,MeloongCore',('/out:'+$output),('/sdkpath:'+$framework),('/reference:'+($references -join ',')),(Join-Path $fixture 'Engine.vb'),(Join-Path $fixture 'LocalGameData.vb'),(Join-Path $root 'Plain Craft Launcher 2/Modules/Base/FileTaskProgress.vb'),(Join-Path $fixture 'Stubs.vb'))
   & $compiler @compilerArgs
   if($LASTEXITCODE -ne 0){throw 'Isolated world-backup engine compilation failed'}
   $asm=[Reflection.Assembly]::Load([IO.File]::ReadAllBytes($output))
@@ -251,7 +251,7 @@ End Module
  $transaction=[Guid]::NewGuid().ToString('N');$previous=Join-Path $game ('saves/.pcl-world-'+$transaction+'.before');$stage=Join-Path $game ('saves/.pcl-world-'+$transaction+'.stage')
  [IO.Directory]::CreateDirectory($stage)|Out-Null
  $saved=Call 'Metadata' @($game,$first)
- Call 'ReadArchive' @((Join-Path $store ('points/'+$first)),$saved,$token,$stage)|Out-Null
+ Call 'ReadArchive' @((Join-Path $store ('points/'+$first)),$saved,$token,$stage,$null)|Out-Null
  Put (Join-Path $store ('transactions/'+$transaction+'.json')) ('{"gameFolder":'+[Newtonsoft.Json.JsonConvert]::SerializeObject($game)+',"world":"World A","point":"'+$first+'","existed":true,"complete":false}')
  [IO.Directory]::Move($world,$previous);[IO.Directory]::Move($stage,$world)
  $owner=[Diagnostics.Process]::new();$owner.StartInfo.FileName='powershell.exe';$owner.StartInfo.Arguments='-NoProfile -Command Start-Sleep -Milliseconds 2500';$owner.StartInfo.UseShellExecute=$false;$owner.StartInfo.CreateNoWindow=$true;$owner.StartInfo.WindowStyle='Hidden'

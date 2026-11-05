@@ -13,6 +13,7 @@ $app.remove_DispatcherUnhandledException([Delegate]::CreateDelegate([Windows.Thr
 $settings=$asm.GetType('PCL.Settings').GetField('Entries').GetValue($null);foreach($entry in $settings.Values){$entry.ValueCache['']=$entry.DefaultValue};$settings['Identify'].ValueCache['']='disabled-provider-fixture'
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('PclDependencyActivation-'+[Guid]::NewGuid().ToString('N'))
 $inspector=$asm.GetType('PCL.ModDependencyInspector');$activation=$asm.GetType('PCL.ModDependencyActivation');$service=$asm.GetType('PCL.ModDependencyAutoFill');$none=[Threading.CancellationToken]::None
+$asm.GetType('PCL.ModDependencyIndex').GetProperty('CacheDirectory',$flags).SetValue($null,(Join-Path $fixture 'dependency-index'),$null)
 function Call($type,$name,[object[]]$arguments){$values=New-Object object[] $arguments.Count;for($i=0;$i -lt $values.Length;$i++){if($null -ne $arguments[$i]){$values[$i]=$arguments[$i].PSObject.BaseObject}};return ,$type.GetMethod($name,$flags).Invoke($null,$values)}
 function Jar($path,$metadata,[hashtable]$extra=@{}){
  [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null;$zip=[IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)

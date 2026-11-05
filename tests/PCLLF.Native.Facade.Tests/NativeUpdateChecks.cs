@@ -72,7 +72,10 @@ internal static partial class NativeUpdateChecks
         foreach (var (tag, current, expected) in new[]
         {
             ("v1.0.1", "1.0.0", true), ("v1.0.1.0", "1.0.1", false),
-            ("v0.9.9", "1.0.1", false), ("v1.0.2-beta", "1.0.1", false)
+            ("v0.9.9", "1.0.1", false), ("v1.0.2-beta", "1.0.1", false),
+            ("v1.3.5", "1.3.5-pre-1", true), ("v1.3.6", "1.3.5-pre-1", true),
+            ("v1.3.4", "1.3.5-pre-1", false), ("v1.3.5-pre-2", "1.3.5-pre-1", false),
+            ("v1.3.5", "1.3.5-pre-", false)
         }) Native.Check(Bool("NewerRelease", tag, current) == expected, "Release version comparison changed: " + tag + "/" + current);
         object stable = Native.Enum(Updater + "+UpdateChannel", "Stable")!;
         object preview = Native.Enum(Updater + "+UpdateChannel", "StableAndPrerelease")!;
@@ -81,7 +84,7 @@ internal static partial class NativeUpdateChecks
             (int)Call("CompareReleaseVersions", "v1.3.5-pre-10", "v1.3.5-pre-3")! > 0 &&
             (int)Call("CompareReleaseVersions", "v1.3.5", "v1.3.5-pre-10")! > 0,
             "LF50 stable/prerelease ordering changed.");
-        Pass("REL-01", "all four original Test-Release comparisons and LF50 stable/prerelease ordering");
+        Pass("REL-01", "all nine LF50 Test-Release comparisons and stable/prerelease ordering");
         Native.Check(!Bool("NewerReleaseForChannel", "v" + PCL.ModBase.ReleaseBaselineVersion, "dev_edition", preview) &&
             Bool("NewerReleaseForChannel", "v1.3.5", "dev_edition", stable) &&
             !Bool("NewerReleaseForChannel", "dev_edition", "1.3.4", preview), "Development edition was treated as a public version or downgraded to its baseline.");

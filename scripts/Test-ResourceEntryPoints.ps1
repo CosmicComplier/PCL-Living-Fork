@@ -26,3 +26,39 @@ if($args[4].ToString() -cne 'Map' -or $args[2] -cne '1.20.2' -or $args[3].ToStri
 $args=$build.Invoke($null,[object[]]@($project,$download,$null,$null,$null))
 if($args[4].ToString() -cne 'Shader'){throw 'Missing search input did not fall back to project type'}
 Write-Output 'Resource entry regressions passed: null-caption local details, version-page context, missing dependency arguments, download search context and missing search-input fallback. No windows or profiles accessed.'
+if($args.Length -ne 6){throw 'Resource detail arguments cannot carry the target instance'}
+$request.Type=[PCLCS.ResourceTypes]::Mod;$request.GameVersion='1.20.1'
+$bound=$build.Invoke($null,[object[]]@($project,$download,$request,$null,$instance))
+if(-not [object]::ReferenceEquals($bound[5],$instance)){throw 'Version-bound mod search lost its exact instance'}
+$dependency=$build.Invoke($null,[object[]]@($project,$detail,$null,$bound,$null))
+if(-not [object]::ReferenceEquals($dependency[5],$instance)){throw 'A dependency-detail link lost its download target'}
+$request.GameVersion='1.20.2';$changed=$build.Invoke($null,[object[]]@($project,$download,$request,$null,$instance));if($null -ne $changed[5]){throw 'A changed version filter retained an incompatible target instance'}
+$downloadFixture=Join-Path ([IO.Path]::GetTempPath()) ('PclDownloadTarget-'+[Guid]::NewGuid().ToString('N'))
+try{
+ $targets=@();foreach($name in @('selected','other')){
+  $path=Join-Path $downloadFixture ('versions/'+$name);[IO.Directory]::CreateDirectory((Join-Path $path 'PCL'))|Out-Null
+  [IO.File]::WriteAllText((Join-Path $path 'PCL/Setup.ini'),"VersionArgumentIndieV2:True`r`n",[Text.UTF8Encoding]::new($false))
+  $targets+=,$instanceType.GetConstructor([type[]]@([string])).Invoke(@([string]$path))
+ }
+ $chooser=$asm.GetType('PCL.PageDownloadResourceDetail').GetMethod('ChooseModDownloadFolder',$flags)
+ $suitableType=[Func``2].MakeGenericType($instanceType,[bool]);$suitable=[Management.Automation.LanguagePrimitives]::ConvertTo([scriptblock]{param($value) return $true},$suitableType)
+ $cached=Join-Path $downloadFixture '.minecraft'
+ $folder=$chooser.Invoke($null,[object[]]@($targets[0].PSObject.BaseObject,$targets[1].PSObject.BaseObject,[string]$cached,$suitable.PSObject.BaseObject))
+ if(-not [IO.Path]::GetFullPath($folder).TrimEnd('\').EndsWith('\versions\selected\mods')){throw 'Cached root folder overrode the explicit version mods folder'}
+ $folder=$chooser.Invoke($null,[object[]]@($null,$targets[1].PSObject.BaseObject,[string]$cached,$suitable.PSObject.BaseObject));if(-not $folder.TrimEnd('\').EndsWith('\versions\other\mods')){throw 'Current selected instance did not override a stale root-folder cache'}
+ if($chooser.Invoke($null,[object[]]@($null,$null,[string]$cached,$suitable.PSObject.BaseObject)) -ne $cached){throw 'Unbound downloads lost their deliberate custom folder'}
+ $folderState=$asm.GetType('PCL.ModMinecraft').GetField('_McFolderSelected',$flags);$previousFolder=$folderState.GetValue($null)
+ try{
+  $shared=(Join-Path $downloadFixture '.minecraft')+'\';$folderState.SetValue($null,[string]$shared)
+  [IO.File]::WriteAllText((Join-Path $targets[0].PathVersion 'PCL/Setup.ini'),"VersionArgumentIndieV2:False`r`n",[Text.UTF8Encoding]::new($false))
+  $asm.GetType('PCL.ModBase').GetMethod('IniClearCache',$flags).Invoke($null,@([string](Join-Path $targets[0].PathVersion 'PCL/Setup.ini')))|Out-Null
+  $settings['VersionArgumentIndieV2'].ValueCache.Clear()
+  $folder=$chooser.Invoke($null,[object[]]@($targets[0].PSObject.BaseObject,$null,[string]$cached,$suitable.PSObject.BaseObject))
+  if($folder.TrimEnd('\') -ne (Join-Path $shared 'mods')){throw 'Non-isolated instance did not resolve to the shared Minecraft mods directory'}
+ }finally{$folderState.SetValue($null,$previousFolder)}
+}finally{
+ $absolute=[IO.Path]::GetFullPath($downloadFixture);$prefix=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\'
+ if(-not $absolute.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($absolute) -notmatch '^PclDownloadTarget-[a-f0-9]{32}$'){throw 'Unsafe download-target fixture cleanup'}
+ if([IO.Directory]::Exists($absolute)){[IO.Directory]::Delete($absolute,$true)}
+}
+Write-Output 'PASS: exact instance retained through search/dependency navigation; selected instance mods directory takes priority over stale folder cache.'
