@@ -10,6 +10,7 @@ internal static class ReviewedInformationNotice
         string version = title switch
         {
             "PCL Living Fork 1.3.5-pre-3 版本说明" => "1.3.5-pre-3",
+            "PCL Living Fork 1.4.0-pre-4 版本说明" => "1.4.0-pre-4",
             "PCL Living Fork dev_edition 版本说明" => "dev_edition",
             _ => throw new InvalidOperationException("PENDING: only exact reviewed information notices may be dismissed.")
         };
@@ -18,14 +19,14 @@ internal static class ReviewedInformationNotice
 
     internal static void VerifyPolicy()
     {
-        foreach (string version in new[] { "1.3.5-pre-3", "dev_edition" })
+        foreach (string version in new[] { "1.3.5-pre-3", "1.4.0-pre-4", "dev_edition" })
         {
             string caption = CaptionForTitle("PCL Living Fork " + version + " 版本说明");
             if (!caption.StartsWith("PCL Living Fork " + version + " 是基于 ", StringComparison.Ordinal) ||
                 !caption.Contains("\r\n\r\n- 首页可开关模组依赖检查与自动补全", StringComparison.Ordinal))
                 throw new InvalidOperationException("Reviewed information notice body changed.");
         }
-        foreach (string title in new[] { "PCL Living Fork 更新失败", "PCL Living Fork 1.3.6 版本说明", "PCL Living Fork dev_edition 版本说明 suffix", "PCL Living Fork dev_edition\n版本说明", "" })
+        foreach (string title in new[] { "PCL Living Fork 更新失败", "PCL Living Fork 1.4.0-pre-5 版本说明", "PCL Living Fork dev_edition 版本说明 suffix", "PCL Living Fork dev_edition\n版本说明", "" })
         {
             bool refused = false;
             try { _ = CaptionForTitle(title); }

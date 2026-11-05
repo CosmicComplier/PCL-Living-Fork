@@ -86,7 +86,7 @@ internal static partial class NativeUpdateChecks
             "LF50 stable/prerelease ordering changed.");
         Pass("REL-01", "all nine LF50 Test-Release comparisons and stable/prerelease ordering");
         Native.Check(!Bool("NewerReleaseForChannel", "v" + PCL.ModBase.ReleaseBaselineVersion, "dev_edition", preview) &&
-            Bool("NewerReleaseForChannel", "v1.3.5", "dev_edition", stable) &&
+            Bool("NewerReleaseForChannel", "v" + (Version.Parse(PCL.ModBase.ReleaseBaselineVersion.Split('-')[0]).Major + 1) + ".0.0", "dev_edition", stable) &&
             !Bool("NewerReleaseForChannel", "dev_edition", "1.3.4", preview), "Development edition was treated as a public version or downgraded to its baseline.");
         object pageTransport = Activator.CreateInstance(Native.Type(Updater + "+UpdateTransport"), true)!;
         Native.Set(pageTransport, "ReadReleaseList", (Func<string, JArray>)(_ => new JArray(Release("v1.3.4", 10, false), Release("v1.3.5", 10, false), Release("v1.3.5-pre-3", 10, false), Release("dev_edition", 10, false))));

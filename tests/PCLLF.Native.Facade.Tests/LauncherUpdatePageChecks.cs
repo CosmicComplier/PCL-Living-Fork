@@ -17,8 +17,12 @@ internal static class LauncherUpdatePageChecks
     {
         object stable = Native.Enum("PCL.ModLauncherUpdate+UpdateChannel", "Stable")!;
         object preview = Native.Enum("PCL.ModLauncherUpdate+UpdateChannel", "StableAndPrerelease")!;
+        int futureMajor = Version.Parse(ModBase.ReleaseBaselineVersion.Split('-')[0]).Major + 1;
+        string stableTag = $"v{futureMajor}.0.0", newestTag = $"v{futureMajor + 1}.0.0";
+        string previewTag = stableTag + "-pre-10", olderPreviewTag = stableTag + "-pre-2";
+        const string oldTag = "v0.0.0";
         bool Newer(string tag, object channel) => (bool)Native.Static("PCL.ModLauncherUpdate", "NewerReleaseForChannel", tag, "dev_edition", channel)!;
-        Native.Check(!Newer("v1.3.4", stable) && !Newer("v" + ModBase.ReleaseBaselineVersion, preview) && Newer("v1.3.5", stable) && Newer("v1.3.5-pre-4", preview) && !Newer("v1.3.5-pre-4", stable), "dev_edition update baseline/channel compatibility changed.");
+        Native.Check(!Newer(oldTag, stable) && !Newer("v" + ModBase.ReleaseBaselineVersion, preview) && Newer(stableTag, stable) && Newer(previewTag, preview) && !Newer(previewTag, stable), "dev_edition update baseline/channel compatibility changed.");
         Native.Check((int)Native.Static("PCL.ModLauncherUpdate", "CompareReleaseVersions", "dev_edition", ModBase.ReleaseBaselineVersion)! > 0 &&
             (int)Native.Static("PCL.ModLauncherUpdate", "CompareReleaseVersions", "dev_edition", "dev_edition")! == 0 && !Newer("dev_edition", preview), "Development editions leaked into public release ordering.");
         Native.Check(Native.Main.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion == ModBase.VersionBaseName, "Displayed and executable product versions disagree.");
@@ -42,8 +46,8 @@ internal static class LauncherUpdatePageChecks
             ((MyTextBox)((MySearchBox)page.FindName("TextSearchVersion")).FindName("TextBox")).Focusable = false;
             var system = new PageSetupSystem();
             Native.Check(system.FindName("ComboLauncherUpdateSource") is null && system.FindName("BtnSystemUpdate") is null, "Old settings still expose duplicate update controls.");
-            JObject old = Release("v1.3.4"), newest = Release("v1.3.6"), prerelease = Release("v1.3.5-pre-10");
-            var entries = new List<JObject> { old, newest, prerelease, Release("v1.3.5"), Release("v1.3.5-pre-2") };
+            JObject old = Release(oldTag), newest = Release(newestTag), prerelease = Release(previewTag);
+            var entries = new List<JObject> { old, newest, prerelease, Release(stableTag), Release(olderPreviewTag) };
             int reads = 0;
             Func<List<JObject>> read = () =>
             {
@@ -78,10 +82,10 @@ internal static class LauncherUpdatePageChecks
             Native.Check(rows.Visibility == Visibility.Visible && hint.Visibility == Visibility.Visible && count.Visibility == Visibility.Visible,
                 "Successful update check did not restore its list, blue hint and result count.");
             string[] Titles() => rows.Children.Cast<MyListItem>().Select(row => row.Title).ToArray();
-            Native.Check(Titles().SequenceEqual(new[] { "v1.3.6", "v1.3.5", "v1.3.5-pre-10", "dev_edition", "v1.3.5-pre-2", "v1.3.4" }),
+            Native.Check(Titles().SequenceEqual(new[] { newestTag, stableTag, previewTag, olderPreviewTag, "dev_edition", oldTag }),
                 "Current development version was pinned instead of sorted by its baseline.");
             MyListItem CurrentRow() => rows.Children.Cast<MyListItem>().Single(row => row.Title == ModBase.VersionBaseName);
-            Native.Check(rows.Children.Cast<MyListItem>().Single(row => row.Title == "v1.3.5-pre-10").Info.Contains("未启用"), "Browsing prereleases bypassed the stable subscription.");
+            Native.Check(rows.Children.Cast<MyListItem>().Single(row => row.Title == previewTag).Info.Contains("未启用"), "Browsing prereleases bypassed the stable subscription.");
             foreach (MyListItem row in rows.Children)
             {
                 Native.Check(row.Logo.EndsWith("Branding/LivingPCL.ico", StringComparison.Ordinal) && row.PathLogo is Canvas { Background: ImageBrush brush } &&
@@ -94,10 +98,10 @@ internal static class LauncherUpdatePageChecks
             Native.Check(search.FindName("TextBox") is MyTextBox && search.FindName("BtnClear") is MyIconButton &&
                 !((MyCard)page.FindName("CardVersions")).IsAncestorOf(search),
                 "Search did not reuse the mod manager's independent MySearchBox card and clear control.");
-            search.Text = " V1.3.5 ";
-            Native.Check(Titles().SequenceEqual(new[] { "v1.3.5", "v1.3.5-pre-10", "v1.3.5-pre-2" }), "Version search omitted matching releases or left an unmatched current row pinned.");
-            search.Text = "1.3.5-pre";
-            Native.Check(Titles().SequenceEqual(new[] { "v1.3.5-pre-10", "v1.3.5-pre-2" }), "Search omitted a matching prerelease.");
+            search.Text = " " + stableTag.ToUpperInvariant() + " ";
+            Native.Check(Titles().SequenceEqual(new[] { stableTag, previewTag, olderPreviewTag }), "Version search omitted matching releases or left an unmatched current row pinned.");
+            search.Text = stableTag.TrimStart('v') + "-pre";
+            Native.Check(Titles().SequenceEqual(new[] { previewTag, olderPreviewTag }), "Search omitted a matching prerelease.");
             search.Text = "DEV_EDITION";
             Native.Check(Titles().SequenceEqual(new[] { "dev_edition" }), "Development edition cannot be found case-insensitively.");
             search.Text = "does-not-exist";

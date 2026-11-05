@@ -2,7 +2,7 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.3.5-pre-3](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-3) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.5-pre-3) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.4.0-pre-4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
@@ -20,7 +20,9 @@
 
 ## 使用
 
-已发布的 VB 版本 1.3.4 和 1.3.5-pre-3 使用 **Windows 64 位系统和 .NET Framework 4.8**，从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 下载后按该版本说明运行。本迁移分支构建的 C#/.NET 10 原生产品面向 Windows x64：完整发布包包含运行时，精简包需要 .NET 10 Desktop Runtime；迁移构建与产物角色见 [现代构建说明](docs/BUILDING_MODERN.md)。迁移分支尚未发布为正式版本。 产品 VB 源码和旧项目已退役，原资源与许可保留；.NET Framework 工具仍供兼容更新桥及独立历史测试使用。
+1.4.0-pre-4 使用 **C#/.NET 10，面向 Windows x64**：精简版需要 .NET 10 Desktop Runtime，完整版包含运行时。下载选择、构建方式与兼容更新桥的作用见 [现代构建说明](docs/BUILDING_MODERN.md)及 [GitHub Release](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4)。当前 1.4.0 系列仍为预发布版。
+
+旧的 VB 版本 1.3.4 和 1.3.5-pre-3 使用 Windows 64 位系统和 .NET Framework 4.8，可从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 按对应版本说明运行。产品 VB 源码和旧项目已退役，原资源与许可保留；.NET Framework 工具仍供兼容更新桥及独立历史测试使用。
 
 升级时保留原有 `PCL`、`.minecraft` 和游戏目录。程序内更新保留原文件名。旧 `LivingPCL2-Re` 仓库继续提供兼容更新入口。
 
@@ -32,7 +34,7 @@
 
 ## 自行编译
 
-迁移分支使用 .NET 10 SDK 与 Windows Desktop/WPF 工具链；完整发布包中的旧版兼容桥还需要 Visual Studio/Build Tools 的 MSBuild 和 .NET Framework 4.8 编译工具。根 solution 与默认发布脚本均指向完整 C# 产品，详细工具链和定向检查见 [现代构建说明](docs/BUILDING_MODERN.md)。在 Windows PowerShell 中运行：
+当前源码使用 .NET 10 SDK 与 Windows Desktop/WPF 工具链；完整发布包中的旧版兼容桥还需要 Visual Studio/Build Tools 的 MSBuild 和 .NET Framework 4.8 编译工具。根 solution 与默认发布脚本均指向完整 C# 产品，详细工具链和定向检查见 [现代构建说明](docs/BUILDING_MODERN.md)。本机构建默认显示 dev_edition，发布构建需显式传入 -OfficialRelease。在 Windows PowerShell 中运行：
 
 ```powershell
 git submodule update --init --recursive
