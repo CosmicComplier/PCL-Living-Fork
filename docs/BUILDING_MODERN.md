@@ -69,4 +69,4 @@ pwsh -NoProfile -File scripts/Build-Release.ps1 -Configuration Release -OutputPa
 
 `NativeRelease.Artifacts.json` 是构建索引。跨目录或跨 CI job 下载后，按角色的 `fileName` 在下载目录定位并复验 hash，索引里的原生产目录绝对 `path` 需要重新定位。完整功能兼容与 Windows 实际结果继续按迁移进度记录验收。
 
-旧 `Test-BuildCredentials.ps1` 的 CLR4 源码差分及失败/并发样本继续使用固定 LF Git 对象和 `scripts/tests/Build-HistoricalCredentialFixture.ps1`。该 helper 必须使用原 GUID 临时目录与明确的 `FailBuild.exe`，正常工作树/MSBuild/成功产品构建均被拒绝；它不是默认发布路径。真实 Native 凭据验收必须引用对应发布的完整 `LivingPCL.dll` 或经过有界读取识别的真正单文件入口，不能反射顶层旧更新兼容桥来冒充 Main。
+独立历史凭据检查运行 `powershell -NoProfile -File scripts/native-smoke/Test-HistoricalCredentialFailures.ps1`，需要真正 Windows PowerShell 5 Desktop/CLR4。它从固定 LF Git 对象导出凭据基础源与许可，编译自有 GUID 内不含 Main/WPF 的 credential-only DLL，以独立 WinPS 子进程复用原完整 `Test-BuildCredentials.ps1`，保留源码差分、失败/非法输入/并发锁样本；编译与子进程临时文件限制在同一 GUID，环境在 finally 恢复。此独立入口的新 Windows 结果仍待验证。失败构建由 `scripts/tests/Build-HistoricalCredentialFixture.ps1` 承载。该 helper 必须使用原 GUID 临时目录与明确的 `FailBuild.exe`，正常工作树/MSBuild/成功产品构建均被拒绝；它不是默认发布路径。真实 Native 凭据验收必须引用对应发布的完整 `LivingPCL.dll` 或经过有界读取识别的真正单文件入口，不能反射顶层旧更新兼容桥来冒充 Main。

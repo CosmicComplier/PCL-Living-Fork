@@ -43,6 +43,9 @@ internal sealed class AccountUiChecksScope : IDisposable
     private Scenario scenario;
     private bool startsClosed;
     private bool disposed;
+    private readonly object hintBuyGate = new();
+    private string hintBuyPath = null!;
+    private int hintBuyReads, hintBuyWrites;
     internal readonly PageLaunchLeft Launch;
     internal readonly MemoryStore Store;
     internal readonly List<(string Text, LegacyLoginHint Kind)> Hints = new();
@@ -202,16 +205,48 @@ internal sealed class AccountUiChecksScope : IDisposable
     {
         object backend = Native.Field(typeof(Settings), "Backend").GetValue(null)!;
         object host = Native.Get(backend, "host")!;
-        Replace(host, "ReadRegistry", new Func<string, string, string?, string?>((folder, key, fallback) => { CheckRegistry(folder, key); return Store.GetValue(key, fallback) as string; }));
-        Replace(host, "WriteRegistry", new Action<string, string, string?>((folder, key, value) => { CheckRegistry(folder, key); Store.SetValue(key, value!, RegistryValueKind.String); }));
-        Replace(host, "HasRegistry", new Func<string, string, bool>((folder, key) => { CheckRegistry(folder, key); return Store.GetValue(key) is not null; }));
+        // LF f4/main50 and fixed PCL5ef define HintBuy as an unencrypted
+        // Boolean Registry setting, not INI and not a Microsoft account key.
+        Settings.Setting hint = Settings.Entries["HintBuy"];
+        Native.Check(hint.Key == "HintBuy" && hint.Source == Settings.Sources.Registry && !hint.Encrypted && hint.Type == typeof(bool) && hint.DefaultValue is false,
+            "Actual HintBuy schema changed; refuse to widen the account platform fixture.");
+        string hintFolder = (string)Native.Static("PCL.Settings", "RegistryFolderFor", hint)!;
+        string hintKey = (string)Native.Static("PCL.Settings", "RegistryValueName", hint)!;
+        Native.Check(hintFolder == "PCLDebug" && hintKey == "HintBuy" && Equals(Native.Field(Native.Type("PCL.ModSecret"), "RegFolder").GetRawConstantValue(), hintFolder),
+            "Actual HintBuy Registry namespace/key changed; no account-key alias is allowed.");
+        string hintRegistry = @"HKEY_CURRENT_USER\Software\" + hintFolder;
+        hintBuyPath = Path.Combine(environment.Data, "account-ui", "HintBuy.REG_SZ");
+        Native.Check(Native.Full(hintBuyPath).StartsWith(Native.Full(environment.Data) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && !File.Exists(hintBuyPath), "Refusing a pre-existing or unowned HintBuy platform leaf.");
+        Directory.CreateDirectory(Path.GetDirectoryName(hintBuyPath)!);
+        Replace(host, "ReadRegistry", new Func<string, string, string?, string?>((folder, key, fallback) => {
+            if (folder == hintRegistry && key == hintKey) { lock (hintBuyGate) { Interlocked.Increment(ref hintBuyReads); return File.Exists(hintBuyPath) ? File.ReadAllText(hintBuyPath, System.Text.Encoding.UTF8) : fallback; } }
+            CheckRegistry(folder, key); return Store.GetValue(key, fallback) as string;
+        }));
+        Replace(host, "WriteRegistry", new Action<string, string, string?>((folder, key, value) => {
+            if (folder == hintRegistry && key == hintKey) {
+                Native.Check(value is not null, "Original HintBuy REG_SZ must contain a string.");
+                lock (hintBuyGate) { File.WriteAllText(hintBuyPath, value!, new System.Text.UTF8Encoding(false)); Interlocked.Increment(ref hintBuyWrites); } return;
+            }
+            CheckRegistry(folder, key); Store.SetValue(key, value!, RegistryValueKind.String);
+        }));
+        Replace(host, "HasRegistry", new Func<string, string, bool>((folder, key) => {
+            if (folder == hintRegistry && key == hintKey) { lock (hintBuyGate) return File.Exists(hintBuyPath); }
+            CheckRegistry(folder, key); return Store.GetValue(key) is not null;
+        }));
         Replace(host, "OpenRegistry", new Func<string, bool, bool, ILegacySettingsStore?>((folder, write, create) => { if (folder != "PCL" || !write || !create) return Forbidden<ILegacySettingsStore?>("unexpected account-store open"); return Store.Open(); }));
-        var read = (Func<string, string, string?, string?>)Native.Get(host, "ReadIni")!;
-        var write = (Action<string, string, string?>)Native.Get(host, "WriteIni")!;
-        string file = Path.Combine(environment.Data, "account-ui", "Setup.ini"); Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        Replace(host, "ReadIni", new Func<string, string, string?, string?>((path, key, fallback) => { if (path != "Setup" || key != "HintBuy") return Forbidden<string?>("unexpected account INI read", key); return read(file, key, fallback); }));
-        Replace(host, "WriteIni", new Action<string, string, string?>((path, key, value) => { if (path != "Setup" || key != "HintBuy") Forbidden("unexpected account INI write", key); write(file, key, value); }));
-        restore.Push(() => Native.Static("PCL.ModBase", "IniClearCache", file));
+        Replace(host, "ReadIni", new Func<string, string, string?, string?>((_, key, _) => Forbidden<string?>("unexpected account INI read", key)));
+        Replace(host, "WriteIni", new Action<string, string, string?>((_, key, _) => Forbidden("unexpected account INI write", key)));
+        hint.Save(); // The genuine Setting.Save/SaveEntry creates the seed REG_SZ.
+        Native.Check(Volatile.Read(ref hintBuyWrites) == 1 && File.Exists(hintBuyPath) && File.ReadAllText(hintBuyPath, System.Text.Encoding.UTF8) == "False", "Original HintBuy Save did not persist its false Boolean seed.");
+    }
+    internal void AssertPurchaseHintSaved()
+    {
+        Native.Check(Volatile.Read(ref hintBuyWrites) == 2, "Original successful login must write HintBuy once; rejected/canceled login must not rewrite it.");
+        int reads = Volatile.Read(ref hintBuyReads);
+        Settings.Entries["HintBuy"].ValueCache.TryRemove("", out _);
+        object value = Settings.Get("HintBuy");
+        Native.Check(value is bool saved && saved && Settings.Get<bool>("HintBuy") && Volatile.Read(ref hintBuyReads) == reads + 1,
+            "Original Settings cold Registry read did not round-trip the saved HintBuy Boolean.");
     }
     private void CheckRegistry(string folder, string key)
     {

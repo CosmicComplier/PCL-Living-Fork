@@ -139,8 +139,37 @@ internal sealed class PackRootInstallChecksScope
     internal bool CaptureHeldTransfer(InstallCase value,ModLoader.LoaderCombo<string> root){CaptureTransfers();string target=Native.Full(Path.Combine(value.Folder,value.Name+".json"));Thread[] held=AllNodes(root).OfType<ModNet.LoaderDownload>().SelectMany(download=>download.Files).Where(file=>Native.Full(file.LocalPath)==target&&file.Threads is not null).SelectMany(file=>file.Threads).Select(part=>part.Thread).OfType<Thread>().Where(thread=>thread.IsAlive).ToArray();foreach(Thread thread in held)transferThreads.TryAdd(thread,0);return held.Length>0;}
     private bool TransientStopped(){CaptureTransfers();
         return admissionPauses.Values.All(pause=>pause.Returned.IsSet&&Volatile.Read(ref pause.Producer)?.IsAlive!=true)&&transferThreads.Keys.All(thread=>!thread.IsAlive)&&taskThreads.All(thread=>!thread.IsAlive)&&Volatile.Read(ref cleanupRunning)==0&&cleanupThreads.All(thread=>ReferenceEquals(thread,Thread.CurrentThread)||!thread.IsAlive)&&Volatile.Read(ref ModNet.NetTaskThreadCount)==0&&networkThreads.Where(thread=>!PackRootInstallChecks.ManagerNames.Contains(thread.Name,StringComparer.Ordinal)).All(thread=>!thread.IsAlive);}
-    internal void Settle(ModLoader.LoaderCombo<string> root){Until(()=>AllNodes(root).All(loader=>loader.State!=ModBase.LoadState.Loading)&&TransientStopped(),"real root/cleanup/task/network producer barrier");}
-    internal void Finish(){foreach(var root in roots)Settle(root);files.FinishActualTasks();Native.Check(TransientStopped()&&ModNet.NetManager.FileRemain==0&&ModNet.NetManager.Tasks.All(task=>task.State is ModBase.LoadState.Finished or ModBase.LoadState.Canceled or ModBase.LoadState.Failed),"HMCL downloader/cleanup is not complete.");Native.Check(StoppedTransfers>0&&TransportUsed,"HMCL actual metadata/client/library/assets HTTP transfer was not observed.");Native.Check(Forbidden==0&&unknownSources.IsEmpty,"HMCL attempted an external dependency, even if caught.");environment.AssertNoForbiddenIo();}
+    // Diagnostics observe only this GUID child's synthetic work. They never
+    // change the original completion predicate, wait budget, state or counters.
+    // Report failures separately so logging cannot replace the primary error.
+    private void ReportCompletion(string stage)
+    {
+        try
+        {
+            ModNet.LoaderDownload[] downloads=ModNet.NetManager.Tasks.ToArray();
+            object ThreadInfo(Thread thread)=>new { Id=thread.ManagedThreadId,Name=thread.Name,Alive=thread.IsAlive,Background=thread.IsBackground,State=thread.ThreadState.ToString() };
+            var snapshot=new {
+                Kind="HMCL completion observation",Stage=stage,TransientStopped=TransientStopped(),
+                FileRemain=Volatile.Read(ref ModNet.NetManager.FileRemain),NetworkWorkers=Volatile.Read(ref ModNet.NetTaskThreadCount),CleanupRunning=Volatile.Read(ref cleanupRunning),
+                ManagerTaskCount=downloads.Length,ManagerTasksTerminal=downloads.All(task=>task.State is ModBase.LoadState.Finished or ModBase.LoadState.Canceled or ModBase.LoadState.Failed),
+                ManagerTasks=downloads.Take(64).Select(task=>new { task.Name,State=task.State.ToString(),Files=task.Files.Take(8).Select(file=>new { State=file.State.ToString(),Parents=file.Tasks.Count,Registered=ModNet.NetManager.AllFiles.TryGetValue(file.LocalPath,out ModNet.NetFile? registered)&&ReferenceEquals(file,registered),AliveTransfers=file.Threads?.Count(part=>part.Thread?.IsAlive==true)??0 }).ToArray() }).ToArray(),
+                Roots=roots.Select(root=>new { root.Name,State=root.State.ToString() }).ToArray(),
+                AliveTasks=taskThreads.Where(thread=>thread.IsAlive).Distinct().Take(32).Select(ThreadInfo).ToArray(),
+                AliveTransfers=transferThreads.Keys.Where(thread=>thread.IsAlive).Take(32).Select(ThreadInfo).ToArray(),
+                AliveCleanup=cleanupThreads.Where(thread=>thread.IsAlive).Distinct().Take(32).Select(ThreadInfo).ToArray(),
+                NetworkThreads=networkThreads.Distinct().Take(64).Select(ThreadInfo).ToArray(),
+                Admission=admissionPauses.Values.Select(pause=>new { pause.Claimed,Scheduled=pause.Scheduled.IsSet,Released=pause.Release.IsSet,Returned=pause.Returned.IsSet,ProducerAlive=Volatile.Read(ref pause.Producer)?.IsAlive==true }).ToArray()
+            };
+            Console.WriteLine("HMCL SAFE COMPLETION "+System.Text.Json.JsonSerializer.Serialize(snapshot));
+        }
+        catch(Exception diagnostic)
+        {
+            try{Console.Error.WriteLine("HMCL completion diagnostic unavailable: "+diagnostic.GetType().Name);}
+            catch{/* Keep the original assertion/exception authoritative. */}
+        }
+    }
+    internal void Settle(ModLoader.LoaderCombo<string> root){Until(()=>AllNodes(root).All(loader=>loader.State!=ModBase.LoadState.Loading)&&TransientStopped(),"real root/cleanup/task/network producer barrier");ReportCompletion("settled "+root.Name);}
+    internal void Finish(){foreach(var root in roots)Settle(root);ReportCompletion("before common file-task barrier");files.FinishActualTasks();ReportCompletion("after common file-task barrier");Native.Check(TransientStopped()&&ModNet.NetManager.FileRemain==0&&ModNet.NetManager.Tasks.All(task=>task.State is ModBase.LoadState.Finished or ModBase.LoadState.Canceled or ModBase.LoadState.Failed),"HMCL downloader/cleanup is not complete.");Native.Check(StoppedTransfers>0&&TransportUsed,"HMCL actual metadata/client/library/assets HTTP transfer was not observed.");Native.Check(Forbidden==0&&unknownSources.IsEmpty,"HMCL attempted an external dependency, even if caught.");environment.AssertNoForbiddenIo();}
     internal bool ExclusiveFiles(){completeFiles.AddRange(Directory.EnumerateFiles(Game,"*",SearchOption.AllDirectories));foreach(string file in completeFiles){using FileStream exclusive=new(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None);}return completeFiles.Count>5;}
     internal void StopLoopback()=>server.Dispose();
 }

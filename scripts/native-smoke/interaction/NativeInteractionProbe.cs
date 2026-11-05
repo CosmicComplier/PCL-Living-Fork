@@ -160,7 +160,10 @@ internal sealed class Probe
     private bool Visible(AutomationElement node)
     {
         var current = node.Current; var r = current.BoundingRectangle;
-        return current.ProcessId == pid && !current.IsOffscreen && !r.IsEmpty && r.Width > 0 && r.Height > 0;
+        // WPF can report unclipped scroll descendants as IsOffscreen=false.
+        // Real settings RAM labels below this HWND still animate every second;
+        // only geometry intersecting the actual Main client is visible evidence.
+        return current.ProcessId == pid && !current.IsOffscreen && !r.IsEmpty && r.Width > 0 && r.Height > 0 && Native.Client(hwnd).IntersectsWith(r);
     }
     private AutomationElement Unique(Func<AutomationElement, bool> test, string description)
     {

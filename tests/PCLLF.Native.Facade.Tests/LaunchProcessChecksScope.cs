@@ -72,6 +72,7 @@ internal sealed partial class LaunchProcessChecksScope : IDisposable
             service = (LaunchCore)Native.Field(typeof(ModLaunch), "Service").GetValue(null)!; launch = (LaunchHost)service.GetType().GetFields(Native.Flags).Single(field => field.FieldType == typeof(LaunchHost)).GetValue(service)!;
             watcher = (WatcherHost)Native.Field(typeof(ModWatcher), "Host").GetValue(null)!;
             tasks.SelectMinecraft(game);
+            _ = FileTaskShell.Install(); // Genuine Main controller/controls for the original loader completion refresh.
             string folder = Path.Combine(game, "versions", "1.20.1"); Directory.CreateDirectory(folder);
             Put(Path.Combine(folder, "1.20.1.json"), "{\"id\":\"1.20.1\",\"type\":\"release\",\"releaseTime\":\"2023-06-12T13:25:51Z\",\"mainClass\":\"net.minecraft.client.main.Main\",\"libraries\":[],\"downloads\":{},\"arguments\":{\"game\":[\"--server\",\"discard.invalid\",\"--port\",\"25565\"],\"jvm\":[]}}");
             using (ZipArchive zip = ZipFile.Open(Path.Combine(folder, "1.20.1.jar"), ZipArchiveMode.Create))

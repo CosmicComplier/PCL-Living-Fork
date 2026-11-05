@@ -95,6 +95,24 @@ jobs:
         with:
           persist-credentials: false
           submodules: true
+          fetch-depth: 0
+
+      - name: Verify fixed historical sources without product VB files
+        # Full Git history stays explicit; Desktop preflight builds no old Main.
+        if: matrix.configuration == 'Release'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -File scripts/tests/Test-FixedLfSource.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed historical source baseline preflight failed after product VB retirement.' }
+
+      - name: Verify original historical credential failure and lock samples
+        # Explicit CLR4 credential-only Git fixture, never Main/bridge/apphost.
+        # Keep original exit23/invalid-input/source-cleanup/exclusive-lock cases.
+        if: matrix.configuration == 'Release'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -File scripts/native-smoke/Test-HistoricalCredentialFailures.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Preserved historical credential failure and lock regression failed.' }
 
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v5

@@ -52,6 +52,7 @@ internal static class AccountUiChecks
         scope.ReleaseRequest();
         scope.AwaitCompletion(ModBase.LoadState.Finished, () => accounts.IsEnabled && login.IsEnabled && login.Text == "登录" && scope.IsCurrent<PageLoginMsSkin>());
         Native.Check(scope.RequestCount == 6 && scope.Refreshes == 1 && scope.Hints.Count == 0, "Synthetic six-stage login did not complete exactly once through the real account host.");
+        scope.AssertPurchaseHintSaved();
         scope.At(AccountUiChecksScope.Checkpoint.SessionChecks);
         PageLoginMsSkin skin = scope.Current<PageLoginMsSkin>();
         Native.Check(Part<TextBlock>(skin, "TextName").Text == "FixtureBUpdated", "Actual logged-in page did not display the atomically saved profile.");
@@ -90,6 +91,7 @@ internal static class AccountUiChecks
                 Native.Check(scope.Loader.Error?.Message == "$native account fixture denied" && scope.Hints.Count == hints + 1 && scope.Hints[^1] == ("native account fixture denied", PCLLF.Presentation.Accounts.LegacyLoginHint.Red), "Actual failure did not retain loader error and publish the original red UI hint.");
             else Native.Check(scope.Hints.Count == hints, "Actual cancellation incorrectly published a login failure hint.");
         }
+        scope.AssertPurchaseHintSaved();
         scope.At(AccountUiChecksScope.Checkpoint.FinalChecks);
         scope.AssertIdle();
         environment.AssertNoForbiddenIo();
