@@ -7,7 +7,7 @@
 - 目标状态：`in_progress`。正式产品现为 `modern/Main` 完整 C#/.NET10 WPF，固定 LF main50/1.3.5-pre-3 的功能、资源、完整事件及 typed 桥已接通，独立于业务 VB/vbproj 构建发布。真实 Windows Debug/Release 主程序编译、54 项资源加载、完整原生包与兼容桥生成、可选联机模式编译已通过；Native两轮冷启/关闭重开与真实Registry已实际通过；备份/更新等其余运行兼容仍在验收，旧 VB 比较工程尚未退役。不能把编译成功或已迁源码当成整链通过；既有 Core/原产品/现代组件各自 Windows 证据仍按下文限定范围保留。
 - 集成分支：`migration/csharp-modern-dotnet`。初始起点`f4aa0fae62c3ee8af24c81e61844c8fdd13c8983`保持；LF main当前同步源固定`50b028da5fcad2226d74d901a41d8c43a249bfb2`，仅只读来源，不向main提交/合并、不force。6个新提交不能整文件覆盖既已迁移的Core/typed桥。
 - 最新已验证检查点为 `5028988`：Build41940652704 的两配置各42步成功、原44消费者通过；Modern41940652692 两配置成功；Migration41940652687 为 Windows508/508、Ubuntu457/457，严格397例零差异。Native41945911030 两配置各24/25默认族通过，Release真实Registry及225/226/228启动合同、两轮正常冷启/关闭/复开通过；MMC命令断言和独立旧版升级退出观察仍失败，不能标完整Native验收成功。历史3df/7eb/4a等证据在原记录保留。
-- 当前交付批次：收尾真实Native功能链与旧版升级。整合包loopback下载已隔离到保留真实guard的专属进程，只有全部原UX/IO/线程/句柄/监听器屏障与nonce/PID/root/Main SHA/MVID完成凭据通过，父进程才执行明确的本人进程终止并要求-1及双EOF；其余事务/FLOW仍正常退出。MMC保原输入/固定期望，仅在失败时输出GUID合成实际配置/缓存/磁盘诊断。合并后Native宿主Release严格编译0W0E，新协议Windows待验；生产网络循环、取消与预算未改。默认发布切换及178产品VB/1vbproj实体退役仍未执行。
+- 当前交付批次：修复f683实际暴露的MMC夹具尾路径/WinPS控制组类型错误；并接通account-ui、launch-process、pack-root-install三条生产子链及独立真实主窗interaction。原25族中24族已在两配置实际通过；新增三族与interaction仅完成合并严格编译/自审/接线，Windows仍待验。显式CI28族各自独立子进程，account-ui/registry-data为solo，原cold/C7/旧桥资格保持独立。生产缓存/下载循环/取消、默认发布和VB实体不改，原数据/锁/guard收尾保持硬门禁。
 - 用户补充验收要求：完整功能链迁移与LF兼容必须同时满足。恢复时先按可运行闭环梳理C007剩余工作及必要宿主前置；C007d2是内部实施起点，单个方法／规则和局部测试通过不代表整条资源功能链完成。兼容矩阵、真实Windows回归及未验证边界随交付同步记录；目标已按用户指令恢复。
 - 用户补充测试要求：按受影响模块／下游／功能链执行；跨链高影响或范围不明的公共契约／框架变更及发布前才全量，纯文档不跑产品测试。G005原分组已验，当前18组（设置／校验Loader／Java与新增foundation独立组），resources始终只4组；精确源只选实际下游，不拉无关Store大集。C026公共动画与C012新增Shared测试依赖／路由合并一个必要完整检查点，之后局部修复定向。
 - 执行路线已按用户要求调整：以完整可运行功能链＋LF兼容通过交付，同类源码批量转换，优先适配固定CE现成成果，集中解决编译／集成差异；实际宿主／控件／现代工程阻塞纳入本轮前置，不长期绕开。小提交保留审查价值，减少重复扫描、零碎研究、重复全测和说明性提交。
@@ -148,6 +148,16 @@ R001必要前置先接Native→Modern的EnableLegacyLink可选参数转发，默
 `f68321a` 的Native41945911030（Debug126978198633／Release126978198689）两配置仍24/25；MMC三原host调用均真实返回且无异常：OverrideCommands=true，PreLaunchCommand完整，WriteIni参数严格等原gold、returned成功；目标相对路径实际为minecraft双反斜杠versions。源码确认Scope.Game已追加尾分隔符，FileTaskScope.SelectMinecraft又无条件追加一次，违反本夹具向helper传裸路径的约定。现仅去Game那一处追加并早断言真实McFolderSelected等于Game加一条分隔符；保原trace、26检查点/ZIP输入/精确命令及生产INI精确路径缓存不变。后续物理覆盖的完整时序未宣称已观察，完整Windows MMC结果仍待。
 
 f683独立旧桥126981275171在新增WinPS前置通过第一个pinned exit0后，unpinned对照给上轮声明为IntPtr的beforeHandle赋null，触发真实类型转换错误，四协议case尚未执行。现仅把该未使用control哨兵设IntPtr.Zero；真实pin/原Handle/严格int0与23/原子ready-release/时间与协议全部不变。本机真实PS语言复现原异常并验证交替赋值修复，仍不计Windows0/23进程或完整旧桥通过。MMC首个完整跨编曾在编译出DLL后因/tmp满额复制失败，不冒称成功；主执行者合并新源后的真正facade全Build已0W0E。两旧证据ZIP仅转存空闲workspace卷并逐字节SHA核验、原路径保留符号链接，不删除源码或未知数据。
+
+R002/R003当前新增三条真正生产子链，并统一接为28个显式CI功能族（默认多组选27、account-ui及registry-data均须各自fresh solo）及独立Release真实主窗interaction：`account-ui`由实际BAML/选择/原按钮进入真正Ms loader六段受控HTTP、原Settings加密/_LF/marker-last事务、MsSkin/退出和失败/Cancel；先用原SaveAccountGroup种自有物理store，保原九设置类型/其它账号/未知profile字段。Shared Default在readonly provider绑定前守卫，已初始化provider拒收；Busy拒收发生在mutations/cleanup之外，Start/Cancel锁与启动保留/真实thread/UI/动画尾闭合后恢复。仅选定MS合成链，真实授权/全九页仍未验。
+
+`launch-process`经真实Main三步Process/Wait/End适配与Watcher，验证自有cmd进程normal0、abnormal23（真实延迟CrashAnalyzer四阶段）及原启动后Cancel；真实参数/个人与QuickPlay Prepare/Track/Finish、PID+start-time日志/环境健康点/冷恢复均在链内。Start前reservation、真实scheduler pending/gen与Thread捕获防止Cancel清引用漏等，真实exit/双EOF/handler/线程/稳定UI尾后才恢复。它不是实际Java/Minecraft或完整12步McLaunchStart通过。
+
+`pack-root-install`从现有HMCL检测/ZIP到原InstallGame/完整原版游戏组合、真实loopback metadata/client/library/assets、JSON merge/安装manifest与拒绝；真实metadata HTTP在途Cancel及已写pack的原延迟清理、原失败清理/旁路字节保护。先捕原Transfer Thread避免Cancel清链；原根任务本无worker lease，不捏造租约或全阶段回滚。永久NetManager保持前台/全部guard直到精确nonce/PID/root/Main SHA/MVID/26检查凭据后本人预期-1终止/双EOF，45秒内完成、5秒清理保primary并仅读已完成流有界尾，未知状态保GUID失败。
+
+独立真实Main interaction复用原Smoke三启动合同/两cold/正常关闭/数据/锁，以新fresh fixture外部UIA工具只关闭精确当前版本说明，再验证安全设置/个性化/启动导航、浅深主题和自有INI值回0、焦点/最小化恢复、真实滚轮offset与有界截图。工具只向PID/HWND/原handle映像SHA/marker核准Main发白名单消息，不注入/加载替身Main；helper退出未证即保留Main/profile/mutex上下文，缺UIA/空图/无行为证据仍失败或pending。UIA失败另留最多200个自有可见节点的有界诊断以保主错。新步骤在原cold资格之外，不能以其结果替换原资格；小证据单独上传，主artifact排除这一新增fixture的重复EXE/BundleExtract。工具/入口置已有native-smoke/interaction前缀，原检查路由算法未改，不牵引无关旧44/全pure重测。
+
+以上新链私有作者/独立审/Root已修复启动线程登记、旧producer拒收、物理store种子、动画队列接管、observer退出屏障、流读取超时和重复尾路径等确定问题；Root合并完整实际Main-reference facade Release及独立UIA工具均strict0W0E，3份PSParse、actionlint、28族与注册表项/solo/default静态一致、所有变更实际native-only路由、git diff检查通过。portable helper结果只计各自边界：10 loopback/JAR、5真实进程清理、4 observer清理分支及原receipt反例，不算Windows产品验收。所有新增Windows行为仍PENDING；真实账号/游戏/全格式根安装/各阶段取消、连续人手hover/拖放/字体手感仍按原R002/R003边界推进，默认发布与VB实体退休未执行。
 
 本轮已推送的实现与验证检查点：
 

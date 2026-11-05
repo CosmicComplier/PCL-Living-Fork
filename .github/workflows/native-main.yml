@@ -122,7 +122,7 @@ jobs:
             credentials = 'Open-source keyless build; no release credential or external publication.'
             coldEntry = if ($env:NATIVE_CONFIGURATION -eq 'Release') { 'Required: genuine native startup, normal WM_CLOSE and reopen.' } else { 'Not executed: the current bounded smoke accepts LF BuildType 0/50; Debug BuildType 100 remains a separate runtime gap.' }
             mainWarningPolicy = 'Main conversion warnings remain visible; zero errors required. Core/Presentation/tools/facade tests keep warnings-as-errors.'
-            facade = 'Required in both configurations: four actual Main data/adapter groups, isolated offscreen theme, real file-task/cancellation/navigation and local/online dependency groups; never product entry.'
+            facade = 'Required in both configurations: 28 separately isolated actual Main data/UI/task/process/install families; account-ui requires its own fresh configuration child. Controlled process/HTTP/store samples are not real authentication or Minecraft. Actual product entry/continuous interaction have independent receipts.'
           } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $logDirectory 'context.json')
 
       - name: Stamp only the original Main CommitHash constant
@@ -345,7 +345,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
           $failedGroups = @()
-          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies', 'dependency-graph', 'toolbox', 'visual-assets', 'launcher-lifecycle', 'modpack-mode', 'review-fixes', 'migrated-controls', 'map-install-recycle', 'resource-updates', 'mmc-import-contract')
+          $groups = @('map-details', 'resource-entry', 'world-details', 'registry-names', 'theme', 'file-tasks', 'mod-dependencies', 'mod-dependency-online', 'updater', 'backup-resources', 'instance-clone', 'modpack-update', 'environment-history', 'local-features', 'launch-dependencies', 'dependency-graph', 'toolbox', 'visual-assets', 'launcher-lifecycle', 'modpack-mode', 'review-fixes', 'migrated-controls', 'map-install-recycle', 'resource-updates', 'mmc-import-contract', 'launch-process', 'pack-root-install', 'account-ui')
           foreach ($group in $groups) {
             # Every family owns its real STA child and temporary state. A
             # failed theme family must not hide file/dependency acceptance.
@@ -354,6 +354,17 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $failedGroups += $group }
           }
           if ($failedGroups.Count -ne 0) { throw ('Actual native Main acceptance failed: ' + ($failedGroups -join ', ')) }
+
+      - name: Verify actual Main safe navigation theme focus and wheel
+        id: interaction
+        # Independent fresh profile/fixture after the original cold receipt;
+        # this new UI result cannot replace that receipt or qualify a package.
+        if: ${{ !cancelled() && matrix.configuration == 'Release' && steps.cold_entry.outcome == 'success' && steps.package_roles.outcome == 'success' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell -NoProfile -STA -File scripts/native-smoke/interaction/Test-NativeLauncherInteraction.ps1 -ExecutablePath "$env:NATIVE_EXE" -WorkspaceRoot "$env:GITHUB_WORKSPACE" -EvidenceRoot (Join-Path $env:NATIVE_LOG_DIRECTORY 'interaction') 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:NATIVE_LOG_DIRECTORY 'interaction.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Main continuous interaction is failed or pending; original cold qualification retains its independent outcome.' }
 
       - name: Compile the original optional LegacyLink mode without running services
         id: legacy_link_compile
@@ -384,12 +395,31 @@ jobs:
           compression-level: 9
           retention-days: 7
 
+      - name: Upload small actual Main interaction evidence
+        if: always() && matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-interaction-evidence-${{ matrix.configuration }}
+          path: |
+            artifacts/native-main/${{ matrix.configuration }}/interaction.log
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/evidence.json
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/interaction-*.json
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/interaction-*.png
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/startup-*.log
+            artifacts/native-main/${{ matrix.configuration }}/interaction/**/PCL/Log*.txt
+          if-no-files-found: warn
+          compression-level: 9
+          retention-days: 7
+
       - name: Upload native build packages and bounded runtime evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: native-main-${{ matrix.configuration }}
-          path: artifacts/native-main/${{ matrix.configuration }}/
+          path: |
+            artifacts/native-main/${{ matrix.configuration }}/
+            !artifacts/native-main/${{ matrix.configuration }}/interaction/**/Install with spaces/*.exe
+            !artifacts/native-main/${{ matrix.configuration }}/interaction/**/BundleExtract/**
           if-no-files-found: warn
           compression-level: 0
           retention-days: 7

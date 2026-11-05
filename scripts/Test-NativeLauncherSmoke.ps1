@@ -8,7 +8,10 @@ param(
  [string]$FixtureProjectPath,
  [string]$NativeUpdaterSource,
  [ValidateRange(10,120)][int]$StartupTimeoutSeconds=60,
- [ValidateRange(3,30)][int]$CloseTimeoutSeconds=15
+ [ValidateRange(3,30)][int]$CloseTimeoutSeconds=15,
+ [switch]$ExerciseInteraction,
+ [string]$InteractionProbePath,
+ [ValidateRange(85,120)][int]$InteractionTimeoutSeconds=90
 )
 # CI-only, actual native Main entry. The observer never loads Main/App/WPF;
 # only the metadata helper opt-in crypto leaf generates synthetic account data.
@@ -36,9 +39,56 @@ $install=Join-Path $fixture 'Install with spaces';$differentCwd=Join-Path $fixtu
 $installed=Join-Path $install 'LivingPCL Native Smoke.exe';$log=Join-Path $install 'PCL/Log1.txt';$marker='__PclLfNativeSmokeOwner'
 $ownedRegistry=[Collections.Generic.List[string]]::new();$ownedAppData=$null;$nativeProcess=$null;$ownProcessStopped=$true
 $accountSentinels=@();$startupSeed='native-smoke-seed-'+$id;$startupMutexObserver=$null
+if($ExerciseInteraction){$script:interactionObserver=$null;$script:interactionObserverStopped=$true}
 $evidence=[ordered]@{Result='pending';Scope='Actual product native cold start/WM_CLOSE/reopen, not complete functional regression';FixtureId=$id;InputExe=$ExecutablePath;MainProject=[IO.Path]::GetFullPath($NativeProjectPath);Runs=@();ForcedCleanup=$false;CleanupErrors=@();UserInteractive=[Environment]::UserInteractive;ObserverSessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId}
 $evidence.StartupContracts=[ordered]@{ImportOrdering='pending';V2Preservation='pending';Accounts=[ordered]@{Count=0;CheckedPhases=@();CryptoSubject='Exact embedded Core/Shared only; no Main/App/WPF is loaded by the generator.'}}
 function Pending([string]$reason){$evidence.Result='pending';throw ('PENDING: '+$reason)}
+function Invoke-OwnedInteraction([int]$pass,[object]$window){
+ if(-not $InteractionProbePath -or -not [IO.File]::Exists($InteractionProbePath)){Pending 'Opt-in interaction requires its separately built external UIAutomation probe.'}
+ $arguments=@([IO.Path]::GetFullPath($InteractionProbePath),'--pid',[string]$nativeProcess.Id,'--hwnd',[string]$window.Handle.ToInt64(),'--fixture',$fixture,'--owner',$id,'--exe',$installed,'--pass',[string]$pass,'--sha256',$proof.sha256,'--workspace',$WorkspaceRoot,'--notice',$expectedNotice)
+ $quoted=@($arguments|ForEach-Object {if($_.Contains('"') -or $_.Contains("`r") -or $_.Contains("`n") -or $_.EndsWith('\')){throw 'Unsupported interaction argument quoting.'};'"'+$_+'"'})
+ $start=[Diagnostics.ProcessStartInfo]::new($DotNetPath);$start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WorkingDirectory=$fixture;$start.Arguments=$quoted -join ' '
+ try{
+  $script:interactionObserver=[Diagnostics.Process]::Start($start);if($null -eq $script:interactionObserver){throw 'External owned-window interaction observer did not start.'}
+  $script:interactionObserverStopped=$false
+  if(-not $script:interactionObserver.WaitForExit($InteractionTimeoutSeconds*1000)){Pending 'External UIAutomation observer exceeded its bound; cleanup must prove helper exit, and timeout is not an interaction pass.'}
+  $script:interactionObserver.Refresh()
+  if(-not $script:interactionObserver.HasExited){throw 'Interaction observer wait returned without a final exit proof.'}
+  $script:interactionObserverStopped=$true
+  $file=Join-Path $fixture ('interaction-'+$pass+'.json')
+  if(-not [IO.File]::Exists($file)){throw 'Interaction observer did not produce owned evidence.'}
+  $result=[IO.File]::ReadAllText($file)|ConvertFrom-Json
+  $run.Interaction=$result
+  if($result.FixtureId -cne $id -or $result.Pass -cne [string]$pass -or $result.ProcessId -ne $nativeProcess.Id -or $result.MainHandle -ne $window.Handle.ToInt64() -or $result.MainSha256 -cne $proof.sha256){throw 'Interaction evidence is not bound to this exact real Main pass.'}
+  if($script:interactionObserver.ExitCode -ne 0 -or $result.Result -cne 'passed'){if($result.Result -ceq 'pending'){Pending ('Owned interaction: '+$result.Error)};throw ('Owned interaction failed: '+$result.Error)}
+  Assert-OwnedProcessImage ([PclLfNativeSmoke.Win32]::ObserveProcessImage($nativeProcess,$false)) $installed
+  Check-Log (Read-OwnedLog) $expectedNotice
+ }finally{
+  if($null -ne $script:interactionObserver){
+   if(-not $script:interactionObserverStopped){
+    try{
+     $script:interactionObserver.Refresh()
+     if($script:interactionObserver.HasExited){$script:interactionObserverStopped=$true}
+     else{
+      $script:interactionObserver.Kill()
+      if($script:interactionObserver.WaitForExit(5000)){$script:interactionObserver.Refresh();$script:interactionObserverStopped=$script:interactionObserver.HasExited}
+     }
+    }catch{
+     $evidence.CleanupErrors+=('Owned interaction observer stop: '+$_.Exception.Message)
+     # Kill may race an actual exit. Only a fresh positive HasExited receipt
+     # can authorize cleanup; an exception or an elapsed wait cannot do so.
+     try{$script:interactionObserver.Refresh();if($script:interactionObserver.HasExited){$script:interactionObserverStopped=$true}}catch{$evidence.CleanupErrors+=('Owned interaction observer exit query: '+$_.Exception.Message)}
+    }
+   }
+   if($script:interactionObserverStopped){$script:interactionObserver.Dispose();$script:interactionObserver=$null}
+   else{
+    $evidence.Result='failed'
+    $evidence.InteractionObserverStop=[ordered]@{ExitProved=$false;ObserverProcessId=$script:interactionObserver.Id;MainProcessId=$nativeProcess.Id;Retained='Observer handle, actual Main process/handle, startup locks and owned profile are retained; no Main close, Dispose or profile deletion is authorized.'}
+    $evidence.CleanupErrors+='Owned interaction observer exit remains unknown; preserve every dependent Main/profile/lock context.'
+   }
+  }
+ }
+}
 function Existing-Key([string]$name){foreach($view in @([Microsoft.Win32.RegistryView]::Registry32,[Microsoft.Win32.RegistryView]::Registry64)){$base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser,$view);try{$node=$base.OpenSubKey($name,$false);if($null -ne $node){$node.Dispose();return $true}}finally{$base.Dispose()}};return $false}
 function Existing-Mutex([string]$name){try{$gate=[Threading.Mutex]::OpenExisting($name);$gate.Dispose();return $true}catch [Threading.WaitHandleCannotBeOpenedException]{return $false}}
 function Check-Mutex([string]$name,[bool]$expectHeld){
@@ -266,6 +316,7 @@ try{
   Assert-SyntheticPreferenceImport $true ('normal-ready-'+$pass)
   Assert-StartupAccounts ('normal-ready-'+$pass);$run.AuthoritativeAccountsPreservedAtReady=$true
   $run.SyntheticPreferenceImportObserved=$true
+  if($ExerciseInteraction){Invoke-OwnedInteraction $pass $mainWindow;Assert-StartupAccounts ('after-interaction-'+$pass)}
   $run.Screenshot=[PclLfNativeSmoke.Win32]::CaptureOwnWindow($mainWindow.Handle,(Join-Path $fixture ('main-'+$pass+'.png')))
   if($pass -eq 2){$rotated=Join-Path $install 'PCL/Log2.txt';if(-not [IO.File]::Exists($rotated) -or (Hash-OwnedFile $rotated) -cne $previousLogHash){throw 'Reopen did not preserve original LF log rotation.'}}
   $closeWatch=[Diagnostics.Stopwatch]::StartNew();$closeBudget=$CloseTimeoutSeconds*1000
@@ -292,6 +343,7 @@ try{
  }
  $evidence.StartupContracts.ImportOrdering='passed-blocked-then-normal-import';$evidence.StartupContracts.V2Preservation='passed-two-real-FormMain-startups'
  $evidence.Result='passed';$evidence.Limit='Cold actual Main HWND visible in the CI windowstation/normal close/reopen only; noninteractive sessions are recorded, not claimed as human desktop interaction. Known OpenSource version information is observed, never clicked. Mutex-before-import, the safe official-update refusal and raw authoritative LF account preservation are checked; GPU/memory utilities, authentication, navigation/font feel and update-bridge completion are not inferred.'
+ if($ExerciseInteraction){$evidence.InteractionScope='Opt-in external probe: exact reviewed local information notice dismissal, safe Main settings/personalization/launch navigation, observable theme/INI restore, measured wheel offsets, focus and same-HWND minimize/restore; stable owned-window screenshots. Human feel/hover/drop/authentication/game/services/hardware remain pending.';$evidence.Limit='Original startup/mutex/import/account/close/reopen/file-lock contracts remain required. Only the exact reviewed 1.3.5-pre-3 information notice is dismissed in opt-in mode. Per-pass interaction evidence describes observed UIA/layout/own-config/screenshots in the CI windowstation; no human desktop or complete R003 pass is inferred.'}
 }catch{if($evidence.Result -ne 'pending' -or $_.Exception.Message -notlike 'PENDING:*'){$evidence.Result='failed'};$evidence.Error=$_.Exception.Message;throw}
 finally{
  try{
@@ -300,14 +352,15 @@ finally{
   $diagnosticLog=Read-OwnedLog
   if($diagnosticLog.Length -gt 0){Write-OwnedCloseDiagnostic $diagnosticExit $diagnosticLog 'before-cleanup'}
  }catch{$evidence.CleanupErrors+=('Owned bounded diagnostics: '+$_.Exception.Message);Write-Output ('Native diagnostic collection failed: '+$_.Exception.Message)}
- if($null -ne $nativeProcess){try{if(-not $nativeProcess.HasExited){[void]$nativeProcess.CloseMainWindow();if(-not $nativeProcess.WaitForExit(3000)){$evidence.ForcedCleanup=$true;$nativeProcess.Kill();[void]$nativeProcess.WaitForExit(5000)}};$ownProcessStopped=$nativeProcess.HasExited;if(-not $ownProcessStopped){$evidence.CleanupErrors+='Own launcher is still alive; preserve fixture profile.'}}catch{$ownProcessStopped=$false;$evidence.CleanupErrors+=('Own process cleanup: '+$_.Exception.Message)}finally{$nativeProcess.Dispose()}}
+ if($ExerciseInteraction -and -not $interactionObserverStopped){$ownProcessStopped=$false;$evidence.Result='failed';$evidence.CleanupErrors+='Main close/Dispose, mutex observer release and owned profile deletion skipped because interaction observer exit was not proved.'}
+ if($null -ne $nativeProcess -and (-not $ExerciseInteraction -or $interactionObserverStopped)){try{if(-not $nativeProcess.HasExited){[void]$nativeProcess.CloseMainWindow();if(-not $nativeProcess.WaitForExit(3000)){$evidence.ForcedCleanup=$true;$nativeProcess.Kill();[void]$nativeProcess.WaitForExit(5000)}};$ownProcessStopped=$nativeProcess.HasExited;if(-not $ownProcessStopped){$evidence.CleanupErrors+='Own launcher is still alive; preserve fixture profile.'}}catch{$ownProcessStopped=$false;$evidence.CleanupErrors+=('Own process cleanup: '+$_.Exception.Message)}finally{$nativeProcess.Dispose()}}
  if($null -ne $startupMutexObserver){
-  if($ownProcessStopped){try{$startupMutexObserver.Dispose();$startupMutexObserver=$null}catch{$evidence.CleanupErrors+=('Owned startup mutex/HWND cleanup: '+$_.Exception.Message)}}
+  if($ownProcessStopped -and (-not $ExerciseInteraction -or $interactionObserverStopped)){try{$startupMutexObserver.Dispose();$startupMutexObserver=$null}catch{$evidence.CleanupErrors+=('Owned startup mutex/HWND cleanup: '+$_.Exception.Message)}}
   else{$evidence.CleanupErrors+='Startup mutex/HWND context retained because owned process stop was not proved.'}
  }
  # Delete only initially absent stores owned by this fixture marker. Never back
  # up/read/restore a real user's profile or delete an unmarked changed store.
- if($ownProcessStopped){foreach($keyName in $ownedRegistry){try{$node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($keyName,$false);$matches=$false;try{$matches=$null -ne $node -and $node.GetValue($marker) -ceq $id}finally{if($null -ne $node){$node.Dispose()}};if($matches){[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyName)}else{$evidence.CleanupErrors+=('Registry owner marker changed: '+$keyName)}}catch{$evidence.CleanupErrors+=('Registry cleanup: '+$keyName+' / '+$_.Exception.Message)}}
+ if($ownProcessStopped -and (-not $ExerciseInteraction -or $interactionObserverStopped)){foreach($keyName in $ownedRegistry){try{$node=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($keyName,$false);$matches=$false;try{$matches=$null -ne $node -and $node.GetValue($marker) -ceq $id}finally{if($null -ne $node){$node.Dispose()}};if($matches){[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyName)}else{$evidence.CleanupErrors+=('Registry owner marker changed: '+$keyName)}}catch{$evidence.CleanupErrors+=('Registry cleanup: '+$keyName+' / '+$_.Exception.Message)}}
  if($null -ne $ownedAppData){try{if([IO.File]::ReadAllText((Join-Path $ownedAppData $marker)) -ceq $id){[IO.Directory]::Delete($ownedAppData,$true)}else{$evidence.CleanupErrors+='AppData owner marker changed.'}}catch{$evidence.CleanupErrors+=('Owned AppData cleanup: '+$_.Exception.Message)}}
  }else{$evidence.CleanupErrors+='Owned profile retained because process exit could not be confirmed.'}
  if($evidence.ForcedCleanup -or $evidence.CleanupErrors.Count -gt 0){if($evidence.Result -eq 'passed'){$evidence.Result='failed'}}

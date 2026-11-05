@@ -32,7 +32,10 @@ internal static class Program
         ["migrated-controls"] = ControlOriginalChecks.Run,
         ["map-install-recycle"] = MapInstallChecks.Run,
         ["resource-updates"] = ResourceUpdateChecks.Run,
-        ["mmc-import-contract"] = MmcImportChecks.Run
+        ["mmc-import-contract"] = MmcImportChecks.Run,
+        ["launch-process"] = LaunchProcessChecks.Run,
+        ["pack-root-install"] = PackRootInstallChecks.Run,
+        ["account-ui"] = AccountUiChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)
@@ -83,7 +86,7 @@ internal static class Program
     private static string[] ReadGroups(string[] args)
     {
         string? value = ReadOption(args, "--groups");
-        string[] selected = value is null ? Cases.Keys.Where(name => name != "registry-data").ToArray() : value.Split(',', StringSplitOptions.TrimEntries);
+        string[] selected = value is null ? Cases.Keys.Where(name => name is not ("registry-data" or "account-ui")).ToArray() : value.Split(',', StringSplitOptions.TrimEntries);
         if (selected.Length == 0 || selected.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("Empty facade selection.");
         foreach (string item in selected)
@@ -91,6 +94,8 @@ internal static class Program
                 throw new ArgumentException("Unknown facade group: " + item);
         if (selected.Contains("registry-data", StringComparer.Ordinal) && selected.Distinct(StringComparer.Ordinal).Count() != 1)
             throw new ArgumentException("Select registry-data alone in its fresh hosted-profile process.");
+        if (selected.Contains("account-ui", StringComparer.Ordinal) && selected.Distinct(StringComparer.Ordinal).Count() != 1)
+            throw new ArgumentException("Select account-ui alone in its fresh guarded Shared configuration process.");
         return selected.Distinct(StringComparer.Ordinal).ToArray();
     }
 
