@@ -2,7 +2,7 @@
 
 当前目标是将 PCLLF 已有产品实现迁移到 C#、.NET 10 和 WPF，完成功能等价、数据兼容、资源依赖、发布产物及旧版更新桥的验证。做到本目标的全部验收项后停止自动续跑。本目标不自动转入新增 MMC 兼容或性能阶段。
 
-当前状态：`in_progress`。5857707真实Windows双配置28族、Core11并发/完整HMCL26回执、launch正常0/异常23/取消、合成账号UI、两轮Main导航/主题/焦点/滚轮/正常关闭、默认四角色/C7/54资源/Registry/startup225/226/228和旧桥四case均通过；旧44/Modern/508与457/strict397同检查点全绿。已据此实体移除178产品VB/1vbproj及比较builder，保两个独立测试VB oracle/历史固定源和全部许可资源；统一Build调用C#现代工作流并显式保原两个可选凭据来源，删除后新reusable发布/C7接线仍待Windows。真实授权/游戏及最终人手体验继续待验，尚不标整体完成。新增MMC/性能/Rust/C++仍延后。
+当前状态：`in_progress`。产品178业务VB/旧vbproj及比较builder已退役，root正式7项目为C#/.NET10 WPF，保两独立测试VB oracle/历史固定源和资源许可。585自动整链双配置28族/Core11/root26/launch三场景/合成账号UI、两轮Main交互/默认包/C7/旧桥及下游全绿。81c删除后统一reusable Build已真实完成Main/54资源/包/原两可选凭据来源C7及同run旧桥；Debug28全过，Release仅file-tasks因测试Stopped通知先于真实lease释放竞态失败，其余27族及UI/cold通过。现仅修测试订阅顺序并按原5秒等真实thread，待Native-only Windows复验。真实账号授权/Minecraft/JVM运行及旧新手感仍需外部实机验收，尚不标整体完成。新增MMC/性能/Rust/C++仍延后。
 
 完整工程背景见 [MIGRATION.md](MIGRATION.md)。可执行任务、进度、验证证据和下次入口只维护在 [MIGRATION_STATUS.md](MIGRATION_STATUS.md)，续跑时从账本继续，不重新建立同一套计划。
 

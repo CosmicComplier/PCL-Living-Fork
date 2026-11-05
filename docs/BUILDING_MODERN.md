@@ -56,7 +56,7 @@ $releaseOutput = Join-Path $PWD ('artifacts/native-release/' + [Guid]::NewGuid()
 pwsh -NoProfile -File scripts/Build-Release.ps1 -Configuration Release -OutputPath $releaseOutput
 ```
 
-脚本复用 C# 凭据生成器的 GUID 临时目录与清理逻辑，执行真正的 `win-x64` 自包含单文件发布，并创建原更新协议需要的兼容桥。其发布调用已关闭构建服务器/节点复用并顺序执行。默认源码构建可使用空内嵌凭据。`Build` 工作流现在统一调用 Native reusable；保留旧流水线的 `CLIENT_ID`、`CURSEFORGE_API_KEY` 两个可选 secret，仅在打包及同一实际 Main/bundle 凭据检查步骤映射为 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY`。缺失时仍允许公开空值构建；本地可经相同环境变量提供输入。值不进入命令行、日志或验收回执，最终新转发接线仍待 Windows CI，不以空值构建证明真实授权。该命令只生成文件。未传 `-OutputPath` 时输出到 `artifacts/release/{Configuration}`；已存在的发布资产不会被覆盖，重复发布请选新目录或先自行处理旧资产。可用 `-EnableLegacyLink` 将原可选联机代码编译进真实产品，构建脚本不会启动它。`Build-NativeRelease.ps1` 和 `Build-ModernRelease.ps1` 保持独立底层入口，调用链为默认入口→Native 打包→Modern C# 发布，不循环调用。
+脚本复用 C# 凭据生成器的 GUID 临时目录与清理逻辑，执行真正的 `win-x64` 自包含单文件发布，并创建原更新协议需要的兼容桥。其发布调用已关闭构建服务器/节点复用并顺序执行。默认源码构建可使用空内嵌凭据。`Build` 工作流现在统一调用 Native reusable；保留旧流水线的 `CLIENT_ID`、`CURSEFORGE_API_KEY` 两个可选 secret，仅在打包及同一实际 Main/bundle 凭据检查步骤映射为 `PCL_MS_CLIENT_ID`、`PCL_CURSEFORGE_API_KEY`。缺失时仍允许公开空值构建；本地可经相同环境变量提供输入。值不进入命令行、日志或验收回执，81c统一Build中真实打包/同Main-bundle C7与同run旧桥已通过，不以空值或配置来源校验证明真实服务授权。该命令只生成文件。未传 `-OutputPath` 时输出到 `artifacts/release/{Configuration}`；已存在的发布资产不会被覆盖，重复发布请选新目录或先自行处理旧资产。可用 `-EnableLegacyLink` 将原可选联机代码编译进真实产品，构建脚本不会启动它。`Build-NativeRelease.ps1` 和 `Build-ModernRelease.ps1` 保持独立底层入口，调用链为默认入口→Native 打包→Modern C# 发布，不循环调用。
 
 以实际 `NativeRelease.Artifacts.json` 中的角色、版本与 SHA256 为准：
 

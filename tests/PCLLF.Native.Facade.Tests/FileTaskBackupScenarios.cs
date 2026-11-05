@@ -246,13 +246,17 @@ internal static class FileTaskBackupScenarios
         using (var release = new ManualResetEventSlim(false))
         using (var stopped = new ManualResetEventSlim(false))
         {
+            Thread workerThread = null;
             var worker = new RedoableWorker((Action)(() =>
             {
+                workerThread = Thread.CurrentThread;
                 entered.Set();
                 release.Wait();
             }));
-            worker.Stopped += () => stopped.Set();
             Require((bool)typeof(ModMinecraft.McInstanceLock).GetMethod("TryAcquireSnapshot", F).Invoke(null, new object[] { worker, instance.PathVersion }), "Snapshot reservation unavailable");
+            // The genuine Acquire registers its Stopped lease-release handler.
+            // Observe AFTER it: multicast FIFO must not signal before release.
+            worker.Stopped += () => stopped.Set();
             worker.Start();
             try
             {
@@ -266,8 +270,12 @@ internal static class FileTaskBackupScenarios
             }
             finally
             {
+                var stopBudget = System.Diagnostics.Stopwatch.StartNew();
                 release.Set();
-                Require(stopped.Wait(5000), "Snapshot reservation did not stop");
+                int remaining = Math.Max(0, 5000 - checked((int)stopBudget.ElapsedMilliseconds));
+                Require(stopped.Wait(remaining), "Snapshot reservation did not stop");
+                remaining = Math.Max(0, 5000 - checked((int)stopBudget.ElapsedMilliseconds));
+                Require(workerThread != null && workerThread.Join(remaining), "Snapshot reservation thread did not return within the original stop budget");
             }
         }
 
