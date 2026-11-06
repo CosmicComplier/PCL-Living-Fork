@@ -39,6 +39,7 @@ public sealed class PackUpdateFlowHost<TPackage, TPlan, TNetFile, TVersion, TIns
     public Action<Action> UiWait = null!;
     public Func<string?> InputProjectAddress = null!;
     public Func<string, JToken> Request = null!;
+    public Func<JObject, ResourceTypes, TVersion> ParseVersion = null!;
     public Action<string, string> EnsureWithin = null!;
     public Func<string, string, string, string, bool, int> Message = null!;
     public Func<string, TPlan, Func<McVersion>, int> Preview = null!;

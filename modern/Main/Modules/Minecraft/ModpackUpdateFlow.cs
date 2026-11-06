@@ -67,6 +67,7 @@ namespace PCL
                 UiWait = new Action<global::System.Action>(Work => global::PCL.ModBase.RunInUiWait(() => Work())),
                 InputProjectAddress = new Func<global::System.String>(() => global::PCL.ModMain.MyMsgBoxInput("整合包项目地址", "CurseForge 或 Modrinth 整合包项目地址", "", Button2: "取消")),
                 Request = new Func<global::System.String, global::Newtonsoft.Json.Linq.JToken>(Url => global::PCL.ModDownload.DlModRequest(Url)),
+                ParseVersion = global::PCL.ResourceVersion.FromPlatformJson,
                 EnsureWithin = new Action<global::System.String, global::System.String>((Root, FileName) => global::PCL.InstanceResourceStore.EnsureWithin(Root, FileName)),
                 Message = new Func<global::System.String, global::System.String, global::System.String, global::System.String, global::System.Boolean, global::System.Int32>((Caption, Title, Button1, Button2, Warn) => global::PCL.ModMain.MyMsgBox(Caption, Title, Button1, Button2, IsWarn: Warn)),
                 Preview = global::PCL.ModpackUpdateFlow.Preview,

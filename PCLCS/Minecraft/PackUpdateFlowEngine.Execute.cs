@@ -19,20 +19,41 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
             instance = RecoverInstance(instance);
         }
         string root = host.GameRoot(instance);
+        string originPath = update.Target(host.VersionFolder(instance), PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.ManifestName);
+        string? originBefore = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(originPath, token: token);
         JObject? baseline = update.ReadManifest(host.VersionFolder(instance));
+        EnsureOriginUnchanged();
+        double inputStart = 0.03;
         if (PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.RequiresBaselineRepair(baseline)) {
+            TPackage? original = null;
+            string? automaticFailure = null;
+            if (baseline is not null) {
+                try {
+                    original = DownloadRecordedOriginal(baseline, stage, token, host.Progress(task, 0.03, 0.08));
+                    if (original is not null) ValidateOriginalPackage(original, baseline, host.Version(instance).VanillaName, host.Version(instance).ModLoaderVersions);
+                } catch (OperationCanceledException) { throw; }
+                catch (Exception error) when (!token.IsCancellationRequested) {
+                    original = null;
+                    automaticFailure = "自动获取或核对当前原包未完成，请手动选择。\r\n";
+                    host.Info("自动补全整合包作者记录未完成：" + error.Message);
+                }
+            }
             string known = baseline is null ? "" : "\r\n已记录：" + baseline["name"] + " " + baseline["version"];
-            if (host.Message("作者文件记录缺失或不完整。请选择当前版本原始整合包，以恢复作者声明并区分个人修改。" + known, "补全整合包记录", "选择原始包", "取消", false) != 1) throw new OperationCanceledException();
-            TPackage original = update.ReadPackage(SelectArchive("选择当前版本原始整合包"), Path.Combine(stage, "original"), token);
-            ValidateOriginalPackage(original, baseline, host.Version(instance).VanillaName, host.Version(instance).ModLoaderVersions);
-            original.Source = baseline?["source"] as JObject;
+            if (original is null) {
+                if (host.Message(automaticFailure + "作者文件记录缺失或不完整。请选择当前版本原始整合包，以恢复作者声明并区分个人修改。" + known, "补全整合包记录", "选择原始包", "取消", false) != 1) throw new OperationCanceledException();
+                original = update.ReadPackage(SelectArchive("选择当前版本原始整合包"), Path.Combine(stage, "original"), token);
+                ValidateOriginalPackage(original, baseline, host.Version(instance).VanillaName, host.Version(instance).ModLoaderVersions);
+                original.Source = baseline?["source"] as JObject;
+            }
             baseline = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Manifest(original);
+            inputStart = 0.08; host.SetProgress(task, inputStart);
         }
         JObject? source = null;
-        if (online) archivePath = ChooseOnline(baseline!, stage, token, ref source, host.Progress(task, 0.03, 0.12));
+        if (online) archivePath = ChooseOnline(baseline!, stage, token, ref source, host.Progress(task, inputStart, 0.12));
         host.SetProgress(task, 0.12);
         TPackage package = update.ReadPackage(archivePath!, Path.Combine(stage, "next"), token);
         package.Source = source;
+        EnsureOriginUnchanged();
         TPlan plan = update.Plan(root, baseline, package, token);
         host.SetProgress(task, 0.15);
         update.DownloadChanges(plan, stage, token, (files, cancel) => host.Download(files, cancel, host.Progress(task, 0.15, 0.65)));
@@ -83,12 +104,17 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         host.BeforeMinecraftChange(instance, host.Version(instance).VanillaName, package.Minecraft!, token);
         host.SetProgress(task, 0.87); host.CaptureHistory(instance, "整合包更新前", token);
         host.SetProgress(task, 0.9);
+        EnsureOriginUnchanged();
         update.ValidateChoices(plan, token);
         int operationCount = plan.Changes.Where(item => item.ApplyAuthor).Sum(item => item.Incoming is null ? item.LocalRelative is null ? 0 : 1 :
             1 + (item.LocalRelative is not null && !item.LocalRelative.Equals(item.DestinationRelative, StringComparison.OrdinalIgnoreCase) ? 1 : 0)) + extras.Count + 1;
         string backup = update.Commit(plan, host.VersionFolder(instance), token, extras, index => host.SetProgress(task, 0.9 + 0.08 * index / Math.Max(1, operationCount)));
         host.SetProgress(task, 0.98); host.SetOutput(task, backup);
         ReloadInstance(instance); host.Info("整合包更新完成，原文件备份：" + backup);
+        void EnsureOriginUnchanged() {
+            if (!Same(originBefore, PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(originPath, token: token)))
+                throw new IOException("整合包作者记录在处理期间发生变化，请重新检查更新；未覆盖变动后的记录。");
+        }
     }
     // A same-Minecraft archive is insufficient evidence for a legacy, possibly
     // pruned origin record. Keep every surviving author declaration as a check.
