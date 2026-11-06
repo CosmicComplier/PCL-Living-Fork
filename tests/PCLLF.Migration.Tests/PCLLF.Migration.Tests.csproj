@@ -40,6 +40,8 @@
     <Compile Include="../../PCLCS/Minecraft/LegacyMinecraftContracts.cs" Link="Production/Minecraft/LegacyMinecraftContracts.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateContracts.cs" Link="Production/Minecraft/PackUpdateContracts.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Package.cs" Link="Production/Minecraft/PackUpdateEngine.Package.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Baseline.cs" Link="Production/Minecraft/PackUpdateEngine.Baseline.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateModInspection.cs" Link="Production/Minecraft/PackUpdateModInspection.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Plan.cs" Link="Production/Minecraft/PackUpdateEngine.Plan.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Transactions.cs" Link="Production/Minecraft/PackUpdateEngine.Transactions.cs" />
     <Compile Include="../../PCLCS/Resources/ResourceVersionModels.cs" Link="Production/Resources/ResourceVersionModels.cs" />

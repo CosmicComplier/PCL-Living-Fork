@@ -63,7 +63,13 @@ internal static class ModpackUpdateChecks
         }, new() { ["mods/stable.jar"] = "stable", ["mods/new.jar"] = "download-new" }), Path.Combine(root, "new-stage"));
         object plan = Update("Plan", game, baseline, next)!;
         Check(plan.GetType().Assembly == Native.Main, "MP-identity", "plan must be the real Main DTO, not a fixture model");
-        Check(Changes(plan).Count(Conflict) == 4, "MP-01", "personal config/options/waypoints/deletion were not preserved");
+        string[] originalPreserved = { "config/custom.txt", "options.txt", "xaerowaypoints/server/map.txt", "mods/disabled.jar" };
+        object[] originalConflicts = Changes(plan).Where(change => originalPreserved.Contains(Text(change, "Relative"), StringComparer.OrdinalIgnoreCase)).ToArray();
+        Check(originalConflicts.Length == 4 && originalConflicts.All(Conflict), "MP-01", "personal config/options/waypoints/deletion were not preserved");
+        object personalAddition = Changes(plan).Single(change => Text(change, "Relative") == "mods/personal.jar");
+        Check(Changes(plan).Count(Conflict) == 5 && Conflict(personalAddition) && (bool)Get(personalAddition, "DisplayOnly")! &&
+            Get(personalAddition, "Ownership")!.ToString() == "PersonalAdded" && !(bool)personalAddition.GetType().GetProperty("ApplyAuthor")!.GetValue(personalAddition)!,
+            "MP-01-personal-preview", "The additional personal mod must be shown once as retained, without scheduling an operation or weakening the original four conflict checks");
         Check(!Changes(plan).Any(change => Text(change, "Relative") == "mods/stable.jar"), "MP-02", "unchanged file scheduled for download");
         int downloads = 0;
         Action<List<ModNet.NetFile>, CancellationToken> download = (files, token) =>

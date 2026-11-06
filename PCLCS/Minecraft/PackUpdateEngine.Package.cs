@@ -16,7 +16,7 @@ namespace PCLCS;
 public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>
     where TFile : PackUpdateFileData where TPackage : PackUpdatePackageData<TFile>
     where TChange : PackUpdateChangeData<TFile> where TPlan : PackUpdatePlanData<TPackage, TChange> {
-    public const string ManifestName = @"PCL\ModpackOrigin.json";
+    public const string ManifestName = "PCL/ModpackOrigin.json";
     private readonly PackUpdateHost<TFile, TPackage, TChange, TPlan, TNetFile> host;
     public PackUpdateEngine(PackUpdateHost<TFile, TPackage, TChange, TPlan, TNetFile> host) { this.host = host; }
     private static bool Same(string? left, string? right) => (left ?? "") == (right ?? "");
@@ -35,15 +35,44 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         if (Directory.Exists(result)) throw new IOException("文件位置已被文件夹占用：" + relative);
         return result;
     }
-    public static string? Digest(string fileName, string algorithm = "sha1") {
+    public static string? Digest(string fileName, string algorithm = "sha1", CancellationToken token = default) {
+        token.ThrowIfCancellationRequested();
+        algorithm = HashAlgorithmName(algorithm);
         if (!File.Exists(fileName)) return null;
         using (Stream input = File.OpenRead(fileName))
-        using (HashAlgorithm hasher = Same(algorithm, "md5") ? (HashAlgorithm)MD5.Create() : Same(algorithm, "sha512") ? (HashAlgorithm)SHA512.Create() : SHA1.Create())
-            return algorithm + ":" + BitConverter.ToString(hasher.ComputeHash(input)).Replace("-", "").ToLowerInvariant();
+        using (HashAlgorithm hasher = algorithm switch { "md5" => MD5.Create(), "sha1" => SHA1.Create(), "sha256" => SHA256.Create(), "sha512" => SHA512.Create(), _ => throw new IOException("不支持的整合包校验算法。") }) {
+            byte[] buffer = new byte[64 * 1024];
+            while (true) {
+                token.ThrowIfCancellationRequested();
+                int read = input.Read(buffer, 0, buffer.Length);
+                token.ThrowIfCancellationRequested();
+                if (read == 0) break;
+                hasher.TransformBlock(buffer, 0, read, buffer, 0);
+            }
+            hasher.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            token.ThrowIfCancellationRequested();
+            return algorithm + ":" + BitConverter.ToString(hasher.Hash!).Replace("-", "").ToLowerInvariant();
+        }
     }
-    public static bool Matches(string fileName, string? expected) => expected is not null && Same(Digest(fileName, expected.Split(':')[0]), expected);
+    private static string HashAlgorithmName(string algorithm) {
+        string value = algorithm.ToLowerInvariant();
+        if (!new[] { "md5", "sha1", "sha256", "sha512" }.Contains(value)) throw new IOException("不支持的整合包校验算法：" + algorithm);
+        return value;
+    }
+    public static string NormalizeHash(string expected) {
+        string[] parts = expected.Split(':');
+        if (parts.Length != 2) throw new IOException("整合包文件缺少有效校验值。");
+        return ValidHash(parts[0], parts[1]);
+    }
+    public static bool Matches(string fileName, string? expected, CancellationToken token = default) {
+        token.ThrowIfCancellationRequested();
+        if (expected is null) return false;
+        string normalized = NormalizeHash(expected);
+        return Same(Digest(fileName, normalized.Split(':')[0], token), normalized);
+    }
     public static string ValidHash(string algorithm, string? value) {
-        int length = Same(algorithm, "md5") ? 32 : Same(algorithm, "sha512") ? 128 : 40;
+        algorithm = HashAlgorithmName(algorithm);
+        int length = algorithm switch { "md5" => 32, "sha1" => 40, "sha256" => 64, "sha512" => 128, _ => throw new IOException("不支持的整合包校验算法。") };
         if (!Regex.IsMatch(value ?? "", @"\A[0-9a-fA-F]{" + length + @"}\z")) throw new IOException("整合包文件缺少有效校验值。");
         return algorithm + ":" + value!.ToLowerInvariant();
     }
@@ -96,12 +125,18 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                     if (item["env"]?["client"]?.ToString() == "unsupported") continue;
                     TFile value = host.CreateFile();
                     value.Relative = RelativePath(item["path"]!.ToString());
-                    value.Hash = ValidHash("sha1", item["hashes"]?["sha1"]?.ToString());
+                    value.Hash = item["hashes"]?["sha1"] is not null ? ValidHash("sha1", item["hashes"]!["sha1"]!.ToString()) : ValidHash("sha512", item["hashes"]?["sha512"]?.ToString());
                     value.OptionalFile = item["env"]?["client"]?.ToString() == "optional";
                     value.Urls = ((JArray)item["downloads"]!).Select(url => url.ToString()).ToList();
                     foreach (string url in value.Urls) {
-                        Match match = Regex.Match(url, @"\Ahttps://cdn\.modrinth\.com/data/([A-Za-z0-9]+)/versions/");
-                        if (match.Success) { value.Identity = "modrinth:" + match.Groups[1].Value; break; }
+                        Match project = Regex.Match(url, @"\Ahttps://cdn\.modrinth\.com/data/([A-Za-z0-9]+)/versions/");
+                        if (!project.Success) continue;
+                        value.Identity = "modrinth:" + project.Groups[1].Value;
+                        // Historical URLs also use version names containing dots, plus signs or escapes.
+                        // Project ownership remains known even when no exact platform version ID is available.
+                        Match version = Regex.Match(url, @"\Ahttps://cdn\.modrinth\.com/data/[A-Za-z0-9]+/versions/([A-Za-z0-9]+)/");
+                        if (version.Success) value.FileIdentity = "modrinth:" + version.Groups[1].Value;
+                        break;
                     }
                     AddFile(result, value);
                 }
@@ -130,6 +165,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                         value.Relative = RelativePath(folder + "/" + version.FileName);
                         value.Hash = ValidHash(version.Hash?.Length == 32 ? "md5" : "sha1", version.Hash);
                         value.Identity = "curseforge:" + item["projectID"]!.ToString();
+                        value.FileIdentity = "curseforge:" + item["fileID"]!.ToString();
                         value.OptionalFile = item["required"] is not null && !(bool)item["required"]!;
                         value.Urls = version.DownloadUrls!.ToList();
                         AddFile(result, value);
@@ -152,7 +188,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                     string payload = Target(stage, "payload/" + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(Path.GetDirectoryName(payload)!);
                     using (Stream input = item.Open()) using (Stream output = File.Create(payload)) input.CopyTo(output);
-                    TFile value = host.CreateFile(); value.Relative = relative; value.Payload = payload; value.Hash = Digest(payload);
+                    TFile value = host.CreateFile(); value.Relative = relative; value.Payload = payload; value.Hash = Digest(payload, token: token);
                     result.Files[relative] = value;
                 }
             }
@@ -169,8 +205,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     }
     public static JObject Manifest(TPackage package) {
         JObject files = new();
-        foreach (TFile item in package.Files.Values) files[item.Relative!] = new JObject(new JProperty("hash", item.Hash), new JProperty("identity", item.Identity));
-        return new JObject(new JProperty("schema", 1), new JProperty("name", package.Name), new JProperty("version", package.Version), new JProperty("minecraft", package.Minecraft),
+        foreach (TFile item in package.Files.Values) files[RelativePath(item.Relative!)] = new JObject(new JProperty("hash", NormalizeHash(item.Hash ?? "")), new JProperty("identity", item.Identity),
+            new JProperty("fileIdentity", item.FileIdentity), new JProperty("optional", item.OptionalFile), new JProperty("state", "declared"));
+        return new JObject(new JProperty("schema", 2), new JProperty("complete", true), new JProperty("name", package.Name), new JProperty("version", package.Version), new JProperty("minecraft", package.Minecraft),
             new JProperty("loaders", JObject.FromObject(package.Loaders)), new JProperty("files", files), new JProperty("source", package.Source));
     }
     public JObject? ReadManifest(string versionFolder) {
@@ -178,8 +215,68 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         if (!File.Exists(fileName)) return null;
         if (new FileInfo(fileName).Length > 16 * 1024 * 1024) throw new IOException("整合包作者清单过大。");
         JObject result = JObject.Parse(File.ReadAllText(fileName));
-        if ((int)result["schema"]! != 1 || result["files"] is not JObject) throw new IOException("不支持此版本的整合包作者清单。");
+        string? schema = result["schema"]?.Type == JTokenType.Integer ? result["schema"]!.ToString() : null;
+        if ((schema != "1" && schema != "2") || result["files"] is not JObject files) throw new IOException("不支持此版本的整合包作者清单。");
+        ValidateOptionalManifestType(result, "complete", JTokenType.Boolean);
+        ValidateOptionalManifestType(result, "baselineNeedsRepair", JTokenType.Boolean);
+        if (schema == "2" && result["complete"]?.Type != JTokenType.Boolean) throw InvalidManifest();
+        ValidateOptionalManifestType(result, "source", JTokenType.Object);
+        ValidateOptionalManifestType(result, "minecraft", JTokenType.String);
+        ValidateOptionalManifestType(result, "loaders", JTokenType.Object);
+        if (result["loaders"] is JObject loaders) foreach (JProperty loader in loaders.Properties())
+            if (loader.Value.Type != JTokenType.String) throw InvalidManifest();
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (JProperty file in files.Properties()) {
+            ManifestPath(file.Name);
+            if (!seen.Add(file.Name)) throw new IOException("整合包作者清单包含重复路径，请重新提供正确的旧整合包。");
+            if (file.Value is not JObject value || value["hash"]?.Type != JTokenType.String) throw new IOException("整合包作者清单缺少原始校验值，请重新提供正确的旧整合包。");
+            value["hash"] = NormalizeHash(value["hash"]!.ToString());
+            foreach (string field in new[] { "identity", "fileIdentity", "state" }) ValidateOptionalManifestType(value, field, JTokenType.String);
+            ValidateOptionalManifestType(value, "optional", JTokenType.Boolean);
+            ValidateOptionalManifestType(value, "baselineRelative", JTokenType.String);
+            if (value["baselineRelative"]?.Type == JTokenType.String) ManifestPath(value["baselineRelative"]!.ToString());
+            ValidateOptionalManifestType(value, "originalHash", JTokenType.String);
+            if (value["originalHash"]?.Type == JTokenType.String) value["originalHash"] = NormalizeHash(value["originalHash"]!.ToString());
+            ValidateOptionalManifestType(value, "local", JTokenType.Object);
+            if (value["local"] is JObject local) {
+                if (local["relative"]?.Type != JTokenType.String || local["hash"]?.Type != JTokenType.String) throw InvalidManifest();
+                ManifestPath(local["relative"]!.ToString());
+                local["hash"] = NormalizeHash(local["hash"]!.ToString());
+                ValidateOptionalManifestType(local, "ownership", JTokenType.String);
+                if (local["ownership"]?.Type == JTokenType.String && local["ownership"]!.ToString() is not ("author" or "personal-added" or "ambiguous")) throw InvalidManifest();
+            }
+            ValidateOptionalManifestType(value, "localCandidates", JTokenType.Array);
+            if (value["localCandidates"] is JArray candidates) foreach (JToken candidate in candidates) {
+                if (candidate.Type != JTokenType.String) throw InvalidManifest();
+                ManifestPath(candidate.ToString());
+            }
+        }
+        ValidateOptionalManifestType(result, "retained", JTokenType.Object);
+        if (result["retained"] is JObject retained) foreach (JProperty file in retained.Properties()) {
+            ManifestPath(file.Name);
+            if (file.Value is not JObject value) throw new IOException("整合包保留文件记录无效，请重新提供正确的旧整合包。");
+            if (value["authorRelative"]?.Type != JTokenType.String || value["hash"]?.Type != JTokenType.String || value["observedHash"]?.Type != JTokenType.String) throw InvalidManifest();
+            ManifestPath(value["authorRelative"]!.ToString());
+            value["hash"] = NormalizeHash(value["hash"]!.ToString());
+            value["observedHash"] = NormalizeHash(value["observedHash"]!.ToString());
+            foreach (string field in new[] { "identity", "fileIdentity", "state", "ownership" }) ValidateOptionalManifestType(value, field, JTokenType.String);
+            if (value["ownership"]?.Type == JTokenType.String && value["ownership"]!.ToString() != "personal-retained") throw InvalidManifest();
+        }
+        if (schema == "1") {
+            // Historical RecordInstalled pruned absent/modified files. Do not silently
+            // promote that filtered inventory to a complete author declaration.
+            result["complete"] = false;
+            result["baselineNeedsRepair"] = true;
+        }
         return result;
+    }
+    private static IOException InvalidManifest() => new("整合包作者或本地状态记录无效，请重新提供正确的旧整合包。");
+    private static void ValidateOptionalManifestType(JObject value, string field, JTokenType type) {
+        if (value[field] is JToken token && token.Type != JTokenType.Null && token.Type != type) throw InvalidManifest();
+    }
+    private static void ManifestPath(string relative) {
+        RelativePath(relative);
+        if (IsPrivate(relative)) throw InvalidManifest();
     }
     public JObject? Detect(string versionFolder) {
         JObject? recorded = ReadManifest(versionFolder);
@@ -200,8 +297,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         try {
             TPackage package = ReadPackage(archivePath, stage, CancellationToken.None); package.Source = source;
             string root = host.InstanceGameRoot(versionFolder);
-            foreach (string relative in package.Files.Keys.ToList()) if (!Matches(Target(root, relative), package.Files[relative].Hash)) package.Files.Remove(relative);
-            host.AtomicWrite(Target(versionFolder, ManifestName), Encoding.UTF8.GetBytes(Manifest(package).ToString()));
+            JObject manifest = Manifest(package);
+            foreach (JProperty entry in ((JObject)manifest["files"]!).Properties()) ObserveInstalledFile(root, entry.Name, (JObject)entry.Value);
+            host.AtomicWrite(Target(versionFolder, ManifestName), Encoding.UTF8.GetBytes(manifest.ToString()));
         } catch (Exception ex) { host.Warn(ex, "整合包已安装，但记录作者文件清单失败；更新时可重新提供原始整合包"); }
     }
 }

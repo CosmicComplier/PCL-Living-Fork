@@ -16,22 +16,27 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     // keep the current before/after guards and reverse rollback under the caller's real workload lock.
     public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null) {
         token.ThrowIfCancellationRequested();
+        ValidateChoices(plan, token);
         List<Tuple<string, string?, string?>> operations = new();
-        foreach (TChange change in plan.Changes.Where(item => !item.Conflict)) {
-            string fileName = Target(plan.Root!, change.Relative!);
-            if (!Same(Digest(fileName), change.Before)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + change.Relative);
-            operations.Add(Tuple.Create(fileName, change.Incoming?.Payload, change.Before));
+        foreach (TChange change in plan.Changes.Where(item => item.ApplyAuthor)) {
+            string? local = change.LocalRelative;
+            if (local is not null && !Same(Digest(Target(plan.Root!, local)), change.Before)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + local);
+            if (change.Incoming is null) {
+                if (local is not null) operations.Add(Tuple.Create(Target(plan.Root!, local), (string?)null, change.Before));
+                continue;
+            }
+            string fileName = Target(plan.Root!, change.DestinationRelative);
+            if (!Same(Digest(fileName), change.TargetBefore)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + change.DestinationRelative);
+            operations.Add(Tuple.Create(fileName, change.Incoming.Payload, change.TargetBefore));
+            if (local is not null && !local.Equals(change.DestinationRelative, StringComparison.OrdinalIgnoreCase))
+                operations.Add(Tuple.Create(Target(plan.Root!, local), (string?)null, change.Before));
         }
         if (extraFiles is not null) foreach (var pair in extraFiles)
             operations.Add(Tuple.Create(Target(versionFolder, pair.Key), (string?)pair.Value, Digest(Target(versionFolder, pair.Key))));
         string box = Target(versionFolder, "PCL/PackUpdateBackups/" + Guid.NewGuid().ToString("N") + "/transaction.json");
         Directory.CreateDirectory(Path.GetDirectoryName(box)!);
         string statePayload = Path.Combine(Path.GetDirectoryName(box)!, "next-manifest.json");
-        JObject nextManifest = Manifest(plan.Package!);
-        foreach (TChange change in plan.Changes.Where(item => item.Conflict)) {
-            JToken? previous = plan.Baseline!["files"]![change.Relative!];
-            if (previous is not null) nextManifest["files"]![change.Relative!] = previous.DeepClone();
-        }
+        JObject nextManifest = BuildNextManifest(plan, token);
         File.WriteAllText(statePayload, nextManifest.ToString());
         string statePath = Target(versionFolder, ManifestName);
         operations.Add(Tuple.Create(statePath, (string?)statePayload, Digest(statePath)));
@@ -42,6 +47,8 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
 
     public string ApplyTransactionWithProgress(string gameRoot, string versionFolder, List<Tuple<string, string?, string?>> operations, CancellationToken token, Action<double>? progress, Action<int>? beforeApply = null, string? box = null) {
         token.ThrowIfCancellationRequested();
+        if (operations.GroupBy(op => Path.GetFullPath(op.Item1), StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+            throw new IOException("更新存在重复的目标操作，请先确认文件关联，未修改当前实例。");
         if (box is null) box = Target(versionFolder, "PCL/PackUpdateBackups/" + Guid.NewGuid().ToString("N") + "/transaction.json");
         Directory.CreateDirectory(Path.GetDirectoryName(box)!);
         int checkedCount = 0, count = Math.Max(1, operations.Count);
