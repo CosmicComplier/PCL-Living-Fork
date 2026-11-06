@@ -26,6 +26,10 @@ internal static class VisualAssetGalleryChecks
             Native.Call(page.GetType(), "ShowResources", page, shots, shots, items);
             UniformGrid grid = VisualAssetChecks.Find<UniformGrid>(page, "PanScreenshots");
             VisualAssetChecks.Check("gallery", 61, grid.Columns == 2 && grid.Children.Count == 3 && grid.Visibility == Visibility.Visible && page.FindName("CardPreview") is null);
+            object[] displayed = grid.Children.Cast<FrameworkElement>().Select(tile => Native.Get(tile, "Entry")!).ToArray();
+            Native.Check(displayed.Length == entries.Length && displayed.ToHashSet().SetEquals(entries), "Gallery sorting changed the scanned screenshot set.");
+            // Click indices refer to the current visible order, including the active addition-time direction.
+            entries = displayed;
             int opened = 0; ProcessStartInfo? info = null;
             Action<ProcessStartInfo> open = value => { opened++; info = value; };
             void Click(object entry, int count) => Native.Call(page.GetType(), "ScreenshotClick", page, entry, count, open);

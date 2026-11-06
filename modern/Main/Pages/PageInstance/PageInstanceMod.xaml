@@ -19,13 +19,19 @@
                         </WrapPanel>
                     </local:MyCard>
                     <local:MyCard x:Name="PanListBack" VerticalAlignment="Top" Opacity="0" Margin="0,0,0,14" Title=" " MinHeight="55">
-                        <StackPanel x:Name="PanFilter" Margin="15,13,0,0" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Height="28">
+                        <StackPanel>
+                          <DockPanel x:Name="PanSortHeader" Margin="15,13,15,0" LastChildFill="True">
+                           <local:MyIconTextButton x:Name="BtnSort" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8,2,0,0"
+                                                  Click="SortClick" ToolTip="点击切换添加时间的正序／倒序；倒序为最近添加在前。时间取本地创建时间，复制、解压和迁移可能改变它。" />
+                           <StackPanel x:Name="PanFilter" Orientation="Horizontal" VerticalAlignment="Top" MinHeight="28">
                             <local:MyRadioButton Tag="0" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="全部" x:Name="BtnFilterAll" Checked="True" />
                             <local:MyRadioButton Tag="1" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="已启用" x:Name="BtnFilterEnabled" />
                             <local:MyRadioButton Tag="2" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="已禁用" x:Name="BtnFilterDisabled" />
                             <local:MyRadioButton Tag="3" ColorType="Highlight" VerticalAlignment="Center" Margin="2,0" Text="可更新" x:Name="BtnFilterCanUpdate" />
+                           </StackPanel>
+                          </DockPanel>
+                          <StackPanel Margin="20,7,18,22" Name="PanList" VerticalAlignment="Top" />
                         </StackPanel>
-                        <StackPanel Margin="20,48,18,22" Name="PanList" VerticalAlignment="Top" />
                     </local:MyCard>
                 </StackPanel>
             </local:MyScrollViewer>

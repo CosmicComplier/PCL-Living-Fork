@@ -65,6 +65,8 @@ namespace PCL
             var View = this.CreateView();
             var Host = this.CreateHost();
             this.Controller = new global::PCLCS.ResourcePageController<global::PCL.ModMinecraft.McInstance, global::PCL.InstanceResourceEntry, global::PCL.InstanceResourceOnlineInfo>((global::System.Int32)Kind, View, Host, new global::PCLCS.InstanceResourceTransactions(global::MeloongCore.PathUtils.RemoveExtendedPrefix));
+            LocalResourceUi.InitializeSortButton(this.BtnSort, ToggleSort, this.PanSortHeader, this.PanFilter);
+            LocalResourceUi.UpdateSortButton(this.BtnSort, this.Controller.SortMode);
             this.ResourceLoader = new global::PCL.ModLoader.LoaderTask<global::PCLCS.ResourcePageController<global::PCL.ModMinecraft.McInstance, global::PCL.InstanceResourceEntry, global::PCL.InstanceResourceOnlineInfo>.Request, global::PCLCS.ResourcePageController<global::PCL.ModMinecraft.McInstance, global::PCL.InstanceResourceEntry, global::PCL.InstanceResourceOnlineInfo>.Result>("读取游戏资源", this.ReadResources);
             this.PageLoaderInit(this.Load, this.PanLoad, this.PanAllBack, (global::System.Windows.FrameworkElement)null, this.ResourceLoader, this.ResourcesLoaded, AutoRun: false);
         }
@@ -79,6 +81,8 @@ namespace PCL
                 PanOperations = PanOperations,
                 PanResourceList = PanResourceList,
                 PanFilter = PanFilter,
+                SortHeader = PanSortHeader,
+                SortControl = BtnSort,
                 BackupSettings = BackupSettings,
                 PanList = PanList,
                 PanWorlds = PanWorlds,
@@ -290,6 +294,16 @@ namespace PCL
         private void SearchChanged()
         {
             this.Controller?.SearchChanged();
+        }
+
+        private void SortClick(object sender, ModBase.RouteEventArgs args) => ToggleSort();
+        private void ToggleSort()
+        {
+            if (this.Controller is null || this.Controller.IsRecycleMode || !this.BtnSort.IsEnabled) return;
+            int next = this.Kind == global::PCL.InstanceResourceKind.Saves
+                ? (this.Controller.SortMode == 3 ? 4 : 3) : (this.Controller.SortMode == 1 ? 2 : 1);
+            this.Controller.SortChanged(next);
+            LocalResourceUi.UpdateSortButton(this.BtnSort, this.Controller.SortMode);
         }
 
         private void FilterChanged(global::PCL.MyRadioButton Sender, global::System.Boolean User)
