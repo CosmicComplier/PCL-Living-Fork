@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PCL;
@@ -41,6 +42,7 @@ internal static class ModpackUpdateUxChecks
         ModpackDownloadProcess.RunParent();
         VersionsAndPreview(Path.Combine(root, "preview"));
         ConflictChoicesAndOwnership(Path.Combine(root, "ownership-preview"));
+        LargeNoticesScroll(Path.Combine(root, "large-preview"));
         Console.WriteLine("PASS native modpack-update UX: UX-P1..P4 and UX-01..UX-13 (actual loopback, selection/modal and read-only preview).");
     }
 
@@ -191,7 +193,10 @@ internal static class ModpackUpdateUxChecks
         ((ContentControl)previewModal.FindName("PanCaption")).Content = null;
         FrameworkElement compact = (FrameworkElement)preview; compact.MaxHeight = 240; compact.Width = 460;
         Render(compact, Path.Combine(folder, "modpack-preview-compact.png"), 470, 250);
-        Check(((UniformGrid)Get(preview, "Filters")!).Columns == 2, "UX-11", "compact categories did not wrap to two columns");
+        Check(((UniformGrid)Get(preview, "Filters")!).Columns == 4, "UX-11", "compact categories unnecessarily consumed a second row");
+        compact.Width = 340;
+        Render(compact, Path.Combine(folder, "modpack-preview-narrow.png"), 350, 250);
+        Check(((UniformGrid)Get(preview, "Filters")!).Columns == 2, "UX-11-narrow", "narrow categories did not wrap to keep their labels readable");
         Check(Changes(plan).Count == before && Changes(plan).Count(Conflict) == conflicts, "UX-12", "preview mutated original plan");
         Check(new[] { "modpack-version-selector.png", "modpack-update-preview.png", "modpack-removals-preview.png", "modpack-preview-compact.png" }.All(name => new FileInfo(Path.Combine(folder, name)).Length > 8), "UX-13", "actual offscreen WPF renders missing");
     }
@@ -265,7 +270,8 @@ internal static class ModpackUpdateUxChecks
         string[] header = Texts((StackPanel)Get(preview, "Header")!);
         Check(header.Any(text => text.Contains("1.21.11 → 26.1.2", StringComparison.Ordinal)) && header.Any(text => text.Contains("0.18.4 → 0.19.3", StringComparison.Ordinal)),
             "UX-C11", "Minecraft/loader changes omitted before and after versions");
-        Expander[] notices = Descendants((StackPanel)Get(preview, "Header")!).OfType<Expander>().ToArray();
+        Expander[] notices = Descendants((StackPanel)Get(preview, "Rows")!).OfType<Expander>()
+            .Where(details => details.Header?.ToString()?.StartsWith("需要核对", StringComparison.Ordinal) == true || details.Header?.ToString()?.StartsWith("保留模组", StringComparison.Ordinal) == true).ToArray();
         Check(notices.Length == 2 && notices.Any(details => details.Header?.ToString()?.Contains("兼容性", StringComparison.Ordinal) == true && Texts(details).Any(text => text.Contains("不兼容", StringComparison.Ordinal))),
             "UX-C12", "retained-mod compatibility evidence was not accessible in preview");
         Render((FrameworkElement)preview, Path.Combine(folder, "modpack-ownership-and-choices.png"));
@@ -282,6 +288,61 @@ internal static class ModpackUpdateUxChecks
     }
 
     private static object? Property(object target, string name) => Native.Property(target.GetType(), name).GetValue(target);
+    private static void LargeNoticesScroll(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        object package = New("PackUpdatePackage");
+        Set(package, "Name", "Large update preview"); Set(package, "Version", "2"); Set(package, "Minecraft", "26.3");
+        ((IDictionary)Get(package, "Loaders")!).Add(ModLoaders.Fabric, "0.20.0");
+        object plan = New("PackUpdatePlan"); Set(plan, "Package", package);
+        var graph = new PackDependencyGraphResult();
+        for (int index = 0; index < 36; index++) {
+            ((List<string>)Get(plan, "Warnings")!).Add("需要核对来源：mods/author-file-" + index + ".jar");
+            ((List<string>)Get(plan, "RuntimeWarnings")!).Add("保留模组需要核对新运行时：mods/personal-" + index + ".jar");
+            graph.Errors.Add("默认组合需要调整的依赖：dependency-" + index);
+            graph.Warnings.Add("默认组合尚待确认的声明：unknown-" + index);
+            object change = New("PackUpdateChange"), incoming = New("PackUpdateFile");
+            string path = "mods/author-file-" + index + ".jar";
+            Set(incoming, "Relative", path); Set(change, "Relative", path); Set(change, "Incoming", incoming);
+            Set(change, "Before", "sha1:fixture"); Set(change, "Conflict", true); Set(change, "Ownership", PackUpdateOwnership.PersonalModified);
+            ((IList)Get(plan, "Changes")!).Add(change);
+        }
+        Set(plan, "DependencyCheck", graph);
+        FrameworkElement preview = (FrameworkElement)Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
+        preview.Width = 460; preview.MaxHeight = 240;
+        ScrollViewer scroll = (ScrollViewer)Get(preview, "Scroller")!;
+        Render(preview, Path.Combine(folder, "long-notices-collapsed.png"), 470, 250, () => {
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0,
+                "Long update notices consumed the fixed header and starved the file-list scroll viewport: viewport=" + scroll.ViewportHeight);
+            double collapsed = scroll.ScrollableHeight;
+            Expander[] details = Descendants((StackPanel)Get(preview, "Rows")!).OfType<Expander>().ToArray();
+            Native.Check(details.Length == 5 && details.All(item => !item.IsExpanded), "Preview evidence is missing or expanded into a wall of text by default.");
+            foreach (Expander detail in details) detail.IsExpanded = true;
+            preview.UpdateLayout();
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > collapsed, "Expanded evidence escaped the shared scroll viewport.");
+            Native.Check(Descendants(preview).OfType<ScrollViewer>().Count() == 1, "Nested evidence scroll viewers can trap the mouse wheel.");
+            scroll.ScrollToBottom(); preview.UpdateLayout();
+            Native.Check(scroll.VerticalOffset > 0, "Large update preview could not scroll to the final file.");
+        });
+        foreach (Expander detail in Descendants((StackPanel)Get(preview, "Rows")!).OfType<Expander>()) detail.IsExpanded = false;
+        preview.Width = double.NaN;
+        MyMsgText modal = Dialog(preview, "整合包更新预览", "按以上选择更新");
+        modal.MaxHeight = 460; preview.MaxHeight = 240;
+        Render(modal, Path.Combine(folder, "long-preview-modal.png"), 840, 520, () => {
+            scroll.ScrollToTop(); modal.UpdateLayout();
+            FrameworkElement confirm = (FrameworkElement)modal.FindName("Btn1");
+            Rect button = confirm.TransformToAncestor(modal).TransformBounds(new Rect(confirm.RenderSize));
+            Native.Check(button.Height > 0 && button.Top >= 0 && button.Bottom <= modal.ActualHeight + 1, "Compact preview clipped its confirmation action.");
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0, "Actual modal wrapper removed the file-list viewport.");
+            ScrollViewer outer = (ScrollViewer)modal.FindName("PanCaption");
+            Native.Check(Math.Abs(preview.ActualWidth - outer.ViewportWidth) <= 1, "Preview content left unused horizontal space inside the modal.");
+            Native.Check(outer.ScrollableHeight == 0, "The disabled modal wrapper can intercept the inner list's mouse wheel.");
+            MouseWheelEventArgs wheel = new(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = UIElement.PreviewMouseWheelEvent };
+            scroll.RaiseEvent(wheel);
+            Native.Check(wheel.Handled, "The genuine native preview list did not accept the mouse wheel.");
+        });
+        Console.WriteLine("PASS large modpack preview: bounded compact header, collapsed/expanded evidence in one scroll viewport, reachable final file, real modal footer and mouse-wheel routing.");
+    }
     private static object Construct(string name, params object?[] values)
     {
         var constructor = Native.Type("PCL." + name).GetConstructors(Native.Flags).Single(info => info.GetParameters().Length == values.Length);
@@ -295,16 +356,22 @@ internal static class ModpackUpdateUxChecks
         ((TranslateTransform)modal.FindName("TransformPos")).Y = 0;
         return modal;
     }
-    private static void Render(FrameworkElement element, string path, int width = 820, int height = 640)
+    private static void Render(FrameworkElement element, string path, int width = 820, int height = 640, Action? verifyLayout = null)
     {
         Grid host = new() { Background = new SolidColorBrush(Color.FromRgb(231, 239, 251)) };
         host.Children.Add(element);
         try
         {
             host.Measure(new Size(width, height)); host.Arrange(new Rect(0, 0, width, height)); host.UpdateLayout();
+            verifyLayout?.Invoke();
             RenderTargetBitmap bitmap = new(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(host);
             PngBitmapEncoder encoder = new(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using FileStream stream = File.Create(path); encoder.Save(stream);
+            using (FileStream stream = File.Create(path)) encoder.Save(stream);
+            string? previews = Environment.GetEnvironmentVariable("PCLLF_MODPACK_PREVIEW_DIR");
+            if (!string.IsNullOrWhiteSpace(previews)) {
+                Directory.CreateDirectory(previews);
+                File.Copy(path, Path.Combine(previews, Path.GetFileName(Path.GetDirectoryName(path)) + "-" + Path.GetFileName(path)), true);
+            }
         }
         finally { host.Children.Clear(); }
     }

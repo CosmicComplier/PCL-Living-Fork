@@ -33,7 +33,7 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); Header.Margin = new Thickness(3, 0, 7, 0);
         Header.Children.Add(Label(title, 15, true)); Header.Children.Add(Label(subtitle, 12, false, "ColorBrushGray2", new Thickness(0, 5, 0, 0))); Children.Add(Header);
         Filters.Columns = filterCount; Filters.Margin = new Thickness(0, 13, 4, 7);
-        Filters.SizeChanged += (_, _) => Filters.Columns = filterCount == 4 && Filters.ActualWidth < 580 ? 2 : filterCount == 3 && Filters.ActualWidth < 430 ? 1 : filterCount;
+        Filters.SizeChanged += (_, _) => Filters.Columns = filterCount == 4 && Filters.ActualWidth < 420 ? 2 : filterCount == 3 && Filters.ActualWidth < 430 ? 1 : filterCount;
         SetRow(Filters, 1); Children.Add(Filters);
         Scroller = host.CreateScroll(); Scroller.Content = Rows; Scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Auto; Scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         SetRow(Scroller, 2); Children.Add(Scroller); Unloaded += (_, _) => host.StopAnimation(AnimationKey);

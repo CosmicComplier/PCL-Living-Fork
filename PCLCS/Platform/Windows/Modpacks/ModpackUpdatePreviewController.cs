@@ -15,26 +15,32 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     private readonly ModpackDialogController<TButton, TScroll> view;
     private readonly Action<int> setKind;
     private readonly TPlan plan;
+    private readonly StackPanel notices = new();
+    private readonly Expander noticeDetails;
+    private readonly TextBlock? noticeSummary;
     private static TKind Kind(int value) => (TKind)Enum.ToObject(typeof(TKind), value);
     private static bool Same(string? a, string? b) => (a ?? "") == (b ?? "");
     public ModpackUpdatePreviewController(ModpackDialogController<TButton, TScroll> view, TPlan plan, string currentMinecraft, Dictionary<ModLoaders, string> currentLoaders,
         Dictionary<TKind, int> counts, Action<int> setKind, Func<string, UIElement> hint) {
         this.view = view; this.counts = counts; this.setKind = setKind; this.plan = plan; Changes = plan.Changes.ToList();
         bool changed = !Same(currentMinecraft, plan.Package!.Minecraft) || !currentLoaders.OrderBy(pair => pair.Key).SequenceEqual(plan.Package.Loaders.OrderBy(pair => pair.Key));
-        if (changed) view.Header.Children.Add(hint("游戏版本或加载器将更新，请确认兼容性。存档会保留，更新前自动备份。"));
+        if (changed) notices.Children.Add(hint("游戏版本或加载器将更新。请核对兼容性；存档会保留，更新前自动备份。"));
         AddNotices("需要核对的文件与来源", plan.Warnings);
-        if (plan.RuntimeWarnings.Count > 0) view.Header.Children.Add(hint("保留模组包含已知兼容性风险或尚未确认的声明，请展开下方兼容性详情核对。"));
+        if (plan.RuntimeWarnings.Count > 0 && plan.DependencyCheck is null) notices.Children.Add(hint("保留模组有兼容性信息需要核对，可展开下方详情。"));
         AddNotices("保留模组的兼容性", plan.RuntimeWarnings);
         if (plan.DependencyCheck is PackDependencyGraphResult graph) {
-            view.Header.Children.Add(hint("以下依赖结果按默认方案检查；调整作者版本或个人覆盖后，确认时会重新检查完整组合。"));
-            if (graph.HasErrors) view.Header.Children.Add(hint("默认组合存在依赖或冲突问题。请调整作者版本和个人覆盖的选择；有确定冲突的组合不会提交。"));
-            else if (graph.HasUnknown) view.Header.Children.Add(hint("完整组合中有无法确认的声明，提交前需要另行确认；未知不表示兼容。"));
+            if (graph.HasErrors) noticeSummary = ModpackDialogController<TButton, TScroll>.Label("默认方案有依赖问题，请核对详情并调整选择。", 12, color: "ColorBrushRedLight", margin: new Thickness(4, 0, 7, 6));
+            else if (graph.HasUnknown) noticeSummary = ModpackDialogController<TButton, TScroll>.Label("部分兼容性声明待核对，确认时会重新检查所选组合。", 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 6));
+            if (graph.HasErrors) notices.Children.Add(hint("默认组合存在依赖或冲突问题，请调整下方选择。确认时会重新检查；有确定冲突时不会提交。"));
+            else if (graph.HasUnknown) notices.Children.Add(hint("部分声明尚待确认，可展开详情核对；确认更新时会按所选组合重新检查。"));
             AddNotices("默认更新组合的依赖与冲突", graph.Errors);
             AddNotices("默认更新组合的待确认声明", graph.Warnings);
         }
+        noticeDetails = new Expander { Header = "来源与兼容性详情", Content = notices, FontSize = 12, Margin = new Thickness(4, 0, 7, 9) };
+        noticeDetails.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
         foreach (int value in new[] { 0, 1, 2, 3 }) {
             counts[Kind(value)] = Changes.Count(item => Classify(item) == value);
-            view.AddFilter(KindName(value) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
+            view.AddFilter((value == 3 ? "保留/冲突" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
         }
         ShowKind(new[] { 3, 1, 0, 2 }.FirstOrDefault(value => counts[Kind(value)] > 0));
     }
@@ -65,7 +71,10 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     }
     public void ShowKind(int value) {
         setKind(value); view.BeginFilter(value);
-        string description = value == 3 ? "个人新增文件会保留。真实冲突默认保留个人版本，可逐项选择使用作者版本；待确认的文件不会自动删除。" : value == 2 ? "作者在新版中移除了以下文件，更新前会备份。" : value == 0 ? "新版将添加以下文件。" : "以下文件将替换为作者提供的新版，更新前会备份；仅改名的旧文件会从实际本地路径处理。";
+        // Notices share the finite file-list viewport; the fixed title/filter rows must stay compact.
+        if (noticeSummary is not null) view.Rows.Children.Add(noticeSummary);
+        if (notices.Children.Count > 0) view.Rows.Children.Add(noticeDetails);
+        string description = value == 3 ? "个人文件默认保留；真实冲突可逐项选择作者版本。" : value == 2 ? "以下作者文件将移除，更新前会自动备份。" : value == 0 ? "新版将添加以下文件。" : "以下文件将更新，原内容与改名文件均会备份。";
         view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(description, 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 10)));
         foreach (var group in Changes.Where(item => Classify(item) == value).GroupBy(item => FolderName(item.Relative!)).OrderBy(item => item.Key)) {
             view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(group.Key + "（" + group.Count() + "）", 13, true, margin: new Thickness(4, 3, 7, 9)));
@@ -93,15 +102,15 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         StackPanel content = new();
         foreach (string line in lines) content.Children.Add(ModpackDialogController<TButton, TScroll>.Label(line, 12, margin: new Thickness(4, 2, 4, 5)));
         Expander details = new() { Header = title + "（" + lines.Length + "）", Margin = new Thickness(0, 6, 0, 0),
-            Content = new ScrollViewer { Content = content, MaxHeight = 110, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } };
+            Content = content };
         details.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
-        view.Header.Children.Add(details);
+        this.notices.Children.Add(details);
     }
     private void AddChoice(StackPanel text, TChange change) {
         string group = "PackUpdateChoice_" + Guid.NewGuid().ToString("N");
-        StackPanel choices = new() { Margin = new Thickness(0, 8, 0, 0) };
-        RadioButton preserve = new() { Content = "保留当前版本", GroupName = group, IsChecked = change.Choice == PackUpdateChoice.PreservePersonal, Margin = new Thickness(0, 0, 0, 5), Tag = PackUpdateChoice.PreservePersonal };
-        RadioButton author = new() { Content = change.Incoming is null ? "使用作者方案（移除此文件）" : change.Ownership == PackUpdateOwnership.Disabled ? "使用作者版本（保持禁用）" : "使用作者版本", GroupName = group, IsChecked = change.Choice == PackUpdateChoice.UseAuthor, Tag = PackUpdateChoice.UseAuthor };
+        WrapPanel choices = new() { Margin = new Thickness(0, 8, 0, 0) };
+        RadioButton preserve = new() { Content = "保留当前版本", GroupName = group, IsChecked = change.Choice == PackUpdateChoice.PreservePersonal, FontSize = 12, Margin = new Thickness(0, 0, 18, 4), Tag = PackUpdateChoice.PreservePersonal };
+        RadioButton author = new() { Content = change.Incoming is null ? "使用作者方案（移除此文件）" : change.Ownership == PackUpdateOwnership.Disabled ? "使用作者版本（保持禁用）" : "使用作者版本", GroupName = group, IsChecked = change.Choice == PackUpdateChoice.UseAuthor, FontSize = 12, Margin = new Thickness(0, 0, 0, 4), Tag = PackUpdateChoice.UseAuthor };
         preserve.SetResourceReference(Control.ForegroundProperty, "ColorBrush1"); author.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
         preserve.Checked += (_, _) => { change.Choice = PackUpdateChoice.PreservePersonal; plan.AllowUnverifiedDependencies = false; };
         author.Checked += (_, _) => { change.Choice = PackUpdateChoice.UseAuthor; plan.AllowUnverifiedDependencies = false; };
