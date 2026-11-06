@@ -15,12 +15,24 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         public string? Relative;
         public bool HashVerified;
         public PackUpdateOwnership Ownership;
+        public bool PersonalComponentMatched;
+        public PackUpdateAssociation Association;
         public List<string> Candidates = new();
     }
     private static bool ModFile(string path) => path.StartsWith("mods/", StringComparison.OrdinalIgnoreCase) &&
         (EnabledModFile(path) || DisabledFile(path));
     private static bool EnabledModFile(string path) => new[] { ".jar", ".zip", ".litemod" }.Any(extension => path.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
     private static bool DisabledFile(string path) => path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".old", StringComparison.OrdinalIgnoreCase);
+    private static int ContentRole(string path) => ModFile(path) ? 1 :
+        path.StartsWith("resourcepacks/", StringComparison.OrdinalIgnoreCase) ? 2 :
+        path.StartsWith("shaderpacks/", StringComparison.OrdinalIgnoreCase) ? 3 :
+        path.StartsWith("datapacks/", StringComparison.OrdinalIgnoreCase) ? 4 : 0;
+    private static bool PlatformArchive(string path) => (ContentRole(path) is 2 or 3 or 4) &&
+        (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".jar", StringComparison.OrdinalIgnoreCase));
+    private static bool CurrentAssociationPolicy(JObject? baseline) => baseline?["associationPolicyVersion"]?.Type == JTokenType.Integer &&
+        baseline!["associationPolicyVersion"]!.Value<int>() == 2;
+    private static bool LegacyAssociationPolicy(JObject? baseline) => baseline?["associationPolicyVersion"] is not JToken version ||
+        version.Type == JTokenType.Null || version.Type == JTokenType.Integer && version.Value<int>() is >= 0 and < 2;
     // Match the shared inspector's ContextForInstance/ScanRaw legacy Forge scope.
     private static string? LegacyVersionFolder(TPackage package) => package.Loaders.ContainsKey(ModLoaders.Forge) &&
         Regex.IsMatch(package.Minecraft ?? "", @"^1\.(?:[0-9]|1[0-2])(?:\.|$)") &&
@@ -69,15 +81,38 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         string? direct = File.Exists(Target(plan.Root!, relative)) ? relative : null;
         string? localOwnership = previous["local"]?["ownership"]?.ToString();
         string? previousLocal = previous["local"]?["relative"]?.ToString();
-        if (localOwnership is "personal-added" or "ambiguous" && previousLocal is not null && File.Exists(Target(plan.Root!, previousLocal)))
-            return new() { Relative = previousLocal, Ownership = localOwnership == "personal-added" ? PackUpdateOwnership.PersonalAdded : PackUpdateOwnership.Ambiguous };
-        bool isMod = ModFile(relative);
-        List<string> candidates = local.Where(path => !IsPrivate(path) &&
-            (isMod ? ModFile(path) : string.Equals(Path.GetDirectoryName(path), Path.GetDirectoryName(relative), StringComparison.OrdinalIgnoreCase)) &&
-            MatchCached(path)).ToList();
-        bool MatchCached(string path) {
-            if (expected is null) return false;
-            string normalized = NormalizeHash(expected), algorithm = normalized.Split(':')[0], key = algorithm + ":" + path;
+        // Ordinary content has path identity. Equal bytes do not establish a rename,
+        // and a historical observation cannot authorize deleting another configuration.
+        if (!ModFile(relative)) {
+            if (previousLocal is not null && !IsPrivate(previousLocal)) Observe(plan, previousLocal, token);
+            if (direct is null) return new() { Ownership = (bool?)previous["optional"] == true ? PackUpdateOwnership.OptionalAbsent : PackUpdateOwnership.Deleted };
+            bool inherited = previousLocal is not null && !string.Equals(previousLocal, relative, StringComparison.OrdinalIgnoreCase);
+            bool recovered = LegacyAssociationPolicy(plan.Baseline) && localOwnership == "ambiguous" && !inherited &&
+                string.Equals(previous["baselineRelative"]?.ToString(), relative, StringComparison.OrdinalIgnoreCase) &&
+                previous["originalHash"] is not null && MatchHash(direct, previous["originalHash"]!.ToString());
+            if (localOwnership == "personal-added" && !inherited) return new() { Relative = direct, Ownership = PackUpdateOwnership.PersonalAdded, Association = PackUpdateAssociation.Unknown };
+            if (!recovered && (inherited || localOwnership is "ambiguous" or "unknown"))
+                return new() { Relative = direct, Ownership = PackUpdateOwnership.Unknown, Association = PackUpdateAssociation.Unknown };
+            bool verified = recovered || MatchCached(direct);
+            return new() { Relative = direct, HashVerified = verified, Ownership = verified ? PackUpdateOwnership.AuthorUnchanged : PackUpdateOwnership.PersonalModified };
+        }
+        if ((localOwnership is "personal-added" or "ambiguous" or "unknown") && previousLocal is not null && ModFile(previousLocal) && File.Exists(Target(plan.Root!, previousLocal))) {
+            bool matched = localOwnership == "personal-added" && CurrentAssociationPolicy(plan.Baseline) &&
+                previous["local"]?["association"]?.ToString() == nameof(PackUpdateAssociation.PersonalComponent) && previous["local"]?["personalComponentMatched"]?.Type == JTokenType.Boolean &&
+                previous["local"]!["personalComponentMatched"]!.Value<bool>() && MatchHash(previousLocal, previous["local"]?["hash"]?.ToString());
+            if (matched) {
+                var copies = local.Where(path => ModFile(path) && MatchHash(path, previous["local"]?["hash"]?.ToString())).ToList();
+                if (copies.Count > 1) return new() { Ownership = PackUpdateOwnership.Ambiguous, Candidates = copies };
+            }
+            return new() { Relative = previousLocal, Ownership = localOwnership == "personal-added" ? PackUpdateOwnership.PersonalAdded :
+                    localOwnership == "ambiguous" ? PackUpdateOwnership.Ambiguous : PackUpdateOwnership.Unknown,
+                PersonalComponentMatched = matched, Association = matched ? PackUpdateAssociation.PersonalComponent : PackUpdateAssociation.Unknown };
+        }
+        List<string> candidates = local.Where(path => !IsPrivate(path) && ModFile(path) && MatchCached(path)).ToList();
+        bool MatchCached(string path) => MatchHash(path, expected);
+        bool MatchHash(string path, string? expectedHash) {
+            if (expectedHash is null) return false;
+            string normalized = NormalizeHash(expectedHash), algorithm = normalized.Split(':')[0], key = algorithm + ":" + path;
             if (!hashes.TryGetValue(key, out string? digest)) hashes[key] = digest = Digest(Target(plan.Root!, path), algorithm, token);
             return Same(digest, normalized);
         }
@@ -85,21 +120,26 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         if (candidates.Count > 1) return new() { Ownership = PackUpdateOwnership.Ambiguous, Candidates = candidates };
         if (direct is not null) return new() { Relative = direct, HashVerified = MatchCached(direct), Ownership = DisabledFile(direct) ? PackUpdateOwnership.Disabled :
             MatchCached(direct) ? PackUpdateOwnership.AuthorUnchanged : PackUpdateOwnership.PersonalModified };
-        if (candidates.Count == 1) return new() { Relative = candidates[0], HashVerified = true, Ownership = DisabledFile(candidates[0]) ? PackUpdateOwnership.Disabled : PackUpdateOwnership.AuthorRenamed };
+        if (candidates.Count == 1) return new() { Relative = candidates[0], HashVerified = true, Association = PackUpdateAssociation.VerifiedModHash,
+            Ownership = DisabledFile(candidates[0]) ? PackUpdateOwnership.Disabled : PackUpdateOwnership.AuthorRenamed };
         string? recorded = previous["local"]?["relative"]?.ToString();
-        List<string> inactive = new[] { relative + ".disabled", relative + ".old", recorded }.Where(path => !string.IsNullOrEmpty(path) && File.Exists(Target(plan.Root!, path!))).Select(path => path!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        List<string> inactive = new[] { relative + ".disabled", relative + ".old", recorded }.Where(path => !string.IsNullOrEmpty(path) && ModFile(path!) && File.Exists(Target(plan.Root!, path!))).Select(path => path!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (inactive.Count > 1) return new() { Ownership = PackUpdateOwnership.Ambiguous, Candidates = inactive };
-        if (!string.IsNullOrEmpty(recorded) && File.Exists(Target(plan.Root!, recorded!))) return new() {
-            Relative = recorded, Ownership = DisabledFile(recorded!) ? PackUpdateOwnership.Disabled : PackUpdateOwnership.PersonalModified };
+        if (!string.IsNullOrEmpty(recorded) && ModFile(recorded!) && File.Exists(Target(plan.Root!, recorded!))) return new() {
+            Relative = recorded, Association = PackUpdateAssociation.RecordedMod, Ownership = DisabledFile(recorded!) ? PackUpdateOwnership.Disabled : PackUpdateOwnership.PersonalModified };
         foreach (string suffix in new[] { ".disabled", ".old" }) if (File.Exists(Target(plan.Root!, relative + suffix)))
             return new() { Relative = relative + suffix, Ownership = PackUpdateOwnership.Disabled };
         return new() { Ownership = (bool?)previous["optional"] == true ?
             PackUpdateOwnership.OptionalAbsent : PackUpdateOwnership.Deleted };
     }
     private PackModInspection Inspect(TPackage package, string file, CancellationToken token = default) => PackUpdateModInspection.Read(file, package.Minecraft, package.Loaders, token);
-    private bool SameAuthor(TPlan plan, JToken previous, LocalAuthor local, TFile incoming, CancellationToken token, Dictionary<string, PackModInspection> metadata) {
+    private bool SameAuthor(TPlan plan, string previousRelative, JToken previous, LocalAuthor local, TFile incoming, CancellationToken token, Dictionary<string, PackModInspection> metadata) {
+        if (ContentRole(previousRelative) != ContentRole(incoming.Relative!) || IsPersonal(previousRelative) || IsPersonal(incoming.Relative!)) return false;
         string? project = previous["identity"]?.ToString();
-        if (!string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(incoming.Identity)) return project == incoming.Identity;
+        if (ModFile(previousRelative) || PlatformArchive(previousRelative) && PlatformArchive(incoming.Relative!)) {
+            if (!string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(incoming.Identity)) return project == incoming.Identity;
+        }
+        if (!ModFile(previousRelative) || !ModFile(incoming.Relative!)) return false;
         if (Same(previous["hash"]?.ToString(), incoming.Hash) && incoming.Hash is not null) return true;
         // ID linking requires BOTH author declarations plus proof of the OLD author bytes.
         // An identical modId alone never establishes ownership of a local file.
@@ -136,8 +176,8 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             TFile? incoming = null; bool ambiguous = false;
             if (package.Files.TryGetValue(pair.Key, out TFile? samePath)) incoming = samePath;
             else {
-                var matches = package.Files.Values.Where(file => !assigned.Contains(file.Relative!) && !old.ContainsKey(file.Relative!) && SameAuthor(result, pair.Value, found, file, token, metadata)).ToList();
-                if (matches.Count == 1 && locations.Count(other => !package.Files.ContainsKey(other.Key) && SameAuthor(result, old[other.Key], other.Value, matches[0], token, metadata)) == 1) incoming = matches[0];
+                var matches = package.Files.Values.Where(file => !assigned.Contains(file.Relative!) && !old.ContainsKey(file.Relative!) && SameAuthor(result, pair.Key, pair.Value, found, file, token, metadata)).ToList();
+                if (matches.Count == 1 && locations.Count(other => !package.Files.ContainsKey(other.Key) && SameAuthor(result, other.Key, old[other.Key], other.Value, matches[0], token, metadata)) == 1) incoming = matches[0];
                 else if (matches.Count == 1) ambiguous = true;
                 else if (matches.Count > 1) ambiguous = true;
                 if (ambiguous) foreach (TFile candidate in matches) ambiguousIncoming.Add(candidate.Relative!);
@@ -156,12 +196,17 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             if (incoming is not null && found.Ownership == PackUpdateOwnership.Disabled && found.HashVerified &&
                 Same(incoming.Hash, pair.Value["hash"]?.ToString()) && string.Equals(pair.Key, incoming.Relative, StringComparison.OrdinalIgnoreCase)) continue;
             if (incoming is not null && !personal && Same(incoming.Hash, pair.Value["hash"]?.ToString()) &&
-                string.Equals(found.Relative, incoming.Relative, StringComparison.OrdinalIgnoreCase)) continue;
+                string.Equals(found.Relative, incoming.Relative, StringComparison.OrdinalIgnoreCase) && Matches(Target(result.Root, found.Relative!), incoming.Hash, token)) continue;
             TChange change = host.CreateChange(); change.BaselineRelative = pair.Key; change.LocalRelative = found.Relative;
             change.Relative = incoming?.Relative ?? pair.Key; change.Incoming = incoming; change.Ownership = ambiguous ? PackUpdateOwnership.Ambiguous : found.Ownership;
+            change.Association = found.Association;
+            if (incoming is not null && PlatformArchive(pair.Key) && PlatformArchive(incoming.Relative!) && !string.Equals(pair.Key, incoming.Relative, StringComparison.OrdinalIgnoreCase))
+                change.Association = PackUpdateAssociation.PlatformProject;
             change.Candidates = found.Candidates;
             change.Conflict = personal || ambiguous || found.Relative is not null && IsPersonal(found.Relative) || PersonalAreaExists(root, change.Relative);
-            change.AllowAuthor = !ambiguous && found.Ownership is not (PackUpdateOwnership.Ambiguous or PackUpdateOwnership.PersonalAdded or PackUpdateOwnership.OptionalAbsent);
+            change.PersonalComponentMatched = found.PersonalComponentMatched;
+            change.AllowAuthor = !ambiguous && found.Ownership is not (PackUpdateOwnership.Ambiguous or PackUpdateOwnership.OptionalAbsent) &&
+                (found.Ownership != PackUpdateOwnership.PersonalAdded || found.PersonalComponentMatched);
             change.Before = found.Relative is null ? null : result.Snapshot[found.Relative];
             if (incoming is not null && change.Ownership == PackUpdateOwnership.Disabled) {
                 Observe(result, change.Relative!, token); Observe(result, change.Relative! + ".disabled", token);
@@ -171,6 +216,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             if (incoming is not null && change.TargetBefore is not null && !string.Equals(change.LocalRelative, change.DestinationRelative, StringComparison.OrdinalIgnoreCase)) {
                 change.Conflict = true; change.AllowAuthor = false; change.Ownership = PackUpdateOwnership.Ambiguous;
             }
+            if (IsRuntimeData(pair.Key) || IsRuntimeData(change.Relative)) {
+                change.Conflict = true; change.AllowAuthor = false; change.DisplayOnly = true;
+            }
             change.Reason = Reason(change); result.Changes.Add(change);
         }
         foreach (TFile incoming in package.Files.Values.Where(file => !assigned.Contains(file.Relative!))) {
@@ -178,10 +226,14 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             TChange change = host.CreateChange(); change.Relative = incoming.Relative; change.Incoming = incoming;
             Observe(result, change.Relative!, token); change.TargetBefore = result.Snapshot[change.Relative!];
             change.LocalRelative = change.TargetBefore is null ? null : change.Relative; change.Before = change.TargetBefore;
-            if (ambiguousIncoming.Contains(change.Relative!)) {
+            if (IsRuntimeData(change.Relative!)) {
+                change.Ownership = change.LocalRelative is null ? PackUpdateOwnership.Deleted : PackUpdateOwnership.PersonalAdded;
+                change.Conflict = true; change.AllowAuthor = false; change.DisplayOnly = true;
+                change.Reason = "保留玩家运行数据，整包更新不替换、删除或注入世界／服务器状态文件";
+            } else if (ambiguousIncoming.Contains(change.Relative!)) {
                 change.Ownership = PackUpdateOwnership.Ambiguous; change.Conflict = true; change.AllowAuthor = false;
                 change.Reason = "同一作者项目有多个旧版或新版文件候选，请先确认版本关联";
-                change.Candidates.AddRange(locations.Where(pair => SameAuthor(result, old[pair.Key], pair.Value, incoming, token, metadata)).Select(pair => pair.Value.Relative ?? pair.Key));
+                change.Candidates.AddRange(locations.Where(pair => SameAuthor(result, pair.Key, old[pair.Key], pair.Value, incoming, token, metadata)).Select(pair => pair.Value.Relative ?? pair.Key));
             } else if (change.LocalRelative is not null) {
                 claimedLocal.Add(change.LocalRelative); change.Ownership = PackUpdateOwnership.PersonalAdded;
                 change.Conflict = true; change.AllowAuthor = false;
@@ -201,12 +253,13 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         }
         return result;
     }
-    private static string Reason(TChange change) => change.Ownership switch {
+    private static string Reason(TChange change) => IsRuntimeData(change.Relative!) ? "保留玩家运行数据，整包更新不替换、删除或注入世界／服务器状态文件" : change.Ownership switch {
         PackUpdateOwnership.Ambiguous => "存在多个匹配候选或重复副本，需先确认，未安排删除或替换",
         PackUpdateOwnership.Disabled => change.Conflict ? "本地禁用文件包含个人修改，可选择作者新版并确认更新后状态" : "作者模组将更新，请确认更新后继续禁用还是启用新版",
         PackUpdateOwnership.Deleted => "保留玩家删除状态",
         PackUpdateOwnership.OptionalAbsent => "保留未安装的可选组件",
         PackUpdateOwnership.PersonalModified => "保留个人替换的版本或内容，可逐项选择作者版本",
+        PackUpdateOwnership.Unknown => "旧关联证据不足，保留当前文件；可明确选择作者版本，不自动处理其他路径的文件",
         _ => change.Conflict ? "保留个人数据文件" : change.Incoming is null ? "移除作者已删除的文件" :
             change.Ownership == PackUpdateOwnership.AuthorRenamed ? "按旧作者哈希识别纯改名，升级并处理实际旧路径" : "更新作者文件"
     };
@@ -237,6 +290,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         TPlan staged = Plan(plan.Root!, plan.Baseline, plan.Package, token);
         plan.Changes = staged.Changes;
         foreach (var pair in staged.Snapshot) if (!plan.Snapshot.ContainsKey(pair.Key)) plan.Snapshot.Add(pair.Key, pair.Value);
+        LinkPersonalAuthorUpdates(plan, token);
         ResolvePersonalChanges(plan, stage, token, download ?? host.Download);
         PreserveModCollisions(plan, token);
         plan.DependencyCheck = CheckDependencies(plan, token);
@@ -327,6 +381,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         }
     }
     public void ValidateChoices(TPlan plan, CancellationToken token = default) {
+        ValidateAssociationBindings(plan);
         ValidateSnapshot(plan, token);
         foreach (TChange change in plan.Changes) if (change.Choice == PackUpdateChoice.UseAuthor && (!change.AllowAuthor || change.DisplayOnly))
             throw new IOException("此项归属或重复冲突尚未确认，不能自动替换：" + change.Relative);

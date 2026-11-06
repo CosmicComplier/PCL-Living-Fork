@@ -12,6 +12,26 @@ namespace PCLCS;
 public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>
     where TFile : PackUpdateFileData where TPackage : PackUpdatePackageData<TFile>
     where TChange : PackUpdateChangeData<TFile> where TPlan : PackUpdatePlanData<TPackage, TChange> {
+    private static void ValidateAssociationBindings(TPlan plan) {
+        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor)) {
+            string destination = RelativePath(change.DestinationRelative);
+            string? local = change.LocalRelative is null ? null : RelativePath(change.LocalRelative);
+            if (IsPrivate(destination) || IsRuntimeData(destination) || local is not null && (IsPrivate(local) || IsRuntimeData(local)))
+                throw new IOException("更新操作涉及受保护的启动器记录或玩家运行数据，未提交：" + change.Relative);
+            if (local is null) continue;
+            if (ModFile(local)) {
+                if (!ModFile(change.Relative!)) throw new IOException("模组来源不能用于其他类别的文件：" + change.Relative);
+                continue;
+            }
+            string? original = change.BaselineRelative is null ? null : RelativePath(change.BaselineRelative);
+            if (original is null || !string.Equals(original, local, StringComparison.OrdinalIgnoreCase) || plan.Baseline?["files"]?[original] is not JObject declared)
+                throw new IOException("普通内容缺少原声明路径关联，未处理其他文件：" + local);
+            if (change.Incoming is null || string.Equals(original, change.Relative, StringComparison.OrdinalIgnoreCase)) continue;
+            if (change.Association != PackUpdateAssociation.PlatformProject || !PlatformArchive(original) || !PlatformArchive(change.Relative!) ||
+                ContentRole(original) != ContentRole(change.Relative!) || string.IsNullOrEmpty(change.Incoming.Identity) || declared["identity"]?.ToString() != change.Incoming.Identity)
+                throw new IOException("普通内容不支持按相同字节跨路径替换：" + original + " / " + change.Relative);
+        }
+    }
     // The complete original transaction boundary: persist backups/log before writing,
     // keep the current before/after guards and reverse rollback under the caller's real workload lock.
     public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null) {

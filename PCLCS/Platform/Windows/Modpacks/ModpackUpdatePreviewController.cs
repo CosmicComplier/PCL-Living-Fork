@@ -50,7 +50,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         PackUpdateOwnership.AuthorUnchanged => "作者文件",
         PackUpdateOwnership.AuthorRenamed => "作者文件，玩家仅改名",
         PackUpdateOwnership.PersonalModified => "个人修改",
-        PackUpdateOwnership.PersonalAdded => "个人新增，保留",
+        PackUpdateOwnership.PersonalAdded => "个人新增",
         PackUpdateOwnership.Disabled => "玩家已禁用",
         PackUpdateOwnership.Deleted => "玩家已删除",
         PackUpdateOwnership.OptionalAbsent => "未安装的可选组件",
@@ -86,7 +86,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                 text.Children.Add(ModpackDialogController<TButton, TScroll>.Label((string.IsNullOrEmpty(folder) ? "根目录" : folder) + " · " + OwnershipName(change.Ownership), 12, false, "ColorBrushGray2", new Thickness(0, 4, 0, 0)));
                 TextBlock? paths = null;
                 if (!string.IsNullOrWhiteSpace(change.LocalRelative) && !string.Equals(change.LocalRelative, change.DestinationRelative, StringComparison.OrdinalIgnoreCase))
-                    text.Children.Add(paths = ModpackDialogController<TButton, TScroll>.Label("本地：" + change.LocalRelative + "\r\n" + (change.Incoming is null ? "作者在新版中移除此文件" : "作者目标：" + change.DestinationRelative), 12, false, "ColorBrushGray2", new Thickness(0, 4, 0, 0)));
+                    text.Children.Add(paths = ModpackDialogController<TButton, TScroll>.Label(Paths(change), 12, false, "ColorBrushGray2", new Thickness(0, 4, 0, 0)));
                 if (change.Candidates.Count > 0)
                     text.Children.Add(ModpackDialogController<TButton, TScroll>.Label("待核对的本地候选：\r\n" + string.Join("\r\n", change.Candidates), 12, false, "ColorBrushGray2", new Thickness(0, 4, 0, 0)));
                 if (!string.IsNullOrWhiteSpace(change.Reason))
@@ -129,6 +129,10 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         details.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
         this.notices.Children.Add(details);
     }
+    private static string Paths(TChange change) => "本地：" + change.LocalRelative + "\r\n" +
+        (change.Operation == PackUpdateOperation.DisablePersonal ? "禁用目标：" + change.DestinationRelative :
+            change.Incoming is not null ? "作者目标：" + change.DestinationRelative :
+            change.BaselineRelative is not null ? "作者在新版中移除此文件" : "本地额外文件");
     private void AddChoice(StackPanel text, TChange change) {
         WrapPanel choices = new() { Margin = new Thickness(0, 8, 0, 0) };
         TextBlock result = ModpackDialogController<TButton, TScroll>.Label(change.Incoming is null ? "本次保留，不执行作者移除。" : "本次保留，不执行作者更新。", 12, color: "ColorBrushGray2", margin: new Thickness(0, 4, 0, 0));
@@ -153,7 +157,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         RefreshResult(); text.Children.Add(result);
     }
     private void AddDisabledState(StackPanel text, TChange change, TextBlock? paths) {
-        void RefreshPaths() { if (paths is not null) paths.Text = "本地：" + change.LocalRelative + "\r\n作者目标：" + change.DestinationRelative; }
+        void RefreshPaths() { if (paths is not null) paths.Text = Paths(change); }
         FrameworkElement disabled = view.CheckOption("更新到新版后继续保持禁用", change.KeepDisabled, selected => {
             change.KeepDisabled = selected; plan.AllowUnverifiedDependencies = false; RefreshPaths();
         });

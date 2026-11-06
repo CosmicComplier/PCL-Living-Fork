@@ -38,6 +38,41 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     private static bool RuntimeDependency(string id) => new[] { "minecraft", "java", "fabricloader", "quilt_loader", "forge", "neoforge", "liteloader" }.Contains(id, StringComparer.Ordinal);
 
+    // Pair one untracked local component with one newly declared author component.
+    // This is a previewed replacement, not proof that the local bytes were authored by the pack.
+    private void LinkPersonalAuthorUpdates(TPlan plan, CancellationToken token) {
+        foreach (TChange linked in plan.Changes.Where(change => change.PersonalComponentMatched && change.Incoming?.Payload is not null)) {
+            var before = Inspect(plan.Package!, Target(plan.Root!, linked.LocalRelative!), token);
+            var after = Inspect(plan.Package!, linked.Incoming!.Payload!, token);
+            var sameIds = LocalContent(plan.Root!, token, LegacyVersionFolder(plan.Package!)).Where(path => LoadedModPath(plan.Package!, path))
+                .Count(path => { var info = Inspect(plan.Package!, Target(plan.Root!, path), token); return info.Confirmed && before.OwnIds.SetEquals(info.OwnIds); });
+            if (!before.Confirmed || !after.Confirmed || before.OwnIds.Count == 0 || !before.OwnIds.SetEquals(after.OwnIds) || sameIds != 1) {
+                linked.PersonalComponentMatched = false; linked.AllowAuthor = false; linked.Conflict = true; linked.Association = PackUpdateAssociation.Unknown;
+                linked.Reason = "原配对的模组身份已变化或出现多个本地候选，保留当前文件，请重新确认关联。";
+            }
+        }
+        var incoming = plan.Changes.Where(change => change.BaselineRelative is null && change.LocalRelative is null &&
+            !change.DisplayOnly && change.AllowAuthor && change.Incoming?.Payload is not null && change.Ownership == PackUpdateOwnership.AuthorUnchanged &&
+            LoadedModPath(plan.Package!, change.DestinationRelative)).ToDictionary(change => change, change => Inspect(plan.Package!, change.Incoming!.Payload!, token));
+        var personal = plan.Changes.Where(change => change.DisplayOnly && change.BaselineRelative is null && change.LocalRelative is not null &&
+            change.Ownership == PackUpdateOwnership.PersonalAdded && LoadedModPath(plan.Package!, change.LocalRelative))
+            .ToDictionary(change => change, change => Inspect(plan.Package!, Target(plan.Root!, change.LocalRelative!), token));
+        bool Match(PackModInspection left, PackModInspection right) => left.Confirmed && right.Confirmed && left.OwnIds.Count > 0 && left.OwnIds.SetEquals(right.OwnIds);
+        foreach (var author in incoming) {
+            token.ThrowIfCancellationRequested();
+            var matches = personal.Where(local => Match(local.Value, author.Value)).ToArray();
+            if (matches.Length != 1 || incoming.Count(other => Match(other.Value, matches[0].Value)) != 1) continue;
+            TChange change = author.Key, local = matches[0].Key;
+            change.LocalRelative = local.LocalRelative; change.Before = local.Before;
+            change.Ownership = PackUpdateOwnership.PersonalAdded;
+            change.PersonalComponentMatched = true;
+            change.Association = PackUpdateAssociation.PersonalComponent;
+            change.Conflict = false; change.AllowPreserveAuthor = true; change.Choice = PackUpdateChoice.UseAuthor;
+            change.Reason = "新版整包已包含此模组，默认升级为整包版本；可选择保留本地版本，确认时会重新检查完整组合。";
+            plan.Changes.Remove(local);
+        }
+    }
+
     // Resolve personal content against N + retained L. Never roll author N back
     // automatically merely to satisfy a personal dependency.
     private void ResolvePersonalChanges(TPlan plan, string stage, CancellationToken token, Action<List<TNetFile>, CancellationToken> download) {
@@ -66,12 +101,14 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             foreach (var file in affected.OrderByDescending(file => file.Change!.Incoming is not null)) {
                 TChange change = file.Change!;
                 if (change.Operation == PackUpdateOperation.PersonalDependency) continue;
-                if (change.Incoming is not null && change.Ownership != PackUpdateOwnership.Ambiguous &&
-                    (change.BaselineRelative is not null || change.Ownership == PackUpdateOwnership.PersonalAdded && change.Candidates.Count == 0)) {
-                    change.AllowAuthor = true;
+                string detail = string.Join("\r\n", errors.Where(issue => SameFile(file.Path, issue.OwnerPath) || issue.RelatedPaths.Any(path => SameFile(path, file.Path)))
+                    .Select(issue => DescribeProblem(issue, files)).Where(message => !string.IsNullOrWhiteSpace(message)).Distinct().Take(3));
+                if (change.Incoming is not null && change.AllowAuthor && change.Ownership != PackUpdateOwnership.Ambiguous &&
+                    (change.BaselineRelative is not null || change.PersonalComponentMatched) &&
+                    (change.Ownership != PackUpdateOwnership.PersonalAdded || change.PersonalComponentMatched)) {
                     change.Choice = PackUpdateChoice.UseAuthor;
                     change.Conflict = false; change.AllowPreserveAuthor = true; change.PersonalCompatible = false;
-                    change.Reason = "个人修改版与新版整包的声明不兼容，默认使用作者新版；保留旧版仍须通过完整组合检查。";
+                    change.Reason = "本地版本与新版整包的声明不兼容，默认使用作者新版；保留旧版仍须通过完整组合检查。" + (detail.Length > 0 ? "\r\n" + detail : "");
                 } else {
                     if (change.Incoming is not null) continue; // An ambiguous occupied author target requires an explicit decision.
                     string destination = file.Relative + ".disabled";
@@ -84,7 +121,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                     change.Operation = PackUpdateOperation.DisablePersonal; change.DisabledDestination = destination;
                     change.DisplayOnly = false; change.AllowAuthor = true; change.Conflict = true; change.Choice = PackUpdateChoice.UseAuthor;
                     change.PersonalCompatible = false;
-                    change.Reason = "个人模组与新版整包存在已确认的声明冲突或缺失依赖；本次备份后禁用，保留文件供恢复。";
+                    change.Reason = detail.Length > 0 ? "禁用原因：" + detail : "个人模组与新版整包存在已确认的声明冲突或缺失依赖。";
                 }
                 changed = true;
                 break;
@@ -103,6 +140,13 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 file.Change.Reason = "个人版本在新版整包中未发现已声明的依赖或运行时冲突，默认保留；实际游戏运行仍需验证。";
             }
         }
+    }
+    private static string DescribeProblem(PackDependencyProblem issue, List<FinalModFile> files) {
+        string message = issue.Message;
+        foreach (var file in files) message = message.Replace(file.Path, file.Relative);
+        foreach (var group in files.GroupBy(file => Path.GetFileName(file.Path), StringComparer.OrdinalIgnoreCase).Where(group => group.Count() == 1))
+            message = message.Replace(group.Key, Path.GetFileName(group.Single().Relative));
+        return message;
     }
     private void TryPreparePersonalDependencies(TPlan plan, string stage, List<FinalModFile> files, string[] missing,
         CancellationToken token, Action<List<TNetFile>, CancellationToken> download) {

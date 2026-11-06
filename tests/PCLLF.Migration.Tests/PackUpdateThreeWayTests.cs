@@ -319,10 +319,10 @@ internal static class PackUpdateThreeWayTests {
             Plan plan = f.Plan(empty, f.Package([incoming])); f.Stage(plan);
             Change change = Incoming(plan, incoming.Relative);
             if (kind == 0) {
-                Change disabled = plan.Changes.Single(c => c.LocalRelative == extra.Relative);
-                Require(!change.Conflict && change.ApplyAuthor && disabled.Operation == PackUpdateOperation.DisablePersonal && disabled.ApplyAuthor,
-                    "An incoming curated own ID must take priority with reversible disabling of the personal duplicate.");
-                f.Commit(plan); f.Has(incoming); f.Absent(extra.Relative); f.Has(extra with { Relative = disabled.DestinationRelative });
+                Require(!change.Conflict && change.ApplyAuthor && change.LocalRelative == extra.Relative && change.Before is not null &&
+                    change.CanChoose && plan.Changes.Count == 1 && change.Operation == PackUpdateOperation.AuthorChange,
+                    "A uniquely matched local mod and new author version must be one selectable upgrade, not addition plus disabling.");
+                f.Commit(plan); f.Has(incoming); f.Absent(extra.Relative); f.Absent(extra.Relative + ".disabled");
             } else {
                 Require(!plan.Changes.Any(c => c.ApplyAuthor && c.LocalRelative == extra.Relative), "An unconfirmed alias provider was automatically disabled.");
                 Require(!change.Conflict && change.ApplyAuthor, "A valid provided alias was flattened into a hard duplicate-own-ID conflict.");

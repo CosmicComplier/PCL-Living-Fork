@@ -141,8 +141,11 @@ internal static class ModpackUpdateChecks
         Update("DownloadChanges", collision, Path.Combine(root, "collision-download"), CancellationToken.None, download);
         object duplicate = Changes(collision).Single(change => Text(change, "Relative") == "mods/new-id.jar");
         Check(!Conflict(duplicate) && (bool)Native.Property(duplicate.GetType(), "ApplyAuthor").GetValue(duplicate)! &&
-            Changes(collision).Any(change => Text(change, "LocalRelative") == "mods/personal-id.jar" &&
-                Get(change, "Operation")!.ToString() == "DisablePersonal"), "MP-13", "A curated own-ID upgrade did not reversibly disable the incompatible personal duplicate.");
+            Text(duplicate, "LocalRelative") == "mods/personal-id.jar" && (bool)Get(duplicate, "PersonalComponentMatched")! &&
+            !Changes(collision).Any(change => Get(change, "Operation")!.ToString() == "DisablePersonal"),
+            "MP-13", "The uniquely matched personal mod and new author component were not paired into one upgrade.");
+        Check(Native.Call(Native.Type("PCL.ModpackUpdatePreviewView"), "Classify", null, duplicate)!.ToString() == "Updated",
+            "MP-13-category", "The real Main preview did not classify the paired component as an upgrade.");
 
         string recoverRoot = Path.Combine(root, "recover-root"), recoverVersion = Path.Combine(root, "recover-version");
         Put(Path.Combine(recoverRoot, "a.txt"), "old-a"); Put(Path.Combine(recoverRoot, "b.txt"), "old-b");

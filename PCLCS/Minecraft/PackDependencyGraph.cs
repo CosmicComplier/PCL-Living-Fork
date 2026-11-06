@@ -17,7 +17,7 @@ public sealed class PackDependencyGraphResult {
 }
 public sealed class PackDependencyProblem {
     public ModDependencyIssueKind Kind;
-    public string OwnerPath = "", RequirementId = "";
+    public string OwnerPath = "", RequirementId = "", Message = "";
     public bool IsError;
     public List<string> RelatedPaths = new();
 }
@@ -72,7 +72,7 @@ public static class PackDependencyGraph {
         result.Report = report;
         result.Problems.AddRange(report.Issues.Select(issue => new PackDependencyProblem {
             Kind = issue.KindValue, IsError = issue.IsError, OwnerPath = issue.Owner?.RootPath ?? "",
-            RequirementId = issue.Requirement?.Id ?? "", RelatedPaths = issue.RelatedMods.Select(mod => mod.RootPath).Distinct(paths).ToList()
+            RequirementId = issue.Requirement?.Id ?? "", Message = issue.Message, RelatedPaths = issue.RelatedMods.Select(mod => mod.RootPath).Distinct(paths).ToList()
         }));
         result.Errors.AddRange(report.Issues.Where(issue => issue.IsError).Select(issue => issue.Message));
         result.Warnings.AddRange(report.Notices);

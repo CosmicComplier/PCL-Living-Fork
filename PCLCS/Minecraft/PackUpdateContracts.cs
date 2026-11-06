@@ -29,6 +29,7 @@ public class PackUpdatePackageData<TFile> where TFile : PackUpdateFileData {
 public enum PackUpdateOwnership { AuthorUnchanged, AuthorRenamed, PersonalModified, PersonalAdded, Disabled, Deleted, OptionalAbsent, Ambiguous, Unknown }
 public enum PackUpdateChoice { PreservePersonal, UseAuthor }
 public enum PackUpdateOperation { AuthorChange, DisablePersonal, PersonalDependency }
+public enum PackUpdateAssociation { DeclaredPath, VerifiedModHash, RecordedMod, PlatformProject, PersonalComponent, Unknown }
 public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     public string? Relative, Before;
     public string? BaselineRelative, LocalRelative, TargetBefore;
@@ -37,8 +38,10 @@ public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     // An optional author-action override is not a file/provenance conflict.
     public bool AllowPreserveAuthor;
     public PackUpdateOperation Operation;
+    public PackUpdateAssociation Association;
     public bool KeepDisabled = true;
     public bool PersonalCompatible;
+    public bool PersonalComponentMatched;
     public string? DisabledDestination;
     public string? Reason;
     public PackUpdateOwnership Ownership;

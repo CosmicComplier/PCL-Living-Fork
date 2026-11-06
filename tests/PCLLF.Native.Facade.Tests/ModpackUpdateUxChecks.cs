@@ -373,12 +373,23 @@ internal static class ModpackUpdateUxChecks
         object update = Add("normal", true, PackUpdateOwnership.AuthorUnchanged), removal = Add("removed", false, PackUpdateOwnership.AuthorUnchanged);
         Add("personal", true, PackUpdateOwnership.PersonalModified, compatible: true);
         Add("conflicting", true, PackUpdateOwnership.PersonalModified, conflict: true);
+        object duplicate = Add("duplicate", false, PackUpdateOwnership.PersonalAdded, conflict: true);
+        Set(duplicate, "Operation", PackUpdateOperation.DisablePersonal); Set(duplicate, "Choice", PackUpdateChoice.UseAuthor);
+        Set(duplicate, "DisabledDestination", "mods/duplicate-old.jar.disabled"); Set(duplicate, "Reason", "禁用原因：重复模组 ID shared_id：duplicate-old.jar、author-new.jar");
         object disabled = Add("disabled", true, PackUpdateOwnership.Disabled);
         object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
         Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
         var counts = (IDictionary)Get(preview, "Counts")!;
         Check((int)counts[Enum.Parse(kinds, "Updated")]! == 2 && (int)counts[Enum.Parse(kinds, "Removed")]! == 1 &&
-            (int)counts[Enum.Parse(kinds, "Preserved")]! == 2, "UX-policy-categories", "Ordinary author changes were mislabeled as conflicts.");
+            (int)counts[Enum.Parse(kinds, "Preserved")]! == 3, "UX-policy-categories", "Ordinary author changes were mislabeled as conflicts.");
+        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
+        Border duplicateRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/duplicate.jar", StringComparison.Ordinal));
+        string[] duplicateText = Descendants(duplicateRow).OfType<TextBlock>().Select(text => text.Text).ToArray();
+        Check(duplicateText.Any(text => text.Contains("禁用目标：mods/duplicate-old.jar.disabled", StringComparison.Ordinal)) &&
+            duplicateText.Any(text => text.Contains("重复模组 ID shared_id", StringComparison.Ordinal)) &&
+            !duplicateText.Any(text => text.Contains("作者在新版中移除", StringComparison.Ordinal) || text.Contains("个人新增，保留", StringComparison.Ordinal)),
+            "UX-personal-disable-description", "A personal duplicate still claimed author removal or unconditional retention.");
+        Render((FrameworkElement)preview, Path.Combine(folder, "personal-duplicate-reason.png"), 740, 480);
         Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
         Border row = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/normal.jar", StringComparison.Ordinal));
         Descendants(row).OfType<MyRadioBox>().Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked = true;

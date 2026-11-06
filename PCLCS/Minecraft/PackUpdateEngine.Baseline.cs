@@ -26,8 +26,8 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             entry["local"] = LocalObservation(relative, Digest(fileName, token: token));
             return;
         }
-        string[] disabled = new[] { relative + ".disabled", relative + ".old" }
-            .Where(candidate => File.Exists(Target(root, candidate))).ToArray();
+        string[] disabled = ModFile(relative) ? new[] { relative + ".disabled", relative + ".old" }
+            .Where(candidate => File.Exists(Target(root, candidate))).ToArray() : Array.Empty<string>();
         if (disabled.Length == 1) {
             entry["state"] = "disabled";
             entry["local"] = LocalObservation(disabled[0], Digest(Target(root, disabled[0]), token: token));
@@ -39,12 +39,13 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         }
     }
 
-    private static JObject LocalObservation(string relative, string? hash, string ownership = "author") => new(
-        new JProperty("relative", relative), new JProperty("hash", hash), new JProperty("ownership", ownership));
+    private static JObject LocalObservation(string relative, string? hash, string ownership = "author", PackUpdateAssociation association = PackUpdateAssociation.DeclaredPath) => new(
+        new JProperty("relative", relative), new JProperty("hash", hash), new JProperty("ownership", ownership), new JProperty("association", association.ToString()));
 
     private static string LocalOwnership(TChange change) => change.Ownership switch {
         PackUpdateOwnership.PersonalAdded => "personal-added",
         PackUpdateOwnership.Ambiguous => "ambiguous",
+        PackUpdateOwnership.Unknown => "unknown",
         _ => "author"
     };
 
@@ -65,12 +66,16 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             } else if (change is not null) {
                 string? local = change.Operation == PackUpdateOperation.DisablePersonal ? change.DestinationRelative : change.LocalRelative;
                 if (local is not null && change.Before is not null) {
-                    author["state"] = local.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) || local.EndsWith(".old", StringComparison.OrdinalIgnoreCase) ? "disabled" :
+                    author["state"] = ModFile(local) && DisabledFile(local) ? "disabled" :
                         change.Ownership == PackUpdateOwnership.AuthorRenamed && !change.Conflict && !change.AllowPreserveAuthor ? "renamed" : "retained";
-                    author["local"] = LocalObservation(local, change.Before, LocalOwnership(change));
+                    author["local"] = LocalObservation(local, change.Before, LocalOwnership(change), change.Association);
+                    if (change.PersonalComponentMatched && change.Ownership == PackUpdateOwnership.PersonalAdded)
+                        author["local"]!["personalComponentMatched"] = true;
                 } else {
                     ObserveInstalledFile(plan.Root!, entry.Name, author, token);
-                    if (author["local"] is JObject observation) observation["ownership"] = LocalOwnership(change);
+                    if (author["local"] is JObject observation) {
+                        observation["ownership"] = LocalOwnership(change); observation["association"] = change.Association.ToString();
+                    }
                 }
                 PreserveOriginalAssociation(author, change, plan.Baseline);
             } else {
@@ -79,8 +84,8 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 // place. Preserve the verified path observation across that update.
                 JObject? previous = plan.Baseline?["files"]?[entry.Name] as JObject;
                 string? local = previous?["local"]?["relative"]?.ToString();
-                if (author["local"] is null && local is not null && File.Exists(Target(plan.Root!, local))) {
-                    author["local"] = LocalObservation(local, Digest(Target(plan.Root!, local), token: token), previous?["local"]?["ownership"]?.ToString() ?? "author");
+                if (author["local"] is null && ModFile(entry.Name) && local is not null && ModFile(local) && File.Exists(Target(plan.Root!, local))) {
+                    author["local"] = LocalObservation(local, Digest(Target(plan.Root!, local), token: token), previous?["local"]?["ownership"]?.ToString() ?? "author", PackUpdateAssociation.RecordedMod);
                     author["state"] = local.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) || local.EndsWith(".old", StringComparison.OrdinalIgnoreCase) ? "disabled" :
                         Matches(Target(plan.Root!, local), author["hash"]?.ToString(), token) ? "renamed" : "retained";
                 }
@@ -88,7 +93,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 // player file. Preserve that provenance even when bytes happen to match.
                 if (author["local"] is JObject observed && previous?["local"] is JObject prior &&
                     string.Equals(observed["relative"]?.ToString(), prior["relative"]?.ToString(), StringComparison.OrdinalIgnoreCase) &&
-                    prior["ownership"]?.ToString() is "personal-added" or "ambiguous")
+                    prior["ownership"]?.ToString() is "personal-added" or "ambiguous" or "unknown")
                     observed["ownership"] = prior["ownership"]!.DeepClone();
             }
         }

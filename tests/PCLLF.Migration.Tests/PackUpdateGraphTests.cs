@@ -7,6 +7,10 @@ internal static class PackUpdateGraphTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("pack update final graph reuses an author dependency for a personal mod", AuthorUpgradeSatisfiesPersonal);
         yield return ("pack update replaces an incompatible personal author override before judging its consumer", AuthorReplacementBeforeDisabling);
+        yield return ("pack update pairs a unique personal mod with its new author version and preserves later upgrade choices", PersonalAuthorComponentUpdate);
+        yield return ("pack update does not pair ambiguous local or author component candidates", AmbiguousPersonalComponents);
+        yield return ("pack update binds a preserved component association to exact observed bytes and protects occupied targets", PersonalComponentAssociationGuards);
+        yield return ("pack update paired component replacement rolls back the original personal bytes", PersonalComponentRollback);
         yield return ("pack update keeps unrelated author upgrades and removals out of the conflict category", OrdinaryAuthorActions);
         yield return ("pack update refuses an author version that breaks a retained personal dependency", AuthorUpgradeBreaksPersonal);
         yield return ("pack update retains a compatible personal override then adopts a compatible later author version", PersonalOverrideAcrossUpdates);
@@ -19,6 +23,92 @@ internal static class PackUpdateGraphTests {
         yield return ("pack update final graph loads only the target legacy version folder and marks unsupported scopes unknown", LegacyIncomingScope);
     }
 
+    private static void PersonalAuthorComponentUpdate() {
+        foreach (bool preserve in new[] { false, true }) {
+            using Fixture f = new();
+            FileSpec local = f.Spec("mods/local-1.jar", "shared_component", "1.0");
+            FileSpec incoming = f.Spec("mods/author-2.jar", "shared_component", "2.0", project: "component");
+            f.Install(local);
+            Plan plan = f.Plan([], [incoming]); f.Stage(plan);
+            Change update = plan.Changes.Single();
+            Require(update.PersonalComponentMatched && update.Before == local.Hash && update.LocalRelative == local.Relative && update.BaselineRelative is null &&
+                update.Incoming?.Relative == incoming.Relative && update.CanChoose && update.ApplyAuthor && !update.Conflict && update.Operation == PackUpdateOperation.AuthorChange,
+                "Unique local/author components were not one previewed upgrade with explicit choices and separate provenance.");
+            Require(File.ReadAllBytes(f.Target(local.Relative)).SequenceEqual(local.Bytes) && !File.Exists(f.Target(incoming.Relative)) && !File.Exists(f.ManifestPath),
+                "Preparing or cancelling the preview must not change local bytes or create an author record.");
+            if (preserve) update.Choice = PackUpdateChoice.PreservePersonal;
+            string backup = f.Engine.Commit(plan, f.Game, CancellationToken.None);
+            JObject saved = f.Engine.ReadManifest(f.Game)!;
+            Require(saved["files"]![incoming.Relative]!["hash"]!.ToString() == incoming.Hash, "Personal bytes replaced the declared new-author hash.");
+            if (preserve) {
+                JToken observed = saved["files"]![incoming.Relative]!["local"]!;
+                Require(observed["ownership"]!.ToString() == "personal-added" && observed["personalComponentMatched"]!.Value<bool>() &&
+                    observed["hash"]!.ToString() == local.Hash && File.ReadAllBytes(f.Target(local.Relative)).SequenceEqual(local.Bytes) && !File.Exists(f.Target(incoming.Relative)),
+                    "Keeping the local component lost its personal provenance or recorded update association.");
+                FileSpec later = f.Spec("mods/author-3.jar", "shared_component", "3.0", project: "component");
+                Plan next = f.Engine.Plan(f.Game, saved, f.Package([later])); f.Stage(next);
+                Change laterUpdate = next.Changes.Single(change => change.Incoming?.Relative == later.Relative);
+                Require(laterUpdate.PersonalComponentMatched && laterUpdate.CanChoose, "Keeping a personal version permanently disabled future author updates.");
+                laterUpdate.Choice = PackUpdateChoice.UseAuthor;
+                f.Engine.Commit(next, f.Game, CancellationToken.None);
+                saved = f.Engine.ReadManifest(f.Game)!;
+                Require(File.ReadAllBytes(f.Target(later.Relative)).SequenceEqual(later.Bytes) && !File.Exists(f.Target(local.Relative)) &&
+                    saved["files"]![later.Relative]!["local"]!["ownership"]!.ToString() == "author" &&
+                    saved["files"]![later.Relative]!["local"]!["personalComponentMatched"] is null,
+                    "Adopting the author version lost bytes or retained the personal-only update exception.");
+            } else {
+                Require(File.ReadAllBytes(f.Target(incoming.Relative)).SequenceEqual(incoming.Bytes) && !File.Exists(f.Target(local.Relative)) &&
+                    !File.Exists(f.Target(local.Relative + ".disabled")) && Directory.EnumerateFiles(backup, "*.bak").Any(path => File.ReadAllBytes(path).SequenceEqual(local.Bytes)),
+                    "The paired upgrade did not back up the original local file or left two active/disabled version rows.");
+            }
+        }
+    }
+    private static void AmbiguousPersonalComponents() {
+        foreach (bool duplicateAuthor in new[] { false, true }) {
+            using Fixture f = new();
+            FileSpec local = f.Spec("mods/local-1.jar", "shared_component", "1.0");
+            FileSpec author = f.Spec("mods/author-2.jar", "shared_component", "2.0", project: "component");
+            f.Install(local);
+            if (!duplicateAuthor) f.Install(local with { Relative = "mods/local-copy.jar" });
+            Plan plan = f.Plan([], duplicateAuthor ? [author, author with { Relative = "mods/author-copy.jar" }] : [author]);
+            f.Stage(plan);
+            Require(!plan.Changes.Any(change => change.PersonalComponentMatched), "A many-to-one or one-to-many component association selected an arbitrary replacement.");
+            Require(File.ReadAllBytes(f.Target(local.Relative)).SequenceEqual(local.Bytes) && !File.Exists(f.Target(author.Relative)) && !File.Exists(f.ManifestPath),
+                "Unconfirmed component preparation changed the instance.");
+        }
+    }
+    private static void PersonalComponentAssociationGuards() {
+        foreach (string kind in new[] { "occupied", "copies", "external", "string-marker" }) {
+            using Fixture f = new();
+            FileSpec local = f.Spec("mods/local-1.jar", "shared_component", "1.0", new() { ["minecraft"] = "1.21.1" });
+            FileSpec author = f.Spec("mods/author-2.jar", "shared_component", "2.0", project: "component");
+            FileSpec nextAuthor = f.Spec("mods/author-3.jar", "shared_component", "3.0", project: "component");
+            f.Install(local); Plan initial = f.Plan([], [author]); f.Stage(initial);
+            initial.Changes.Single().Choice = PackUpdateChoice.PreservePersonal;
+            f.Engine.Commit(initial, f.Game, CancellationToken.None);
+            JObject saved = f.Engine.ReadManifest(f.Game)!;
+            if (kind == "occupied") f.Install(f.Spec(nextAuthor.Relative, "unrelated", "1"));
+            if (kind == "copies") f.Install(local with { Relative = "mods/copied-local.jar" });
+            if (kind == "external") f.Install(f.Spec(local.Relative, "changed_component", "99", new() { ["minecraft"] = "1.21.1" }));
+            if (kind == "string-marker") saved["files"]![author.Relative]!["local"]!["personalComponentMatched"] = "true";
+            byte[] before = File.ReadAllBytes(f.Target(local.Relative));
+            Plan plan = f.Engine.Plan(f.Game, saved, f.Package([nextAuthor], minecraft: "26.2", loaderVersion: "0.20.1")); f.Stage(plan);
+            Change update = plan.Changes.Single(change => change.Incoming?.Relative == nextAuthor.Relative);
+            Require(!update.AllowAuthor && !update.ApplyAuthor, "A stale, ambiguous or untyped personal association bypassed its protection: " + kind);
+            update.Choice = PackUpdateChoice.UseAuthor;
+            Throws<IOException>(() => f.Engine.ValidateChoices(plan));
+            Require(File.ReadAllBytes(f.Target(local.Relative)).SequenceEqual(before), "Rejecting a stale association changed the original: " + kind);
+        }
+    }
+    private static void PersonalComponentRollback() {
+        using Fixture f = new();
+        FileSpec local = f.Spec("mods/local-1.jar", "shared_component", "1.0");
+        FileSpec author = f.Spec("mods/author-2.jar", "shared_component", "2.0", project: "component");
+        f.Install(local); Plan plan = f.Plan([], [author]); f.Stage(plan);
+        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None, beforeApply: index => { if (index == 2) throw new IOException("Synthetic manifest-stage failure."); }));
+        Require(File.ReadAllBytes(f.Target(local.Relative)).SequenceEqual(local.Bytes) && !File.Exists(f.Target(author.Relative)) && !File.Exists(f.ManifestPath),
+            "Failed component replacement did not restore the actual personal bytes and original manifest state.");
+    }
     private static void AuthorReplacementBeforeDisabling() {
         using Fixture f = new();
         FileSpec original = f.Spec("mods/library.jar", "author_library", "0.5", project: "library");
@@ -77,6 +167,8 @@ internal static class PackUpdateGraphTests {
         Require(!choice.Conflict && choice.ApplyAuthor, "The normal author upgrade was misclassified or rolled back to satisfy a personal mod.");
         Change extra = plan.Changes.Single(item => item.LocalRelative == "mods/extra.jar");
         Require(extra.Operation == PackUpdateOperation.DisablePersonal && extra.ApplyAuthor, "The incompatible personal addition was not prepared for reversible disabling.");
+        Require(extra.Reason!.Contains("author_library", StringComparison.Ordinal) && extra.Reason.Contains(">=1.0 <2.0", StringComparison.Ordinal),
+            "The personal mod card lost the exact failing dependency and version requirement.");
         f.Engine.Commit(plan, f.Game, CancellationToken.None);
         JObject saved = f.Engine.ReadManifest(f.Game)!;
         Require(saved["files"]![incoming.Relative]!["hash"]!.ToString() == incoming.Hash && File.ReadAllBytes(f.Target(incoming.Relative)).SequenceEqual(incoming.Bytes) &&
