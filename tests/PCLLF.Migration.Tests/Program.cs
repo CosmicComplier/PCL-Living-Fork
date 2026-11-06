@@ -41,6 +41,7 @@ internal static class Program {
             ("mod-dependencies", () => ModDependencyInspectorPipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.LocalCases()).Concat(PackDependencyPolicyTests.Cases())),
             ("mod-dependency-online", () => ModDependencyOnlinePipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.OnlineCases())),
             ("settings", () => LegacySettingsTests.Cases().Concat(SettingsMicrosoftIsolationTests.Cases())),
+            ("mod-favorites", LegacyModFavoritesTests.Cases),
             ("validation-loaders", LegacyValidationLoaderTests.Cases),
             ("legacy-java", LegacyJavaTests.Cases),
             ("foundation", LegacyFoundationTests.Cases)
