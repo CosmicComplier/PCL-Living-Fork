@@ -197,6 +197,7 @@ namespace PCL
                 ReadInteger = key => Settings.Get<int>(key), ReadString = key => Settings.Get<string>(key),
                 ReadBoolean = key => Settings.Get<bool>(key), HasSaved = key => Settings.HasSaved(key),
                 DefaultValue = key => Settings.GetDefault(key), WriteSetting = (key, value) => Settings.Set(key, value), ResetSetting = key => Settings.Reset(key),
+                PersistUpdateLogPrompt = PersistUpdateLogPrompt,
                 HasIniKey = (file, key) => ModBase.HasIniKey(file, key), ThemeRefresh = value => ModSecret.ThemeRefresh(value),
                 ThemeRefreshMain = () => ModSecret.ThemeRefreshMain(), RefreshHidden = () => PageSetupUI.HiddenRefresh(),
                 RefreshBackground = (first, second) => PageSetupUI.BackgroundRefresh(first, second), RefreshMusic = (first, second) => ModMusic.MusicRefreshPlay(first, second),
@@ -278,6 +279,41 @@ namespace PCL
             InoutFluent = power => new ModAnimation.AniEaseInoutFluent((ModAnimation.AniEasePower)(int)power),
             Start = (frames, name, refresh) => ModAnimation.AniStart(frames, name, refresh), Stop = name => ModAnimation.AniStop(name), Speed = () => ModAnimation.AniSpeed
         };
+
+        // Persists the update-log prompt preference without the generic settings
+        // writer's toast-on-failure behavior, then re-reads Setup.ini so a rejected
+        // write leaves the session on the previous value and never false.
+        private static bool PersistUpdateLogPrompt(bool value)
+        {
+            string file = Paths.Base + @"PCL\Setup.ini";
+            try
+            {
+                string current = FileUtils.Exists(file) ? FileUtils.ReadAsString(file) : "";
+                FileUtils.WriteAtomic(file, LegacyUpdateLogPrompt.WriteIniText(current, value));
+                ModBase.IniClearCache("Setup");
+                Settings.Entries[LegacyUpdateLogPrompt.Key].ValueCache.Clear();
+                bool persisted = Settings.Get<bool>(LegacyUpdateLogPrompt.Key);
+                if (persisted == value)
+                {
+                    Logger.Info($"已保存更新说明弹窗设置：{value}");
+                    return true;
+                }
+                Logger.Error($"更新说明弹窗设置写入后读回不一致（期望 {value}，实际 {persisted}），未保留本次更改", LogBehavior.None);
+                return false;
+            }
+            catch (Exception error)
+            {
+                try
+                {
+                    ModBase.IniClearCache("Setup");
+                    Settings.Entries[LegacyUpdateLogPrompt.Key].ValueCache.Clear();
+                    Settings.Get<bool>(LegacyUpdateLogPrompt.Key);
+                }
+                catch (Exception rollbackError) { Logger.Error(rollbackError, "回滚更新说明弹窗设置缓存失败", LogBehavior.None); }
+                Logger.Error(error, "保存更新说明弹窗设置失败，未保留本次更改", LogBehavior.None);
+                return false;
+            }
+        }
 
         private static LegacyMainTerminationHost CreateTerminationHost() => new LegacyMainTerminationHost
         {

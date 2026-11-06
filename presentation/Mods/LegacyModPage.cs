@@ -27,6 +27,10 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     private LegacyModFilter filter;
     private LocalResourceSortOrder sortOrder;
     private List<TMod>? searchResult;
+    private const string EmptyTitleDefault = "尚未安装 Mod";
+    private const string EmptyHintDefault = "你可以下载新的 Mod，或者从已经下载好的文件安装 Mod。\r\n如果你已经安装了 Mod，可能是版本隔离设置有误，请在设置中调整版本隔离选项。";
+    private const string FavoriteEmptyTitle = "暂无收藏的 Mod";
+    private const string FavoriteEmptyHint = "点击 Mod 条目右侧的星标即可收藏。";
     // Test-visible rebuild counter: only a successful ReloadModList or a complete
     // LoadUI rebuild increments it; favorite toggles must leave it unchanged.
     public int ListRebuildSerial {get;private set;}
@@ -42,7 +46,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void LoadUI(){
         try{
             if(host.Output()!.Any()){view.Back().Visibility=Visibility.Visible;view.Empty().Visibility=Visibility.Collapsed;}
-            else{view.Empty().Visibility=Visibility.Visible;view.Back().Visibility=Visibility.Collapsed;return;}
+            else{view.Empty().Visibility=Visibility.Visible;view.Back().Visibility=Visibility.Collapsed;view.SetEmptyTitle(EmptyTitleDefault);view.SetEmptyHint(EmptyHintDefault);return;}
             host.Items().Clear();foreach(TMod entry in host.Output()!)host.Items()[entry.EnabledName]=MakeItem(entry);
             Filter=LegacyModFilter.All;view.SetSearch("");RefreshUI();ListRebuildSerial++;
         }catch(Exception error){Logger.Error(error,"加载 Mod 列表 UI 失败");}
@@ -117,14 +121,16 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void SortChanged(int value){if(value>=0)SortOrder=(LocalResourceSortOrder)value;}
     public void RefreshUI(){
         if(view.List() is null)return;IReadOnlyList<TMod> showing=LocalResourceSort.Order(Current.Where(CanPassFilter),sortOrder,mod=>mod.File);host.ChangeAnimationControl(1);
-        if(showing.Any()){view.List()!.Visibility=Visibility.Visible;view.List()!.Children.Clear();foreach(TMod mod in showing){if(!host.Items().TryGetValue(mod.EnabledName,out TItem? item))continue;host.SetChecked(item,host.Selected().Contains(mod.EnabledName));view.List()!.Children.Add(item);}}
-        else view.List()!.Visibility=Visibility.Collapsed;
+        if(showing.Any()){view.List()!.Visibility=Visibility.Visible;view.List()!.Children.Clear();foreach(TMod mod in showing){if(!host.Items().TryGetValue(mod.EnabledName,out TItem? item))continue;host.SetChecked(item,host.Selected().Contains(mod.EnabledName));view.List()!.Children.Add(item);}view.Empty().Visibility=Visibility.Collapsed;}
+        else{view.List()!.Visibility=Visibility.Collapsed;if(Filter==LegacyModFilter.Favorites){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(FavoriteEmptyTitle);view.SetEmptyHint(FavoriteEmptyHint);}else if(!(host.Output()?.Any()??false)){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(EmptyTitleDefault);view.SetEmptyHint(EmptyHintDefault);}}
         host.ChangeAnimationControl(-1);host.SetSelected(host.Selected().Where(name=>showing.Any(mod=>Same(mod.EnabledName,name))).ToList());RefreshBars();
     }
     public void RefreshBars(){
-        int any=0,enabled=0,updates=0;foreach(TMod mod in Current){any++;if(mod.HasUpdate)updates++;if(mod.IsEnabled)enabled++;}int disabled=any-enabled;
+        int any=0,enabled=0,updates=0,favorites=0;foreach(TMod mod in Current){any++;if(mod.HasUpdate)updates++;if(mod.IsEnabled)enabled++;if(IsFavorite(mod.EnabledName))favorites++;}int disabled=any-enabled;
         ResourcePageFilter[] filters=view.Filters();filters[0].Text=(IsSearching?"搜索结果":"全部")+$" ({any})";filters[3].Text=$"可更新 ({updates})";filters[3].Visibility=Filter==LegacyModFilter.CanUpdate||updates>0?Visibility.Visible:Visibility.Collapsed;
         filters[1].Text=$"启用 ({enabled})";filters[1].Visibility=Filter==LegacyModFilter.Enabled||(enabled>0&&enabled<any)?Visibility.Visible:Visibility.Collapsed;filters[2].Text=$"禁用 ({disabled})";filters[2].Visibility=Filter==LegacyModFilter.Disabled||disabled>0?Visibility.Visible:Visibility.Collapsed;
+        // Favorites stays visible and enabled from the first render, even at 0.
+        filters[4].Text=$"收藏 ({favorites})";filters[4].Visibility=Visibility.Visible;
         int count=host.Selected().Count;bool selected=count>0;if(selected)view.SetSelectionText($"已选择 {count} 个文件");
         if(selected){bool hasUpdate=false,hasEnabled=false,hasDisabled=false;foreach(TMod mod in host.Output()!){if(!host.Selected().Contains(mod.EnabledName))continue;if(mod.HasUpdate)hasUpdate=true;if(mod.IsEnabled)hasEnabled=true;if(!mod.IsEnabled)hasDisabled=true;}view.EnableDisable(hasEnabled);view.EnableEnable(hasDisabled);view.EnableUpdate(hasUpdate);}
         view.ListBack().Margin=new Thickness(0,0,0,selected?95:15);view.SelectionBar(count,ref bottomCount,view.Root().IsLoaded&&host.AnimationControl()==0);
@@ -154,9 +160,18 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void UnselectAnimated(){int old=host.AnimationControl();host.SetAnimationControl(0);ChangeAllSelected(false);host.ChangeAnimationControl(old);}
     public void MainKey(KeyEventArgs e){if(!host.IsCurrentPage())return;if(host.CtrlDown()&&e.Key==Key.A)ChangeAllSelected(true);}
     public void SearchKey(KeyEventArgs e){if(view.Search().Any())return;if(host.CtrlDown()&&e.Key==Key.A)view.FocusBack();}
-    public LegacyModFilter Filter {get=>filter;set{if(filter==value)return;filter=value;view.Filters()[value==LegacyModFilter.All?0:value==LegacyModFilter.Enabled?1:value==LegacyModFilter.Disabled?2:3].Checked=true;RefreshUI();}}
-    private bool CanPassFilter(TMod mod)=>Filter switch{LegacyModFilter.All=>true,LegacyModFilter.Enabled=>mod.IsEnabled,LegacyModFilter.Disabled=>!mod.IsEnabled,LegacyModFilter.CanUpdate=>mod.HasUpdate,_=>false};
-    public void FilterChanged(int value){Filter=(LegacyModFilter)value;RefreshUI();}
+    public LegacyModFilter Filter {get=>filter;set{if(filter==value)return;if(!Enum.IsDefined(typeof(LegacyModFilter),value))return;filter=value;view.Filters()[(int)value].Checked=true;RefreshUI();}}
+    private bool CanPassFilter(TMod mod)=>Filter switch{LegacyModFilter.All=>true,LegacyModFilter.Enabled=>mod.IsEnabled,LegacyModFilter.Disabled=>!mod.IsEnabled,LegacyModFilter.CanUpdate=>mod.HasUpdate,LegacyModFilter.Favorites=>IsFavorite(mod.EnabledName),_=>false};
+    public void FilterChanged(int value){Filter=Enum.IsDefined(typeof(LegacyModFilter),value)?(LegacyModFilter)value:LegacyModFilter.All;}
+    private List<string> FavoriteKeys()=>host.FavoriteKeys?.Invoke()??new List<string>();
+    public bool IsFavorite(string key)=>LegacyModFavorites.Contains(FavoriteKeys(),key);
+    public bool ToggleFavorite(string key){
+        bool favorited;
+        try{favorited=host.ToggleFavorite(key);}catch(Exception error){Logger.Error(error,"切换 Mod 收藏失败",LogBehavior.None);favorited=IsFavorite(key);}
+        Logger.Info(LegacyModFavorites.ToggleLogLine(key,favorited));
+        if(Filter==LegacyModFilter.Favorites)RefreshUI();else RefreshBars();
+        return favorited;
+    }
     public void SelectED(bool enable){EDMods(host.Output()!.Where(mod=>host.Selected().Contains(mod.EnabledName)),enable);ChangeAllSelected(false);}
     private void EDMods(IEnumerable<TMod> mods,bool enable){List<TMod> frozen=mods.ToList();if(enable)ApplyModState(frozen,true);else BeginDependencyMutation(frozen.Where(mod=>mod.IsEnabled).Select(mod=>mod.File.FullName!),"禁用",()=>ApplyModState(frozen,false));}
     private void ApplyModState(IEnumerable<TMod> mods,bool enable){

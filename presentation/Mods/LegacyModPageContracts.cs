@@ -9,7 +9,7 @@ using PCLCS;
 
 namespace PCLLF.Presentation.Mods;
 
-public enum LegacyModFilter { All, Enabled, Disabled, CanUpdate }
+public enum LegacyModFilter { All, Enabled, Disabled, CanUpdate, Favorites }
 public delegate void LegacyModSelectionBar(int count,ref int previous,bool animate);
 public sealed class LegacyModPageView {
     public Func<FrameworkElement> Root = null!, Back = null!, Empty = null!, ListBack = null!;
@@ -20,6 +20,8 @@ public sealed class LegacyModPageView {
     public Action<bool> EnableIndex = null!;
     public Action<string> IndexText = null!;
     public Func<ResourcePageFilter[]> Filters = null!;
+    // Favorite-filter empty state text; the mod page owns the copy, the host view owns the controls.
+    public Action<string> SetEmptyTitle = null!, SetEmptyHint = null!;
     public Action<bool> EnableDisable = null!, EnableEnable = null!, EnableUpdate = null!;
     public LegacyModSelectionBar SelectionBar = null!;
 }

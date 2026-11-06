@@ -32,7 +32,7 @@ internal static class LegacySettingsTests {
         Equal(LegacySettingSource.Normal, fixture.Entries["SystemUpdateLogPrompt"].Source);
         Equal("", fixture.Entries["UiModFavorite"].DefaultValue);
         Equal(typeof(string), fixture.Entries["UiModFavorite"].Type);
-        Equal(LegacySettingSource.Normal, fixture.Entries["UiModFavorite"].Source);
+        Equal(LegacySettingSource.Instance, fixture.Entries["UiModFavorite"].Source);
         foreach (string key in new[] { "ToolLauncherUpdateSource", "ToolLauncherUpdateChannel", "UiLauncherColorMode" }) {
             Equal(0, fixture.Entries[key].DefaultValue);
             Equal(typeof(int), fixture.Entries[key].Type);

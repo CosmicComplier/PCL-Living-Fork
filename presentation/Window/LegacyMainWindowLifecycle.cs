@@ -26,6 +26,11 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         try { return host.ReadBoolean(LegacyUpdateLogPrompt.Key); }
         catch (Exception error) { Logger.Error(error, "读取更新说明弹窗设置失败", LogBehavior.None); return UpdateLogPromptDefault; }
     }
+    private void DismissUpdateLogPrompt() {
+        try {
+            if (!host.PersistUpdateLogPrompt(false)) Logger.Error("更新说明弹窗设置保存失败，已回滚为原设置", LogBehavior.None);
+        } catch (Exception error) { Logger.Error(error, "更新说明弹窗设置保存失败，已回滚为原设置", LogBehavior.None); }
+    }
     public void ConstructBeforeXaml() {
         host.WriteStartTick(host.Clock()); host.AssignGlobalWindow(); host.CreateLaunchLeft(); host.CreateLaunchRight();
         int last = host.ReadInteger("SystemLastVersionReg");
@@ -101,7 +106,11 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
     private void ShowReleaseLog(bool automatic) => RunThread(() => {
         if (host.ShowReleaseNotes(automatic, ForkReleaseHighlights)) return;
         string content = $"{host.LauncherName()} {host.VersionBaseName()}\r\n\r\n" + ForkReleaseHighlights;
-        if (Message(content, host.LauncherName() + " 更新说明", "确定", "查看更新日志") == 2) host.OpenWebsite(host.ReleasesUrl());
+        // Closing with X yields no integer result, which keeps the 确定 (no write) semantics.
+        switch (Message(content, host.LauncherName() + " 更新说明", "确定", "查看更新日志", "不再弹出")) {
+            case 2: host.OpenWebsite(host.ReleasesUrl()); break;
+            case 3: DismissUpdateLogPrompt(); break;
+        }
     }, "Fork UpdateLog Output");
     public void Upgrade(int lastVersion) {
         Logger.Info($"版本号从 {lastVersion} 升高到 {host.VersionCode}"); host.WriteSetting("SystemLastVersionReg", host.VersionCode);
@@ -127,7 +136,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         if (host.HasSaved("ToolDownloadTranslate") && !host.HasSaved("ToolDownloadTranslateV2")) { host.WriteSetting("ToolDownloadTranslateV2", checked(host.ReadInteger("ToolDownloadTranslate") + 1)); Logger.Info("已从老版本迁移 Mod 命名设置"); }
         if (lastVersion <= 381 && host.HasSaved("LaunchAdvanceJvm") && Operators.ConditionalCompareObjectEqual(host.ReadString("LaunchAdvanceJvm").ToString().Replace("-XX:+UseG1GC ", "").Replace("-XX:-UseAdaptiveSizePolicy ", "").Trim(), host.DefaultValue("LaunchAdvanceJvm"), false)) { host.ResetSetting("LaunchAdvanceJvm"); Logger.Info("已重置 JVM 参数设置"); }
         if (lastVersion <= 0 || highest >= host.VersionCode) return;
-        ShowReleaseLog(true);
+        if (ShouldAutoShowUpdateLog()) ShowReleaseLog(true);
     }
     public void Downgrade(int lastVersion) { Logger.Info($"版本号从 {lastVersion} 降低到 {host.VersionCode}"); host.WriteSetting("SystemLastVersionReg", host.VersionCode); }
 }

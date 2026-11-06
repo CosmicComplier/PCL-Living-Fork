@@ -85,6 +85,28 @@ namespace PCL
                 ConfirmMode = ActionName => global::PCL.ModModpackMode.ConfirmModAction(ActionName),
                 ReadBoolean = new Func<global::System.String, global::System.Boolean>(Key => global::PCL.Settings.Get<bool>(Key)),
                 WriteSetting = new Action<global::System.String, global::System.Object>((Key, Value) => global::PCL.Settings.Set(Key, Value)),
+                FavoriteKeys = new Func<global::System.Collections.Generic.List<global::System.String>>(() => {
+                    var Target = global::PCL.PageInstanceLeft.Instance;
+                    if (Target is null) return new global::System.Collections.Generic.List<global::System.String>();
+                    return global::PCLCS.LegacyModFavorites.Parse(global::PCL.Settings.Get<string>(global::PCLCS.LegacyModFavorites.SettingKey, Instance: Target));
+                }),
+                ToggleFavorite = new Func<global::System.String, global::System.Boolean>(Key => {
+                    var Target = global::PCL.PageInstanceLeft.Instance;
+                    if (Target is null) return false;
+                    global::System.Collections.Generic.List<global::System.String> Current = global::PCLCS.LegacyModFavorites.Parse(global::PCL.Settings.Get<string>(global::PCLCS.LegacyModFavorites.SettingKey, Instance: Target));
+                    if (global::PCLCS.LegacyModFavorites.Contains(Current, Key)) {
+                        global::System.Collections.Generic.List<global::System.String> Remaining = global::PCLCS.LegacyModFavorites.Remove(Current, Key);
+                        global::PCL.Settings.Set(global::PCLCS.LegacyModFavorites.SettingKey, global::PCLCS.LegacyModFavorites.Serialize(Remaining), Instance: Target);
+                        return false;
+                    }
+                    if (!global::PCLCS.LegacyModFavorites.TryAdd(Current, Key, out global::System.Collections.Generic.List<global::System.String> Added, out string Serialized, out int Count, out int Length)) {
+                        global::MeloongCore.Logger.Warn(global::PCLCS.LegacyModFavorites.OverflowLogLine(Count, Length), global::MeloongCore.LogBehavior.None);
+                        global::PCL.ModMain.Hint("收藏数量已达上限", global::PCL.ModMain.HintType.Red, false);
+                        return false;
+                    }
+                    global::PCL.Settings.Set(global::PCLCS.LegacyModFavorites.SettingKey, Serialized, Instance: Target);
+                    return true;
+                }),
                 SelectInstallFiles = new Func<global::System.Collections.Generic.IEnumerable<global::System.String>>(() => global::MeloongCore.Wpf.Dialogs.SelectFile("选择要安装的 Mod", true, filter: new[] { (new[] { "jar", "litemod", "disabled", "old" }, "Mod 文件") })),
                 Explorer = global::PCL.ModBase.OpenExplorer,
                 Website = global::PCL.ModBase.OpenWebsite,
