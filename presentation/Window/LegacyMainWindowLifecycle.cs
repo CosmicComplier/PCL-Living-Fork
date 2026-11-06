@@ -18,7 +18,7 @@ namespace PCLLF.Presentation.Windowing;
 
 public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnimation>
     where TStack : class, ILegacyMainPageStack, new() where TInstance : class where TAnimation : struct {
-    private const string ForkReleaseHighlights = "- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览";
+    private const string ForkReleaseHighlights = "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览";
     public void ConstructBeforeXaml() {
         host.WriteStartTick(host.Clock()); host.AssignGlobalWindow(); host.CreateLaunchLeft(); host.CreateLaunchRight();
         int last = host.ReadInteger("SystemLastVersionReg");
@@ -85,12 +85,14 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             }
             try { host.JavaInitialize(); System.Threading.Thread.Sleep(100); host.StartClientList(); RunThread(host.ClearTaskTemp, "TryClearTaskTemp", ThreadPriority.BelowNormal); }
             catch (Exception ex) { Logger.Error(ex, "初始化加载池运行失败"); }
-            if (host.VersionBranchMain() == "OpenSource") Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + ForkReleaseHighlights, $"{host.LauncherName()} {host.VersionBaseName()} 版本说明");
+            if (host.VersionBranchMain() == "OpenSource" && !host.ShowReleaseNotes(true, ForkReleaseHighlights)) Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + ForkReleaseHighlights, $"{host.LauncherName()} {host.VersionBaseName()} 版本说明");
             host.CheckUpdates();
         }, "初始化", ThreadPriority.Lowest);
         Logger.Info($"第三阶段加载用时：{checked(host.Clock() - host.StartTick())} ms");
     }
-    public void ShowUpdateLog() => RunThread(() => {
+    public void ShowUpdateLog() => ShowReleaseLog(false);
+    private void ShowReleaseLog(bool automatic) => RunThread(() => {
+        if (host.ShowReleaseNotes(automatic, ForkReleaseHighlights)) return;
         string content = $"{host.LauncherName()} {host.VersionBaseName()}\r\n\r\n" + ForkReleaseHighlights;
         if (Message(content, host.LauncherName() + " 更新说明", "确定", "查看更新日志") == 2) host.OpenWebsite(host.ReleasesUrl());
     }, "Fork UpdateLog Output");
@@ -118,7 +120,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         if (host.HasSaved("ToolDownloadTranslate") && !host.HasSaved("ToolDownloadTranslateV2")) { host.WriteSetting("ToolDownloadTranslateV2", checked(host.ReadInteger("ToolDownloadTranslate") + 1)); Logger.Info("已从老版本迁移 Mod 命名设置"); }
         if (lastVersion <= 381 && host.HasSaved("LaunchAdvanceJvm") && Operators.ConditionalCompareObjectEqual(host.ReadString("LaunchAdvanceJvm").ToString().Replace("-XX:+UseG1GC ", "").Replace("-XX:-UseAdaptiveSizePolicy ", "").Trim(), host.DefaultValue("LaunchAdvanceJvm"), false)) { host.ResetSetting("LaunchAdvanceJvm"); Logger.Info("已重置 JVM 参数设置"); }
         if (lastVersion <= 0 || highest >= host.VersionCode) return;
-        ShowUpdateLog();
+        ShowReleaseLog(true);
     }
     public void Downgrade(int lastVersion) { Logger.Info($"版本号从 {lastVersion} 降低到 {host.VersionCode}"); host.WriteSetting("SystemLastVersionReg", host.VersionCode); }
 }
