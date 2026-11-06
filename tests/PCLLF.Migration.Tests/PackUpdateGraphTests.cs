@@ -6,6 +6,8 @@ using PCLCS;
 internal static class PackUpdateGraphTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("pack update final graph reuses an author dependency for a personal mod", AuthorUpgradeSatisfiesPersonal);
+        yield return ("pack update replaces an incompatible personal author override before judging its consumer", AuthorReplacementBeforeDisabling);
+        yield return ("pack update keeps unrelated author upgrades and removals out of the conflict category", OrdinaryAuthorActions);
         yield return ("pack update refuses an author version that breaks a retained personal dependency", AuthorUpgradeBreaksPersonal);
         yield return ("pack update retains a compatible personal override then adopts a compatible later author version", PersonalOverrideAcrossUpdates);
         yield return ("pack update unknown metadata requires explicit acknowledgement and keeps logical filenames", UnknownNeedsAcknowledgement);
@@ -17,6 +19,39 @@ internal static class PackUpdateGraphTests {
         yield return ("pack update final graph loads only the target legacy version folder and marks unsupported scopes unknown", LegacyIncomingScope);
     }
 
+    private static void AuthorReplacementBeforeDisabling() {
+        using Fixture f = new();
+        FileSpec original = f.Spec("mods/library.jar", "author_library", "0.5", project: "library");
+        FileSpec local = f.Spec(original.Relative, "author_library", "1.0", project: "library");
+        FileSpec incoming = f.Spec("mods/library-2.jar", "author_library", "2.0", project: "library");
+        FileSpec extra = f.Spec("mods/personal.jar", "personal_extra", "1.0", new() { ["author_library"] = ">=2" });
+        f.Install(local); f.Install(extra);
+        Plan plan = f.Plan([original], [incoming]); f.Stage(plan);
+        Change replacement = plan.Changes.Single(change => change.Incoming?.Relative == incoming.Relative);
+        Change personal = plan.Changes.Single(change => change.LocalRelative == extra.Relative);
+        Require(replacement.ApplyAuthor && !replacement.Conflict && personal.PersonalCompatible && personal.Operation == PackUpdateOperation.AuthorChange && !personal.ApplyAuthor,
+            "Replacing the provider should repair the personal consumer, not disable it based on an outdated graph.");
+        f.Engine.Commit(plan, f.Game, CancellationToken.None);
+        Require(File.ReadAllBytes(f.Target(incoming.Relative)).SequenceEqual(incoming.Bytes) && File.ReadAllBytes(f.Target(extra.Relative)).SequenceEqual(extra.Bytes),
+            "Compatible consumer or author replacement was lost.");
+    }
+    private static void OrdinaryAuthorActions() {
+        using Fixture f = new();
+        FileSpec original = f.Spec("mods/old.jar", "normal", "1", project: "normal");
+        FileSpec incoming = f.Spec("mods/new.jar", "normal", "2", project: "normal");
+        FileSpec removed = f.Spec("mods/removed.jar", "removed", "1", project: "removed");
+        FileSpec brokenAuthor = f.Spec("mods/broken-author.jar", "broken_author", "1", new() { ["missing"] = ">=1" });
+        f.Install(original); f.Install(removed);
+        Plan plan = f.Plan([original, removed], [incoming, brokenAuthor]); f.Stage(plan);
+        Change update = plan.Changes.Single(change => change.Incoming?.Relative == incoming.Relative);
+        Change removal = plan.Changes.Single(change => change.BaselineRelative == removed.Relative);
+        Require(plan.DependencyCheck!.HasErrors && update.AllowPreserveAuthor && removal.AllowPreserveAuthor &&
+            !update.Conflict && !removal.Conflict && update.ApplyAuthor && removal.ApplyAuthor,
+            "An unrelated graph error turned ordinary author actions into conflicts or changed their default actions.");
+        update.Choice = removal.Choice = PackUpdateChoice.PreservePersonal;
+        Require(!update.ApplyAuthor && !removal.ApplyAuthor, "Independent preserve choices stopped affecting execution.");
+        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+    }
     private static void AuthorUpgradeSatisfiesPersonal() {
         using Fixture f = new();
         FileSpec original = f.Spec("mods/library-1.jar", "author_library", "1.0", project: "library");
@@ -37,23 +72,20 @@ internal static class PackUpdateGraphTests {
         f.Install(original);
         f.Install(f.Spec("mods/extra.jar", "personal_extra", "1.0", new() { ["author_library"] = ">=1.0 <2.0" }));
         Plan plan = f.Plan([original], [incoming]); f.Stage(plan);
-        Require(plan.DependencyCheck?.HasErrors == true, "The preview did not see the complete final graph error.");
+        Require(plan.DependencyCheck?.HasErrors == false, "The revised author combination was not resolved after handling the incompatible personal addition.");
         Change choice = plan.Changes.Single(item => item.Incoming?.Relative == incoming.Relative);
-        Require(choice.Conflict && choice.Choice == PackUpdateChoice.UseAuthor && choice.ApplyAuthor, "A problematic author upgrade must keep its default action but expose the current-version choice.");
-        IOException failure = Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
-        Require(failure.Message.Contains("依赖") && failure.Message.Contains("author_library"), "The rejected plan lost the conflicting dependency evidence.");
-        Require(File.ReadAllBytes(f.Target(original.Relative)).SequenceEqual(original.Bytes) && !File.Exists(f.Target(incoming.Relative)) && !File.Exists(f.ManifestPath), "A rejected complete graph altered the instance or author baseline.");
-        choice.Choice = PackUpdateChoice.PreservePersonal;
-        Require(!f.Engine.CheckDependencies(plan).HasErrors && !f.Engine.CheckDependencies(plan).HasUnknown, "Keeping the compatible current author version did not resolve the actual personal dependency.");
+        Require(!choice.Conflict && choice.ApplyAuthor, "The normal author upgrade was misclassified or rolled back to satisfy a personal mod.");
+        Change extra = plan.Changes.Single(item => item.LocalRelative == "mods/extra.jar");
+        Require(extra.Operation == PackUpdateOperation.DisablePersonal && extra.ApplyAuthor, "The incompatible personal addition was not prepared for reversible disabling.");
         f.Engine.Commit(plan, f.Game, CancellationToken.None);
         JObject saved = f.Engine.ReadManifest(f.Game)!;
-        Require(saved["files"]![incoming.Relative]!["hash"]!.ToString() == incoming.Hash && saved["files"]![incoming.Relative]!["local"]!["relative"]!.ToString() == original.Relative,
-            "Keeping the current version overwrote the new author baseline or lost its local override mapping.");
+        Require(saved["files"]![incoming.Relative]!["hash"]!.ToString() == incoming.Hash && File.ReadAllBytes(f.Target(incoming.Relative)).SequenceEqual(incoming.Bytes) &&
+            !File.Exists(f.Target("mods/extra.jar")) && File.Exists(f.Target(extra.DestinationRelative)), "Curated author upgrade or reversible personal disabling was not committed correctly.");
         FileSpec later = f.Spec("mods/library-1.5.jar", "author_library", "1.5", project: "library");
         Plan next = f.Engine.Plan(f.Game, saved, f.Package([later])); f.Stage(next);
         next.Changes.Single(item => item.Incoming?.Relative == later.Relative).Choice = PackUpdateChoice.UseAuthor;
         f.Engine.Commit(next, f.Game, CancellationToken.None);
-        Require(!File.Exists(f.Target(original.Relative)) && File.ReadAllBytes(f.Target(later.Relative)).SequenceEqual(later.Bytes), "A later compatible author version could not replace the tracked kept version.");
+        Require(!File.Exists(f.Target(original.Relative)) && File.ReadAllBytes(f.Target(later.Relative)).SequenceEqual(later.Bytes), "A later author version could not replace the tracked author version.");
     }
 
     private static void PersonalOverrideAcrossUpdates() {
@@ -65,7 +97,7 @@ internal static class PackUpdateGraphTests {
         f.Install(f.Spec("mods/extra.jar", "personal_extra", "1.0", new() { ["author_library"] = ">=1.4 <2.0" }));
         Plan plan = f.Plan([original], [incoming]); f.Stage(plan);
         Change change = plan.Changes.Single(item => item.Incoming?.Relative == incoming.Relative);
-        Require(change.Conflict && !change.ApplyAuthor && !f.Engine.CheckDependencies(plan).HasErrors, "A compatible personal override was not retained by default.");
+        Require(change.PersonalCompatible && !change.Conflict && !change.ApplyAuthor && !f.Engine.CheckDependencies(plan).HasErrors, "A compatible personal override was not retained by default.");
         change.Choice = PackUpdateChoice.UseAuthor;
         Throws<IOException>(() => f.Engine.ValidateChoices(plan));
         change.Choice = PackUpdateChoice.PreservePersonal;
@@ -88,7 +120,7 @@ internal static class PackUpdateGraphTests {
         FileSpec unknown = f.Raw("mods/unconfirmed.jar", Jar("readme.txt", "metadata intentionally unavailable"));
         Plan plan = f.Plan([], [unknown]); f.Stage(plan);
         Require(plan.DependencyCheck?.HasUnknown == true && !plan.DependencyCheck.HasErrors, "Unknown metadata was called compatible or a definite dependency conflict.");
-        Require(plan.DependencyCheck.Warnings.Any(message => message.Contains(unknown.Relative)), "Temporary payload names hid the logical author filename.");
+        Require(plan.DependencyCheck!.Warnings.Any(message => message.Contains(unknown.Relative)), "Temporary payload names hid the logical author filename.");
         Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
         Require(!File.Exists(f.Target(unknown.Relative)), "Unconfirmed dependencies committed without acknowledgement.");
         plan.AllowUnverifiedDependencies = true;
@@ -115,12 +147,13 @@ internal static class PackUpdateGraphTests {
         f.Install(original); f.Install(extra);
         Plan plan = f.Plan([original], []); f.Stage(plan);
         Change removal = plan.Changes.Single(item => item.BaselineRelative == original.Relative);
-        Require(removal.Conflict && removal.ApplyAuthor && plan.DependencyCheck?.HasErrors == true, "Author removal should remain the default action and expose its final graph problem.");
-        removal.Choice = PackUpdateChoice.PreservePersonal;
+        Require(!removal.Conflict && removal.ApplyAuthor && plan.DependencyCheck?.HasErrors == false, "Author removal should stay the default, with its incompatible personal dependent handled separately.");
+        Change dependent = plan.Changes.Single(item => item.LocalRelative == extra.Relative);
+        Require(dependent.Operation == PackUpdateOperation.DisablePersonal, "Personal dependent was not reversibly disabled.");
         f.Engine.Commit(plan, f.Game, CancellationToken.None);
         JObject saved = f.Engine.ReadManifest(f.Game)!;
-        Require(saved["files"]![original.Relative] is null && saved["retained"]![original.Relative] is not null && File.Exists(f.Target(original.Relative)) && File.Exists(f.Target(extra.Relative)),
-            "Keeping a removed component either deleted the personal dependency or falsely restored author ownership.");
+        Require(saved["files"]![original.Relative] is null && !File.Exists(f.Target(original.Relative)) && !File.Exists(f.Target(extra.Relative)) && File.Exists(f.Target(dependent.DestinationRelative)),
+            "Author removal did not preserve the disabled personal dependency outside author ownership.");
     }
 
     private static void AliasNeedsAcknowledgement() {
@@ -165,13 +198,10 @@ internal static class PackUpdateGraphTests {
             f.Package([next], "1.12.2", ModLoaders.Forge, "14.23.5.2855"));
         f.Stage(plan);
         Require(plan.ObservedModFiles.Contains(client.Relative) && plan.Snapshot.ContainsKey(client.Relative), "The active legacy version-folder mod was omitted from the preview snapshot.");
-        Require(plan.DependencyCheck?.HasErrors == true && plan.DependencyCheck.Errors.Any(message => message.Contains("legacy_client") && message.Contains("author_library")),
-            "A root library replacement escaped an active mods/1.12.2 client's dependency constraint.");
-        plan.AllowUnverifiedDependencies = true;
-        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
-        Require(File.ReadAllBytes(f.Target(original.Relative)).SequenceEqual(original.Bytes) && !File.Exists(f.Target(next.Relative)), "A known legacy version-folder conflict changed the author library.");
-        plan.Changes.Single(change => change.Incoming?.Relative == next.Relative).Choice = PackUpdateChoice.PreservePersonal;
-        Require(!f.Engine.CheckDependencies(plan).HasErrors && !f.Engine.CheckDependencies(plan).HasUnknown, "Retaining the compatible library did not satisfy the real legacy annotation dependency.");
+        Require(plan.DependencyCheck?.HasErrors == false && plan.Changes.Single(change => change.LocalRelative == client.Relative).Operation == PackUpdateOperation.DisablePersonal,
+            "Active legacy personal constraints were not resolved by preserving the curated library and reversibly disabling the incompatible client.");
+        Require(plan.Changes.Single(change => change.Incoming?.Relative == next.Relative).ApplyAuthor &&
+            !f.Engine.CheckDependencies(plan).HasErrors && !f.Engine.CheckDependencies(plan).HasUnknown, "Curated legacy library was unexpectedly rolled back.");
         File.WriteAllBytes(f.Target(client.Relative), f.Legacy(client.Relative, "legacy_client", "2", "required-after:author_library@[1,3)").Bytes);
         Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
         Require(!File.Exists(f.ManifestPath), "A modified legacy version-folder file did not invalidate the old preview.");

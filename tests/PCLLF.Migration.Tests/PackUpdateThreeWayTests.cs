@@ -16,6 +16,8 @@ internal static class PackUpdateThreeWayTests {
         yield return ("pack update one physical jar cannot satisfy two old author declarations with the same hash", SharedAuthorHash);
         yield return ("pack update two changed disabled variants are ambiguous and cannot be chosen automatically", AmbiguousDisabledVariants);
         yield return ("pack update explicit author selection upgrades disabled bytes without enabling the mod", UpgradeDisabledSelection);
+        yield return ("pack update asks disabled author state independently and protects occupied enable destinations", DisabledEnableChoice);
+        yield return ("pack update recognizes tracked local content already equal to the new author bytes", ConvergedAuthorContent);
         yield return ("pack update personal own-id conflicts block while alias ambiguity needs explicit confirmation without deleting additions", PersonalModAndAliasCollisions);
         yield return ("pack update no-project overrides use old and new loader contexts when associating an upgrade", LoaderContextTransition);
         yield return ("pack update multiple old or new files from one platform project are not paired arbitrarily", AmbiguousProjectVersions);
@@ -28,6 +30,7 @@ internal static class PackUpdateThreeWayTests {
         yield return ("pack update unknown metadata cannot alone establish a duplicate mod", UnknownMetadata);
         yield return ("pack update download failure, cancellation and corrupted payloads leave the instance intact", DownloadFailures);
         yield return ("pack update commit failure and cancellation roll back renamed files and the manifest", CommitRollback);
+        yield return ("pack update rollback preserves external writes and leaves incomplete recovery pending", RollbackExternalWrites);
         yield return ("pack update rejects changed renamed files and new mods after preview", StalePreview);
         yield return ("pack update personal additions occupying an author target retain their provenance across updates", PersonalTargetAcrossUpdates);
         yield return ("pack update stages only changed selectable author files and skips unavailable unchanged or optional URLs", SelectiveDownloads);
@@ -35,6 +38,62 @@ internal static class PackUpdateThreeWayTests {
         yield return ("pack update canceled planning and hashing preserve the instance and throw cancellation", PlanningCancellation);
     }
 
+    private static void RollbackExternalWrites() {
+        foreach (bool existed in new[] { false, true }) {
+            using Context f = new();
+            string first = f.Path("config/first.txt"), second = f.Path("config/second.txt");
+            if (existed) f.Text("config/first.txt", "OLD_AUTHOR");
+            f.Text("config/second.txt", "SECOND_OLD");
+            string stage = f.StagePath(), firstPayload = System.IO.Path.Combine(stage, "first"), secondPayload = System.IO.Path.Combine(stage, "second");
+            File.WriteAllText(firstPayload, "NEW_AUTHOR"); File.WriteAllText(secondPayload, "SECOND_NEW");
+            var operations = new List<Tuple<string, string?, string?>> {
+                Tuple.Create(first, (string?)firstPayload, (string?)Digest(first)),
+                Tuple.Create(second, (string?)secondPayload, (string?)Digest(second))
+            };
+            IOException? error = null;
+            try { f.Engine.ApplyTransaction(f.Game, f.Game, operations, CancellationToken.None, index => {
+                if (index == 1) { File.WriteAllText(first, "EXTERNAL_PERSONAL_EDIT"); throw new IOException("injected"); }
+            }); } catch (IOException failure) { error = failure; }
+            Require(error?.Message.Contains("回滚未完成", StringComparison.Ordinal) == true, "Incomplete rollback was reported as ordinary failure.");
+            Require(File.ReadAllText(first) == "EXTERNAL_PERSONAL_EDIT" && File.ReadAllText(second) == "SECOND_OLD", "Rollback overwrote external data or changed an unapplied file.");
+            string journal = f.Engine.Pending(f.Game).Single(); JObject log = JObject.Parse(File.ReadAllText(journal));
+            Require(log["complete"]!.Value<bool>() == false && log["rolledBack"]!.Value<bool>() == false && log["rollbackIncomplete"]!.Value<bool>(), "Incomplete rollback was falsely marked complete.");
+            if (existed) Require(File.ReadAllText(log["files"]![0]!["backup"]!.ToString()) == "OLD_AUTHOR", "Original backup was not retained.");
+            Throws<IOException>(() => f.Engine.Recover(f.Game, f.Game));
+            Require(File.ReadAllText(first) == "EXTERNAL_PERSONAL_EDIT", "Recovery overwrote unresolved external content.");
+        }
+    }
+    private static void DisabledEnableChoice() {
+        foreach (bool occupied in new[] { false, true }) {
+            using Context f = new();
+            Spec old = new("mods/old.jar", Fabric("example", "1"), "project");
+            Spec next = old with { Relative = "mods/new.jar", Bytes = Fabric("example", "2") };
+            var baseline = f.Package([old]); f.Install(old);
+            File.Move(f.Path(old.Relative), f.Path(old.Relative + ".disabled"));
+            if (occupied) f.Install(next with { Bytes = Fabric("foreign", "personal") });
+            Plan plan = f.Plan(baseline, f.Package([next])); f.Stage(plan);
+            Change change = Incoming(plan, next.Relative);
+            Require(change.ApplyAuthor && change.KeepDisabled, "Disabled author version should update with disabled selected by default.");
+            change.KeepDisabled = false;
+            if (occupied) {
+                Throws<IOException>(() => f.Commit(plan));
+                Require(File.Exists(f.Path(old.Relative + ".disabled")), "Rejected enable removed the previous disabled version.");
+            } else {
+                f.Commit(plan); f.Has(next); f.Absent(old.Relative + ".disabled"); f.Absent(next.Relative + ".disabled");
+                Require(f.Engine.ReadManifest(f.Game)!["files"]![next.Relative]!["state"]!.ToString() == "installed", "Explicit enable did not record the actual enabled state.");
+            }
+        }
+    }
+    private static void ConvergedAuthorContent() {
+        using Context f = new();
+        Spec old = new("mods/same.jar", Fabric("same", "1"), "project");
+        Spec incoming = old with { Bytes = Fabric("same", "2") };
+        var baseline = f.Package([old]); f.Install(incoming);
+        Plan plan = f.Plan(baseline, f.Package([incoming])); f.Stage(plan);
+        Require(!plan.Changes.Any(change => change.Relative == incoming.Relative), "Tracked local bytes already matching N were called a conflict or unnecessarily rewritten.");
+        f.Commit(plan); f.Has(incoming);
+        Require(f.Engine.ReadManifest(f.Game)!["files"]![incoming.Relative]!["state"]!.ToString() == "installed", "Converged content was not recorded as the author version.");
+    }
     private static void LegacyVersionLinks() {
         using Context f = new();
         Spec mod = new("mods/legacy.jar", Fabric("legacy", "1"), "oldproject");
@@ -106,7 +165,7 @@ internal static class PackUpdateThreeWayTests {
             var original = f.Package([old]); f.Install(personal);
             var package = f.Package([next]); Plan plan = f.Plan(original, package); f.Stage(plan);
             Change change = Incoming(plan, next.Relative);
-            Require(change.Conflict && change.AllowAuthor, "A modified author jar must offer a real per-item choice.");
+            Require(change.PersonalCompatible && !change.Conflict && change.CanChoose, "A usable personal modification must be retained with an independent author-version choice.");
             Require(!change.ApplyAuthor, "Personal replacement was not preserved by default.");
             if (useAuthor) change.Choice = PackUpdateChoice.UseAuthor;
             f.Commit(plan);
@@ -117,7 +176,7 @@ internal static class PackUpdateThreeWayTests {
                 f.Has(personal); f.Absent(next.Relative);
                 Spec third = next with { Relative = "mods/lithium-third.jar", Bytes = Fabric("lithium", "3.0") };
                 Plan repeated = f.Engine.Plan(f.Game, manifest, f.Package([third])); f.Stage(repeated);
-                Require(Incoming(repeated, third.Relative).Conflict, "The second update forgot a retained personal replacement.");
+                Require(Incoming(repeated, third.Relative).PersonalCompatible && !Incoming(repeated, third.Relative).ApplyAuthor, "The second update forgot a usable retained personal replacement.");
                 f.Commit(repeated); f.Has(personal); f.Absent(third.Relative);
             }
         }
@@ -149,10 +208,13 @@ internal static class PackUpdateThreeWayTests {
             if (disabled) File.Move(f.Path(old.Relative), f.Path(old.Relative + ".disabled")); else File.Delete(f.Path(old.Relative));
             Plan plan = f.Plan(original, f.Package([next])); f.Stage(plan);
             Change update = Incoming(plan, next.Relative);
-            Require(update.Conflict && !update.ApplyAuthor, "Deleted/disabled file was silently restored.");
+            Require(disabled ? !update.Conflict && update.ApplyAuthor && update.KeepDisabled : update.Conflict && !update.ApplyAuthor,
+                "Disabled author content must update without enabling; personal deletion must stay respected.");
             Require(update.Ownership == (disabled ? PackUpdateOwnership.Disabled : PackUpdateOwnership.Deleted), "Disabled/deleted states were conflated with a normal rename.");
             f.Commit(plan); f.Absent(old.Relative); f.Absent(next.Relative);
-            if (disabled) Require(File.ReadAllBytes(f.Path(old.Relative + ".disabled")).SequenceEqual(old.Bytes), "Disabled bytes changed or the mod was reenabled.");
+            if (disabled) {
+                Require(!File.Exists(f.Path(old.Relative + ".disabled")) && File.ReadAllBytes(f.Path(next.Relative + ".disabled")).SequenceEqual(next.Bytes), "Disabled author content was not updated to the newer bytes.");
+            }
         }
     }
 
@@ -237,7 +299,7 @@ internal static class PackUpdateThreeWayTests {
         File.Move(f.Path(old.Relative), f.Path(old.Relative + ".disabled"));
         Plan plan = f.Plan(original, f.Package([next])); f.Stage(plan);
         Change change = Incoming(plan, next.Relative);
-        Require(change.Ownership == PackUpdateOwnership.Disabled && change.AllowAuthor && !change.ApplyAuthor, "The disabled author file did not retain its own explicit update choice.");
+        Require(change.Ownership == PackUpdateOwnership.Disabled && change.AllowAuthor && change.ApplyAuthor && change.KeepDisabled, "The disabled author file did not default to updating while keeping its disabled state.");
         change.Choice = PackUpdateChoice.UseAuthor; f.Commit(plan);
         f.Has(next with { Relative = next.Relative + ".disabled" });
         f.Absent(old.Relative); f.Absent(old.Relative + ".disabled"); f.Absent(next.Relative);
@@ -256,13 +318,13 @@ internal static class PackUpdateThreeWayTests {
             var empty = f.Package([]); f.Install(extra);
             Plan plan = f.Plan(empty, f.Package([incoming])); f.Stage(plan);
             Change change = Incoming(plan, incoming.Relative);
-            Require(!plan.Changes.Any(c => c.ApplyAuthor && c.LocalRelative == extra.Relative), "A personal addition entered the automatic deletion transaction.");
             if (kind == 0) {
-                Require(change.Conflict && !change.AllowAuthor && !change.ApplyAuthor, "An incoming own ID ignored an independently added personal mod.");
-                change.Choice = PackUpdateChoice.UseAuthor; Throws<IOException>(() => f.Engine.ValidateChoices(plan));
-                change.Choice = PackUpdateChoice.PreservePersonal; f.Commit(plan);
-                f.Has(extra); f.Absent(incoming.Relative);
+                Change disabled = plan.Changes.Single(c => c.LocalRelative == extra.Relative);
+                Require(!change.Conflict && change.ApplyAuthor && disabled.Operation == PackUpdateOperation.DisablePersonal && disabled.ApplyAuthor,
+                    "An incoming curated own ID must take priority with reversible disabling of the personal duplicate.");
+                f.Commit(plan); f.Has(incoming); f.Absent(extra.Relative); f.Has(extra with { Relative = disabled.DestinationRelative });
             } else {
+                Require(!plan.Changes.Any(c => c.ApplyAuthor && c.LocalRelative == extra.Relative), "An unconfirmed alias provider was automatically disabled.");
                 Require(!change.Conflict && change.ApplyAuthor, "A valid provided alias was flattened into a hard duplicate-own-ID conflict.");
                 var graph = f.Engine.CheckDependencies(plan);
                 Require(!graph.HasErrors && graph.HasUnknown && graph.Warnings.Any(text => text.Contains("shared_id") && text.Contains("提供")), "Alias provider ambiguity was not visible as unverified loader behavior.");
@@ -272,7 +334,7 @@ internal static class PackUpdateThreeWayTests {
             }
             JObject manifest = f.Engine.ReadManifest(f.Game)!;
             Require(manifest["files"]?[extra.Relative] is null, "A preserved personal addition became an author-owned file.");
-            Require(kind == 0 ? manifest["files"]?[incoming.Relative]?["state"]?.ToString() != "installed" : manifest["files"]?[incoming.Relative]?["state"]?.ToString() == "installed", "The author record did not distinguish a blocked own-ID collision from an explicitly confirmed alias provider.");
+            Require(manifest["files"]?[incoming.Relative]?["state"]?.ToString() == "installed", "The author record did not describe the actual installed curated file.");
         }
     }
 
@@ -551,11 +613,12 @@ internal static class PackUpdateThreeWayTests {
             Plan plan = f.Plan(original, f.Package([nextA, nextB, nextC])); f.Stage(plan);
             foreach (Spec next in new[] { nextA, nextB, nextC }) {
                 Change change = Incoming(plan, next.Relative);
-                Require(change.Conflict && !change.AllowAuthor && !change.ApplyAuthor, "A retained-mod conflict cascade left an upgrade enabled or invisible before preview: " + next.Relative);
+                Require(!change.Conflict && change.AllowAuthor && change.ApplyAuthor, "A personal duplicate caused unrelated curated upgrades to be retained: " + next.Relative);
             }
-            Require(Incoming(plan, nextA.Relative).Candidates.Contains(personal.Relative) && Incoming(plan, nextB.Relative).Candidates.Contains(oldA.Relative) && Incoming(plan, nextC.Relative).Candidates.Contains(oldB.Relative), "The preview did not preserve the actual retained-file evidence for every step of the collision cascade.");
-            f.Commit(plan); f.Has(oldA); f.Has(oldB); f.Has(personal);
-            f.Absent(nextA.Relative); f.Absent(nextB.Relative); f.Absent(nextC.Relative);
+            Change disabled = plan.Changes.Single(change => change.LocalRelative == personal.Relative);
+            Require(disabled.Operation == PackUpdateOperation.DisablePersonal && disabled.ApplyAuthor, "Personal duplicate was not prepared for reversible disabling.");
+            f.Commit(plan); f.Absent(oldA.Relative); f.Absent(oldB.Relative); f.Absent(personal.Relative);
+            f.Has(nextA); f.Has(nextB); f.Has(nextC); f.Has(personal with { Relative = disabled.DestinationRelative });
         }
     }
 

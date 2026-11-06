@@ -36,7 +36,7 @@ internal static class Program {
             ("environment-history", EnvironmentHistoryPipelineTests.Cases),
             ("instance-clone", InstanceClonePipelineTests.Cases),
             ("pack-update", () => PackUpdateThreeWayTests.Cases().Concat(PackUpdateMetadataTests.Cases())
-                .Concat(PackDependencyOriginTests.Cases()).Concat(PackDependencyGraphTests.Cases()).Concat(PackUpdateGraphTests.Cases())),
+                .Concat(PackDependencyOriginTests.Cases()).Concat(PackDependencyGraphTests.Cases()).Concat(PackUpdateGraphTests.Cases()).Concat(PackUpdateSupplementPolicyTests.Cases())),
             ("mod-dependencies", () => ModDependencyInspectorPipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.LocalCases()).Concat(PackDependencyPolicyTests.Cases())),
             ("mod-dependency-online", () => ModDependencyOnlinePipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.OnlineCases())),
             ("settings", () => LegacySettingsTests.Cases().Concat(SettingsMicrosoftIsolationTests.Cases())),

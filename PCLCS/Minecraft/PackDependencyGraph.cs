@@ -11,6 +11,15 @@ namespace PCLCS;
 public sealed class PackDependencyGraphResult {
     public bool HasErrors, HasUnknown;
     public List<string> Errors = new(), Warnings = new();
+    public List<PackDependencyProblem> Problems = new();
+    public List<string> UnverifiedFiles = new();
+    internal PackUpdateModInspection.Report? Report;
+}
+public sealed class PackDependencyProblem {
+    public ModDependencyIssueKind Kind;
+    public string OwnerPath = "", RequirementId = "";
+    public bool IsError;
+    public List<string> RelatedPaths = new();
 }
 
 /// <summary>
@@ -53,12 +62,18 @@ public static class PackDependencyGraph {
             if (count++ == 0) report.Builtins = single.Builtins;
             report.Mods.AddRange(single.Mods);
             report.MetadataIncomplete |= single.MetadataIncomplete;
+            if (single.MetadataIncomplete) result.UnverifiedFiles.Add(fullPath);
             // A single-file report cannot resolve peers in other files. Only keep
             // parser notices; rebuild all Issues/Edges from the combined Mods.
             report.Notices.AddRange(single.Notices);
         }
         token.ThrowIfCancellationRequested();
         Inspection.BuildReport(report, token);
+        result.Report = report;
+        result.Problems.AddRange(report.Issues.Select(issue => new PackDependencyProblem {
+            Kind = issue.KindValue, IsError = issue.IsError, OwnerPath = issue.Owner?.RootPath ?? "",
+            RequirementId = issue.Requirement?.Id ?? "", RelatedPaths = issue.RelatedMods.Select(mod => mod.RootPath).Distinct(paths).ToList()
+        }));
         result.Errors.AddRange(report.Issues.Where(issue => issue.IsError).Select(issue => issue.Message));
         result.Warnings.AddRange(report.Notices);
         result.Warnings.AddRange(report.Issues.Where(issue => !issue.IsError).Select(issue => issue.Message));
@@ -66,10 +81,12 @@ public static class PackDependencyGraph {
             edge.Requirement.KindValue == ModDependencyKind.Required &&
             (edge.Requirement.IsUnknown || edge.StateValue == ModDependencyMatchState.Unknown)).ToArray();
         result.HasUnknown |= report.MetadataIncomplete || unknownRequired.Length > 0;
+        result.UnverifiedFiles.AddRange(unknownRequired.Select(edge => edge.Owner.RootPath));
         result.Warnings.AddRange(unknownRequired.Select(edge => "文件 " + Path.GetFileName(edge.Owner.RootPath) + "：" +
             edge.Owner.Display + " 需要 " + edge.Requirement.Display + "，当前无法完整确认。"));
         if (count > 0 && (string.IsNullOrWhiteSpace(minecraft) || !context.LoaderKnown)) {
             result.HasUnknown = true;
+            result.UnverifiedFiles.AddRange(seen);
             result.Warnings.Add("尚未完整确认目标 Minecraft／加载器，无法证明最终组合的声明兼容性。");
         }
         // Reuse the shared loader's known-error classification. Alias providers
@@ -81,6 +98,7 @@ public static class PackDependencyGraph {
             var providers = group.Select(pair => pair.Mod).GroupBy(mod => mod.RootPath, paths).Select(owner => owner.First()).ToArray();
             if (providers.Length < 2 || providers.All(mod => mod.Id == group.Key)) continue;
             result.HasUnknown = true;
+            result.UnverifiedFiles.AddRange(providers.Select(mod => mod.RootPath));
             result.Warnings.Add("提供别名 " + group.Key + " 存在多个顶层提供者（" + string.Join("、", providers.Select(mod => Path.GetFileName(mod.RootPath))) + "），需按实际加载器确认，未将其视作同一作者项目。");
         }
         result.Errors = result.Errors.Where(text => !string.IsNullOrWhiteSpace(text)).Distinct(StringComparer.Ordinal).ToList();

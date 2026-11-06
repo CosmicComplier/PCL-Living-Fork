@@ -147,6 +147,14 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             foreach (string candidate in found.Candidates) { claimedLocal.Add(candidate); Observe(result, candidate, token); }
             if (found.Relative is null && incoming is null && !ambiguous && found.Ownership != PackUpdateOwnership.Ambiguous) continue;
             bool personal = found.Ownership is not (PackUpdateOwnership.AuthorUnchanged or PackUpdateOwnership.AuthorRenamed);
+            if (!ambiguous && incoming is not null && found.Relative is not null &&
+                found.Ownership is PackUpdateOwnership.AuthorUnchanged or PackUpdateOwnership.AuthorRenamed or PackUpdateOwnership.PersonalModified &&
+                Matches(Target(result.Root, found.Relative), incoming.Hash, token)) {
+                if (string.Equals(found.Relative, incoming.Relative, StringComparison.OrdinalIgnoreCase)) continue;
+                found.Ownership = PackUpdateOwnership.AuthorRenamed; personal = false;
+            }
+            if (incoming is not null && found.Ownership == PackUpdateOwnership.Disabled && found.HashVerified &&
+                Same(incoming.Hash, pair.Value["hash"]?.ToString()) && string.Equals(pair.Key, incoming.Relative, StringComparison.OrdinalIgnoreCase)) continue;
             if (incoming is not null && !personal && Same(incoming.Hash, pair.Value["hash"]?.ToString()) &&
                 string.Equals(found.Relative, incoming.Relative, StringComparison.OrdinalIgnoreCase)) continue;
             TChange change = host.CreateChange(); change.BaselineRelative = pair.Key; change.LocalRelative = found.Relative;
@@ -155,6 +163,10 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             change.Conflict = personal || ambiguous || found.Relative is not null && IsPersonal(found.Relative) || PersonalAreaExists(root, change.Relative);
             change.AllowAuthor = !ambiguous && found.Ownership is not (PackUpdateOwnership.Ambiguous or PackUpdateOwnership.PersonalAdded or PackUpdateOwnership.OptionalAbsent);
             change.Before = found.Relative is null ? null : result.Snapshot[found.Relative];
+            if (incoming is not null && change.Ownership == PackUpdateOwnership.Disabled) {
+                Observe(result, change.Relative!, token); Observe(result, change.Relative! + ".disabled", token);
+                if (found.HashVerified) { change.Conflict = false; change.Choice = PackUpdateChoice.UseAuthor; }
+            }
             Observe(result, change.DestinationRelative, token); change.TargetBefore = result.Snapshot[change.DestinationRelative];
             if (incoming is not null && change.TargetBefore is not null && !string.Equals(change.LocalRelative, change.DestinationRelative, StringComparison.OrdinalIgnoreCase)) {
                 change.Conflict = true; change.AllowAuthor = false; change.Ownership = PackUpdateOwnership.Ambiguous;
@@ -191,7 +203,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     }
     private static string Reason(TChange change) => change.Ownership switch {
         PackUpdateOwnership.Ambiguous => "存在多个匹配候选或重复副本，需先确认，未安排删除或替换",
-        PackUpdateOwnership.Disabled => "保留禁用状态；选择作者版本仍保持禁用",
+        PackUpdateOwnership.Disabled => change.Conflict ? "本地禁用文件包含个人修改，可选择作者新版并确认更新后状态" : "作者模组将更新，请确认更新后继续禁用还是启用新版",
         PackUpdateOwnership.Deleted => "保留玩家删除状态",
         PackUpdateOwnership.OptionalAbsent => "保留未安装的可选组件",
         PackUpdateOwnership.PersonalModified => "保留个人替换的版本或内容，可逐项选择作者版本",
@@ -225,15 +237,17 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         TPlan staged = Plan(plan.Root!, plan.Baseline, plan.Package, token);
         plan.Changes = staged.Changes;
         foreach (var pair in staged.Snapshot) if (!plan.Snapshot.ContainsKey(pair.Key)) plan.Snapshot.Add(pair.Key, pair.Value);
+        ResolvePersonalChanges(plan, stage, token, download ?? host.Download);
         PreserveModCollisions(plan, token);
         plan.DependencyCheck = CheckDependencies(plan, token);
         if (plan.DependencyCheck.HasErrors) {
             // Preserve the author's default actions, but expose a way to retain a
             // current author file when its upgrade/removal would break a personal
             // mod. The final selected combination is rechecked before any write.
-            foreach (TChange change in plan.Changes.Where(change => !change.Conflict && !change.DisplayOnly && change.AllowAuthor &&
+            foreach (TChange change in plan.Changes.Where(change => !change.Conflict && !change.DisplayOnly && change.AllowAuthor && !change.PersonalCompatible && !change.AllowPreserveAuthor &&
+                change.Ownership is PackUpdateOwnership.AuthorUnchanged or PackUpdateOwnership.AuthorRenamed &&
                 change.BaselineRelative is not null && change.LocalRelative is not null && ModFile(change.LocalRelative) && EnabledModFile(change.LocalRelative))) {
-                change.Conflict = true;
+                change.AllowPreserveAuthor = true;
                 change.Choice = PackUpdateChoice.UseAuthor;
                 change.Reason = change.Incoming is null ? "作者新版移除此文件；可选择保留当前版本，确认前会重新检查完整模组组合。" :
                     "默认使用作者新版；可选择保留当前版本以调整个人模组组合，确认前会重新检查全部依赖与冲突。";
@@ -246,18 +260,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     // proof that this chosen combination satisfies its dependencies.
     public PackDependencyGraphResult CheckDependencies(TPlan plan, CancellationToken token = default) {
         token.ThrowIfCancellationRequested();
-        var removed = new HashSet<string>(plan.Changes.Where(change => change.ApplyAuthor && change.LocalRelative is not null)
-            .Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
-        var files = new List<string>();
-        foreach (string path in LocalContent(plan.Root!, token, LegacyVersionFolder(plan.Package!)).Where(path => LoadedModPath(plan.Package!, path) && !removed.Contains(path)))
-            files.Add(Target(plan.Root!, path));
-        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && change.Incoming is not null &&
-            LoadedModPath(plan.Package!, change.DestinationRelative))) {
-            token.ThrowIfCancellationRequested();
-            if (change.Incoming!.Payload is null || !Matches(change.Incoming.Payload, change.Incoming.Hash, token))
-                throw new IOException("所选作者文件尚未完整暂存或已变化：" + change.Relative);
-            files.Add(change.Incoming.Payload);
-        }
+        var files = FinalModFiles(plan, token).Select(file => file.Path).ToList();
         PackDependencyGraphResult result = PackDependencyGraph.Check(files, plan.Package!.Minecraft, plan.Package.Loaders, token);
         foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && ModFile(change.DestinationRelative) &&
             EnabledModFile(change.DestinationRelative) && !LoadedModPath(plan.Package!, change.DestinationRelative))) {
@@ -327,6 +330,10 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         ValidateSnapshot(plan, token);
         foreach (TChange change in plan.Changes) if (change.Choice == PackUpdateChoice.UseAuthor && (!change.AllowAuthor || change.DisplayOnly))
             throw new IOException("此项归属或重复冲突尚未确认，不能自动替换：" + change.Relative);
+        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && change.Ownership == PackUpdateOwnership.Disabled && !change.KeepDisabled)) {
+            if (!plan.Snapshot.TryGetValue(change.DestinationRelative, out string? occupied) || occupied is not null)
+                throw new IOException("启用新版模组的目标路径已存在或未经预览，未覆盖：" + change.DestinationRelative);
+        }
         List<(string Path, PackModInspection Ids)> final = new();
         var removed = new HashSet<string>(plan.Changes.Where(change => change.ApplyAuthor && change.LocalRelative is not null).Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
         foreach (string path in LocalContent(plan.Root!, token, LegacyVersionFolder(plan.Package!)).Where(path => LoadedModPath(plan.Package!, path) && !removed.Contains(path)))

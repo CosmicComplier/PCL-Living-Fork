@@ -43,6 +43,7 @@ internal static class ModpackUpdateUxChecks
         VersionsAndPreview(Path.Combine(root, "preview"));
         ConflictChoicesAndOwnership(Path.Combine(root, "ownership-preview"));
         LargeNoticesScroll(Path.Combine(root, "large-preview"));
+        AuthorActionsAndDisabledState(Path.Combine(root, "policy-preview"));
         Console.WriteLine("PASS native modpack-update UX: UX-P1..P4 and UX-01..UX-13 (actual loopback, selection/modal and read-only preview).");
     }
 
@@ -262,7 +263,7 @@ internal static class ModpackUpdateUxChecks
         modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked = true;
         Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.PreservePersonal, "UX-C8", "returning to preserve did not reach the original DTO");
         RadioButton disabledAuthor = Radios(Row("mods/disabled.jar")).Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor));
-        Check(disabledAuthor.Content?.ToString()?.Contains("保持禁用", StringComparison.Ordinal) == true,
+        Check(Descendants(Row("mods/disabled.jar")).OfType<CheckBox>().Any(state => state.IsChecked == true && state.Content?.ToString()?.Contains("保持禁用", StringComparison.Ordinal) == true),
             "UX-C9", "disabled updates did not make their disabled result explicit");
         disabledAuthor.IsChecked = true;
         Check((PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.UseAuthor && Property(disabled, "DestinationRelative")!.ToString() == "mods/disabled.jar.disabled",
@@ -353,6 +354,48 @@ internal static class ModpackUpdateUxChecks
             Native.Check(wheel.Handled, "The genuine native preview list did not accept the mouse wheel.");
         });
         Console.WriteLine("PASS large modpack preview: bounded compact header, collapsed/expanded evidence in one scroll viewport, reachable final file, real modal footer and mouse-wheel routing.");
+    }
+    private static void AuthorActionsAndDisabledState(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        object package = New("PackUpdatePackage"), plan = New("PackUpdatePlan");
+        Set(package, "Name", "Author priority"); Set(package, "Version", "2"); Set(package, "Minecraft", "1.21.11");
+        ((IDictionary)Get(package, "Loaders")!).Add(ModLoaders.Fabric, "0.19.3"); Set(plan, "Package", package);
+        object Add(string name, bool incoming, PackUpdateOwnership owner, bool conflict = false, bool compatible = false) {
+            object change = New("PackUpdateChange"); Set(change, "Relative", "mods/" + name + ".jar"); Set(change, "Before", "sha1:fixture");
+            Set(change, "LocalRelative", "mods/" + name + "-old.jar"); Set(change, "Ownership", owner); Set(change, "Conflict", conflict);
+            Set(change, "PersonalCompatible", compatible); Set(change, "AllowPreserveAuthor", owner == PackUpdateOwnership.AuthorUnchanged || compatible);
+            Set(change, "Choice", compatible || conflict ? PackUpdateChoice.PreservePersonal : PackUpdateChoice.UseAuthor);
+            if (incoming) { object file = New("PackUpdateFile"); Set(file, "Relative", "mods/" + name + ".jar"); Set(change, "Incoming", file); }
+            ((IList)Get(plan, "Changes")!).Add(change); return change;
+        }
+        object update = Add("normal", true, PackUpdateOwnership.AuthorUnchanged), removal = Add("removed", false, PackUpdateOwnership.AuthorUnchanged);
+        Add("personal", true, PackUpdateOwnership.PersonalModified, compatible: true);
+        Add("conflicting", true, PackUpdateOwnership.PersonalModified, conflict: true);
+        object disabled = Add("disabled", true, PackUpdateOwnership.Disabled);
+        object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
+        Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
+        var counts = (IDictionary)Get(preview, "Counts")!;
+        Check((int)counts[Enum.Parse(kinds, "Updated")]! == 2 && (int)counts[Enum.Parse(kinds, "Removed")]! == 1 &&
+            (int)counts[Enum.Parse(kinds, "Preserved")]! == 2, "UX-policy-categories", "Ordinary author changes were mislabeled as conflicts.");
+        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
+        Border row = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/normal.jar", StringComparison.Ordinal));
+        Descendants(row).OfType<RadioButton>().Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked = true;
+        Check(!(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
+            Descendants(row).OfType<TextBlock>().Any(text => text.Visibility == Visibility.Visible && text.Text.Contains("不执行作者更新", StringComparison.Ordinal)),
+            "UX-policy-preserve", "Keeping an ordinary author version did not affect execution or explain the outcome.");
+        Border disabledRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/disabled.jar", StringComparison.Ordinal));
+        CheckBox state = Descendants(disabledRow).OfType<CheckBox>().Single();
+        Check(state.IsChecked == true && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString()!.EndsWith(".disabled", StringComparison.Ordinal),
+            "UX-disabled-default", "Disabled author update was not paired with an explicit keep-disabled choice.");
+        Render((FrameworkElement)preview, Path.Combine(folder, "author-updates-and-disabled-state.png"), 740, 480);
+        state.IsChecked = false;
+        Check(!(bool)Get(disabled, "KeepDisabled")! && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString() == "mods/disabled.jar",
+            "UX-disabled-enable", "The explicit enabled-state choice did not reach the update plan.");
+        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
+        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
+        Check(!(bool)Get(disabled, "KeepDisabled")! && !(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
+            (bool)Native.Property(removal.GetType(), "ApplyAuthor").GetValue(removal)!, "UX-policy-independent", "Filter changes reset choices or changed unrelated author actions.");
     }
     private static object Construct(string name, params object?[] values)
     {

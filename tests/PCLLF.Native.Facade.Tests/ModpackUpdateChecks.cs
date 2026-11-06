@@ -63,13 +63,16 @@ internal static class ModpackUpdateChecks
         }, new() { ["mods/stable.jar"] = "stable", ["mods/new.jar"] = "download-new" }), Path.Combine(root, "new-stage"));
         object plan = Update("Plan", game, baseline, next)!;
         Check(plan.GetType().Assembly == Native.Main, "MP-identity", "plan must be the real Main DTO, not a fixture model");
-        string[] originalPreserved = { "config/custom.txt", "options.txt", "xaerowaypoints/server/map.txt", "mods/disabled.jar" };
+        string[] originalPreserved = { "config/custom.txt", "options.txt", "xaerowaypoints/server/map.txt" };
         object[] originalConflicts = Changes(plan).Where(change => originalPreserved.Contains(Text(change, "Relative"), StringComparer.OrdinalIgnoreCase)).ToArray();
-        Check(originalConflicts.Length == 4 && originalConflicts.All(Conflict), "MP-01", "personal config/options/waypoints/deletion were not preserved");
+        Check(originalConflicts.Length == 3 && originalConflicts.All(Conflict), "MP-01", "personal config/options/waypoints were not preserved");
+        object disabledUpdate = Changes(plan).Single(change => Text(change, "Relative") == "mods/disabled.jar");
+        Check(!Conflict(disabledUpdate) && (bool)Native.Property(disabledUpdate.GetType(), "ApplyAuthor").GetValue(disabledUpdate)! &&
+            (bool)Get(disabledUpdate, "KeepDisabled")!, "MP-01-disabled-update", "Disabled author content must update separately from its enable state.");
         object personalAddition = Changes(plan).Single(change => Text(change, "Relative") == "mods/personal.jar");
-        Check(Changes(plan).Count(Conflict) == 5 && Conflict(personalAddition) && (bool)Get(personalAddition, "DisplayOnly")! &&
+        Check(Changes(plan).Count(Conflict) == 4 && Conflict(personalAddition) && (bool)Get(personalAddition, "DisplayOnly")! &&
             Get(personalAddition, "Ownership")!.ToString() == "PersonalAdded" && !(bool)personalAddition.GetType().GetProperty("ApplyAuthor")!.GetValue(personalAddition)!,
-            "MP-01-personal-preview", "The additional personal mod must be shown once as retained, without scheduling an operation or weakening the original four conflict checks");
+            "MP-01-personal-preview", "The additional personal mod must be shown once as retained, with personal configuration checks preserved");
         Check(!Changes(plan).Any(change => Text(change, "Relative") == "mods/stable.jar"), "MP-02", "unchanged file scheduled for download");
         int downloads = 0;
         Action<List<ModNet.NetFile>, CancellationToken> download = (files, token) =>
@@ -96,7 +99,7 @@ internal static class ModpackUpdateChecks
         foreach ((string path, string text) in expected)
             Check(File.ReadAllText(Path.Combine(game, path)) == text, "MP-04:" + path, "incorrect committed bytes");
         Check(!File.Exists(Path.Combine(game, "mods/removed.jar")) && !File.Exists(Path.Combine(game, "mods/disabled.jar")), "MP-05", "removed/disabled mod handling failed");
-        Check(File.ReadAllText(Path.Combine(game, "mods/disabled.jar.disabled")) == "disabled-by-player", "MP-05-disabled-bytes", "disabled personal file changed");
+        Check(File.ReadAllText(Path.Combine(game, "mods/disabled.jar.disabled")) == "new-disabled", "MP-05-disabled-bytes", "Disabled author content was not updated or was reenabled.");
         Check(File.Exists(Path.Combine(backup, "transaction.json")), "MP-06", "durable update backup missing");
         JObject saved = (JObject)Update("ReadManifest", version)!;
         object repeated = Update("Plan", game, saved, next)!;
@@ -136,7 +139,10 @@ internal static class ModpackUpdateChecks
         ((IDictionary)Get(collisionPackage, "Files")!).Add("mods/new-id.jar", mod);
         object collision = Update("Plan", game, saved, collisionPackage)!;
         Update("DownloadChanges", collision, Path.Combine(root, "collision-download"), CancellationToken.None, download);
-        Check(Changes(collision).Single(change => Text(change, "Relative") == "mods/new-id.jar") is object duplicate && Conflict(duplicate), "MP-13", "renamed incoming mod duplicated personal Fabric id");
+        object duplicate = Changes(collision).Single(change => Text(change, "Relative") == "mods/new-id.jar");
+        Check(!Conflict(duplicate) && (bool)Native.Property(duplicate.GetType(), "ApplyAuthor").GetValue(duplicate)! &&
+            Changes(collision).Any(change => Text(change, "LocalRelative") == "mods/personal-id.jar" &&
+                Get(change, "Operation")!.ToString() == "DisablePersonal"), "MP-13", "A curated own-ID upgrade did not reversibly disable the incompatible personal duplicate.");
 
         string recoverRoot = Path.Combine(root, "recover-root"), recoverVersion = Path.Combine(root, "recover-version");
         Put(Path.Combine(recoverRoot, "a.txt"), "old-a"); Put(Path.Combine(recoverRoot, "b.txt"), "old-b");

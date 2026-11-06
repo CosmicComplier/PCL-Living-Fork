@@ -59,14 +59,14 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             JObject author = (JObject)entry.Value;
             TChange? change = plan.Changes.FirstOrDefault(item => item.Incoming is not null &&
                 string.Equals(item.Incoming.Relative, entry.Name, StringComparison.OrdinalIgnoreCase));
-            if (change is not null && change.ApplyAuthor) {
-                author["state"] = change.Ownership == PackUpdateOwnership.Disabled ? "disabled" : "installed";
+            if (change is not null && change.ApplyAuthor && change.Operation != PackUpdateOperation.DisablePersonal) {
+                author["state"] = change.Ownership == PackUpdateOwnership.Disabled && change.KeepDisabled ? "disabled" : "installed";
                 author["local"] = LocalObservation(change.DestinationRelative!, author["hash"]!.ToString());
             } else if (change is not null) {
-                string? local = change.LocalRelative;
+                string? local = change.Operation == PackUpdateOperation.DisablePersonal ? change.DestinationRelative : change.LocalRelative;
                 if (local is not null && change.Before is not null) {
                     author["state"] = local.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) || local.EndsWith(".old", StringComparison.OrdinalIgnoreCase) ? "disabled" :
-                        change.Ownership == PackUpdateOwnership.AuthorRenamed && !change.Conflict ? "renamed" : "retained";
+                        change.Ownership == PackUpdateOwnership.AuthorRenamed && !change.Conflict && !change.AllowPreserveAuthor ? "renamed" : "retained";
                     author["local"] = LocalObservation(local, change.Before, LocalOwnership(change));
                 } else {
                     ObserveInstalledFile(plan.Root!, entry.Name, author, token);
@@ -94,6 +94,13 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         }
 
         JObject retained = new();
+        foreach (TChange disabled in plan.Changes.Where(change => change.Operation == PackUpdateOperation.DisablePersonal &&
+            change.ApplyAuthor && change.BaselineRelative is not null && change.Before is not null)) {
+            JToken? author = plan.Baseline?["files"]?[disabled.BaselineRelative!];
+            retained[disabled.DestinationRelative] = new JObject(new JProperty("authorRelative", disabled.BaselineRelative), new JProperty("hash", author?["hash"]),
+                new JProperty("identity", author?["identity"]), new JProperty("fileIdentity", author?["fileIdentity"]),
+                new JProperty("observedHash", disabled.Before), new JProperty("state", "disabled"), new JProperty("ownership", "personal-retained"));
+        }
         // Previously retained author files are personal state at this point. They
         // remain outside files, and are dropped once deleted or intentionally replaced.
         if (plan.Baseline?["retained"] is JObject previousRetained) {

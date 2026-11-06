@@ -21,13 +21,22 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         foreach (TChange change in plan.Changes.Where(item => item.ApplyAuthor)) {
             string? local = change.LocalRelative;
             if (local is not null && !Same(Digest(Target(plan.Root!, local)), change.Before)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + local);
+            if (change.Operation == PackUpdateOperation.DisablePersonal) {
+                string disabled = Target(plan.Root!, change.DestinationRelative);
+                if (!plan.Snapshot.TryGetValue(change.DestinationRelative, out string? disabledBefore) || disabledBefore is not null || File.Exists(disabled))
+                    throw new IOException("禁用目标已经存在，请重新检查：" + change.DestinationRelative);
+                operations.Add(Tuple.Create(disabled, (string?)Target(plan.Root!, local!), (string?)null));
+                operations.Add(Tuple.Create(Target(plan.Root!, local!), (string?)null, change.Before));
+                continue;
+            }
             if (change.Incoming is null) {
                 if (local is not null) operations.Add(Tuple.Create(Target(plan.Root!, local), (string?)null, change.Before));
                 continue;
             }
             string fileName = Target(plan.Root!, change.DestinationRelative);
-            if (!Same(Digest(fileName), change.TargetBefore)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + change.DestinationRelative);
-            operations.Add(Tuple.Create(fileName, change.Incoming.Payload, change.TargetBefore));
+            string? targetBefore = plan.Snapshot.TryGetValue(change.DestinationRelative, out string? observed) ? observed : change.TargetBefore;
+            if (!Same(Digest(fileName), targetBefore)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + change.DestinationRelative);
+            operations.Add(Tuple.Create(fileName, change.Incoming.Payload, targetBefore));
             if (local is not null && !local.Equals(change.DestinationRelative, StringComparison.OrdinalIgnoreCase))
                 operations.Add(Tuple.Create(Target(plan.Root!, local), (string?)null, change.Before));
         }
@@ -83,15 +92,29 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             log["complete"] = true;
             host.AtomicWrite(box, Encoding.UTF8.GetBytes(log.ToString()));
             progress?.Invoke(1);
-        } catch {
+        } catch (Exception failure) {
+            List<string> rollbackErrors = new();
             foreach (int index in applied.AsEnumerable().Reverse()) {
                 JToken item = logFiles[index]; string destination = item["target"]!.ToString();
-                if (item["backup"]!.Type == JTokenType.Null) {
-                    if (Same(Digest(destination), item["after"]?.ToString())) File.Delete(destination);
-                } else ReplaceFrom(item["backup"]!.ToString(), destination);
+                try {
+                    string? current = Digest(destination), before = item["before"]!.Type == JTokenType.Null ? null : item["before"]!.ToString(),
+                        after = item["after"]!.Type == JTokenType.Null ? null : item["after"]!.ToString();
+                    if (Same(current, before)) continue;
+                    if (!Same(current, after)) { rollbackErrors.Add("文件已被外部修改，保留现场：" + destination); continue; }
+                    if (item["backup"]!.Type == JTokenType.Null) File.Delete(destination);
+                    else {
+                        string backup = item["backup"]!.ToString();
+                        host.EnsureWithin(Path.GetDirectoryName(box)!, backup);
+                        if (!Same(Digest(backup), before)) { rollbackErrors.Add("更新备份校验失败，保留现场：" + destination); continue; }
+                        ReplaceFrom(backup, destination);
+                    }
+                } catch (Exception rollbackFailure) { rollbackErrors.Add("回滚未完成：" + destination + "（" + rollbackFailure.Message + "）"); }
             }
-            log["complete"] = true; log["rolledBack"] = true;
-            File.WriteAllText(box, log.ToString());
+            bool restored = rollbackErrors.Count == 0;
+            log["complete"] = restored; log["rolledBack"] = restored;
+            if (!restored) { log["rollbackIncomplete"] = true; log["rollbackErrors"] = new JArray(rollbackErrors); }
+            host.AtomicWrite(box, Encoding.UTF8.GetBytes(log.ToString()));
+            if (!restored) throw new IOException("自动回滚未完成，已保留外部修改与更新备份，请先检查恢复现场。\r\n" + string.Join("\r\n", rollbackErrors), failure);
             throw;
         }
         return Path.GetDirectoryName(box)!;

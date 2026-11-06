@@ -44,6 +44,8 @@
     <Compile Include="../../PCLCS/Minecraft/PackUpdateModInspection.cs" Link="Production/Minecraft/PackUpdateModInspection.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackDependencyOrigin.cs" Link="Production/Minecraft/PackDependencyOrigin.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackDependencyGraph.cs" Link="Production/Minecraft/PackDependencyGraph.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateDependencySupplement.cs" Link="Production/Minecraft/PackUpdateDependencySupplement.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Personal.cs" Link="Production/Minecraft/PackUpdateEngine.Personal.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyAutoFillContracts.cs" Link="Production/Minecraft/ModDependencyAutoFillContracts.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyAutoFillEngine.cs" Link="Production/Minecraft/ModDependencyAutoFillEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/ModDependencyAutoFillInstall.cs" Link="Production/Minecraft/ModDependencyAutoFillInstall.cs" />
