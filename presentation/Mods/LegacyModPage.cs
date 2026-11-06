@@ -27,9 +27,12 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     private LegacyModFilter filter;
     private LocalResourceSortOrder sortOrder;
     private List<TMod>? searchResult;
+    // Test-visible rebuild counter: only a successful ReloadModList or a complete
+    // LoadUI rebuild increments it; favorite toggles must leave it unchanged.
+    public int ListRebuildSerial {get;private set;}
     public LegacyModPage(LegacyModPageView view,LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){this.view=view;this.host=host;}
     public void Loaded(){host.ApplyMode();if(!host.LastWasDetails())view.ScrollHome();host.ChangeAnimationControl(1);host.Selected().Clear();ReloadModList();ApplyLoaderWarnings();ChangeAllSelected(false);host.ChangeAnimationControl(-1);if(loaded)return;loaded=true;host.BindMainKey();host.AdjustFilterMargins();}
-    public void ReloadModList(bool ForceReload=false){if(!host.LoaderRun(ForceReload?1:0))return;Logger.Info("已刷新 Mod 列表");Filter=LegacyModFilter.All;view.ScrollHome();view.SetSearch("");}
+    public void ReloadModList(bool ForceReload=false){if(!host.LoaderRun(ForceReload?1:0))return;ListRebuildSerial++;Logger.Info("已刷新 Mod 列表");Filter=LegacyModFilter.All;view.ScrollHome();view.SetSearch("");}
     public static void Refresh(LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){
         try{host.ClearProjectCache();host.ClearVersionCache();FileUtils.Delete(host.TempPath()+@"Cache\LocalMod.json");Logger.Info("由于点击刷新按钮，清理本地 Mod 信息缓存");}catch(Exception error){Logger.Warn(error,"强制刷新时清理本地 Mod 信息缓存失败");}
         host.ReloadCurrent(true);host.SelectModPage();host.Hint("正在刷新……",0,false);
@@ -41,7 +44,7 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
             if(host.Output()!.Any()){view.Back().Visibility=Visibility.Visible;view.Empty().Visibility=Visibility.Collapsed;}
             else{view.Empty().Visibility=Visibility.Visible;view.Back().Visibility=Visibility.Collapsed;return;}
             host.Items().Clear();foreach(TMod entry in host.Output()!)host.Items()[entry.EnabledName]=MakeItem(entry);
-            Filter=LegacyModFilter.All;view.SetSearch("");RefreshUI();
+            Filter=LegacyModFilter.All;view.SetSearch("");RefreshUI();ListRebuildSerial++;
         }catch(Exception error){Logger.Error(error,"加载 Mod 列表 UI 失败");}
     }
     private TItem MakeItem(TMod entry){host.ChangeAnimationControl(1);TItem item=host.NewItem(entry,host.Selected().Contains(entry.EnabledName));host.BindUpdate(entry,item);TInstance? target=host.Instance();if(target is not null)host.RefreshLoaderWarning(item,target);host.ChangeAnimationControl(-1);return item;}

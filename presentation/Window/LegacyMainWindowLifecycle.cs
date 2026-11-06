@@ -12,6 +12,7 @@ using Microsoft.VisualBasic.CompilerServices;
 using PCLLF.Presentation.Animation;
 using PCLLF.Presentation.Controls;
 
+using PCLCS;
 using PCLCS.Startup;
 
 namespace PCLLF.Presentation.Windowing;
@@ -19,6 +20,12 @@ namespace PCLLF.Presentation.Windowing;
 public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnimation>
     where TStack : class, ILegacyMainPageStack, new() where TInstance : class where TAnimation : struct {
     private const string ForkReleaseHighlights = "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览";
+    // The one place that may read SystemUpdateLogPrompt; true (or a missing key) means show the log.
+    private const bool UpdateLogPromptDefault = true;
+    public bool ShouldAutoShowUpdateLog() {
+        try { return host.ReadBoolean(LegacyUpdateLogPrompt.Key); }
+        catch (Exception error) { Logger.Error(error, "读取更新说明弹窗设置失败", LogBehavior.None); return UpdateLogPromptDefault; }
+    }
     public void ConstructBeforeXaml() {
         host.WriteStartTick(host.Clock()); host.AssignGlobalWindow(); host.CreateLaunchLeft(); host.CreateLaunchRight();
         int last = host.ReadInteger("SystemLastVersionReg");

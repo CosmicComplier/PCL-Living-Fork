@@ -25,7 +25,14 @@ internal static class LegacySettingsTests {
     private static void Definitions() {
         var fixture = new Fixture();
         // LF main50 adds source/channel/color-mode/panel-opacity; no baseline key is removed.
-        Equal(209, fixture.Entries.Count);
+        // A-003.1 adds SystemUpdateLogPrompt; A-003.2 adds UiModFavorite.
+        Equal(211, fixture.Entries.Count);
+        Equal(true, fixture.Entries["SystemUpdateLogPrompt"].DefaultValue);
+        Equal(typeof(bool), fixture.Entries["SystemUpdateLogPrompt"].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries["SystemUpdateLogPrompt"].Source);
+        Equal("", fixture.Entries["UiModFavorite"].DefaultValue);
+        Equal(typeof(string), fixture.Entries["UiModFavorite"].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries["UiModFavorite"].Source);
         foreach (string key in new[] { "ToolLauncherUpdateSource", "ToolLauncherUpdateChannel", "UiLauncherColorMode" }) {
             Equal(0, fixture.Entries[key].DefaultValue);
             Equal(typeof(int), fixture.Entries[key].Type);

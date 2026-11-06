@@ -98,6 +98,9 @@ public sealed class LegacyMainWindowHost<TStack, TInstance, TAnimation>
     public Func<string, object?> DefaultValue = null!;
     public Action<string, object?> WriteSetting = null!;
     public Action<string> ResetSetting = null!;
+    // Writes SystemUpdateLogPrompt to Setup.ini, verifies the persisted value and returns
+    // whether the write survived; false must leave the session preference unchanged.
+    public Func<bool, bool> PersistUpdateLogPrompt = null!;
     public Func<string, string, bool> HasIniKey = null!;
     public Action<int> ThemeRefresh = null!;
     public Action ThemeRefreshMain = null!, RefreshHidden = null!;

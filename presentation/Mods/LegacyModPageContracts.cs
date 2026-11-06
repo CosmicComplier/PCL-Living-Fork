@@ -65,6 +65,11 @@ public sealed class LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDo
     public Action<string,int,bool> Hint = null!;
     public Func<string,bool> ConfirmMode = null!, ReadBoolean = null!;
     public Action<string,object> WriteSetting = null!;
+    // A-003.2 favorite identity ports. FavoriteKeys returns the current instance's
+    // lowercase EnabledName set; ToggleFavorite switches and persists it, returning
+    // the authoritative new state. Declared here; wired by the product runtime.
+    public Func<List<string>> FavoriteKeys = null!;
+    public Func<string,bool> ToggleFavorite = null!;
     public Func<IEnumerable<string>> SelectInstallFiles = null!;
     public Action<string> Explorer = null!, Website = null!;
     public Func<string,string,string,string,bool,int> Message = null!;
