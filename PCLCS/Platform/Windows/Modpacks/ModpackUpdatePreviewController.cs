@@ -1,7 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -18,17 +20,28 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     private readonly StackPanel notices = new();
     private readonly Expander noticeDetails;
     private readonly TextBlock? noticeSummary;
+    private readonly Func<TPlan, TPlan>? snapshot;
+    private readonly Func<TPlan, CancellationToken, PackUpdatePreviewReview>? review;
+    private readonly StackPanel compatibility = new();
+    private readonly TextBlock? selectionStatus;
+    private CancellationTokenSource? checking;
+    private int revision, activeKind;
+    private volatile bool closed;
+    private readonly object checkGate = new();
+    private readonly Dictionary<CancellationTokenSource, Task> readChecks = new();
     private static TKind Kind(int value) => (TKind)Enum.ToObject(typeof(TKind), value);
     private static bool Same(string? a, string? b) => (a ?? "") == (b ?? "");
     public ModpackUpdatePreviewController(ModpackDialogController<TButton, TScroll> view, TPlan plan, string currentMinecraft, Dictionary<ModLoaders, string> currentLoaders,
-        Dictionary<TKind, int> counts, Action<int> setKind, Func<string, UIElement> hint) {
+        Dictionary<TKind, int> counts, Action<int> setKind, Func<string, UIElement> hint,
+        Func<TPlan, TPlan>? snapshot = null, Func<TPlan, CancellationToken, PackUpdatePreviewReview>? review = null) {
         this.view = view; this.counts = counts; this.setKind = setKind; this.plan = plan; Changes = plan.Changes.ToList();
+        this.snapshot = snapshot; this.review = review;
         bool changed = !Same(currentMinecraft, plan.Package!.Minecraft) || !currentLoaders.OrderBy(pair => pair.Key).SequenceEqual(plan.Package.Loaders.OrderBy(pair => pair.Key));
         if (changed) notices.Children.Add(hint("游戏版本或加载器将更新。请核对兼容性；存档会保留，更新前自动备份。"));
         AddNotices("需要核对的文件与来源", plan.Warnings);
         if (plan.RuntimeWarnings.Count > 0 && plan.DependencyCheck is null) notices.Children.Add(hint("保留模组有兼容性信息需要核对，可展开下方详情。"));
-        AddNotices("保留模组的兼容性", plan.RuntimeWarnings);
-        if (plan.DependencyCheck is PackDependencyGraphResult graph) {
+        if (review is null) AddNotices("保留模组的兼容性", plan.RuntimeWarnings);
+        if (review is null && plan.DependencyCheck is PackDependencyGraphResult graph) {
             if (graph.HasErrors) noticeSummary = ModpackDialogController<TButton, TScroll>.Label("默认方案有依赖问题，请核对详情并调整选择。", 12, color: "ColorBrushRedLight", margin: new Thickness(4, 0, 7, 6));
             else if (graph.HasUnknown) noticeSummary = ModpackDialogController<TButton, TScroll>.Label("部分兼容性声明待核对，确认时会重新检查所选组合。", 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 6));
             if (graph.HasErrors) notices.Children.Add(hint("默认组合存在依赖或冲突问题，请调整下方选择。确认时会重新检查；有确定冲突时不会提交。"));
@@ -43,6 +56,12 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
             view.AddFilter((value == 3 ? "保留/冲突" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
         }
         ShowKind(new[] { 3, 1, 0, 2 }.FirstOrDefault(value => counts[Kind(value)] > 0));
+        if (review is not null && snapshot is not null) {
+            selectionStatus = ModpackDialogController<TButton, TScroll>.Label("正在检查所选组合…", 12, margin: new Thickness(0, 7, 0, 0));
+            view.Header.Children.Add(selectionStatus);
+            view.Unloaded += (_, _) => { _ = CloseAndDrainAsync(); view.SetCanConfirm(false); };
+            RecheckSelection();
+        }
     }
     public static int Classify(TChange change) => change.PersonalCompatible || change.Operation == PackUpdateOperation.DisablePersonal || change.DisplayOnly || change.Conflict ? 3 : change.Incoming is null ? 2 : change.Before is null ? 0 : 1;
     public static string KindName(int value) => value switch { 0 => "新增", 1 => "更新", 2 => "移除", _ => "个人文件与冲突" };
@@ -70,7 +89,9 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         return parts[0].ToLowerInvariant() switch { "mods" => "模组", "config" or "defaultconfigs" => "配置", "resourcepacks" => "资源包", "shaderpacks" => "光影包", "datapacks" => "数据包", _ => parts[0] };
     }
     public void ShowKind(int value) {
+        activeKind = value;
         setKind(value); view.BeginFilter(value);
+        if (review is not null) view.Rows.Children.Add(compatibility);
         // Notices share the finite file-list viewport; the fixed title/filter rows must stay compact.
         if (noticeSummary is not null) view.Rows.Children.Add(noticeSummary);
         if (notices.Children.Count > 0) view.Rows.Children.Add(noticeDetails);
@@ -148,9 +169,9 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
             }
         }
         FrameworkElement preserve = view.RadioOption(change.Operation == PackUpdateOperation.DisablePersonal ? "继续启用（需通过检查）" : "保留当前版本",
-            change.Choice == PackUpdateChoice.PreservePersonal, () => { change.Choice = PackUpdateChoice.PreservePersonal; plan.AllowUnverifiedDependencies = false; RefreshResult(); });
+            change.Choice == PackUpdateChoice.PreservePersonal, () => { change.Choice = PackUpdateChoice.PreservePersonal; change.DisableAfterUpdate = false; plan.AllowUnverifiedDependencies = false; RefreshResult(); RecheckSelection(); });
         FrameworkElement author = view.RadioOption(change.Operation == PackUpdateOperation.DisablePersonal ? "本次禁用并保留文件" : change.Incoming is null ? "使用作者方案（移除此文件）" : "使用作者版本",
-            change.Choice == PackUpdateChoice.UseAuthor, () => { change.Choice = PackUpdateChoice.UseAuthor; plan.AllowUnverifiedDependencies = false; RefreshResult(); });
+            change.Choice == PackUpdateChoice.UseAuthor, () => { change.Choice = PackUpdateChoice.UseAuthor; change.DisableAfterUpdate = false; plan.AllowUnverifiedDependencies = false; RefreshResult(); RecheckSelection(); });
         preserve.Margin = new Thickness(0, 0, 18, 4); preserve.Tag = PackUpdateChoice.PreservePersonal;
         author.Margin = new Thickness(0, 0, 0, 4); author.Tag = PackUpdateChoice.UseAuthor;
         choices.Children.Add(preserve); choices.Children.Add(author); text.Children.Add(choices);
@@ -159,10 +180,122 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     private void AddDisabledState(StackPanel text, TChange change, TextBlock? paths) {
         void RefreshPaths() { if (paths is not null) paths.Text = Paths(change); }
         FrameworkElement disabled = view.CheckOption("更新到新版后继续保持禁用", change.KeepDisabled, selected => {
-            change.KeepDisabled = selected; plan.AllowUnverifiedDependencies = false; RefreshPaths();
+            change.KeepDisabled = selected; change.DisableAfterUpdate = false; plan.AllowUnverifiedDependencies = false; RefreshPaths(); RecheckSelection();
         });
         disabled.Margin = new Thickness(0, 8, 0, 0);
         disabled.ToolTip = "勾选：更新文件但保持禁用；取消勾选：更新后启用新版。目标占用或组合不兼容时不会提交。";
         text.Children.Add(disabled);
+    }
+    private async void RecheckSelection() {
+        if (snapshot is null || review is null || closed) return;
+        int generation = ++revision;
+        CancelCheck();
+        var cancellation = new CancellationTokenSource(); checking = cancellation;
+        try {
+            view.SetCanConfirm(false);
+            if (selectionStatus is not null) {
+                selectionStatus.Text = "正在检查所选组合…";
+                selectionStatus.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1");
+            }
+            TPlan selected = snapshot(plan);
+            Task<PackUpdatePreviewReview> read;
+            lock (checkGate) {
+                if (closed) return;
+                read = Task.Run(() => review(selected, cancellation.Token), cancellation.Token);
+                readChecks.Add(cancellation, read);
+            }
+            PackUpdatePreviewReview result = await read.ConfigureAwait(false);
+            await ApplyLatestAsync(generation, () => {
+                plan.DependencyCheck = result.Dependencies;
+                compatibility.Children.Clear();
+                if (result.Actions.Count > 0) compatibility.Children.Add(ModpackDialogController<TButton, TScroll>.Label("兼容性处理（选择后重新检查）", 13, true, margin: new Thickness(4, 3, 7, 8)));
+                foreach (var action in result.Actions.OrderBy(action => action.Kind).ThenBy(action => action.Relative, StringComparer.OrdinalIgnoreCase)) {
+                    TChange change = plan.Changes.Concat(plan.PreviewChanges).Single(item => item.Relative == action.Relative);
+                    StackPanel body = new();
+                    string label = action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion ? "使用整包新版："
+                        : action.Kind == PackUpdatePreviewActionKind.EnableRequired ? change.Operation == PackUpdateOperation.EnablePersonal ? "启用本地的必需前置：" : "启用整包版本的必需前置："
+                        : "禁用不兼容模组（保留文件）：";
+                    FrameworkElement option = view.CheckOption(label + Path.GetFileName(action.Relative), action.Selected, enabled => {
+                        if (action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion) {
+                            change.Choice = enabled ? PackUpdateChoice.UseAuthor : PackUpdateChoice.PreservePersonal;
+                            change.PreviewAuthorRepair = enabled;
+                            change.DisableAfterUpdate = false;
+                        } else if (action.Kind == PackUpdatePreviewActionKind.EnableRequired) {
+                            change.KeepDisabled = !enabled; change.DisableAfterUpdate = false;
+                            if (enabled) change.Choice = PackUpdateChoice.UseAuthor;
+                        } else if (change.Operation == PackUpdateOperation.DisablePersonal) change.Choice = enabled ? PackUpdateChoice.UseAuthor : PackUpdateChoice.PreservePersonal;
+                        else { change.DisableAfterUpdate = enabled; if (enabled) change.Choice = PackUpdateChoice.UseAuthor; }
+                        plan.AllowUnverifiedDependencies = false; RecheckSelection();
+                    });
+                    option.Tag = "preview-repair:" + action.Kind + ":" + action.Relative;
+                    body.Children.Add(option);
+                    body.Children.Add(ModpackDialogController<TButton, TScroll>.Label(action.Details, 12, color: "ColorBrushGray2", margin: new Thickness(0, 6, 0, 0)));
+                    compatibility.Children.Add(ModpackDialogController<TButton, TScroll>.Frame(body));
+                }
+                if (result.Dependencies.HasErrors) {
+                    StackPanel errors = new();
+                    foreach (string error in result.Dependencies.Errors) errors.Children.Add(ModpackDialogController<TButton, TScroll>.Label(error, 12, color: "ColorBrushRedLight", margin: new Thickness(4, 3, 7, 3)));
+                    compatibility.Children.Add(new Expander { Header = "仍需处理的问题（" + result.Dependencies.Errors.Count + "）", Content = errors, IsExpanded = result.Actions.Count == 0, Margin = new Thickness(4, 0, 7, 8) });
+                }
+                string[] warnings = result.Dependencies.Warnings.Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray();
+                if (warnings.Length > 0) {
+                    StackPanel details = new();
+                    foreach (string warning in warnings) details.Children.Add(ModpackDialogController<TButton, TScroll>.Label(warning, 12, color: "ColorBrushGray2", margin: new Thickness(4, 3, 7, 3)));
+                    compatibility.Children.Add(new Expander { Header = "待确认声明（" + warnings.Length + "）", Content = details, IsExpanded = false, Margin = new Thickness(4, 0, 7, 8) });
+                }
+                if (selectionStatus is not null) {
+                    selectionStatus.Text = result.Dependencies.HasErrors ? "所选组合仍有依赖／兼容问题，请在预览中处理后更新。" : result.Dependencies.HasUnknown ? "未发现确定冲突；部分声明仍需确认。" : "所选组合检查通过，可以更新。";
+                    selectionStatus.SetResourceReference(TextBlock.ForegroundProperty, result.Dependencies.HasErrors ? "ColorBrushRedLight" : "ColorBrush1");
+                }
+                double offset = view.Scroller.VerticalOffset;
+                ShowKind(activeKind); view.Scroller.ScrollToVerticalOffset(offset);
+                view.SetCanConfirm(!result.Dependencies.HasErrors);
+            });
+        } catch (OperationCanceledException) when (cancellation.IsCancellationRequested || closed || view.Dispatcher.HasShutdownStarted) { }
+        catch (Exception error) {
+            // The window may disappear while a worker or its Dispatcher operation is finishing.
+            // In particular, do not let an exception in this async-void error path reach WPF.
+            try {
+                await ApplyLatestAsync(generation, () => {
+                    view.SetCanConfirm(false);
+                    if (selectionStatus is not null) {
+                        selectionStatus.Text = "组合检查未完成，请调整选择后重试：" + error.Message;
+                        selectionStatus.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushRedLight");
+                    }
+                });
+            } catch (Exception) { /* A closing/unavailable UI must not reopen confirmation. */ }
+        } finally {
+            lock (checkGate) {
+                readChecks.Remove(cancellation);
+                Interlocked.CompareExchange(ref checking, null, cancellation);
+                cancellation.Dispose();
+            }
+        }
+    }
+    // May be called by the non-UI preview owner. Drain only file-reading tasks:
+    // their UI continuations can be queued behind the modal's closing animation.
+    public Task CloseAndDrainAsync() {
+        Task[] reads;
+        lock (checkGate) {
+            closed = true;
+            Interlocked.Increment(ref revision);
+            foreach (CancellationTokenSource source in readChecks.Keys) source.Cancel();
+            reads = readChecks.Values.ToArray();
+        }
+        return DrainReadsAsync(reads);
+    }
+    private static async Task DrainReadsAsync(Task[] reads) {
+        try { await Task.WhenAll(reads).ConfigureAwait(false); }
+        catch (Exception) { /* Each review reports failure only while its preview remains open. */ }
+    }
+    private async Task ApplyLatestAsync(int generation, Action apply) {
+        if (closed || view.Dispatcher.HasShutdownStarted || view.Dispatcher.HasShutdownFinished) return;
+        await view.Dispatcher.InvokeAsync(() => {
+            if (closed || generation != revision || view.Dispatcher.HasShutdownStarted) return;
+            apply();
+        });
+    }
+    private void CancelCheck() {
+        try { checking?.Cancel(); } catch (ObjectDisposedException) { }
     }
 }

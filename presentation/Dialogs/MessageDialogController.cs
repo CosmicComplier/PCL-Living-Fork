@@ -210,7 +210,7 @@ public sealed class MessageTextController<TKind, TValidation> : MessageDialogCon
     protected override void FocusInput() => Parts.Button1().Focus();
     protected override string LogText() => $"普通弹窗：{Parts.Title().Text}\r\n{text.CaptionText().Text}";
     public override void Button1Click() {
-        if (Converter.IsExited) return;
+        if (Converter.IsExited || !Parts.Button1().IsEnabled) return;
         if (Converter.Button1Action is not null) Converter.Button1Action();
         else { Converter.IsExited = true; Converter.Result = 1; Close(true); }
     }

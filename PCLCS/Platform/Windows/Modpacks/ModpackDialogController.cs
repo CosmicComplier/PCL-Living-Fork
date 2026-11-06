@@ -28,6 +28,8 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
     public readonly StackPanel Rows = new();
     public readonly TScroll Scroller;
     public readonly string AnimationKey;
+    public bool CanConfirm { get; private set; } = true;
+    public event EventHandler? ConfirmationChanged;
     private readonly ModpackDialogHost<TButton, TScroll> host;
     public ModpackDialogController(string title, string subtitle, int filterCount, ModpackDialogHost<TButton, TScroll> host) {
         this.host = host; AnimationKey = host.AnimationName();
@@ -46,6 +48,10 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
     }
     public FrameworkElement RadioOption(string text, bool selected, Action select) => host.CreateRadio(text, selected, select);
     public FrameworkElement CheckOption(string text, bool selected, Action<bool> change) => host.CreateCheck(text, selected, change);
+    public void SetCanConfirm(bool value) {
+        if (CanConfirm == value) return;
+        CanConfirm = value; ConfirmationChanged?.Invoke(this, EventArgs.Empty);
+    }
     public void BeginFilter(int key) {
         foreach (TButton button in Filters.Children) host.HighlightButton(button, (int)button.Tag == key);
         Rows.Children.Clear(); Scroller.ScrollToTop(); host.StopAnimation(AnimationKey);

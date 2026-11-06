@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -106,9 +106,8 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         host.SetProgress(task, 0.9);
         EnsureOriginUnchanged();
         update.ValidateChoices(plan, token);
-        int operationCount = plan.Changes.Where(item => item.ApplyAuthor).Sum(item => item.Incoming is null ? item.LocalRelative is null ? 0 : 1 :
-            1 + (item.LocalRelative is not null && !item.LocalRelative.Equals(item.DestinationRelative, StringComparison.OrdinalIgnoreCase) ? 1 : 0)) + extras.Count + 1;
-        string backup = update.Commit(plan, host.VersionFolder(instance), token, extras, index => host.SetProgress(task, 0.9 + 0.08 * index / Math.Max(1, operationCount)));
+        int operationCount = update.PlannedOperationCount(plan, token) + extras.Count + 1;
+        string backup = update.Commit(plan, host.VersionFolder(instance), token, extras, index => host.SetProgress(task, Math.Min(0.98, 0.9 + 0.08 * index / Math.Max(1, operationCount))));
         host.SetProgress(task, 0.98); host.SetOutput(task, backup);
         ReloadInstance(instance); host.Info("整合包更新完成，原文件备份：" + backup);
         void EnsureOriginUnchanged() {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -135,7 +135,14 @@ namespace PCL
         // 实际模态控件及运行时 Loader 构造，流程决策与取消/等待编排由 C# 持有。
         private static global::System.Int32 Preview(global::System.String Summary, global::PCL.PackUpdatePlan Plan, global::System.Func<global::PCLCS.McVersion> Version)
         {
-            return global::PCL.ModMain.MyMsgBoxConfirmContent(Summary, "整合包更新预览", "按以上选择更新", () => new global::PCL.ModpackUpdatePreviewView(Plan, Version().VanillaName, Version().ModLoaderVersions), IsWarn: false);
+            global::PCL.ModpackUpdatePreviewView preview = null;
+            try {
+                return global::PCL.ModMain.MyMsgBoxConfirmContent(Summary, "整合包更新预览", "按以上选择更新", () => preview = new global::PCL.ModpackUpdatePreviewView(Plan, Version().VanillaName, Version().ModLoaderVersions, true), IsWarn: false);
+            } finally {
+                // Preview runs on the update worker. Wait for readers before its staging
+                // directory or instance lock can be released; this never waits for UI callbacks.
+                preview?.CloseAndDrainAsync().GetAwaiter().GetResult();
+            }
         }
         private static global::PCL.ResourceVersion SelectOnlineVersion(global::System.Collections.Generic.List<global::PCL.ResourceVersion> Versions, global::System.String Name, global::System.String CurrentVersion)
         {

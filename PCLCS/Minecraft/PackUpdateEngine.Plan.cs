@@ -291,6 +291,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         plan.Changes = staged.Changes;
         foreach (var pair in staged.Snapshot) if (!plan.Snapshot.ContainsKey(pair.Key)) plan.Snapshot.Add(pair.Key, pair.Value);
         LinkPersonalAuthorUpdates(plan, token);
+        PreparePreviewChanges(plan, stage, token);
         ResolvePersonalChanges(plan, stage, token, download ?? host.Download);
         PreserveModCollisions(plan, token);
         plan.DependencyCheck = CheckDependencies(plan, token);
@@ -316,7 +317,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         token.ThrowIfCancellationRequested();
         var files = FinalModFiles(plan, token).Select(file => file.Path).ToList();
         PackDependencyGraphResult result = PackDependencyGraph.Check(files, plan.Package!.Minecraft, plan.Package.Loaders, token);
-        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && ModFile(change.DestinationRelative) &&
+        foreach (TChange change in PlanChanges(plan).Where(change => change.ApplyAuthor && ModFile(change.DestinationRelative) &&
             EnabledModFile(change.DestinationRelative) && !LoadedModPath(plan.Package!, change.DestinationRelative))) {
             string[] parts = change.DestinationRelative.Split('/');
             // A different numeric MC version directory is outside the standard
@@ -327,7 +328,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             }
         }
         string DisplayPath(string message) {
-            foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && change.Incoming?.Payload is not null)) {
+            foreach (TChange change in PlanChanges(plan).Where(change => change.ApplyAuthor && change.Incoming?.Payload is not null)) {
                 message = message.Replace(change.Incoming!.Payload!, change.DestinationRelative);
                 message = message.Replace(Path.GetFileName(change.Incoming.Payload!), change.DestinationRelative);
             }
@@ -373,7 +374,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     }
     private void RefreshRuntimeWarnings(TPlan plan, CancellationToken token) {
         plan.RuntimeWarnings.Clear();
-        var removed = new HashSet<string>(plan.Changes.Where(change => change.ApplyAuthor && change.LocalRelative is not null).Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
+        var removed = new HashSet<string>(PlanChanges(plan).Where(change => change.ApplyAuthor && change.LocalRelative is not null).Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
         foreach (string path in LocalContent(plan.Root!, token, LegacyVersionFolder(plan.Package!)).Where(path => LoadedModPath(plan.Package!, path) && !removed.Contains(path))) {
             PackModInspection info = Inspect(plan.Package!, Target(plan.Root!, path), token);
             foreach (string warning in info.CompatibilityWarnings) plan.RuntimeWarnings.Add(path + "：" + warning);
@@ -381,19 +382,13 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         }
     }
     public void ValidateChoices(TPlan plan, CancellationToken token = default) {
-        ValidateAssociationBindings(plan);
         ValidateSnapshot(plan, token);
-        foreach (TChange change in plan.Changes) if (change.Choice == PackUpdateChoice.UseAuthor && (!change.AllowAuthor || change.DisplayOnly))
-            throw new IOException("此项归属或重复冲突尚未确认，不能自动替换：" + change.Relative);
-        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && change.Ownership == PackUpdateOwnership.Disabled && !change.KeepDisabled)) {
-            if (!plan.Snapshot.TryGetValue(change.DestinationRelative, out string? occupied) || occupied is not null)
-                throw new IOException("启用新版模组的目标路径已存在或未经预览，未覆盖：" + change.DestinationRelative);
-        }
+        ValidatePlannedOperations(plan, token);
         List<(string Path, PackModInspection Ids)> final = new();
-        var removed = new HashSet<string>(plan.Changes.Where(change => change.ApplyAuthor && change.LocalRelative is not null).Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
+        var removed = new HashSet<string>(PlanChanges(plan).Where(change => change.ApplyAuthor && change.LocalRelative is not null).Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
         foreach (string path in LocalContent(plan.Root!, token, LegacyVersionFolder(plan.Package!)).Where(path => LoadedModPath(plan.Package!, path) && !removed.Contains(path)))
             final.Add((path, Inspect(plan.Package!, Target(plan.Root!, path), token)));
-        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && change.Incoming is not null)) {
+        foreach (TChange change in PlanChanges(plan).Where(change => change.ApplyAuthor && change.Incoming is not null)) {
             if (!Matches(change.Incoming!.Payload!, change.Incoming.Hash, token)) throw new IOException("暂存文件已变化：" + change.Relative);
             if (!LoadedModPath(plan.Package!, change.DestinationRelative)) continue;
             PackModInspection info = Inspect(plan.Package!, change.Incoming.Payload!, token);

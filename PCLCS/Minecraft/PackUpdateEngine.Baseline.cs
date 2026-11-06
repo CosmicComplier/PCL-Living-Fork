@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -58,10 +58,12 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         foreach (JProperty entry in files.Properties()) {
             token.ThrowIfCancellationRequested();
             JObject author = (JObject)entry.Value;
-            TChange? change = plan.Changes.FirstOrDefault(item => item.Incoming is not null &&
+            TChange? change = PlanChanges(plan).FirstOrDefault(item => item.Incoming is not null &&
                 string.Equals(item.Incoming.Relative, entry.Name, StringComparison.OrdinalIgnoreCase));
-            if (change is not null && change.ApplyAuthor && change.Operation != PackUpdateOperation.DisablePersonal) {
-                author["state"] = change.Ownership == PackUpdateOwnership.Disabled && change.KeepDisabled ? "disabled" : "installed";
+            if (change is not null && change.PreviewOnly && !change.ApplyAuthor) {
+                ObserveInstalledFile(plan.Root!, entry.Name, author, token);
+            } else if (change is not null && change.ApplyAuthor && change.Operation != PackUpdateOperation.DisablePersonal) {
+                author["state"] = change.DisableAfterUpdate || change.Ownership == PackUpdateOwnership.Disabled && change.KeepDisabled ? "disabled" : "installed";
                 author["local"] = LocalObservation(change.DestinationRelative!, author["hash"]!.ToString());
             } else if (change is not null) {
                 string? local = change.Operation == PackUpdateOperation.DisablePersonal ? change.DestinationRelative : change.LocalRelative;
@@ -99,7 +101,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         }
 
         JObject retained = new();
-        foreach (TChange disabled in plan.Changes.Where(change => change.Operation == PackUpdateOperation.DisablePersonal &&
+        foreach (TChange disabled in PlanChanges(plan).Where(change => change.Operation == PackUpdateOperation.DisablePersonal &&
             change.ApplyAuthor && change.BaselineRelative is not null && change.Before is not null)) {
             JToken? author = plan.Baseline?["files"]?[disabled.BaselineRelative!];
             retained[disabled.DestinationRelative] = new JObject(new JProperty("authorRelative", disabled.BaselineRelative), new JProperty("hash", author?["hash"]),
@@ -120,7 +122,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 }
             }
         }
-        foreach (TChange change in plan.Changes.Where(item => !item.ApplyAuthor && item.BaselineRelative is not null && item.LocalRelative is not null && item.Before is not null)) {
+        foreach (TChange change in PlanChanges(plan).Where(item => !item.ApplyAuthor && item.BaselineRelative is not null && item.LocalRelative is not null && item.Before is not null)) {
             token.ThrowIfCancellationRequested();
             string path = change.LocalRelative!;
             if (files.Properties().Any(entry => string.Equals(entry.Value["local"]?["relative"]?.ToString(), path, StringComparison.OrdinalIgnoreCase))) continue;
@@ -134,7 +136,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         return next;
     }
 
-    private static bool WillReplaceOrRemove(TPlan plan, string relative) => plan.Changes.Any(change => change.ApplyAuthor &&
+    private static bool WillReplaceOrRemove(TPlan plan, string relative) => PlanChanges(plan).Any(change => change.ApplyAuthor &&
         (string.Equals(change.LocalRelative, relative, StringComparison.OrdinalIgnoreCase) || string.Equals(change.DestinationRelative, relative, StringComparison.OrdinalIgnoreCase)));
 
     private static void PreserveOriginalAssociation(JObject entry, TChange change, JObject? baseline) {

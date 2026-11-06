@@ -28,8 +28,18 @@ public class PackUpdatePackageData<TFile> where TFile : PackUpdateFileData {
 }
 public enum PackUpdateOwnership { AuthorUnchanged, AuthorRenamed, PersonalModified, PersonalAdded, Disabled, Deleted, OptionalAbsent, Ambiguous, Unknown }
 public enum PackUpdateChoice { PreservePersonal, UseAuthor }
-public enum PackUpdateOperation { AuthorChange, DisablePersonal, PersonalDependency }
+public enum PackUpdateOperation { AuthorChange, DisablePersonal, PersonalDependency, EnablePersonal }
 public enum PackUpdateAssociation { DeclaredPath, VerifiedModHash, RecordedMod, PlatformProject, PersonalComponent, Unknown }
+public enum PackUpdatePreviewActionKind { EnableRequired, DisableIncompatible, UseAuthorVersion }
+public sealed class PackUpdatePreviewAction {
+    public string Relative = "", Details = "";
+    public PackUpdatePreviewActionKind Kind;
+    public bool Selected;
+}
+public sealed class PackUpdatePreviewReview {
+    public PackDependencyGraphResult Dependencies = new();
+    public List<PackUpdatePreviewAction> Actions = new();
+}
 public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     public string? Relative, Before;
     public string? BaselineRelative, LocalRelative, TargetBefore;
@@ -42,6 +52,7 @@ public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     public bool KeepDisabled = true;
     public bool PersonalCompatible;
     public bool PersonalComponentMatched;
+    public bool PreviewOnly, DisableAfterUpdate, PreviewAuthorRepair;
     public string? DisabledDestination;
     public string? Reason;
     public PackUpdateOwnership Ownership;
@@ -49,15 +60,21 @@ public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     public PackUpdateChoice Choice;
     public List<string> Candidates = new();
     public bool CanChoose => !DisplayOnly && AllowAuthor && Ownership != PackUpdateOwnership.Ambiguous && (Conflict || AllowPreserveAuthor);
-    public bool ApplyAuthor => !DisplayOnly && (!(Conflict || AllowPreserveAuthor) || AllowAuthor && Choice == PackUpdateChoice.UseAuthor);
+    public bool ApplyAuthor => !DisplayOnly && AllowAuthor && (!DisableAfterUpdate || Ownership is not (PackUpdateOwnership.Ambiguous or PackUpdateOwnership.Unknown)) && (!PreviewOnly || DisableAfterUpdate || Ownership == PackUpdateOwnership.Disabled && !KeepDisabled) &&
+        (!(Conflict || AllowPreserveAuthor) || AllowAuthor && Choice == PackUpdateChoice.UseAuthor);
     // Updating a deliberately disabled mod never implicitly enables it.
     public string DestinationRelative => Operation == PackUpdateOperation.DisablePersonal ? DisabledDestination! :
-        (Relative ?? "") + (Incoming is not null && Ownership == PackUpdateOwnership.Disabled && KeepDisabled ? ".disabled" : "");
+        (Relative ?? "") + (Incoming is not null && (DisableAfterUpdate || Ownership == PackUpdateOwnership.Disabled && KeepDisabled) ? ".disabled" : "");
+    public PackUpdateChangeData<TFile> SnapshotForPreview() {
+        var copy = (PackUpdateChangeData<TFile>)MemberwiseClone(); copy.Candidates = new(Candidates); return copy;
+    }
 }
 public class PackUpdatePlanData<TPackage, TChange> where TPackage : class where TChange : class {
     public string? Root;
     public TPackage? Package;
     public List<TChange> Changes = new();
+    // Unchanged author files remain outside the normal delta, but can be enabled/disabled explicitly in the preview.
+    public List<TChange> PreviewChanges = new();
     public JObject? Baseline;
     public Dictionary<string, string?> Snapshot = new(StringComparer.OrdinalIgnoreCase);
     public List<string> Warnings = new(), RuntimeWarnings = new();

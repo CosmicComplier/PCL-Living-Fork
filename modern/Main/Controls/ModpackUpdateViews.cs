@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -144,11 +144,14 @@ namespace PCL
                 Kind = value;
             }
         }
-        internal ModpackUpdatePreviewView(PackUpdatePlan Plan, string CurrentMinecraft, Dictionary<ModLoaders, string> CurrentLoaders) : base(Plan.Package.Name + " " + Plan.Package.Version, RuntimeSummary(Plan.Package, CurrentMinecraft, CurrentLoaders), 4)
+        internal ModpackUpdatePreviewView(PackUpdatePlan Plan, string CurrentMinecraft, Dictionary<ModLoaders, string> CurrentLoaders) : this(Plan, CurrentMinecraft, CurrentLoaders, false) { }
+        internal ModpackUpdatePreviewView(PackUpdatePlan Plan, string CurrentMinecraft, Dictionary<ModLoaders, string> CurrentLoaders, bool ValidateSelection) : base(Plan.Package.Name + " " + Plan.Package.Version, RuntimeSummary(Plan.Package, CurrentMinecraft, CurrentLoaders), 4)
         {
-            Controller = new PreviewController(this, Plan, CurrentMinecraft, CurrentLoaders, Counts, Value => Kind = (ChangeKind)Value, Text => new MyHint() { Text = Text, Theme = MyHint.Themes.Yellow, Margin = new Thickness(0d, 10d, 0d, 0d) });
+            Controller = new PreviewController(this, Plan, CurrentMinecraft, CurrentLoaders, Counts, Value => Kind = (ChangeKind)Value, Text => new MyHint() { Text = Text, Theme = MyHint.Themes.Yellow, Margin = new Thickness(0d, 10d, 0d, 0d) },
+                ValidateSelection ? ModpackUpdate.Engine.SnapshotForPreview : null, ValidateSelection ? ModpackUpdate.Engine.ReviewPreview : null);
             Changes = Controller.Changes;
         }
+        internal System.Threading.Tasks.Task CloseAndDrainAsync() => Controller.CloseAndDrainAsync();
         internal static ChangeKind Classify(PackUpdateChange Change)
         {
             return (ChangeKind)PreviewController.Classify(Change);
