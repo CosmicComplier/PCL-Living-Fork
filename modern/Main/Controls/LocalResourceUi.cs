@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace PCL
@@ -9,6 +11,46 @@ namespace PCL
     // 模组页与游戏资源页共用的原生选择栏图标和动画。
     internal static class LocalResourceUi
     {
+        internal static void InitializeSortButton(MyIconTextButton button, Action toggle, DockPanel header, StackPanel filters)
+        {
+            button.MinHeight = button.MaxHeight = button.Height = 24;
+            button.ShapeLogo.MaxHeight = button.ShapeLogo.MaxWidth = 12;
+            button.ShapeLogo.Margin = new Thickness(6, 0, 0, 0);
+            button.LabText.FontSize = 12;
+            button.LabText.Margin = new Thickness(5, 0, 6, 1);
+            button.Focusable = true;
+            KeyboardNavigation.SetIsTabStop(button, true);
+            button.KeyDown += (_, args) =>
+            {
+                if (!button.IsEnabled || args.Key is not (Key.Enter or Key.Space)) return;
+                toggle();
+                args.Handled = true;
+            };
+            void FitHeader()
+            {
+                double required = button.DesiredSize.Width;
+                foreach (FrameworkElement filter in filters.Children)
+                    if (filter.Visibility != Visibility.Collapsed) required += filter.DesiredSize.Width;
+                Dock target = required > header.ActualWidth + 0.5 ? Dock.Top : Dock.Right;
+                if (DockPanel.GetDock(button) != target) DockPanel.SetDock(button, target);
+            }
+            header.SizeChanged += (_, _) => FitHeader();
+            filters.SizeChanged += (_, _) => FitHeader();
+            button.SizeChanged += (_, _) => FitHeader();
+            header.Loaded += (_, _) => FitHeader();
+        }
+        internal static void UpdateSortButton(MyIconTextButton button, int mode)
+        {
+            button.Text = mode switch { 1 => "最近添加", 2 => "最早添加", 3 => "最近游玩", 4 => "最早游玩", _ => "默认排序" };
+            button.Logo = mode switch
+            {
+                1 or 3 => "M3 15L0 12L1.4 10.6L2 11.2V1H4V11.2L4.6 10.6L6 12Z M8 2H16V4H8Z M8 7H14V9H8Z M8 12H12V14H8Z",
+                2 or 4 => "M3 1L0 4L1.4 5.4L2 4.8V15H4V4.8L4.6 5.4L6 4Z M8 2H12V4H8Z M8 7H14V9H8Z M8 12H16V14H8Z",
+                _ => "M1 2H15V4H1Z M1 7H15V9H1Z M1 12H15V14H1Z"
+            };
+            AutomationProperties.SetName(button, "排序：" + button.Text);
+        }
+
         // 从原模组条目的选中/悬停反馈抽出，行与截图卡片共用相同时间和缓动。
         internal static void AppendItemSelection(List<ModAnimation.AniData> Ani, Border Back, bool Hovered, bool Selected, bool Pressed, bool TintBackground = true)
         {

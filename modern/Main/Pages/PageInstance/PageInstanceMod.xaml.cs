@@ -25,12 +25,16 @@ namespace PCL
             this.SelectedMods = new List<string>();
             Native = new NativePage(CreateView(), LocalModPageRuntime.CreateHost(this));
             this.InitializeComponent();
+            LocalResourceUi.InitializeSortButton(this.BtnSort, ToggleSort, this.PanSortHeader, this.PanFilter);
+            LocalResourceUi.UpdateSortButton(this.BtnSort, (int)Native.SortOrder);
         }
 
-        private void SortChanged(object sender, SelectionChangedEventArgs e)
+        private void SortClick(object sender, ModBase.RouteEventArgs e) => ToggleSort();
+        private void ToggleSort()
         {
-            if (sender is MyComboBox selector && ReferenceEquals(e.OriginalSource, selector))
-                Native.SortChanged(selector.SelectedIndex);
+            if (!this.BtnSort.IsEnabled) return;
+            Native.SortChanged(((int)Native.SortOrder + 1) % 3);
+            LocalResourceUi.UpdateSortButton(this.BtnSort, (int)Native.SortOrder);
         }
 
         private LegacyModPageView CreateView()

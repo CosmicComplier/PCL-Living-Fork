@@ -62,8 +62,8 @@ public sealed partial class ResourcePageController<TInstance, TEntry, TOnline>
         if (View.SortControl is not null) {
             View.SortControl.IsEnabled = !IsRecycleMode;
             View.SortControl.ToolTip = IsRecycleMode ? "回收站按删除记录顺序显示；删除时间不作为添加时间或最后游玩时间。" :
-                Kind == 0 ? "添加时间取文件夹创建时间，仅为近似值；最后游玩取 level.dat 的 LastPlayed，未知时间排在最后。" :
-                "添加时间以本地文件或文件夹的创建时间估算，复制、解压、迁移可能改变此时间，不代表资源的发布日期。";
+                Kind == 0 ? "点击切换最近游玩和最早游玩。时间取 level.dat 的 LastPlayed，未知时间排在最后。" :
+                "点击切换默认排序、最近添加和最早添加。添加时间取本地创建时间，复制、解压和迁移可能改变它。";
         }
         if (!IsRecycleMode) {
             RefreshResourceToolbar();
