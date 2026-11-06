@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Windows;
@@ -17,6 +18,29 @@ internal static class LocalModSortChecks
     {
         string root = Path.Combine(environment.Root, "local-mod-sort");
         Directory.CreateDirectory(root);
+        // HasUpdate reads a genuine instance-scoped setting even when no
+        // update exists. Supply its owner while keeping loader ports isolated.
+        ModMinecraft.McInstance? previous = PageInstanceLeft.Instance;
+        ModMinecraft.McInstance owner = new(Path.Combine(root, "instance"));
+        IDictionary cache = (IDictionary)Native.Get(Native.Entries["VersionAdvanceDisableModUpdate"]!, "ValueCache")!;
+        bool existed = cache.Contains(owner.PathVersion);
+        object? oldValue = cache[owner.PathVersion];
+        try
+        {
+            cache[owner.PathVersion] = false;
+            PageInstanceLeft.Instance = owner;
+            RunPage(environment, root);
+        }
+        finally
+        {
+            PageInstanceLeft.Instance = previous;
+            if (existed) cache[owner.PathVersion] = oldValue;
+            else cache.Remove(owner.PathVersion);
+        }
+    }
+
+    private static void RunPage(FixtureEnvironment environment, string root)
+    {
         LocalResourceFile older = Mod("older.jar", "needle older", 2001);
         LocalResourceFile middle = Mod("middle.jar.disabled", "unrelated furniture", 2002);
         LocalResourceFile newer = Mod("newer.jar", "needle newer", 2003);
@@ -89,11 +113,14 @@ internal static class LocalModSortChecks
         Order(latest.File.Name, newer.File.Name, middle.File.Name, older.File.Name);
         Native.Check(sort.SelectedIndex == 1 && latest.File.Exists && middle.File.Exists, "Refresh reset ordering or changed disabled/new mod files.");
         Part<FrameworkElement>("PanListBack").Opacity = 1;
-        Render(page, Path.Combine(root, "mod-sort-compact.png"), 470, 600);
-        Rect combo = sort.TransformToAncestor(page).TransformBounds(new Rect(sort.RenderSize));
-        Rect list = rows.TransformToAncestor(page).TransformBounds(new Rect(rows.RenderSize));
-        Native.Check(combo.Height > 0 && combo.Right <= page.ActualWidth + 1 && combo.Bottom <= list.Top + 1,
-            "Compact mod header clipped the sort combo or overlapped the list.");
+        Render(page, Path.Combine(root, "mod-sort-compact.png"), 470, 600, () =>
+        {
+            Native.Check(page.IsAncestorOf(sort) && page.IsAncestorOf(rows), "Compact mod content was not attached to the real page.");
+            Rect combo = sort.TransformToAncestor(page).TransformBounds(new Rect(sort.RenderSize));
+            Rect list = rows.TransformToAncestor(page).TransformBounds(new Rect(rows.RenderSize));
+            Native.Check(combo.Height > 0 && combo.Right <= page.ActualWidth + 1 && combo.Bottom <= list.Top + 1,
+                "Compact mod header clipped the sort combo or overlapped the list.");
+        });
         environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS native local-mod-sort: actual combo/default/time order, selection, filters, fuzzy search, refreshed/disabled rows and compact header.");
 
@@ -110,12 +137,14 @@ internal static class LocalModSortChecks
         }
     }
 
-    private static void Render(FrameworkElement element, string file, int width, int height)
+    private static void Render(FrameworkElement element, string file, int width, int height, Action verifyLayout)
     {
+        ((FrameworkElement)element.FindName("PanAllBack")).Visibility = Visibility.Visible;
         Grid host = new(); host.Children.Add(element);
         try
         {
             host.Measure(new Size(width, height)); host.Arrange(new Rect(0, 0, width, height)); host.UpdateLayout();
+            verifyLayout();
             RenderTargetBitmap image = new(width, height, 96, 96, PixelFormats.Pbgra32); image.Render(host);
             PngBitmapEncoder encoder = new(); encoder.Frames.Add(BitmapFrame.Create(image));
             using FileStream output = File.Create(file); encoder.Save(output);

@@ -67,11 +67,15 @@ internal static class ResourceSortChecks
         Order(page, "PanList", "needle-newer.zip", "folder-pack", "needle-older.zip");
         Native.Check(combo.SelectedIndex == 1, "Reloading resource results reset its selected sort mode.");
         combo.SelectedIndex = 0; Native.Check(Names(page, "PanList").SequenceEqual(original), "Default no longer preserves the original catalog order.");
-        Render(page, Path.Combine(folder, "compact-header.png"));
-        Rect comboBounds = combo.TransformToAncestor(page).TransformBounds(new Rect(combo.RenderSize));
-        Rect listBounds = Part<Panel>(page, "PanResourceList").TransformToAncestor(page).TransformBounds(new Rect(Part<Panel>(page, "PanResourceList").RenderSize));
-        Native.Check(comboBounds.Height > 0 && comboBounds.Right <= page.ActualWidth + 1 && comboBounds.Bottom <= listBounds.Top + 1,
-            "Compact resource header clipped the combo or overlapped content.");
+        Render(page, Path.Combine(folder, "compact-header.png"), () =>
+        {
+            Panel list = Part<Panel>(page, "PanResourceList");
+            Native.Check(page.IsAncestorOf(combo) && page.IsAncestorOf(list), "Compact resources were not attached to the real page.");
+            Rect comboBounds = combo.TransformToAncestor(page).TransformBounds(new Rect(combo.RenderSize));
+            Rect listBounds = list.TransformToAncestor(page).TransformBounds(new Rect(list.RenderSize));
+            Native.Check(comboBounds.Height > 0 && comboBounds.Right <= page.ActualWidth + 1 && comboBounds.Bottom <= listBounds.Top + 1,
+                "Compact resource header clipped the combo or overlapped content.");
+        });
         Native.Set(Controller(page), "IsRecycleMode", true);
         Show(page, folder, entries);
         Native.Check(!combo.IsEnabled && (combo.ToolTip?.ToString() ?? "").Contains("删除", StringComparison.Ordinal), "Recycle records incorrectly expose installation/play-time sorting.");
@@ -132,10 +136,12 @@ internal static class ResourceSortChecks
         zip.WriteByte(0); zip.WriteByte(0); return folder;
         void Tag(byte kind, string value) { zip.WriteByte(kind); byte[] text = Encoding.UTF8.GetBytes(value); zip.WriteByte((byte)(text.Length >> 8)); zip.WriteByte((byte)text.Length); zip.Write(text); }
     }
-    private static void Render(FrameworkElement page, string file) {
+    private static void Render(FrameworkElement page, string file, Action verifyLayout) {
+        Part<FrameworkElement>(page, "PanAllBack").Visibility = Visibility.Visible;
         Grid host = new(); host.Children.Add(page);
         try {
             host.Measure(new Size(470, 650)); host.Arrange(new Rect(0, 0, 470, 650)); host.UpdateLayout();
+            verifyLayout();
             RenderTargetBitmap pixels = new(470, 650, 96, 96, PixelFormats.Pbgra32); pixels.Render(host);
             PngBitmapEncoder png = new(); png.Frames.Add(BitmapFrame.Create(pixels)); using FileStream target = File.Create(file); png.Save(target);
         } finally { host.Children.Clear(); }
