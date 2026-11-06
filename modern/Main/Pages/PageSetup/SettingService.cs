@@ -42,7 +42,20 @@ namespace PCL
         }
         public static void SaveSetting(object sender)
         {
-            LegacySettingsBindingController.SaveSetting(sender, ModAnimation.AniControlEnabled, Control => Control is ISettingControl, KeyProperty, Control => ((ISettingControl)Control).GetCurrentSetting(), (Key, Value) => Settings.Set(Key, Value, Instance: PageInstanceLeft.Instance));
+            LegacySettingsBindingController.SaveSetting(sender, ModAnimation.AniControlEnabled, Control => Control is ISettingControl, KeyProperty, Control => ((ISettingControl)Control).GetCurrentSetting(), (Key, Value) =>
+            {
+                // The update-log prompt keeps exactly one write path: the atomic,
+                // read-back verified store used by the dialog's 不再弹出 button.
+                // On failure the control is refreshed to the value that persisted.
+                if (Key == LegacyUpdateLogPrompt.Key)
+                {
+                    FormMain.PersistUpdateLogPrompt(Conversions.ToBoolean(Value));
+                    if (sender is ISettingControl control)
+                        control.RefreshSetting(Conversions.ToString(Settings.Get<bool>(Key)));
+                    return;
+                }
+                Settings.Set(Key, Value, Instance: PageInstanceLeft.Instance);
+            });
         }
     }
 

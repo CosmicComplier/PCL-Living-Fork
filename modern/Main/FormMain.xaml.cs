@@ -283,7 +283,7 @@ namespace PCL
         // Persists the update-log prompt preference without the generic settings
         // writer's toast-on-failure behavior, then re-reads Setup.ini so a rejected
         // write leaves the session on the previous value and never false.
-        private static bool PersistUpdateLogPrompt(bool value)
+        internal static bool PersistUpdateLogPrompt(bool value)
         {
             string file = Paths.Base + @"PCL\Setup.ini";
             try

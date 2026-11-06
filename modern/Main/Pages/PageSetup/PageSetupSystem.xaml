@@ -114,7 +114,7 @@
                     <TextBlock x:Name="LabModpackMode" Text="整合包模式" Grid.Row="4" VerticalAlignment="Center" Margin="0,16,25,0" Visibility="Collapsed"/>
                     <local:MyCheckBox x:Name="CheckModpackMode" Text="启用" Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,16,0,0" Visibility="Collapsed"/>
                     <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="更新说明" Margin="0,16,25,0"/>
-                    <local:MyCheckBox x:Name="CheckUpdateLogPrompt" Text="更新后显示更新说明" Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,16,0,0" local:SettingService.Key="SystemUpdateLogPrompt" ToolTip="取消勾选后，版本更新时不再自动弹出更新说明；该设置在下一次版本变化时生效。" />
+                    <local:MyCheckBox x:Name="CheckUpdateLogPrompt" Text="启动与更新时显示版本说明" Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,16,0,0" local:SettingService.Key="SystemUpdateLogPrompt" ToolTip="取消勾选后，启动时的版本说明与版本更新说明都不再自动弹出；下一次版本变化生效，手动查看不受影响。" />
                 </Grid>
             </local:MyCard>
 
