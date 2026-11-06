@@ -86,8 +86,8 @@ internal static class LauncherUpdatePageChecks
             Native.Check(rows.Visibility == Visibility.Visible && hint.Visibility == Visibility.Visible && count.Visibility == Visibility.Visible,
                 "Successful update check did not restore its list, blue hint and result count.");
             string[] Titles() => rows.Children.Cast<MyListItem>().Select(row => row.Title).ToArray();
-            Native.Check(Titles().SequenceEqual(new[] { newestTag, stableTag, previewTag, olderPreviewTag, "dev_edition", oldTag }),
-                "Current development version was pinned instead of sorted by its baseline.");
+            Native.Check(Titles().SequenceEqual(new[] { newestTag, stableTag, previewTag, olderPreviewTag, ModBase.VersionBaseName, oldTag }),
+                "Current build was pinned instead of participating in the version order.");
             MyListItem CurrentRow() => rows.Children.Cast<MyListItem>().Single(row => row.Title == ModBase.VersionBaseName);
             Native.Check(rows.Children.Cast<MyListItem>().Single(row => row.Title == previewTag).Info.Contains("未启用"), "Browsing prereleases bypassed the stable subscription.");
             foreach (MyListItem row in rows.Children)
@@ -107,7 +107,8 @@ internal static class LauncherUpdatePageChecks
             search.Text = stableTag.TrimStart('v') + "-pre";
             Native.Check(Titles().SequenceEqual(new[] { previewTag, olderPreviewTag }), "Search omitted a matching prerelease.");
             search.Text = "DEV_EDITION";
-            Native.Check(Titles().SequenceEqual(new[] { "dev_edition" }), "Development edition cannot be found case-insensitively.");
+            Native.Check(Titles().SequenceEqual(ModBase.VersionBaseName == "dev_edition" ? new[] { "dev_edition" } : Array.Empty<string>()),
+                "Development-edition search ignored the actual official/development build identity.");
             search.Text = "does-not-exist";
             Native.Check(rows.Children.Count == 0 && ((FrameworkElement)page.FindName("LabNoResults")).Visibility == Visibility.Visible &&
                 ((TextBlock)page.FindName("LabResultCount")).Text.Contains("显示 0 个"), "Empty search has no honest result count/empty state.");
