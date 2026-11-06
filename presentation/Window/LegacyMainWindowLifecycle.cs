@@ -99,12 +99,10 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             }
             try { host.JavaInitialize(); System.Threading.Thread.Sleep(100); host.StartClientList(); RunThread(host.ClearTaskTemp, "TryClearTaskTemp", ThreadPriority.BelowNormal); }
             catch (Exception ex) { Logger.Error(ex, "初始化加载池运行失败"); }
-            if (host.VersionBranchMain() == "OpenSource" && !updateLogPromptIssued && ShouldAutoShowUpdateLog()) {
-                updateLogPromptIssued = true;
-                if (!host.ShowReleaseNotes(true, ForkReleaseHighlights)
-                    && Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + ForkReleaseHighlights, $"{host.LauncherName()} {host.VersionBaseName()} 版本说明", "确定", "不再弹出") == 2)
-                    DismissUpdateLogPrompt();
-            }
+            if (host.VersionBranchMain() == "OpenSource" && !updateLogPromptIssued && ShouldAutoShowUpdateLog()
+                && !host.ShowReleaseNotes(true, ForkReleaseHighlights)
+                && Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + ForkReleaseHighlights, $"{host.LauncherName()} {host.VersionBaseName()} 版本说明", "确定", "不再弹出") == 2)
+                DismissUpdateLogPrompt();
             host.CheckUpdates();
         }, "初始化", ThreadPriority.Lowest);
         Logger.Info($"第三阶段加载用时：{checked(host.Clock() - host.StartTick())} ms");
@@ -143,7 +141,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         if (host.HasSaved("ToolDownloadTranslate") && !host.HasSaved("ToolDownloadTranslateV2")) { host.WriteSetting("ToolDownloadTranslateV2", checked(host.ReadInteger("ToolDownloadTranslate") + 1)); Logger.Info("已从老版本迁移 Mod 命名设置"); }
         if (lastVersion <= 381 && host.HasSaved("LaunchAdvanceJvm") && Operators.ConditionalCompareObjectEqual(host.ReadString("LaunchAdvanceJvm").ToString().Replace("-XX:+UseG1GC ", "").Replace("-XX:-UseAdaptiveSizePolicy ", "").Trim(), host.DefaultValue("LaunchAdvanceJvm"), false)) { host.ResetSetting("LaunchAdvanceJvm"); Logger.Info("已重置 JVM 参数设置"); }
         if (lastVersion <= 0 || highest >= host.VersionCode) return;
-        if (ShouldAutoShowUpdateLog() && !updateLogPromptIssued) { updateLogPromptIssued = true; ShowUpdateLog(); }
+        if (ShouldAutoShowUpdateLog()) { updateLogPromptIssued = true; ShowUpdateLog(); }
     }
     public void Downgrade(int lastVersion) { Logger.Info($"版本号从 {lastVersion} 降低到 {host.VersionCode}"); host.WriteSetting("SystemLastVersionReg", host.VersionCode); }
 }

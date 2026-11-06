@@ -57,8 +57,9 @@ public static partial class ModLauncherUpdate
         string caption = "基于 PCL 官方开源版的第三方版本。\r\n" +
             (notes.FromRelease ? "以下为当前版本的完整发布说明。" : "暂未读取到当前版本的完整发布说明，以下为本地简述。");
         int choice = ModMain.MyMsgBoxConfirmContent(caption, ModBase.LauncherDisplayName + " " + notes.Version + " 更新说明", "确定",
-            () => new ReleaseNotesView(notes.Markdown), CancelText: "查看发布页", IsWarn: false);
+            () => new ReleaseNotesView(notes.Markdown), CancelText: "查看发布页", ThirdText: automatic ? "不再弹出" : "", IsWarn: false);
         if (choice == 2) ModBase.OpenWebsite(notes.Url);
+        if (choice == 3) FormMain.PersistUpdateLogPrompt(false);
         return true;
     }
 }
