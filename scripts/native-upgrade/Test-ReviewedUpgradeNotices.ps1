@@ -41,8 +41,10 @@ function Message-Log([string]$Title,[string]$Body,[string]$Kind='普通'){
  $rows=@($Kind+'弹窗：'+$Title)+@($Body -split '\r?\n'|Where-Object {$_.Length -gt 0})
  return (($rows | ForEach-Object {$prefix+$_}) -join $nl)+$nl
 }
-$highlights='- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime'+$nl+'- 更新页新增版本搜索、当前版本标记与 Markdown 说明'+$nl+'- 修复图片、中文搜索、资源详情异常及删除版本卡顿'
-foreach($version in @('dev_edition','1.4.0-pre-4')){
+$legacyHighlights='- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime'+$nl+'- 更新页新增版本搜索、当前版本标记与 Markdown 说明'+$nl+'- 修复图片、中文搜索、资源详情异常及删除版本卡顿'
+$currentHighlights='- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime'+$nl+'- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度'+$nl+'- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明'+$nl+'- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序'+$nl+'- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿'+$nl+'- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览'
+foreach($version in @('dev_edition','1.4.0-pre-4','1.4.0')){
+ $highlights=if($version -ceq '1.4.0-pre-4'){$legacyHighlights}else{$currentHighlights}
  $script:nativeProof=[pscustomobject]@{versionBaseName=$version}
  $script:newNotice='PCL Living Fork '+$version+' 版本说明'
  $caption='PCL Living Fork '+$version+$nl+$nl+$highlights

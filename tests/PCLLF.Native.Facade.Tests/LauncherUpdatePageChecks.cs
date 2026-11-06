@@ -15,6 +15,9 @@ internal static class LauncherUpdatePageChecks
 {
     internal static void Run(FixtureEnvironment environment)
     {
+        Native.Check(ModBase.ReleaseBaselineIsPrerelease == ModBase.ReleaseBaselineVersion.Contains('-', StringComparison.Ordinal), "Release baseline and channel label disagree.");
+        string expectedBuildLabel = ModBase.BuildType.ToString() switch { "Debug" => "开发版", "Snapshot" => "快照版", _ => ModBase.VersionBaseName == "dev_edition" ? "开发版" : ModBase.ReleaseBaselineIsPrerelease ? "预发布版" : "正式版" };
+        Native.Check(ModBase.BuildTypeDisplay == expectedBuildLabel, "Release/development build label does not match its actual version.");
         object stable = Native.Enum("PCL.ModLauncherUpdate+UpdateChannel", "Stable")!;
         object preview = Native.Enum("PCL.ModLauncherUpdate+UpdateChannel", "StableAndPrerelease")!;
         int futureMajor = Version.Parse(ModBase.ReleaseBaselineVersion.Split('-')[0]).Major + 1;
