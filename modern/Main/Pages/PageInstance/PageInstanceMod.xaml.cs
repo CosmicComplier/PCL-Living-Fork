@@ -23,7 +23,7 @@ namespace PCL
             __LfAttachOwnHandles();
             this.ModItems = new ConcurrentDictionary<string, MyLocalModItem>();
             this.SelectedMods = new List<string>();
-            Native = new NativePage(CreateView(), LocalModPageRuntime.CreateHost(this));
+            Native = new NativePage(CreateView(), LocalModPageRuntime.CreateHost(this)) { SortOrder = LocalResourceSortOrder.AddedNewest };
             this.InitializeComponent();
             LocalResourceUi.InitializeSortButton(this.BtnSort, ToggleSort, this.PanSortHeader, this.PanFilter);
             LocalResourceUi.UpdateSortButton(this.BtnSort, (int)Native.SortOrder);
@@ -33,7 +33,7 @@ namespace PCL
         private void ToggleSort()
         {
             if (!this.BtnSort.IsEnabled) return;
-            Native.SortChanged(((int)Native.SortOrder + 1) % 3);
+            Native.SortChanged(Native.SortOrder == LocalResourceSortOrder.AddedNewest ? 2 : 1);
             LocalResourceUi.UpdateSortButton(this.BtnSort, (int)Native.SortOrder);
         }
 

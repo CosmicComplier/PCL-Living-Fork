@@ -40,8 +40,8 @@ internal static class ResourceSortChecks
         IList entries = Scan(folder, kind);
         var page = Page(kind); Show(page, folder, entries);
         MyIconTextButton sort = Part<MyIconTextButton>(page, "BtnSort");
-        Native.Check(page.FindName("ComboSort") is null && Mode(page) == 0 && sort.Text == "默认排序", "Resources must start with the compact default-sort action.");
-        string[] original = Names(page, "PanList");
+        Native.Check(page.FindName("ComboSort") is null && Mode(page) == 1 && sort.Text == "添加时间 · 倒序", "Resources must start with the compact descending addition-time action.");
+        string[] original = entries.Cast<InstanceResourceEntryData>().Select(entry => entry.Name!).ToArray();
         MyLocalModItem selected = Part<Panel>(page, "PanList").Children.OfType<MyLocalModItem>().First(); selected.Checked = true;
         object entry = Native.Get(selected, "ResourceEntry")!;
         SetSort(page, 1);
@@ -58,8 +58,10 @@ internal static class ResourceSortChecks
         search.Text = ""; Native.Call(Controller(page).GetType(), "SearchChanged", Controller(page));
         Show(page, folder, Scan(folder, kind));
         Order(page, "PanList", "needle-newer.zip", "folder-pack", "needle-older.zip");
-        Native.Check(Mode(page) == 1 && sort.Text == "最近添加", "Reloading resource results reset its selected sort mode or label.");
-        SetSort(page, 0); Native.Check(Names(page, "PanList").SequenceEqual(original), "Default no longer preserves the original catalog order.");
+        Native.Check(Mode(page) == 1 && sort.Text == "添加时间 · 倒序", "Reloading resource results reset its selected sort mode or label.");
+        ClickSort(page); Native.Check(Mode(page) == 2 && sort.Text == "添加时间 · 正序", "Addition-time action failed to expose its ascending direction.");
+        ClickSort(page); Native.Check(Mode(page) == 1, "Addition-time action cycled outside its two directions.");
+        Native.Check(entries.Cast<InstanceResourceEntryData>().Select(entry => entry.Name!).SequenceEqual(original), "Sorting mutated the source catalog.");
         Render(page, Path.Combine(folder, "compact-header.png"), () =>
         {
             Panel list = Part<Panel>(page, "PanResourceList");
@@ -90,15 +92,15 @@ internal static class ResourceSortChecks
         Native.Set(host, "QuickPlaySupported", new Func<ModMinecraft.McInstance, bool>(_ => false));
         Show(page, folder, worlds);
         MyIconTextButton sort = Part<MyIconTextButton>(page, "BtnSort");
-        Native.Check(page.FindName("ComboSort") is null && Mode(page) == 3 && sort.Text == "最近游玩", "Worlds must default to recent LastPlayed and expose only the compact play-time toggle.");
+        Native.Check(page.FindName("ComboSort") is null && Mode(page) == 3 && sort.Text == "最后游玩 · 倒序", "Worlds must default to recent LastPlayed and expose only the compact play-time toggle.");
         Order(page, "PanWorlds", "newer-play", "older-play", "unknown-play");
         string recentIcon = sort.Logo;
         ClickSort(page); Order(page, "PanWorlds", "older-play", "newer-play", "unknown-play");
-        Native.Check(Mode(page) == 4 && sort.Text == "最早游玩" && sort.Logo != recentIcon, "Clicking the world action did not change its direction, label and vector icon together.");
+        Native.Check(Mode(page) == 4 && sort.Text == "最后游玩 · 正序" && sort.Logo != recentIcon, "Clicking the world action did not change its direction, label and vector icon together.");
         Native.Call(Controller(page).GetType(), "SearchChanged", Controller(page));
         Order(page, "PanWorlds", "older-play", "newer-play", "unknown-play");
         Show(page, folder, worlds);
-        Native.Check(Mode(page) == 4 && sort.Text == "最早游玩", "World refresh reset the play-time direction.");
+        Native.Check(Mode(page) == 4 && sort.Text == "最后游玩 · 正序", "World refresh reset the play-time direction.");
         ClickSort(page); Order(page, "PanWorlds", "newer-play", "older-play", "unknown-play");
         Native.Check(Mode(page) == 3, "World clicks exposed a non-play-time sort mode.");
         Render(page, Path.Combine(folder, "compact-world-header.png"), () => CheckButtonLayout(page));

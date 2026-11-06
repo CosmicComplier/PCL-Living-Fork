@@ -301,7 +301,7 @@ namespace PCL
         {
             if (this.Controller is null || this.Controller.IsRecycleMode || !this.BtnSort.IsEnabled) return;
             int next = this.Kind == global::PCL.InstanceResourceKind.Saves
-                ? (this.Controller.SortMode == 3 ? 4 : 3) : (this.Controller.SortMode + 1) % 3;
+                ? (this.Controller.SortMode == 3 ? 4 : 3) : (this.Controller.SortMode == 1 ? 2 : 1);
             this.Controller.SortChanged(next);
             LocalResourceUi.UpdateSortButton(this.BtnSort, this.Controller.SortMode);
         }

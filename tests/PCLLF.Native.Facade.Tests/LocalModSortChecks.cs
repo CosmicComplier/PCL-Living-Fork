@@ -63,10 +63,10 @@ internal static class LocalModSortChecks
         string[] Names() => rows.Children.OfType<MyLocalModItem>().Select(item => item.Entry.File.Name).ToArray();
         void Order(params string[] names) => Native.Check(Names().SequenceEqual(names), "Local mod page order differs: " + string.Join(",", Names()));
 
-        Native.Check(page.FindName("ComboSort") is null && ResourceSortChecks.Mode(page) == 0 && sort.Text == "默认排序", "Real mod page must offer the compact default-sort action.");
+        Native.Check(page.FindName("ComboSort") is null && ResourceSortChecks.Mode(page) == 1 && sort.Text == "添加时间 · 倒序", "Real mod page must offer the compact descending addition-time action.");
         page.SelectedMods.Add(older.EnabledName);
         Call("LoadUI");
-        Order(middle.File.Name, newer.File.Name, older.File.Name);
+        Order(newer.File.Name, middle.File.Name, older.File.Name);
         ResourceSortChecks.SetSort(page, 1);
         Order(newer.File.Name, middle.File.Name, older.File.Name);
         Native.Check((LocalResourceSortOrder)Native.Property(controller.GetType(), "SortOrder").GetValue(controller)! == LocalResourceSortOrder.AddedNewest,
@@ -93,16 +93,15 @@ internal static class LocalModSortChecks
         Order(older.File.Name, newer.File.Name);
         ResourceSortChecks.SetSort(page, 1);
         Order(newer.File.Name, older.File.Name);
-        ResourceSortChecks.SetSort(page, 0);
-        string[] ranked = Names();
-        Native.Check(ranked.Length == 2 && ranked.Contains(older.File.Name) && ranked.Contains(newer.File.Name), "Default search lost matching rows.");
         ResourceSortChecks.SetSort(page, 2);
         Order(older.File.Name, newer.File.Name);
-        ResourceSortChecks.SetSort(page, 0);
-        Native.Check(Names().SequenceEqual(ranked), "Restoring default sort did not preserve the genuine search ranking.");
+        ResourceSortChecks.ClickSort(page);
+        Native.Check(ResourceSortChecks.Mode(page) == 1 && sort.Text == "添加时间 · 倒序", "Mod action failed to alternate between ascending and descending order.");
+        Order(newer.File.Name, older.File.Name);
         search.Text = "";
         page.SearchRun();
-        Order(middle.File.Name, newer.File.Name, older.File.Name);
+        Order(newer.File.Name, middle.File.Name, older.File.Name);
+        Native.Check(output.SequenceEqual(new[] { middle, newer, older }), "Sorting mutated the original loader output.");
         Native.Check(scans == 0 && animations == 1, "Changing sort invoked scanning or unbalanced animation suppression.");
 
         // A new row arriving from the loader must obey the active mode as well.

@@ -47,7 +47,7 @@ public sealed partial class ResourcePageController<TInstance, TEntry, TOnline>
     public ResourcePageController(int kind, ResourcePageView<TInstance, TEntry, TOnline> view,
         ResourcePageHost<TInstance, TEntry, TOnline> host, InstanceResourceTransactions transactions) {
         Kind = kind; View = view; Host = host; Transactions = transactions;
-        SortMode = kind == 0 ? 3 : 0;
+        SortMode = kind == 0 ? 3 : 1;
     }
     private bool SamePath(string? left, string? right) => Host.SamePath(left!, right!);
     private string Title => InstanceResourceKindRules.Title(Kind);

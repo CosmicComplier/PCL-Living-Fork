@@ -41,7 +41,7 @@ namespace PCL
         }
         internal static void UpdateSortButton(MyIconTextButton button, int mode)
         {
-            button.Text = mode switch { 1 => "最近添加", 2 => "最早添加", 3 => "最近游玩", 4 => "最早游玩", _ => "默认排序" };
+            button.Text = mode switch { 1 => "添加时间 · 倒序", 2 => "添加时间 · 正序", 3 => "最后游玩 · 倒序", 4 => "最后游玩 · 正序", _ => "默认排序" };
             button.Logo = mode switch
             {
                 1 or 3 => "M3 15L0 12L1.4 10.6L2 11.2V1H4V11.2L4.6 10.6L6 12Z M8 2H16V4H8Z M8 7H14V9H8Z M8 12H12V14H8Z",
