@@ -18,6 +18,7 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
     public string Fingerprint(TReport report) {
         List<string> values = new() { JObject.FromObject(report.Context).ToString(Formatting.None) };
         values.Add(report.MetadataIncomplete.ToString());
+        if (report.PackOrigin?.IsPack == true) values.Add("pack-origin:" + report.PackOrigin.Fingerprint);
         values.AddRange(report.Notices.OrderBy(value => value, StringComparer.Ordinal));
         foreach (TMod item in report.Mods.OrderBy(modInfo => modInfo.Key, StringComparer.Ordinal)) {
             values.Add(item.Key + "|" + item.Version + "|" + item.Enabled + "|" + item.Format);
@@ -39,19 +40,30 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
     private static string FilePathKey(string path) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.FilePathKey(path);
     private static bool SameFilePath(string first, string second) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.SameFilePath(first, second);
     private static TReport Inspect(string folder, TContext context, CancellationToken token) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.Inspect(folder, context, token);
-    private static TReport WithEnabledFiles(TReport report, IEnumerable<string> paths, CancellationToken token) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.WithEnabledFiles(report, paths, token);
+    private static TReport WithEnabledFiles(TReport report, IEnumerable<string> paths, CancellationToken token) {
+        TReport result = ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.WithEnabledFiles(report, paths, token);
+        result.PackOrigin = report.PackOrigin;
+        return result;
+    }
     private static bool FileSatisfiesDependency(TReport report, string path, TDependency requirement) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.FileSatisfiesDependency(report, path, requirement);
     private static void BuildReport(TReport report, CancellationToken token) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.BuildReport(report, token);
 
     public TPlan Prepare(string root, TReport report, CancellationToken token) {
         TPlan plan = new() { Root = Path.GetFullPath(root), Report = report, Stamp = Fingerprint(report) };
+        PackDependencyOrigin? origin = report.PackOrigin?.IsPack == true ? report.PackOrigin : null;
+        if (origin is not null) {
+            plan.Notes.AddRange(origin.Notes);
+            plan.Notes.Add("整合包以作者组合为基线；仅为个人新增模组规划前置，作者禁用或缺失组件不会自动启用或补装。");
+            if (!origin.Complete) return plan;
+        }
         HashSet<string> selected = new(StringComparer.OrdinalIgnoreCase);
-        List<string> roots = report.Mods.Where(item => !item.Enabled).Select(item => item.RootPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        List<string> roots = report.Mods.Where(item => !item.Enabled && (origin is null || origin.IsPersonal(item.RootPath))).Select(item => item.RootPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         TReport current = report;
         for (int round = 0; round <= 63; round++) {
             token.ThrowIfCancellationRequested();
             bool changed = false;
-            foreach (TIssue issue in current.Issues.Where(item => item.KindValue == ModDependencyIssueKind.MissingRequired && item.Requirement?.KindValue == ModDependencyKind.Required)) {
+            foreach (TIssue issue in current.Issues.Where(item => item.KindValue == ModDependencyIssueKind.MissingRequired && item.Requirement?.KindValue == ModDependencyKind.Required &&
+                (origin is null || origin.IsPersonal(item.Owner.RootPath)))) {
                 List<string> matches = roots.Where(fileName => !selected.Contains(fileName) && FileSatisfiesDependency(current, fileName, issue.Requirement)).ToList();
                 if (matches.Count != 1) continue;
                 selected.Add(matches[0]); changed = true;

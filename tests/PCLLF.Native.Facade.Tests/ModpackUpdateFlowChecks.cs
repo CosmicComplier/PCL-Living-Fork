@@ -214,12 +214,101 @@ internal static class ModpackUpdateFlowChecks
             "FLOW-11-origin", "correct schema-1 repair did not commit a complete schema-2 author origin");
         Check(committedOrigin["files"]?["config/personal.txt"]?["state"]?.ToString() == "retained" && committedOrigin["files"]?["config/personal.txt"]?["local"]?["hash"]?.ToString() == Digest(Path.Combine(accepted.PathIndie, "config/personal.txt")),
             "FLOW-11-retained", "new author expectation and retained personal observation were not recorded separately");
+        AutomaticOrigins(flow, minecraft, root, old, next);
         TraceStage("common-barrier-enter");
         using (DeadlineGuard deadlineGuard = new(DateTime.UtcNow.AddSeconds(10), "common actual-task completion barrier")) scope.FinishActualTasks();
         TraceStage("common-barrier-return");
         accounts.AssertUsed(); TraceStage("account-read-contract-return");
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS native modpack-update workflow: FLOW-01..11 (genuine admission lease, baseline/preview refusals, guarded cancellation, stale runtime guard, schema-1 repair, history/commit/reload).");
+        Console.WriteLine("PASS native modpack-update workflow: FLOW-01..11 and automatic schema-1 origins (exact Modrinth/CurseForge versions, primary archive, hash/project/origin guards, cancellation, personal preservation, transactional schema-2 commit).");
+    }
+
+    private static void AutomaticOrigins(LiveFlow flow, string minecraft, string root, string old, string next)
+    {
+        string wrongFolder = Path.Combine(root, "auto-wrong-original"); Directory.CreateDirectory(wrongFolder);
+        string wrong = Pack(wrongFolder, "flow-old", new() { ["config/author.txt"] = "wrong-author", ["config/personal.txt"] = "old-default" }, fabric: false);
+        foreach (string platform in new[] { "Modrinth", "CurseForge" })
+        foreach (string scenario in platform == "Modrinth" ? new[] { "accept", "preview-cancel", "foreign", "corrupt", "wrong-original", "cancel", "changed-origin", "schema2" } : new[] { "accept", "foreign" })
+        {
+            string label = "AUTO-" + platform + "-" + scenario;
+            ModMinecraft.McInstance instance = Instance(minecraft, "auto-" + platform + "-" + scenario + "-1.20.1");
+            SeedOrigin(instance, old, root, label);
+            if (scenario != "schema2") LegacyPrunedOrigin(instance);
+            Put(Path.Combine(instance.PathIndie, "config/author.txt"), "old-author");
+            Put(Path.Combine(instance.PathIndie, "config/personal.txt"), "my-edit");
+            string originPath = Path.Combine(instance.PathVersion, "PCL", "ModpackOrigin.json");
+            JObject recorded = JObject.Parse(File.ReadAllText(originPath));
+            string project = platform == "Modrinth" ? "pack-project" : "7001", version = platform == "Modrinth" ? "old-version" : "511111";
+            recorded["source"] = new JObject { ["platform"] = platform, ["project"] = project, ["version"] = version };
+            Put(originPath, recorded.ToString()); string originBefore = File.ReadAllText(originPath), externalOrigin = originBefore;
+            string original = scenario == "wrong-original" ? wrong : old;
+            string hash = Digest(original).Split(':')[1]; int size = checked((int)new FileInfo(original).Length);
+            int requests = 0, downloads = 0, previews = 0, pickers = flow.PickerCalls;
+            flow.Messages.Clear(); flow.Archives.Enqueue(next);
+            flow.Confirm = (_, _, _, _, _) => 2; // Any fallback is explicit cancellation, never a hidden old-file picker.
+            flow.Project = (id, source) => {
+                Check(id == project && source.ToString() == platform, label, "wrong project lookup");
+                return new ResourceProject(new JObject { ["Id"] = project, ["Slug"] = project, ["Types"] = (int)ResourceTypes.ModPack,
+                    ["Platform"] = (int)source, ["RawName"] = "Fixture pack", ["Description"] = "Synthetic original source",
+                    ["Website"] = "https://example.invalid/pack", ["LastUpdate"] = DateTime.UtcNow, ["DownloadCount"] = 1, ["Tags"] = new JArray() });
+            };
+            flow.Request = url => {
+                requests++;
+                Check(url == (platform == "Modrinth" ? "https://api.modrinth.com/v2/version/" + version : "https://api.curseforge.com/v1/mods/" + project + "/files/" + version), label, "did not request the exact recorded version");
+                string owner = scenario == "foreign" ? "9999" : project;
+                if (platform == "CurseForge") return new JObject { ["data"] = new JObject {
+                    ["id"] = int.Parse(version), ["modId"] = int.Parse(owner), ["gameId"] = 432, ["displayName"] = "Original fixture",
+                    ["fileName"] = "original.zip", ["fileDate"] = DateTime.UtcNow, ["releaseType"] = 1, ["downloadCount"] = 1,
+                    ["fileLength"] = size, ["downloadUrl"] = "https://example.invalid/original.zip", ["gameVersions"] = new JArray("1.20.1"),
+                    ["hashes"] = new JArray(new JObject { ["algo"] = 1, ["value"] = hash }) } };
+                return new JObject {
+                    ["id"] = version, ["project_id"] = owner, ["name"] = "Original fixture", ["version_number"] = "flow-old",
+                    ["date_published"] = DateTime.UtcNow, ["version_type"] = "release", ["downloads"] = 1,
+                    ["game_versions"] = new JArray("1.20.1"), ["loaders"] = new JArray(),
+                    ["files"] = new JArray(
+                        new JObject { ["filename"] = "cosign-bundle.zip", ["primary"] = false, ["size"] = 7, ["url"] = "https://example.invalid/signature.zip", ["hashes"] = new JObject { ["sha1"] = new string('0', 40) } },
+                        new JObject { ["filename"] = "original.mrpack", ["primary"] = true, ["size"] = size, ["url"] = "https://example.invalid/original.mrpack", ["hashes"] = new JObject { ["sha1"] = hash } }) };
+            };
+            flow.Download = (files, token, progress) => {
+                token.ThrowIfCancellationRequested(); downloads++;
+                Check(files.Count == 1, label, "original lookup downloaded unrelated files");
+                if (scenario == "cancel") throw new OperationCanceledException(token);
+                File.Copy(original, files[0].LocalPath);
+                if (scenario == "corrupt") File.AppendAllText(files[0].LocalPath, "corrupt");
+                if (scenario == "changed-origin") {
+                    recorded["externalChange"] = true; externalOrigin = recorded.ToString(); Put(originPath, externalOrigin);
+                }
+            };
+            flow.Preview = plan => {
+                previews++;
+                JObject repaired = (JObject)Get(plan, "Baseline")!;
+                Check(repaired["schema"]?.Value<int>() == 2 && repaired["complete"]?.Value<bool>() == true && repaired["files"]?["config/personal.txt"]?["hash"] is not null,
+                    label, "automatic original did not restore the complete immutable author baseline");
+                Check(Changes(plan).Any(change => Get(change, "Relative")?.ToString() == "config/personal.txt" && Get(change, "Ownership")?.ToString() == "PersonalModified"),
+                    label, "personal modification was not recognized against the restored author declaration");
+                Check(File.ReadAllText(originPath) == originBefore, label, "repaired origin was written before preview approval");
+                return scenario == "preview-cancel" ? 2 : 1;
+            };
+            flow.Start(instance); flow.WaitStopped();
+            Check(flow.PickerCalls == pickers + 1 && flow.Archives.Count == 0, label, "automatic source unexpectedly opened another picker");
+            Check(requests == (scenario == "schema2" ? 0 : 1), label, "schema/version lookup count is wrong");
+            Check(downloads == (scenario is "foreign" or "schema2" ? 0 : 1), label, "unverified or already-complete origin downloaded an archive");
+            if (scenario is "accept" or "schema2") {
+                JObject committed = JObject.Parse(File.ReadAllText(originPath));
+                Check(flow.Worker!.LastSucceeded && previews == 1 && flow.Messages.Count == 0 && committed["schema"]?.Value<int>() == 2 && committed["complete"]?.Value<bool>() == true,
+                    label, "automatic baseline did not reach the genuine schema-2 update transaction: state=" + flow.Step!.State + "; success=" + flow.Worker.LastSucceeded + "; previews=" + previews + "; messages=" + string.Join(",", flow.Messages) + "; info=" + string.Join(" / ", flow.Infos.TakeLast(2)) + "; error=" + flow.Step.Error);
+                Check(File.ReadAllText(Path.Combine(instance.PathIndie, "config/author.txt")) == "new-author", label, "author update was not applied");
+            } else {
+                Check(!flow.Worker!.LastSucceeded && previews == (scenario == "preview-cancel" ? 1 : 0), label, "rejected/canceled origin reached an update preview or commit");
+                Check(flow.Step!.State == (scenario == "changed-origin" ? ModBase.LoadState.Failed : ModBase.LoadState.Canceled), label, "failure/cancellation state is wrong: " + flow.Step.Error);
+                Check(File.ReadAllText(originPath) == externalOrigin && File.ReadAllText(Path.Combine(instance.PathIndie, "config/author.txt")) == "old-author",
+                    label, "rejected original overwrote current files or external origin changes");
+                Check(!Directory.Exists(Path.Combine(instance.PathVersion, "PCL", "PackUpdateBackups")), label, "refused original started a commit transaction");
+            }
+            Check(File.ReadAllText(Path.Combine(instance.PathIndie, "config/personal.txt")) == "my-edit", label, "personal edit was replaced");
+            Check(!flow.Updating && !ModMinecraft.McInstanceLock.IsLocked(instance), label, "original download left an update reservation active");
+        }
+        Console.WriteLine("PASS automatic schema-1 origins: 10 genuine native workflow cases; exact source/project/version and primary archive, existing-hash verification, personal edits, transaction/cancellation and schema-2 no-repeat.");
     }
 
     // The real SelectInstance evaluates CacheNideServer/CacheAuthServerServer
@@ -403,6 +492,9 @@ internal static class ModpackUpdateFlowChecks
         internal RedoableWorker? Worker;
         internal Func<string, string, string, string, bool, int> Confirm = (_, _, _, _, _) => 1;
         internal Func<object, int> Preview = _ => 2;
+        internal Func<string, ResourcePlatforms, ResourceProjectModelData> Project = (_, _) => throw new InvalidOperationException("Unexpected project request.");
+        internal Func<string, JToken> Request = _ => throw new InvalidOperationException("Unexpected version request.");
+        internal Action<List<ModNet.NetFile>, CancellationToken, ProgressProvider?> Download = (_, _, _) => throw new InvalidOperationException("Unexpected archive download.");
         private static bool AnyLocked => (bool)Native.Property(typeof(ModMinecraft.McInstanceLock), "IsAnyLocked").GetValue(null)!;
         internal bool Updating => (bool)Native.Property(Native.Type("PCL.ModpackUpdateFlow"), "IsUpdating").GetValue(null)!;
         internal LiveFlow(string root)
@@ -416,6 +508,9 @@ internal static class ModpackUpdateFlowChecks
             Replace("HintRed", new Action<string>(RedHints.Add));
             Replace("Hint", new Action<string>(Infos.Add));
             Replace("Info", new Action<string>(Infos.Add));
+            Replace("Project", new Func<string, ResourcePlatforms, ResourceProjectModelData>((id, platform) => Project(id, platform)));
+            Replace("Request", new Func<string, JToken>(url => Request(url)));
+            Replace("Download", new Action<List<ModNet.NetFile>, CancellationToken, ProgressProvider?>((files, token, progress) => Download(files, token, progress)));
             Replace("TempFolder", new Func<string>(() => { string folder = Path.Combine(this.root, "stage-" + Interlocked.Increment(ref stage)); Directory.CreateDirectory(folder); return folder; }));
             FieldInfo preview = Native.Field(host.GetType(), "Preview");
             Type actualPlan = preview.FieldType.GetGenericArguments()[1];

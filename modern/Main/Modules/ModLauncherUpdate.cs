@@ -18,7 +18,7 @@ namespace PCL
     // LF 50b028da5fcad2226d74d901a41d8c43a249bfb2 complete updater behavior.
     // The native-only N005 bundle identity and actual process path adaptations
     // remain in the original four-argument replacement/rollback transaction.
-    public static class ModLauncherUpdate
+    public static partial class ModLauncherUpdate
     {
         private const string Repository = ModBase.LauncherRepository;
         private const string CompatibilityRepository = "DDZmumo/LivingPCL2-Re";

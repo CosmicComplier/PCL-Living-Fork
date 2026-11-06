@@ -28,7 +28,8 @@ namespace PCL
         #region 声明
 
         // 下列版本信息由更新器自动修改
-        public const string ReleaseBaselineVersion = "1.4.0-pre-4";
+        public const string ReleaseBaselineVersion = "1.4.0";
+        public const bool ReleaseBaselineIsPrerelease = false;
 #if OFFICIAL_RELEASE
         public const string VersionBaseName = ReleaseBaselineVersion;
 #else
@@ -44,16 +45,16 @@ namespace PCL
         public const string LauncherCnbUrl = "https://cnb.cool/" + LauncherCnbRepository;
         public const string CommitHash = ""; // Commit Hash，由 GitHub Workflow 自动替换
 #if RELEASE
-        public const int VersionCode = 413; // 正式版
+        public const int VersionCode = 415; // 正式版
 #else
-        public const int VersionCode = 414; // 快照版
+        public const int VersionCode = 416; // 快照版
 #endif
         public const string VersionDisplay = BuildTypeDisplay + " " + VersionBaseName;
 #if DEBUG
         public const string BuildTypeDisplay = "开发版";
         public const BuildTypes BuildType = BuildTypes.Debug;
 #elif RELEASE
-        public const string BuildTypeDisplay = VersionBaseName == "dev_edition" ? "开发版" : "预发布版";
+        public const string BuildTypeDisplay = VersionBaseName == "dev_edition" ? "开发版" : ReleaseBaselineIsPrerelease ? "预发布版" : "正式版";
         public const BuildTypes BuildType = BuildTypes.Release;
 #else
         public const string BuildTypeDisplay = "快照版";

@@ -2,7 +2,7 @@
 
 **PCL Living Fork**（原 LivingPCL）是基于 [Plain Craft Launcher（PCL）](https://github.com/Meloong-Git/PCL) 原项目的第三方 Minecraft 启动器，由 DDZmumo 维护，非 PCL 官方版本。
 
-[下载 1.3.4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.3.4) · [预发布 1.4.0-pre-4](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
+[下载 1.4.0](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0) · [更新说明](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0) · [历史版本](https://github.com/DDZmumo/PCL-Living-Fork/releases) · [问题反馈](https://github.com/DDZmumo/PCL-Living-Fork/issues)
 
 ## 功能
 
@@ -20,7 +20,7 @@
 
 ## 使用
 
-1.4.0-pre-4 使用 **C#/.NET 10，面向 Windows x64**。公开发布仅提供精简版 EXE、ZIP 和 SHA256 校验文件，均不包含 .NET 运行时；运行或自动升级前需先安装 .NET 10 Desktop Runtime x64。下载、构建与轻量兼容交接说明见 [现代构建说明](docs/BUILDING_MODERN.md)及 [GitHub Release](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0-pre-4)。当前 1.4.0 系列仍为预发布版。
+1.4.0 正式版使用 **C#/.NET 10，面向 Windows x64**，包含四个预发布版本的改动和后续修复。公开发布仅提供精简版 EXE、ZIP 和 SHA256 校验文件，均不包含 .NET 运行时；运行或自动升级前需先安装 .NET 10 Desktop Runtime x64。下载、构建与轻量兼容交接说明见 [现代构建说明](docs/BUILDING_MODERN.md)及 [GitHub Release](https://github.com/DDZmumo/PCL-Living-Fork/releases/tag/v1.4.0)。
 
 旧的 VB 版本 1.3.4 和 1.3.5-pre-3 使用 Windows 64 位系统和 .NET Framework 4.8，可从 [Releases](https://github.com/DDZmumo/PCL-Living-Fork/releases) 按对应版本说明运行。产品 VB 源码和旧项目已退役，原资源与许可保留；.NET Framework 工具仍供兼容更新桥及独立历史测试使用。
 

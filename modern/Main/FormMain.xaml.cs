@@ -212,6 +212,7 @@ namespace PCL
                 BuildType = (int)ModBase.BuildType, VersionCode = ModBase.VersionCode, Dpi = () => ModBase.DPI,
                 VersionBaseName = () => ModBase.VersionBaseName, VersionBranchMain = () => ModSecret.VersionBranchMain,
                 LauncherName = () => ModBase.LauncherDisplayName, ReleasesUrl = () => ModBase.LauncherReleasesUrl, IssuesUrl = () => ModBase.LauncherIssuesUrl,
+                ShowReleaseNotes = (automatic, summary) => ModLauncherUpdate.TryShowCurrentReleaseNotes(automatic, summary),
                 TempFolder = () => ModBase.PathTemp, ExecutablePath = () => ModBase.PathExe,
                 Clock = () => ModBase.GetTimeMs(), StartTick = () => ModBase.ApplicationStartTick, WriteStartTick = value => ModBase.ApplicationStartTick = value,
                 Handle = () => ModBase.Handle, WriteHandle = value => ModBase.Handle = value, SetForeground = value => ModMain.SetForegroundWindow(value),

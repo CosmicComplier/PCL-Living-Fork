@@ -89,6 +89,10 @@ namespace PCL
         {
             return global::PCLCS.PackUpdateEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile>.Digest(FileName, Algorithm);
         }
+        internal static string DigestForInspection(string fileName, string algorithm, CancellationToken token)
+        {
+            return UpdateEngine.Digest(fileName, algorithm, token);
+        }
         private static global::System.Boolean Matches(global::System.String FileName, global::System.String Expected)
         {
             return global::PCLCS.PackUpdateEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile>.Matches(FileName, Expected);

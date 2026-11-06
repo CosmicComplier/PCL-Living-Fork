@@ -68,6 +68,7 @@
 <Compile Include="Modules/Base/ToolboxDownloadSession.cs" />
 <Compile Include="Pages/PageOther/PageOtherTest.Tools.cs" />
 <Compile Include="Modules/ModLauncherUpdate.cs" />
+<Compile Include="Modules/ModLauncherUpdate.ReleaseNotes.cs" />
 <Compile Include="Modules/ModernBundleIdentity.cs" />
 <Compile Include="Modules/ModModpackMode.cs" />
 <Compile Include="Modules/Minecraft/InstalledComponentSummary.cs" />

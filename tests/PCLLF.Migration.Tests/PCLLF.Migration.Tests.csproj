@@ -42,6 +42,14 @@
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Package.cs" Link="Production/Minecraft/PackUpdateEngine.Package.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Baseline.cs" Link="Production/Minecraft/PackUpdateEngine.Baseline.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateModInspection.cs" Link="Production/Minecraft/PackUpdateModInspection.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackDependencyOrigin.cs" Link="Production/Minecraft/PackDependencyOrigin.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackDependencyGraph.cs" Link="Production/Minecraft/PackDependencyGraph.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateDependencySupplement.cs" Link="Production/Minecraft/PackUpdateDependencySupplement.cs" />
+    <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Personal.cs" Link="Production/Minecraft/PackUpdateEngine.Personal.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyAutoFillContracts.cs" Link="Production/Minecraft/ModDependencyAutoFillContracts.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyAutoFillEngine.cs" Link="Production/Minecraft/ModDependencyAutoFillEngine.cs" />
+    <Compile Include="../../PCLCS/Minecraft/ModDependencyAutoFillInstall.cs" Link="Production/Minecraft/ModDependencyAutoFillInstall.cs" />
+    <Compile Include="../../PCLCS/Minecraft/DependencyActivationEngine.cs" Link="Production/Minecraft/DependencyActivationEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Plan.cs" Link="Production/Minecraft/PackUpdateEngine.Plan.cs" />
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Transactions.cs" Link="Production/Minecraft/PackUpdateEngine.Transactions.cs" />
     <Compile Include="../../PCLCS/Resources/ResourceVersionModels.cs" Link="Production/Resources/ResourceVersionModels.cs" />

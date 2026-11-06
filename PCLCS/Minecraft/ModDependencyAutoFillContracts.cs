@@ -12,12 +12,18 @@ public class DependencyActivationItemData<TMod> where TMod : class {
     public TMod? Owner;
     public List<string> RequiredBy = new(), Requirements = new(), ResolvedIssues = new();
 }
-public class ModDependencyAutoFillItemData<TVersion, TItem> where TVersion : class where TItem : class {
+public sealed class DependencyReplacementData {
+    public string Source = null!, BeforeHash = null!, AuthorRelative = null!, ProjectIdentity = null!;
+}
+public interface IDependencyReplacementItem { bool HasAuthorReplacement { get; } }
+public class ModDependencyAutoFillItemData<TVersion, TItem> : IDependencyReplacementItem where TVersion : class where TItem : class {
     public string Platform = null!, ProjectId = null!, Name = null!;
     public TVersion Version = null!;
     public JObject Raw = null!;
     public List<string> RequiredBy = new();
     public List<TItem> Alternatives = new();
+    public DependencyReplacementData? Replacement;
+    public bool HasAuthorReplacement => Replacement is not null;
 }
 public class ModDependencyAutoFillPlanData<TReport, TItem, TActivation> where TReport : class where TItem : class where TActivation : class {
     public string Root = null!;
@@ -26,7 +32,8 @@ public class ModDependencyAutoFillPlanData<TReport, TItem, TActivation> where TR
     public List<TItem> Items = new();
     public List<TActivation> Enables = new();
     public List<string> Notes = new();
-    public string ActionText => Enables.Count > 0 ? Items.Count > 0 ? "启用并补全后启动" : "启用并启动" : Items.Count > 0 ? "补全并启动" : "返回 Mod 管理";
+    public bool AuthorReplacementConfirmed;
+    public string ActionText => Items.Exists(item => item is IDependencyReplacementItem replacement && replacement.HasAuthorReplacement) ? "验证并替换后启动" : Enables.Count > 0 ? Items.Count > 0 ? "启用并补全后启动" : "启用并启动" : Items.Count > 0 ? "补全并启动" : "返回 Mod 管理";
 }
 public class DependencyCandidateMismatchException : IOException {
     public readonly int Index;
@@ -69,4 +76,5 @@ public sealed class ModDependencyAutoFillHost<TReport, TVersion, TNetFile, TPlan
     public Action<Exception, string> Warn = null!;
     public Action RefreshOptions = null!;
     public Func<int, string, DependencyCandidateMismatchException> CandidateMismatch = null!;
+    public Func<string, string, List<Tuple<string, string?, string?>>, CancellationToken, string>? ApplyTransaction;
 }

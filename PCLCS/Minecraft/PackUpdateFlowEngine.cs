@@ -45,6 +45,46 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         if (string.IsNullOrEmpty(result)) throw new OperationCanceledException();
         return result!;
     }
+    private TPackage? DownloadRecordedOriginal(JObject baseline, string stage, CancellationToken token, TProgress progress) {
+        // A filtered schema-1 inventory is rebuilt only from its exact recorded original.
+        if (baseline["schema"]?.Type != JTokenType.Integer || baseline["schema"]!.ToString() != "1" ||
+            baseline["source"] is not JObject source || !Enum.TryParse(source["platform"]?.ToString(), out ResourcePlatforms platform) ||
+            platform is not (ResourcePlatforms.Modrinth or ResourcePlatforms.CurseForge)) return null;
+        string projectId = source["project"]?.ToString() ?? "", versionId = source["version"]?.ToString() ?? "";
+        if (!Regex.IsMatch(projectId, @"\A[A-Za-z0-9_-]+\z") || !Regex.IsMatch(versionId, @"\A[A-Za-z0-9_-]+\z")) return null;
+        if (platform == ResourcePlatforms.CurseForge && (!Regex.IsMatch(projectId, @"\A[0-9]+\z") || !Regex.IsMatch(versionId, @"\A[0-9]+\z"))) return null;
+        token.ThrowIfCancellationRequested();
+        ResourceProjectModelData project = host.Project(projectId, platform);
+        token.ThrowIfCancellationRequested();
+        if (project.Types != ResourceTypes.ModPack || !Regex.IsMatch(project.Id ?? "", @"\A[A-Za-z0-9_-]+\z")) throw new IOException("旧记录的来源不是有效整合包项目。");
+        string endpoint = platform == ResourcePlatforms.Modrinth ? "https://api.modrinth.com/v2/version/" + versionId :
+            "https://api.curseforge.com/v1/mods/" + project.Id + "/files/" + versionId;
+        JToken response = host.Request(endpoint);
+        token.ThrowIfCancellationRequested();
+        JObject metadata = (platform == ResourcePlatforms.Modrinth ? response : response["data"]) as JObject
+            ?? throw new IOException("未获取到旧记录对应的整合包文件。");
+        if (!Same(metadata["id"]?.ToString(), versionId) || !Same(metadata[platform == ResourcePlatforms.Modrinth ? "project_id" : "modId"]?.ToString(), project.Id))
+            throw new IOException("原包文件与旧记录的项目或版本不一致。");
+        if (platform == ResourcePlatforms.Modrinth && metadata["files"] is JArray entries) {
+            var primary = entries.Where(file => file["primary"]?.Type == JTokenType.Boolean && file["primary"]!.Value<bool>()).ToList();
+            if (primary.Count != 1) throw new IOException("旧版本的主整合包文件无法唯一确定。");
+            metadata = (JObject)metadata.DeepClone(); metadata["files"] = new JArray(primary[0].DeepClone());
+        }
+        TVersion version = host.ParseVersion(metadata, ResourceTypes.ModPack);
+        if (!Same(version.Id, versionId) || !version.DownloadAvailable || version.Size <= 0 || version.DownloadUrls!.Any(url =>
+                !Uri.TryCreate(url, UriKind.Absolute, out Uri? address) || address.Scheme != "https" || address.UserInfo != ""))
+            throw new IOException("旧整合包不可下载或缺少完整校验信息。");
+        string algorithm = version.Hash?.Length switch { 32 => "md5", 40 => "sha1", 64 => "sha256", 128 => "sha512", _ => throw new IOException("旧整合包缺少有效校验值。") };
+        string hash = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.ValidHash(algorithm, version.Hash);
+        string archive = Path.Combine(stage, platform == ResourcePlatforms.Modrinth ? "recorded-original.mrpack" : "recorded-original.zip");
+        host.Download(new List<TNetFile> { host.ToUpdateFile(version, archive, baseline["minecraft"]?.ToString(), version.ModLoaders) }, token, progress);
+        token.ThrowIfCancellationRequested();
+        if (!File.Exists(archive) || new FileInfo(archive).Length != version.Size || !PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Matches(archive, hash, token))
+            throw new IOException("下载的旧整合包未通过文件大小和哈希校验。");
+        TPackage original = update.ReadPackage(archive, Path.Combine(stage, "original-online"), token);
+        original.Source = (JObject)source.DeepClone(); original.Source["project"] = project.Id;
+        return original;
+    }
     public string ChooseOnline(JObject baseline, string stage, CancellationToken token, ref JObject? source, TProgress progress) {
         source = baseline["source"] as JObject;
         if (source is not null) source = (JObject)source.DeepClone();

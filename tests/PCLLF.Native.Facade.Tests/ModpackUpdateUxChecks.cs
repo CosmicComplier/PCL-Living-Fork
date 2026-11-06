@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PCL;
@@ -41,6 +42,8 @@ internal static class ModpackUpdateUxChecks
         ModpackDownloadProcess.RunParent();
         VersionsAndPreview(Path.Combine(root, "preview"));
         ConflictChoicesAndOwnership(Path.Combine(root, "ownership-preview"));
+        LargeNoticesScroll(Path.Combine(root, "large-preview"));
+        AuthorActionsAndDisabledState(Path.Combine(root, "policy-preview"));
         Console.WriteLine("PASS native modpack-update UX: UX-P1..P4 and UX-01..UX-13 (actual loopback, selection/modal and read-only preview).");
     }
 
@@ -170,6 +173,7 @@ internal static class ModpackUpdateUxChecks
                 ((IList)Get(plan, "Changes")!).Add(change);
             }
         object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
+        Native.Check(!Descendants((DependencyObject)preview).Any(control => control is RadioButton or CheckBox), "Preview options must use genuine PCL radio/checkbox controls.");
         IDictionary counts = (IDictionary)Get(preview, "Counts")!;
         Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
         Check(Property(preview, "ActiveKind")!.ToString() == "Preserved", "UX-07", "personal changes not visible by default");
@@ -178,7 +182,7 @@ internal static class ModpackUpdateUxChecks
             object value = Enum.Parse(kinds, kind);
             Check((int)counts[value]! == count, "UX-08:" + kind, "incorrect category count");
             Native.Call(preview.GetType(), "ShowKind", preview, value);
-            Border[] boxes = ((StackPanel)Get(preview, "Rows")!).Children.OfType<Border>().ToArray();
+            Border[] boxes = FileCards(preview);
             Check(boxes.Length == count && boxes.All(box => box.BorderThickness.Left == 1 && !string.IsNullOrWhiteSpace(box.ToolTip?.ToString())), "UX-09:" + kind, "file border or full path tooltip missing");
         }
         Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
@@ -191,7 +195,10 @@ internal static class ModpackUpdateUxChecks
         ((ContentControl)previewModal.FindName("PanCaption")).Content = null;
         FrameworkElement compact = (FrameworkElement)preview; compact.MaxHeight = 240; compact.Width = 460;
         Render(compact, Path.Combine(folder, "modpack-preview-compact.png"), 470, 250);
-        Check(((UniformGrid)Get(preview, "Filters")!).Columns == 2, "UX-11", "compact categories did not wrap to two columns");
+        Check(((UniformGrid)Get(preview, "Filters")!).Columns == 4, "UX-11", "compact categories unnecessarily consumed a second row");
+        compact.Width = 340;
+        Render(compact, Path.Combine(folder, "modpack-preview-narrow.png"), 350, 250);
+        Check(((UniformGrid)Get(preview, "Filters")!).Columns == 2, "UX-11-narrow", "narrow categories did not wrap to keep their labels readable");
         Check(Changes(plan).Count == before && Changes(plan).Count(Conflict) == conflicts, "UX-12", "preview mutated original plan");
         Check(new[] { "modpack-version-selector.png", "modpack-update-preview.png", "modpack-removals-preview.png", "modpack-preview-compact.png" }.All(name => new FileInfo(Path.Combine(folder, name)).Length > 8), "UX-13", "actual offscreen WPF renders missing");
     }
@@ -230,9 +237,9 @@ internal static class ModpackUpdateUxChecks
         object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.18.4" });
         Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
         void Show(string kind) => Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, kind));
-        Border Row(string relative) => ((StackPanel)Get(preview, "Rows")!).Children.OfType<Border>().Single(box => box.ToolTip?.ToString()?.Split('\r')[0] == relative);
+        Border Row(string relative) => FileCards(preview).Single(box => box.ToolTip?.ToString()?.Split('\r')[0] == relative);
         string[] Texts(DependencyObject element) => Descendants(element).OfType<TextBlock>().Select(block => block.Text).ToArray();
-        RadioButton[] Radios(Border row) => Descendants(row).OfType<RadioButton>().ToArray();
+        MyRadioBox[] Radios(Border row) => Descendants(row).OfType<MyRadioBox>().ToArray();
 
         Show("Preserved");
         Check(Texts(Row("mods/player-extra.jar")).Any(text => text.Contains("个人新增", StringComparison.Ordinal)) && Radios(Row("mods/player-extra.jar")).Length == 0,
@@ -240,10 +247,10 @@ internal static class ModpackUpdateUxChecks
         Check(Texts(Row("mods/ambiguous.jar")).Any(text => text.Contains("mods/copy-one.jar", StringComparison.Ordinal) && text.Contains("mods/copy-two.jar", StringComparison.Ordinal)) && Radios(Row("mods/ambiguous.jar")).Length == 0,
             "UX-C2", "ambiguous matches hidden or offered an unsafe author selection");
         Check(Radios(Row("mods/unknown.jar")).Length == 0, "UX-C3", "unconfirmed ownership offered an unsafe author selection");
-        RadioButton[] modifiedChoices = Radios(Row("mods/personal.jar"));
-        Check(modifiedChoices.Length == 2 && modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked == true,
+        MyRadioBox[] modifiedChoices = Radios(Row("mods/personal.jar"));
+        Check(modifiedChoices.Length == 2 && modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked == true,
             "UX-C4", "true conflicts must default to preserve and offer per-item choices");
-        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).IsChecked = true;
+        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).Checked = true;
         Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.UseAuthor && (PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.PreservePersonal,
             "UX-C5", "author selection did not reach the original DTO or changed another conflict");
         Show("Updated");
@@ -252,20 +259,21 @@ internal static class ModpackUpdateUxChecks
             "UX-C6", "pure rename must display one logical update with its real local and target paths");
         Show("Preserved");
         modifiedChoices = Radios(Row("mods/personal.jar"));
-        Check(modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).IsChecked == true,
+        Check(modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).Checked == true,
             "UX-C7", "changing filters lost the explicit author choice");
-        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked = true;
+        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked = true;
         Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.PreservePersonal, "UX-C8", "returning to preserve did not reach the original DTO");
-        RadioButton disabledAuthor = Radios(Row("mods/disabled.jar")).Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor));
-        Check(disabledAuthor.Content?.ToString()?.Contains("保持禁用", StringComparison.Ordinal) == true,
+        MyRadioBox disabledAuthor = Radios(Row("mods/disabled.jar")).Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor));
+        Check(Descendants(Row("mods/disabled.jar")).OfType<MyCheckBox>().Any(state => state.Checked == true && state.Text?.Contains("保持禁用", StringComparison.Ordinal) == true),
             "UX-C9", "disabled updates did not make their disabled result explicit");
-        disabledAuthor.IsChecked = true;
+        disabledAuthor.Checked = true;
         Check((PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.UseAuthor && Property(disabled, "DestinationRelative")!.ToString() == "mods/disabled.jar.disabled",
             "UX-C10", "choosing an author update re-enabled a disabled mod");
         string[] header = Texts((StackPanel)Get(preview, "Header")!);
         Check(header.Any(text => text.Contains("1.21.11 → 26.1.2", StringComparison.Ordinal)) && header.Any(text => text.Contains("0.18.4 → 0.19.3", StringComparison.Ordinal)),
             "UX-C11", "Minecraft/loader changes omitted before and after versions");
-        Expander[] notices = Descendants((StackPanel)Get(preview, "Header")!).OfType<Expander>().ToArray();
+        Expander[] notices = Descendants((StackPanel)Get(preview, "Rows")!).OfType<Expander>()
+            .Where(details => details.Header?.ToString()?.StartsWith("需要核对", StringComparison.Ordinal) == true || details.Header?.ToString()?.StartsWith("保留模组", StringComparison.Ordinal) == true).ToArray();
         Check(notices.Length == 2 && notices.Any(details => details.Header?.ToString()?.Contains("兼容性", StringComparison.Ordinal) == true && Texts(details).Any(text => text.Contains("不兼容", StringComparison.Ordinal))),
             "UX-C12", "retained-mod compatibility evidence was not accessible in preview");
         Render((FrameworkElement)preview, Path.Combine(folder, "modpack-ownership-and-choices.png"));
@@ -273,6 +281,8 @@ internal static class ModpackUpdateUxChecks
         Console.WriteLine("PASS native modpack-update ownership preview: UX-C1..C13 (personal additions, one pure-rename row, independent choices, disabled state, ambiguity and runtime warnings).");
     }
 
+    private static Border[] FileCards(object preview) => ((StackPanel)Get(preview, "Rows")!).Children.OfType<FrameworkElement>()
+        .SelectMany(element => element is Border card ? new[] { card } : element is Grid grid ? grid.Children.OfType<Border>() : Enumerable.Empty<Border>()).ToArray();
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         yield return root;
@@ -282,6 +292,140 @@ internal static class ModpackUpdateUxChecks
     }
 
     private static object? Property(object target, string name) => Native.Property(target.GetType(), name).GetValue(target);
+    private static void LargeNoticesScroll(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        object package = New("PackUpdatePackage");
+        Set(package, "Name", "Large update preview"); Set(package, "Version", "2"); Set(package, "Minecraft", "26.3");
+        ((IDictionary)Get(package, "Loaders")!).Add(ModLoaders.Fabric, "0.20.0");
+        object plan = New("PackUpdatePlan"); Set(plan, "Package", package);
+        var graph = new PackDependencyGraphResult();
+        for (int index = 0; index < 36; index++) {
+            ((List<string>)Get(plan, "Warnings")!).Add("需要核对来源：mods/author-file-" + index + ".jar");
+            ((List<string>)Get(plan, "RuntimeWarnings")!).Add("保留模组需要核对新运行时：mods/personal-" + index + ".jar");
+            graph.Errors.Add("默认组合需要调整的依赖：dependency-" + index);
+            graph.Warnings.Add("默认组合尚待确认的声明：unknown-" + index);
+            object change = New("PackUpdateChange"), incoming = New("PackUpdateFile");
+            string path = "mods/author-file-" + index + ".jar";
+            Set(incoming, "Relative", path); Set(change, "Relative", path); Set(change, "Incoming", incoming);
+            Set(change, "Before", "sha1:fixture"); Set(change, "Conflict", true); Set(change, "Ownership", PackUpdateOwnership.PersonalModified);
+            ((IList)Get(plan, "Changes")!).Add(change);
+        }
+        Set(plan, "DependencyCheck", graph);
+        FrameworkElement preview = (FrameworkElement)Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
+        preview.Width = 460; preview.MaxHeight = 240;
+        ScrollViewer scroll = (ScrollViewer)Get(preview, "Scroller")!;
+        Render(preview, Path.Combine(folder, "long-notices-collapsed.png"), 470, 250, () => {
+            Grid cards = ((StackPanel)Get(preview, "Rows")!).Children.OfType<Grid>().Single();
+            Native.Check(cards.ColumnDefinitions.Count == 1, "Narrow conflict cards did not return to one column.");
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0,
+                "Long update notices consumed the fixed header and starved the file-list scroll viewport: viewport=" + scroll.ViewportHeight);
+            double collapsed = scroll.ScrollableHeight;
+            Expander[] details = Descendants((StackPanel)Get(preview, "Rows")!).OfType<Expander>().ToArray();
+            Native.Check(details.Length == 5 && details.All(item => !item.IsExpanded), "Preview evidence is missing or expanded into a wall of text by default.");
+            foreach (Expander detail in details) detail.IsExpanded = true;
+            preview.UpdateLayout();
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > collapsed, "Expanded evidence escaped the shared scroll viewport.");
+            Native.Check(Descendants(preview).OfType<ScrollViewer>().Count() == 1, "Nested evidence scroll viewers can trap the mouse wheel.");
+            scroll.ScrollToBottom(); preview.UpdateLayout();
+            Native.Check(scroll.VerticalOffset > 0, "Large update preview could not scroll to the final file.");
+        });
+        foreach (Expander detail in Descendants((StackPanel)Get(preview, "Rows")!).OfType<Expander>()) detail.IsExpanded = false;
+        preview.Width = double.NaN;
+        MyMsgText modal = Dialog(preview, "整合包更新预览", "按以上选择更新");
+        modal.MaxHeight = 460; preview.MaxHeight = 240;
+        Render(modal, Path.Combine(folder, "long-preview-modal.png"), 840, 520, () => {
+            scroll.ScrollToTop(); modal.UpdateLayout();
+            FrameworkElement confirm = (FrameworkElement)modal.FindName("Btn1");
+            Rect button = confirm.TransformToAncestor(modal).TransformBounds(new Rect(confirm.RenderSize));
+            Native.Check(button.Height > 0 && button.Top >= 0 && button.Bottom <= modal.ActualHeight + 1, "Compact preview clipped its confirmation action.");
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0, "Actual modal wrapper removed the file-list viewport.");
+            ScrollViewer outer = (ScrollViewer)modal.FindName("PanCaption");
+            Native.Check(Math.Abs(preview.ActualWidth - outer.ViewportWidth) <= 1, "Preview content left unused horizontal space inside the modal.");
+            Grid cards = ((StackPanel)Get(preview, "Rows")!).Children.OfType<Grid>().Single();
+            Border[] boxes = cards.Children.Cast<Border>().ToArray();
+            Native.Check(cards.ColumnDefinitions.Count == 2 && boxes.Length == 36, "Wide conflict preview did not use two columns for all mods.");
+            Rect left = boxes[0].TransformToAncestor(preview).TransformBounds(new Rect(boxes[0].RenderSize));
+            Rect right = boxes[1].TransformToAncestor(preview).TransformBounds(new Rect(boxes[1].RenderSize));
+            Native.Check(Math.Abs(left.Top - right.Top) <= 1 && left.Right <= right.Left + 1 && right.Right <= preview.ActualWidth + 1,
+                "Conflict cards overlapped or escaped their two-column viewport.");
+            Native.Check(outer.ScrollableHeight == 0, "The disabled modal wrapper can intercept the inner list's mouse wheel.");
+            MouseWheelEventArgs wheel = new(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = UIElement.PreviewMouseWheelEvent };
+            scroll.RaiseEvent(wheel);
+            Native.Check(wheel.Handled, "The genuine native preview list did not accept the mouse wheel.");
+        });
+        Console.WriteLine("PASS large modpack preview: bounded compact header, collapsed/expanded evidence in one scroll viewport, reachable final file, real modal footer and mouse-wheel routing.");
+    }
+    private static void AuthorActionsAndDisabledState(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        object package = New("PackUpdatePackage"), plan = New("PackUpdatePlan");
+        Set(package, "Name", "Author priority"); Set(package, "Version", "2"); Set(package, "Minecraft", "1.21.11");
+        ((IDictionary)Get(package, "Loaders")!).Add(ModLoaders.Fabric, "0.19.3"); Set(plan, "Package", package);
+        object Add(string name, bool incoming, PackUpdateOwnership owner, bool conflict = false, bool compatible = false) {
+            object change = New("PackUpdateChange"); Set(change, "Relative", "mods/" + name + ".jar"); Set(change, "Before", "sha1:fixture");
+            Set(change, "LocalRelative", "mods/" + name + "-old.jar"); Set(change, "Ownership", owner); Set(change, "Conflict", conflict);
+            Set(change, "PersonalCompatible", compatible); Set(change, "AllowPreserveAuthor", owner == PackUpdateOwnership.AuthorUnchanged || compatible);
+            Set(change, "Choice", compatible || conflict ? PackUpdateChoice.PreservePersonal : PackUpdateChoice.UseAuthor);
+            if (incoming) { object file = New("PackUpdateFile"); Set(file, "Relative", "mods/" + name + ".jar"); Set(change, "Incoming", file); }
+            ((IList)Get(plan, "Changes")!).Add(change); return change;
+        }
+        object update = Add("normal", true, PackUpdateOwnership.AuthorUnchanged), removal = Add("removed", false, PackUpdateOwnership.AuthorUnchanged);
+        Add("personal", true, PackUpdateOwnership.PersonalModified, compatible: true);
+        Add("conflicting", true, PackUpdateOwnership.PersonalModified, conflict: true);
+        object duplicate = Add("duplicate", false, PackUpdateOwnership.PersonalAdded, conflict: true);
+        Set(duplicate, "Operation", PackUpdateOperation.DisablePersonal); Set(duplicate, "Choice", PackUpdateChoice.UseAuthor);
+        Set(duplicate, "DisabledDestination", "mods/duplicate-old.jar.disabled"); Set(duplicate, "Reason", "禁用原因：重复模组 ID shared_id：duplicate-old.jar、author-new.jar");
+        object disabled = Add("disabled", true, PackUpdateOwnership.Disabled);
+        object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
+        Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
+        var counts = (IDictionary)Get(preview, "Counts")!;
+        Check((int)counts[Enum.Parse(kinds, "Updated")]! == 2 && (int)counts[Enum.Parse(kinds, "Removed")]! == 1 &&
+            (int)counts[Enum.Parse(kinds, "Preserved")]! == 3, "UX-policy-categories", "Ordinary author changes were mislabeled as conflicts.");
+        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
+        Border duplicateRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/duplicate.jar", StringComparison.Ordinal));
+        string[] duplicateText = Descendants(duplicateRow).OfType<TextBlock>().Select(text => text.Text).ToArray();
+        Check(duplicateText.Any(text => text.Contains("禁用目标：mods/duplicate-old.jar.disabled", StringComparison.Ordinal)) &&
+            duplicateText.Any(text => text.Contains("重复模组 ID shared_id", StringComparison.Ordinal)) &&
+            !duplicateText.Any(text => text.Contains("作者在新版中移除", StringComparison.Ordinal) || text.Contains("个人新增，保留", StringComparison.Ordinal)),
+            "UX-personal-disable-description", "A personal duplicate still claimed author removal or unconditional retention.");
+        Render((FrameworkElement)preview, Path.Combine(folder, "personal-duplicate-reason.png"), 740, 480);
+        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
+        Border row = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/normal.jar", StringComparison.Ordinal));
+        Descendants(row).OfType<MyRadioBox>().Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked = true;
+        Check(!(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
+            Descendants(row).OfType<TextBlock>().Any(text => text.Visibility == Visibility.Visible && text.Text.Contains("不执行作者更新", StringComparison.Ordinal)),
+            "UX-policy-preserve", "Keeping an ordinary author version did not affect execution or explain the outcome.");
+        Border disabledRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/disabled.jar", StringComparison.Ordinal));
+        MyCheckBox state = Descendants(disabledRow).OfType<MyCheckBox>().Single();
+        Check(state.Checked == true && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString()!.EndsWith(".disabled", StringComparison.Ordinal),
+            "UX-disabled-default", "Disabled author update was not paired with an explicit keep-disabled choice.");
+        Render((FrameworkElement)preview, Path.Combine(folder, "author-updates-and-disabled-state.png"), 740, 480);
+        System.Windows.Application app = System.Windows.Application.Current;
+        Window? previousMain = app.MainWindow; ShutdownMode previousShutdown = app.ShutdownMode;
+        Window window = new() { Content = preview, Width = 740, Height = 480, Left = -30000, Top = -30000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+        try
+        {
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            window.Show(); window.UpdateLayout();
+            Check(state.IsLoaded, "UX-native-loaded", "Native checkbox interactions require a live offscreen presentation source.");
+            state.SetChecked(false, true);
+            Check(!(bool)Get(disabled, "KeepDisabled")! && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString() == "mods/disabled.jar",
+                "UX-disabled-enable", "The explicit enabled-state choice did not reach the update plan.");
+            Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
+            Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
+            Check(!(bool)Get(disabled, "KeepDisabled")! && !(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
+                (bool)Native.Property(removal.GetType(), "ApplyAuthor").GetValue(removal)!, "UX-policy-independent", "Filter changes reset choices or changed unrelated author actions.");
+            disabledRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/disabled.jar", StringComparison.Ordinal));
+            Check(!Descendants(disabledRow).OfType<MyCheckBox>().Single().Checked,
+                "UX-native-restored", "Native checkbox did not restore the explicit choice after changing filters.");
+        }
+        finally
+        {
+            window.Content = null; window.Close();
+            app.MainWindow = previousMain; app.ShutdownMode = previousShutdown;
+        }
+    }
     private static object Construct(string name, params object?[] values)
     {
         var constructor = Native.Type("PCL." + name).GetConstructors(Native.Flags).Single(info => info.GetParameters().Length == values.Length);
@@ -295,16 +439,22 @@ internal static class ModpackUpdateUxChecks
         ((TranslateTransform)modal.FindName("TransformPos")).Y = 0;
         return modal;
     }
-    private static void Render(FrameworkElement element, string path, int width = 820, int height = 640)
+    private static void Render(FrameworkElement element, string path, int width = 820, int height = 640, Action? verifyLayout = null)
     {
         Grid host = new() { Background = new SolidColorBrush(Color.FromRgb(231, 239, 251)) };
         host.Children.Add(element);
         try
         {
             host.Measure(new Size(width, height)); host.Arrange(new Rect(0, 0, width, height)); host.UpdateLayout();
+            verifyLayout?.Invoke();
             RenderTargetBitmap bitmap = new(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(host);
             PngBitmapEncoder encoder = new(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using FileStream stream = File.Create(path); encoder.Save(stream);
+            using (FileStream stream = File.Create(path)) encoder.Save(stream);
+            string? previews = Environment.GetEnvironmentVariable("PCLLF_MODPACK_PREVIEW_DIR");
+            if (!string.IsNullOrWhiteSpace(previews)) {
+                Directory.CreateDirectory(previews);
+                File.Copy(path, Path.Combine(previews, Path.GetFileName(Path.GetDirectoryName(path)) + "-" + Path.GetFileName(path)), true);
+            }
         }
         finally { host.Children.Clear(); }
     }

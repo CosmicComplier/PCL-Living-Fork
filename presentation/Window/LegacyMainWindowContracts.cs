@@ -116,6 +116,7 @@ public sealed class LegacyMainWindowHost<TStack, TInstance, TAnimation>
     public Func<int> Dpi = null!;
     public bool LegacyLink;
     public Func<string> VersionBaseName = null!, VersionBranchMain = null!, LauncherName = null!, ReleasesUrl = null!, IssuesUrl = null!, TempFolder = null!, ExecutablePath = null!;
+    public Func<bool, string, bool> ShowReleaseNotes = (_, _) => false;
     public Func<long> Clock = null!, StartTick = null!;
     public Action<long> WriteStartTick = null!;
     public Func<IntPtr> Handle = null!;

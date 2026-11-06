@@ -760,7 +760,17 @@ namespace PCL
         private static global::PCLCS.LegacyLaunchDependencyContext DependencyContext(global::PCL.ModMinecraft.McInstance Instance, global::System.String JavaVersion, global::System.String ModsFolder)
         {
             var Context = global::PCL.ModDependencyInspector.ContextForInstance(Instance, JavaVersion);
-            return new global::PCLCS.LegacyLaunchDependencyContext() { Inspect = new Func<global::System.Threading.CancellationToken, global::PCLCS.LegacyLaunchDependencyReport>(Token => global::PCL.ModLaunch.DependencyReport(ModsFolder, global::PCL.ModDependencyInspector.Inspect(ModsFolder, Context, Token))) };
+            return new global::PCLCS.LegacyLaunchDependencyContext() { Inspect = Token =>
+            {
+                var origin = PackDependencyOrigin.Read(Instance.PathVersion, Instance.PathIndie, ModModpackMode.Enabled,
+                    ModpackUpdate.ReadManifest, ModpackUpdate.DigestForInspection, Token);
+                // A pack's content hash can change without a size/mtime change. Its graph
+                // must describe the same actual files as the fresh provenance snapshot.
+                var report = origin.IsPack ? ModDependencyInspector.ScanRaw(ModsFolder, Context, Token, true) :
+                    ModDependencyInspector.Inspect(ModsFolder, Context, Token);
+                report.PackOrigin = origin;
+                return DependencyReport(ModsFolder, report);
+            } };
         }
         private static global::PCLCS.LegacyLaunchDependencyReport DependencyReport(global::System.String Folder, global::PCL.ModDependencyInspector.InspectionReport Report)
         {
@@ -769,6 +779,8 @@ namespace PCL
             {
                 Source = Report,
                 ReadHasErrors = new Func<global::System.Boolean>(() => Report.HasErrors),
+                ReadNeedsAttention = () => Report.HasErrors || Report.PackOrigin?.NeedsAttention == true ||
+                    Report.PackOrigin?.IsPack == true && Report.MetadataIncomplete,
                 WasAccepted = new Func<global::System.Boolean>(() => global::PCL.LaunchDependencyCheck.WasAccepted(Folder, Report)),
                 Accept = new Action(() => global::PCL.LaunchDependencyCheck.Accept(Folder, Report)),
                 BuildAutoFill = new Func<global::System.Threading.CancellationToken, global::PCLCS.LegacyLaunchDependencyPlan>(Token => global::PCL.ModLaunch.DependencyPlan(global::PCL.ModDependencyAutoFill.BuildPlan(Folder, Report, Token))),
@@ -785,6 +797,7 @@ namespace PCL
                 WriteCaption = new Action<global::System.String>(Value => Plan.Caption = Value),
                 ReadItemsCount = new Func<global::System.Int32>(() => Plan.Items.Count),
                 ReadEnablesCount = new Func<global::System.Int32>(() => Plan.Enables.Count),
+                ConfirmAuthorReplacement = () => Plan.AuthorReplacementConfirmed = true,
                 Install = new Func<global::System.Threading.CancellationToken, global::System.Int32>(Token => global::PCL.ModDependencyAutoFill.Install(Plan, Token))
             };
         }
@@ -792,7 +805,7 @@ namespace PCL
         {
             global::PCL.ModDependencyInspector.InspectionReport Original = (global::PCL.ModDependencyInspector.InspectionReport)Report.Source;
             if (AfterRepair)
-                return global::PCL.ModMain.MyMsgBoxConfirmContent("前置已处理，仍有以下问题。", "启动前模组检查", "返回 Mod 管理", () => new global::PCL.ModDependencyCheckView(Original), "取消启动", "仍然启动", WarningButton: 3);
+                return global::PCL.ModMain.MyMsgBoxConfirmContent("前置已处理，仍有模组问题或整合包来源需要核对。", "启动前模组检查", "返回 Mod 管理", () => new global::PCL.ModDependencyCheckView(Original), "取消启动", "仍然启动", WarningButton: 3);
             global::PCL.ModDependencyAutoFill.Plan OriginalPlan = (global::PCL.ModDependencyAutoFill.Plan)Plan.Source;
             return global::PCL.ModMain.MyMsgBoxConfirmContent("请检查以下模组问题。", "启动前模组检查", OriginalPlan.ActionText, () => new global::PCL.ModDependencyCheckView(Original, OriginalPlan), "取消启动", "仍然启动", WarningButton: 3);
         }

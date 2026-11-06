@@ -80,9 +80,15 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         string lower = relative.ToLowerInvariant();
         return lower.StartsWith("pcl/") || lower.StartsWith(".pcl-") || lower == ".pclignore";
     }
+    public static bool IsRuntimeData(string relative) {
+        string lower = relative.ToLowerInvariant();
+        // Litematica's per-world/server/dimension state is not a global author setting.
+        return lower.StartsWith("config/litematica/litematica_", StringComparison.Ordinal) && lower.EndsWith(".json", StringComparison.Ordinal) &&
+            lower.Substring("config/litematica/".Length).IndexOf('/') < 0;
+    }
     public static bool IsPersonal(string relative) {
         string lower = relative.ToLowerInvariant();
-        return lower == "options.txt" || lower.StartsWith("optionsof") || lower.StartsWith("optionsshaders") || lower == "servers.dat" || lower == "servers.dat_old" ||
+        return IsRuntimeData(relative) || lower == "options.txt" || lower.StartsWith("optionsof") || lower.StartsWith("optionsshaders") || lower == "servers.dat" || lower == "servers.dat_old" ||
             new[] { "saves/", "screenshots/", "xaerowaypoints/", "xaeroworldmap/", "journeymap/", "voxelmap/", "schematics/" }.Any(prefix => lower.StartsWith(prefix)) ||
             lower.Contains("waypoint") || lower.StartsWith("config/xaero") || lower.StartsWith("config/journeymap") || lower.StartsWith("config/voxelmap");
     }
@@ -207,7 +213,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         JObject files = new();
         foreach (TFile item in package.Files.Values) files[RelativePath(item.Relative!)] = new JObject(new JProperty("hash", NormalizeHash(item.Hash ?? "")), new JProperty("identity", item.Identity),
             new JProperty("fileIdentity", item.FileIdentity), new JProperty("optional", item.OptionalFile), new JProperty("state", "declared"));
-        return new JObject(new JProperty("schema", 2), new JProperty("complete", true), new JProperty("name", package.Name), new JProperty("version", package.Version), new JProperty("minecraft", package.Minecraft),
+        return new JObject(new JProperty("schema", 2), new JProperty("complete", true), new JProperty("associationPolicyVersion", 2), new JProperty("name", package.Name), new JProperty("version", package.Version), new JProperty("minecraft", package.Minecraft),
             new JProperty("loaders", JObject.FromObject(package.Loaders)), new JProperty("files", files), new JProperty("source", package.Source));
     }
     public JObject? ReadManifest(string versionFolder) {
@@ -243,7 +249,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 ManifestPath(local["relative"]!.ToString());
                 local["hash"] = NormalizeHash(local["hash"]!.ToString());
                 ValidateOptionalManifestType(local, "ownership", JTokenType.String);
-                if (local["ownership"]?.Type == JTokenType.String && local["ownership"]!.ToString() is not ("author" or "personal-added" or "ambiguous")) throw InvalidManifest();
+                if (local["ownership"]?.Type == JTokenType.String && local["ownership"]!.ToString() is not ("author" or "personal-added" or "ambiguous" or "unknown")) throw InvalidManifest();
+                ValidateOptionalManifestType(local, "association", JTokenType.String);
+                ValidateOptionalManifestType(local, "personalComponentMatched", JTokenType.Boolean);
             }
             ValidateOptionalManifestType(value, "localCandidates", JTokenType.Array);
             if (value["localCandidates"] is JArray candidates) foreach (JToken candidate in candidates) {

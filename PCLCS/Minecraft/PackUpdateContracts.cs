@@ -28,19 +28,31 @@ public class PackUpdatePackageData<TFile> where TFile : PackUpdateFileData {
 }
 public enum PackUpdateOwnership { AuthorUnchanged, AuthorRenamed, PersonalModified, PersonalAdded, Disabled, Deleted, OptionalAbsent, Ambiguous, Unknown }
 public enum PackUpdateChoice { PreservePersonal, UseAuthor }
+public enum PackUpdateOperation { AuthorChange, DisablePersonal, PersonalDependency }
+public enum PackUpdateAssociation { DeclaredPath, VerifiedModHash, RecordedMod, PlatformProject, PersonalComponent, Unknown }
 public class PackUpdateChangeData<TFile> where TFile : PackUpdateFileData {
     public string? Relative, Before;
     public string? BaselineRelative, LocalRelative, TargetBefore;
     public TFile? Incoming;
     public bool Conflict;
+    // An optional author-action override is not a file/provenance conflict.
+    public bool AllowPreserveAuthor;
+    public PackUpdateOperation Operation;
+    public PackUpdateAssociation Association;
+    public bool KeepDisabled = true;
+    public bool PersonalCompatible;
+    public bool PersonalComponentMatched;
+    public string? DisabledDestination;
     public string? Reason;
     public PackUpdateOwnership Ownership;
     public bool DisplayOnly, AllowAuthor = true;
     public PackUpdateChoice Choice;
     public List<string> Candidates = new();
-    public bool ApplyAuthor => !DisplayOnly && (!Conflict || AllowAuthor && Choice == PackUpdateChoice.UseAuthor);
+    public bool CanChoose => !DisplayOnly && AllowAuthor && Ownership != PackUpdateOwnership.Ambiguous && (Conflict || AllowPreserveAuthor);
+    public bool ApplyAuthor => !DisplayOnly && (!(Conflict || AllowPreserveAuthor) || AllowAuthor && Choice == PackUpdateChoice.UseAuthor);
     // Updating a deliberately disabled mod never implicitly enables it.
-    public string DestinationRelative => (Relative ?? "") + (Incoming is not null && Ownership == PackUpdateOwnership.Disabled ? ".disabled" : "");
+    public string DestinationRelative => Operation == PackUpdateOperation.DisablePersonal ? DisabledDestination! :
+        (Relative ?? "") + (Incoming is not null && Ownership == PackUpdateOwnership.Disabled && KeepDisabled ? ".disabled" : "");
 }
 public class PackUpdatePlanData<TPackage, TChange> where TPackage : class where TChange : class {
     public string? Root;
@@ -49,6 +61,9 @@ public class PackUpdatePlanData<TPackage, TChange> where TPackage : class where 
     public JObject? Baseline;
     public Dictionary<string, string?> Snapshot = new(StringComparer.OrdinalIgnoreCase);
     public List<string> Warnings = new(), RuntimeWarnings = new();
+    // Unknown declarations require an explicit acknowledgement, never an implicit compatibility claim.
+    public bool AllowUnverifiedDependencies;
+    public PackDependencyGraphResult? DependencyCheck;
     public HashSet<string> ObservedModFiles = new(StringComparer.OrdinalIgnoreCase);
 }
 public sealed class PackUpdateHost<TFile, TPackage, TChange, TPlan, TNetFile>
