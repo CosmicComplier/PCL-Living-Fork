@@ -65,5 +65,6 @@ internal static class ResourceUpdateChecks
         File.AppendAllText(original,"changed-after-check");C(126,Rejected(()=>Install(result)) is not null);C(127,!Directory.EnumerateDirectories(packs,".pcl-import-*").Any());
         MapInstallSourceChecks.Complete("update");environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS native resource-updates: real Main MR/CF exact-match compatibility and transaction/error/cancel/stale filename/backup behavior; injected transport only, no HTTP.");
+        LocalModSortChecks.Run(environment);
     }
 }

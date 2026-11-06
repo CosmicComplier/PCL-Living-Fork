@@ -49,6 +49,7 @@ public static class InstanceResourceCatalog {
                 if (kind == 0) {
                     detail = File.Exists(ChildPath(child.FullName, "level.dat"))
                         ? "Minecraft 存档" : "未找到 level.dat，存档可能不完整";
+                    if (isDirectory) entry.LastPlayedUtc = ReadLastPlayed(child.FullName, token, removeExtendedPrefix);
                     loadFileIcon(entry, ChildPath(child.FullName, "icon.png"), 64);
                 } else if (kind == 2) {
                     ReadPackInfo(entry, ref detail, loadFileIcon, decodeStreamIcon, normalizeLineEndings);
@@ -58,7 +59,9 @@ public static class InstanceResourceCatalog {
                     // was returned. A failed callback does not advance it.
                     previewCount++;
                 }
-                entry.Description = detail + " · " + child.LastWriteTime.ToString("yyyy-MM-dd HH:mm");
+                entry.Description = kind == 0 ? detail + " · 最后游玩：" +
+                    (entry.LastPlayedUtc.HasValue ? entry.LastPlayedUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "未知") :
+                    detail + " · " + child.LastWriteTime.ToString("yyyy-MM-dd HH:mm");
                 result.Add(entry);
             } catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
                 // Moving/unreadable individual children do not hide other entries.
@@ -68,6 +71,38 @@ public static class InstanceResourceCatalog {
             return result.OrderByDescending(item => item.IsDirectory)
                 .ThenBy(item => item.Name, Comparer<string?>.Create(InstanceResourcePathText.ComparePathText)).ToList();
         return result;
+    }
+
+    private static DateTime? ReadLastPlayed(string folder, CancellationToken token, Func<string, string> removeExtendedPrefix) {
+        token.ThrowIfCancellationRequested();
+        DateTime? result;
+        try {
+            WorldMetadataInfo? data = WorldMetadataFiles.Read(folder, false,
+                (parent, path) => EnsureWorldMetadataPath(parent, path, removeExtendedPrefix));
+            result = data is not null && data.LastPlayedUtc != DateTime.MinValue ? data.LastPlayedUtc : null;
+        } catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or FormatException or ArgumentOutOfRangeException or OverflowException) {
+            // A damaged, busy or unsupported level.dat does not hide the world.
+            // Missing time remains unknown; directory mtime is not evidence of playing.
+            result = null;
+        }
+        token.ThrowIfCancellationRequested();
+        return result;
+    }
+
+    private static void EnsureWorldMetadataPath(string parent, string path, Func<string, string> removeExtendedPrefix) {
+        if (Path.DirectorySeparatorChar == '\\') {
+            InstanceResourcePaths.EnsureWithin(parent, path, false, removeExtendedPrefix);
+            return;
+        }
+        // The legacy boundary above deliberately models Windows separators. Use
+        // the host separator for this new read-only cross-platform metadata path.
+        string directory = Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar);
+        string full = Path.GetFullPath(path);
+        if (!string.Equals(Path.GetDirectoryName(full), directory, StringComparison.Ordinal))
+            throw new IOException("存档元数据路径超出了当前目录。");
+        if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0 ||
+                (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("不能读取链接文件或链接目录中的存档元数据。");
     }
 
     public static void ReadPackInfo<TEntry>(TEntry entry, ref string detail,

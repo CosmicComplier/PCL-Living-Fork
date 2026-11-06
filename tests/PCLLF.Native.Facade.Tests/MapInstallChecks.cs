@@ -89,6 +89,12 @@ internal static class MapInstallChecks
         Array hints=(Array)Native.Call(Native.Field(typeof(ModMain),"HintWaiting").FieldType,"ToArray",Native.Field(typeof(ModMain),"HintWaiting").GetValue(null))!;
         C(146,hints.Cast<object>().Any(hint=>(string)Value(hint,"Text")! =="已还原资源"&&Value(hint,"Type")!.ToString()=="Green")&&Part<FrameworkElement>(page,"LabOperation").Visibility==Visibility.Collapsed);
         IList empty=(IList)Activator.CreateInstance(entries.GetType())!;Native.Call(page.GetType(),"ShowResources",page,saves,saves,empty);C(149,Part<TextBlock>(page,"LabEmpty").Text=="回收站为空。"&&!Part<FrameworkElement>(page,"BtnBackupAll").IsEnabled&&back.Visibility==Visibility.Visible&&Part<FrameworkElement>(page,"CardSelect").Visibility==Visibility.Collapsed);
-        Native.Call(page.GetType(),"ReturnToResources",page);Native.Call(page.GetType(),"ShowResources",page,saves,saves,Scan(saves,kind));C(153,back.Visibility==Visibility.Collapsed&&Part<FrameworkElement>(page,"BtnRestore").Visibility==Visibility.Visible&&Part<MyButton>(page,"BtnOpenFolder").Text=="打开文件夹"&&Part<FrameworkElement>(page,"BackupSettings").Visibility==Visibility.Visible&&Part<FrameworkElement>(page,"PanWorlds").Visibility==Visibility.Visible&&Part<FrameworkElement>(page,"PanFilter").Margin.Top==13);
+        FrameworkElement sortHeader=Part<FrameworkElement>(page,"PanSortHeader"),filterPanel=Part<FrameworkElement>(page,"PanFilter");
+        Native.Check(ReferenceEquals(filterPanel.Parent,sortHeader)&&sortHeader.Margin.Top==40&&filterPanel.Margin==new Thickness(0)&&!Part<FrameworkElement>(page,"BtnSort").IsEnabled,
+            "Recycle mode must keep the shared filter/sort header below its heading and disable sorting.");
+        Native.Call(page.GetType(),"ReturnToResources",page);Native.Call(page.GetType(),"ShowResources",page,saves,saves,Scan(saves,kind));
+        // The shared header now owns the original outer spacing; the nested filter has no extra margin.
+        C(153,back.Visibility==Visibility.Collapsed&&Part<FrameworkElement>(page,"BtnRestore").Visibility==Visibility.Visible&&Part<MyButton>(page,"BtnOpenFolder").Text=="打开文件夹"&&Part<FrameworkElement>(page,"BackupSettings").Visibility==Visibility.Visible&&Part<FrameworkElement>(page,"PanWorlds").Visibility==Visibility.Visible&&sortHeader.Margin.Top==13&&filterPanel.Margin==new Thickness(0));
+        Native.Check(Part<FrameworkElement>(page,"BtnSort").IsEnabled,"Returning from recycle mode must restore sorting.");
     }
 }

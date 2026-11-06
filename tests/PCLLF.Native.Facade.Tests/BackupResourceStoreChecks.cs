@@ -79,6 +79,7 @@ internal static class BackupResourceStoreChecks
         Reject(() => Store("EnsureWithin", schematics, Path.Combine(root, "foreign.txt"), false), "foreign resource scope");
         foreach (string name in new[] { "../escape", "CON", "file.", "a/b" }) Reject(() => Store("SafeName", name), "unsafe resource name " + name);
         ResourcePage(root, packs, shots, trash, pack);
+        ResourceSortChecks.Run(root);
         Console.WriteLine("PASS backup-resources store: actual world ZIP/folder roundtrips, collision/cancel/path/stale guards, frozen previews/handle release, package validation, native resource page and batch export/recycle/restore.");
     }
 

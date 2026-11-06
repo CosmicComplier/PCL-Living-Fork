@@ -82,6 +82,8 @@ public sealed class ResourcePageRowActions<TEntry, TOnline> where TEntry : Insta
 public sealed class ResourcePageView<TInstance, TEntry, TOnline>
     where TInstance : class where TEntry : InstanceResourceEntryData where TOnline : class {
     public FrameworkElement Root = null!, Viewport = null!, PanFilter = null!, PanEmpty = null!, PanOperations = null!, PanResourceList = null!, BackupSettings = null!;
+    // Optional for the original acceptance hosts, whose header uses absolute margins.
+    public FrameworkElement? SortHeader, SortControl;
     public Panel PanList = null!, PanWorlds = null!;
     public UniformGrid PanScreenshots = null!;
     public Grid PanManageButtons = null!;
