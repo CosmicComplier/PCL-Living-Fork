@@ -27,6 +27,18 @@ namespace PCL
             HighlightButton = new Action<MyButton, bool>((Button, Highlight) => Button.ColorType = Highlight ? MyButton.ColorState.Highlight : MyButton.ColorState.Normal),
             OnClick = new Action<MyButton, Action>((Button, Work) => Button.Click += (Sender, Args) => Work()),
             CreateScroll = new Func<MyScrollViewer>(() => new MyScrollViewer()),
+            CreateRadio = (text, selected, select) =>
+            {
+                MyRadioBox control = new() { Text = text, Checked = selected };
+                control.Check += (_, _) => select();
+                return control;
+            },
+            CreateCheck = (text, selected, change) =>
+            {
+                MyCheckBox control = new() { Text = text, Checked = selected };
+                control.Change += (_, _) => change(control.Checked);
+                return control;
+            },
             AnimationControl = new Func<int>(() => ModAnimation.AniControlEnabled),
             StopAnimation = new Action<string>(Name => ModAnimation.AniStop(Name)),
             AnimateOpacity = new Action<UIElement, double, int, string>((Element, Value, Duration, Name) => ModAnimation.AniStart(ModAnimation.AaOpacity(Element, Value, Duration), Name))

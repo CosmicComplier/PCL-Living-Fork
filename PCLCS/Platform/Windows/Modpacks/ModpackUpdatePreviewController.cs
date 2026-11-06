@@ -130,10 +130,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         this.notices.Children.Add(details);
     }
     private void AddChoice(StackPanel text, TChange change) {
-        string group = "PackUpdateChoice_" + Guid.NewGuid().ToString("N");
         WrapPanel choices = new() { Margin = new Thickness(0, 8, 0, 0) };
-        RadioButton preserve = new() { Content = change.Operation == PackUpdateOperation.DisablePersonal ? "继续启用（需通过检查）" : "保留当前版本", GroupName = group, IsChecked = change.Choice == PackUpdateChoice.PreservePersonal, FontSize = 12, Margin = new Thickness(0, 0, 18, 4), Tag = PackUpdateChoice.PreservePersonal };
-        RadioButton author = new() { Content = change.Operation == PackUpdateOperation.DisablePersonal ? "本次禁用并保留文件" : change.Incoming is null ? "使用作者方案（移除此文件）" : "使用作者版本", GroupName = group, IsChecked = change.Choice == PackUpdateChoice.UseAuthor, FontSize = 12, Margin = new Thickness(0, 0, 0, 4), Tag = PackUpdateChoice.UseAuthor };
         TextBlock result = ModpackDialogController<TButton, TScroll>.Label(change.Incoming is null ? "本次保留，不执行作者移除。" : "本次保留，不执行作者更新。", 12, color: "ColorBrushGray2", margin: new Thickness(0, 4, 0, 0));
         void RefreshResult() {
             if (change.Operation == PackUpdateOperation.DisablePersonal) {
@@ -146,19 +143,22 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                 result.Visibility = change.AllowPreserveAuthor && change.Choice == PackUpdateChoice.PreservePersonal ? Visibility.Visible : Visibility.Collapsed;
             }
         }
-        preserve.SetResourceReference(Control.ForegroundProperty, "ColorBrush1"); author.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
-        preserve.Checked += (_, _) => { change.Choice = PackUpdateChoice.PreservePersonal; plan.AllowUnverifiedDependencies = false; RefreshResult(); };
-        author.Checked += (_, _) => { change.Choice = PackUpdateChoice.UseAuthor; plan.AllowUnverifiedDependencies = false; RefreshResult(); };
+        FrameworkElement preserve = view.RadioOption(change.Operation == PackUpdateOperation.DisablePersonal ? "继续启用（需通过检查）" : "保留当前版本",
+            change.Choice == PackUpdateChoice.PreservePersonal, () => { change.Choice = PackUpdateChoice.PreservePersonal; plan.AllowUnverifiedDependencies = false; RefreshResult(); });
+        FrameworkElement author = view.RadioOption(change.Operation == PackUpdateOperation.DisablePersonal ? "本次禁用并保留文件" : change.Incoming is null ? "使用作者方案（移除此文件）" : "使用作者版本",
+            change.Choice == PackUpdateChoice.UseAuthor, () => { change.Choice = PackUpdateChoice.UseAuthor; plan.AllowUnverifiedDependencies = false; RefreshResult(); });
+        preserve.Margin = new Thickness(0, 0, 18, 4); preserve.Tag = PackUpdateChoice.PreservePersonal;
+        author.Margin = new Thickness(0, 0, 0, 4); author.Tag = PackUpdateChoice.UseAuthor;
         choices.Children.Add(preserve); choices.Children.Add(author); text.Children.Add(choices);
         RefreshResult(); text.Children.Add(result);
     }
     private void AddDisabledState(StackPanel text, TChange change, TextBlock? paths) {
-        CheckBox disabled = new() { Content = "更新到新版后继续保持禁用", IsChecked = change.KeepDisabled, FontSize = 12, Margin = new Thickness(0, 8, 0, 0) };
-        disabled.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
-        disabled.ToolTip = "勾选：更新文件但保持禁用；取消勾选：更新后启用新版。目标占用或组合不兼容时不会提交。";
         void RefreshPaths() { if (paths is not null) paths.Text = "本地：" + change.LocalRelative + "\r\n作者目标：" + change.DestinationRelative; }
-        disabled.Checked += (_, _) => { change.KeepDisabled = true; plan.AllowUnverifiedDependencies = false; RefreshPaths(); };
-        disabled.Unchecked += (_, _) => { change.KeepDisabled = false; plan.AllowUnverifiedDependencies = false; RefreshPaths(); };
+        FrameworkElement disabled = view.CheckOption("更新到新版后继续保持禁用", change.KeepDisabled, selected => {
+            change.KeepDisabled = selected; plan.AllowUnverifiedDependencies = false; RefreshPaths();
+        });
+        disabled.Margin = new Thickness(0, 8, 0, 0);
+        disabled.ToolTip = "勾选：更新文件但保持禁用；取消勾选：更新后启用新版。目标占用或组合不兼容时不会提交。";
         text.Children.Add(disabled);
     }
 }

@@ -15,6 +15,8 @@ public sealed class ModpackDialogHost<TButton, TScroll> where TButton : Framewor
     public Action<TButton, bool> HighlightButton = null!;
     public Action<TButton, Action> OnClick = null!;
     public Func<TScroll> CreateScroll = null!;
+    public Func<string, bool, Action, FrameworkElement> CreateRadio = null!;
+    public Func<string, bool, Action<bool>, FrameworkElement> CreateCheck = null!;
     public Func<int> AnimationControl = null!;
     public Action<string> StopAnimation = null!;
     public Action<UIElement, double, int, string> AnimateOpacity = null!;
@@ -42,6 +44,8 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
         TButton button = host.CreateButton(); host.SetButtonText(button, text); button.Tag = key; button.Height = 34; button.Margin = new Thickness(3, 0, 3, 6); button.IsEnabled = enabled;
         host.OnClick(button, () => selectFilter(key)); Filters.Children.Add(button);
     }
+    public FrameworkElement RadioOption(string text, bool selected, Action select) => host.CreateRadio(text, selected, select);
+    public FrameworkElement CheckOption(string text, bool selected, Action<bool> change) => host.CreateCheck(text, selected, change);
     public void BeginFilter(int key) {
         foreach (TButton button in Filters.Children) host.HighlightButton(button, (int)button.Tag == key);
         Rows.Children.Clear(); Scroller.ScrollToTop(); host.StopAnimation(AnimationKey);

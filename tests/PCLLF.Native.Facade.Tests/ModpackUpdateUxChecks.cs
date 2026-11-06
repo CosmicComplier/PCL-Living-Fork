@@ -173,6 +173,7 @@ internal static class ModpackUpdateUxChecks
                 ((IList)Get(plan, "Changes")!).Add(change);
             }
         object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.19.3" });
+        Native.Check(!Descendants((DependencyObject)preview).Any(control => control is RadioButton or CheckBox), "Preview options must use genuine PCL radio/checkbox controls.");
         IDictionary counts = (IDictionary)Get(preview, "Counts")!;
         Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
         Check(Property(preview, "ActiveKind")!.ToString() == "Preserved", "UX-07", "personal changes not visible by default");
@@ -238,7 +239,7 @@ internal static class ModpackUpdateUxChecks
         void Show(string kind) => Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, kind));
         Border Row(string relative) => FileCards(preview).Single(box => box.ToolTip?.ToString()?.Split('\r')[0] == relative);
         string[] Texts(DependencyObject element) => Descendants(element).OfType<TextBlock>().Select(block => block.Text).ToArray();
-        RadioButton[] Radios(Border row) => Descendants(row).OfType<RadioButton>().ToArray();
+        MyRadioBox[] Radios(Border row) => Descendants(row).OfType<MyRadioBox>().ToArray();
 
         Show("Preserved");
         Check(Texts(Row("mods/player-extra.jar")).Any(text => text.Contains("个人新增", StringComparison.Ordinal)) && Radios(Row("mods/player-extra.jar")).Length == 0,
@@ -246,10 +247,10 @@ internal static class ModpackUpdateUxChecks
         Check(Texts(Row("mods/ambiguous.jar")).Any(text => text.Contains("mods/copy-one.jar", StringComparison.Ordinal) && text.Contains("mods/copy-two.jar", StringComparison.Ordinal)) && Radios(Row("mods/ambiguous.jar")).Length == 0,
             "UX-C2", "ambiguous matches hidden or offered an unsafe author selection");
         Check(Radios(Row("mods/unknown.jar")).Length == 0, "UX-C3", "unconfirmed ownership offered an unsafe author selection");
-        RadioButton[] modifiedChoices = Radios(Row("mods/personal.jar"));
-        Check(modifiedChoices.Length == 2 && modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked == true,
+        MyRadioBox[] modifiedChoices = Radios(Row("mods/personal.jar"));
+        Check(modifiedChoices.Length == 2 && modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked == true,
             "UX-C4", "true conflicts must default to preserve and offer per-item choices");
-        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).IsChecked = true;
+        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).Checked = true;
         Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.UseAuthor && (PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.PreservePersonal,
             "UX-C5", "author selection did not reach the original DTO or changed another conflict");
         Show("Updated");
@@ -258,14 +259,14 @@ internal static class ModpackUpdateUxChecks
             "UX-C6", "pure rename must display one logical update with its real local and target paths");
         Show("Preserved");
         modifiedChoices = Radios(Row("mods/personal.jar"));
-        Check(modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).IsChecked == true,
+        Check(modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor)).Checked == true,
             "UX-C7", "changing filters lost the explicit author choice");
-        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked = true;
+        modifiedChoices.Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked = true;
         Check((PackUpdateChoice)Get(modified, "Choice")! == PackUpdateChoice.PreservePersonal, "UX-C8", "returning to preserve did not reach the original DTO");
-        RadioButton disabledAuthor = Radios(Row("mods/disabled.jar")).Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor));
-        Check(Descendants(Row("mods/disabled.jar")).OfType<CheckBox>().Any(state => state.IsChecked == true && state.Content?.ToString()?.Contains("保持禁用", StringComparison.Ordinal) == true),
+        MyRadioBox disabledAuthor = Radios(Row("mods/disabled.jar")).Single(button => Equals(button.Tag, PackUpdateChoice.UseAuthor));
+        Check(Descendants(Row("mods/disabled.jar")).OfType<MyCheckBox>().Any(state => state.Checked == true && state.Text?.Contains("保持禁用", StringComparison.Ordinal) == true),
             "UX-C9", "disabled updates did not make their disabled result explicit");
-        disabledAuthor.IsChecked = true;
+        disabledAuthor.Checked = true;
         Check((PackUpdateChoice)Get(disabled, "Choice")! == PackUpdateChoice.UseAuthor && Property(disabled, "DestinationRelative")!.ToString() == "mods/disabled.jar.disabled",
             "UX-C10", "choosing an author update re-enabled a disabled mod");
         string[] header = Texts((StackPanel)Get(preview, "Header")!);
@@ -380,22 +381,39 @@ internal static class ModpackUpdateUxChecks
             (int)counts[Enum.Parse(kinds, "Preserved")]! == 2, "UX-policy-categories", "Ordinary author changes were mislabeled as conflicts.");
         Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
         Border row = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/normal.jar", StringComparison.Ordinal));
-        Descendants(row).OfType<RadioButton>().Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).IsChecked = true;
+        Descendants(row).OfType<MyRadioBox>().Single(button => Equals(button.Tag, PackUpdateChoice.PreservePersonal)).Checked = true;
         Check(!(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
             Descendants(row).OfType<TextBlock>().Any(text => text.Visibility == Visibility.Visible && text.Text.Contains("不执行作者更新", StringComparison.Ordinal)),
             "UX-policy-preserve", "Keeping an ordinary author version did not affect execution or explain the outcome.");
         Border disabledRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/disabled.jar", StringComparison.Ordinal));
-        CheckBox state = Descendants(disabledRow).OfType<CheckBox>().Single();
-        Check(state.IsChecked == true && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString()!.EndsWith(".disabled", StringComparison.Ordinal),
+        MyCheckBox state = Descendants(disabledRow).OfType<MyCheckBox>().Single();
+        Check(state.Checked == true && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString()!.EndsWith(".disabled", StringComparison.Ordinal),
             "UX-disabled-default", "Disabled author update was not paired with an explicit keep-disabled choice.");
         Render((FrameworkElement)preview, Path.Combine(folder, "author-updates-and-disabled-state.png"), 740, 480);
-        state.IsChecked = false;
-        Check(!(bool)Get(disabled, "KeepDisabled")! && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString() == "mods/disabled.jar",
-            "UX-disabled-enable", "The explicit enabled-state choice did not reach the update plan.");
-        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
-        Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
-        Check(!(bool)Get(disabled, "KeepDisabled")! && !(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
-            (bool)Native.Property(removal.GetType(), "ApplyAuthor").GetValue(removal)!, "UX-policy-independent", "Filter changes reset choices or changed unrelated author actions.");
+        System.Windows.Application app = System.Windows.Application.Current;
+        Window? previousMain = app.MainWindow; ShutdownMode previousShutdown = app.ShutdownMode;
+        Window window = new() { Content = preview, Width = 740, Height = 480, Left = -30000, Top = -30000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+        try
+        {
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            window.Show(); window.UpdateLayout();
+            Check(state.IsLoaded, "UX-native-loaded", "Native checkbox interactions require a live offscreen presentation source.");
+            state.SetChecked(false, true);
+            Check(!(bool)Get(disabled, "KeepDisabled")! && Native.Property(disabled.GetType(), "DestinationRelative").GetValue(disabled)!.ToString() == "mods/disabled.jar",
+                "UX-disabled-enable", "The explicit enabled-state choice did not reach the update plan.");
+            Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
+            Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Updated"));
+            Check(!(bool)Get(disabled, "KeepDisabled")! && !(bool)Native.Property(update.GetType(), "ApplyAuthor").GetValue(update)! &&
+                (bool)Native.Property(removal.GetType(), "ApplyAuthor").GetValue(removal)!, "UX-policy-independent", "Filter changes reset choices or changed unrelated author actions.");
+            disabledRow = FileCards(preview).Single(card => card.ToolTip!.ToString()!.StartsWith("mods/disabled.jar", StringComparison.Ordinal));
+            Check(!Descendants(disabledRow).OfType<MyCheckBox>().Single().Checked,
+                "UX-native-restored", "Native checkbox did not restore the explicit choice after changing filters.");
+        }
+        finally
+        {
+            window.Content = null; window.Close();
+            app.MainWindow = previousMain; app.ShutdownMode = previousShutdown;
+        }
     }
     private static object Construct(string name, params object?[] values)
     {
