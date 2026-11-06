@@ -180,7 +180,7 @@ internal static class ModpackUpdateUxChecks
             object value = Enum.Parse(kinds, kind);
             Check((int)counts[value]! == count, "UX-08:" + kind, "incorrect category count");
             Native.Call(preview.GetType(), "ShowKind", preview, value);
-            Border[] boxes = ((StackPanel)Get(preview, "Rows")!).Children.OfType<Border>().ToArray();
+            Border[] boxes = FileCards(preview);
             Check(boxes.Length == count && boxes.All(box => box.BorderThickness.Left == 1 && !string.IsNullOrWhiteSpace(box.ToolTip?.ToString())), "UX-09:" + kind, "file border or full path tooltip missing");
         }
         Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, "Preserved"));
@@ -235,7 +235,7 @@ internal static class ModpackUpdateUxChecks
         object preview = Construct("ModpackUpdatePreviewView", plan, "1.21.11", new Dictionary<ModLoaders, string> { [ModLoaders.Fabric] = "0.18.4" });
         Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
         void Show(string kind) => Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(kinds, kind));
-        Border Row(string relative) => ((StackPanel)Get(preview, "Rows")!).Children.OfType<Border>().Single(box => box.ToolTip?.ToString()?.Split('\r')[0] == relative);
+        Border Row(string relative) => FileCards(preview).Single(box => box.ToolTip?.ToString()?.Split('\r')[0] == relative);
         string[] Texts(DependencyObject element) => Descendants(element).OfType<TextBlock>().Select(block => block.Text).ToArray();
         RadioButton[] Radios(Border row) => Descendants(row).OfType<RadioButton>().ToArray();
 
@@ -279,6 +279,8 @@ internal static class ModpackUpdateUxChecks
         Console.WriteLine("PASS native modpack-update ownership preview: UX-C1..C13 (personal additions, one pure-rename row, independent choices, disabled state, ambiguity and runtime warnings).");
     }
 
+    private static Border[] FileCards(object preview) => ((StackPanel)Get(preview, "Rows")!).Children.OfType<FrameworkElement>()
+        .SelectMany(element => element is Border card ? new[] { card } : element is Grid grid ? grid.Children.OfType<Border>() : Enumerable.Empty<Border>()).ToArray();
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         yield return root;
@@ -312,6 +314,8 @@ internal static class ModpackUpdateUxChecks
         preview.Width = 460; preview.MaxHeight = 240;
         ScrollViewer scroll = (ScrollViewer)Get(preview, "Scroller")!;
         Render(preview, Path.Combine(folder, "long-notices-collapsed.png"), 470, 250, () => {
+            Grid cards = ((StackPanel)Get(preview, "Rows")!).Children.OfType<Grid>().Single();
+            Native.Check(cards.ColumnDefinitions.Count == 1, "Narrow conflict cards did not return to one column.");
             Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0,
                 "Long update notices consumed the fixed header and starved the file-list scroll viewport: viewport=" + scroll.ViewportHeight);
             double collapsed = scroll.ScrollableHeight;
@@ -336,6 +340,13 @@ internal static class ModpackUpdateUxChecks
             Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0, "Actual modal wrapper removed the file-list viewport.");
             ScrollViewer outer = (ScrollViewer)modal.FindName("PanCaption");
             Native.Check(Math.Abs(preview.ActualWidth - outer.ViewportWidth) <= 1, "Preview content left unused horizontal space inside the modal.");
+            Grid cards = ((StackPanel)Get(preview, "Rows")!).Children.OfType<Grid>().Single();
+            Border[] boxes = cards.Children.Cast<Border>().ToArray();
+            Native.Check(cards.ColumnDefinitions.Count == 2 && boxes.Length == 36, "Wide conflict preview did not use two columns for all mods.");
+            Rect left = boxes[0].TransformToAncestor(preview).TransformBounds(new Rect(boxes[0].RenderSize));
+            Rect right = boxes[1].TransformToAncestor(preview).TransformBounds(new Rect(boxes[1].RenderSize));
+            Native.Check(Math.Abs(left.Top - right.Top) <= 1 && left.Right <= right.Left + 1 && right.Right <= preview.ActualWidth + 1,
+                "Conflict cards overlapped or escaped their two-column viewport.");
             Native.Check(outer.ScrollableHeight == 0, "The disabled modal wrapper can intercept the inner list's mouse wheel.");
             MouseWheelEventArgs wheel = new(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = UIElement.PreviewMouseWheelEvent };
             scroll.RaiseEvent(wheel);

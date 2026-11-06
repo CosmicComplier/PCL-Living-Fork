@@ -78,6 +78,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(description, 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 10)));
         foreach (var group in Changes.Where(item => Classify(item) == value).GroupBy(item => FolderName(item.Relative!)).OrderBy(item => item.Key)) {
             view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(group.Key + "（" + group.Count() + "）", 13, true, margin: new Thickness(4, 3, 7, 9)));
+            List<Border> cards = new();
             foreach (TChange change in group.OrderBy(item => item.Relative, StringComparer.OrdinalIgnoreCase)) {
                 StackPanel text = new(); TextBlock name = ModpackDialogController<TButton, TScroll>.Label(Path.GetFileName(change.Relative), 13, true);
                 name.TextWrapping = TextWrapping.NoWrap; name.TextTrimming = TextTrimming.CharacterEllipsis; text.Children.Add(name);
@@ -91,10 +92,29 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                     text.Children.Add(ModpackDialogController<TButton, TScroll>.Label(change.Reason, 12, false, "ColorBrushGray2", new Thickness(0, 4, 0, 0)));
                 if (change.Conflict && !change.DisplayOnly && change.AllowAuthor && change.Ownership != PackUpdateOwnership.Ambiguous)
                     AddChoice(text, change);
-                Border box = ModpackDialogController<TButton, TScroll>.Frame(text); box.ToolTip = change.Relative + "\r\n" + change.LocalRelative + "\r\n" + change.Reason; view.Rows.Children.Add(box);
+                Border box = ModpackDialogController<TButton, TScroll>.Frame(text); box.ToolTip = change.Relative + "\r\n" + change.LocalRelative + "\r\n" + change.Reason; cards.Add(box);
             }
+            if (value == 3 && group.All(item => item.Relative!.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))) view.Rows.Children.Add(ConflictGrid(cards));
+            else foreach (Border card in cards) view.Rows.Children.Add(card);
         }
         if (counts[Kind(value)] == 0) view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label("此分类没有文件。", 13, margin: new Thickness(8)));
+    }
+    private static Grid ConflictGrid(List<Border> cards) {
+        Grid grid = new();
+        foreach (Border card in cards) grid.Children.Add(card);
+        int columns = 0;
+        void ArrangeCards(double width) {
+            int count = width >= 600 ? 2 : 1;
+            if (columns == count) return;
+            columns = count;
+            grid.ColumnDefinitions.Clear(); grid.RowDefinitions.Clear();
+            for (int column = 0; column < count; column++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int row = 0; row < (cards.Count + count - 1) / count; row++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int index = 0; index < cards.Count; index++) { Grid.SetColumn(cards[index], index % count); Grid.SetRow(cards[index], index / count); }
+        }
+        ArrangeCards(0);
+        grid.SizeChanged += (_, args) => ArrangeCards(args.NewSize.Width);
+        return grid;
     }
     private void AddNotices(string title, IEnumerable<string> notices) {
         string[] lines = notices.Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray();
