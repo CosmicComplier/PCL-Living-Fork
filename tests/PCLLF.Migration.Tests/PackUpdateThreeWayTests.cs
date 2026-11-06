@@ -23,6 +23,7 @@ internal static class PackUpdateThreeWayTests {
         yield return ("pack update absent optional selections survive recording and two updates", OptionalSelections);
         yield return ("pack update first recording preserves missing, modified and disabled author declarations", RecordAuthorDeclarations);
         yield return ("pack update hashes retain their algorithm and project identity is distinct from file version", HashAndIdentityContracts);
+        yield return ("pack update retains project identities for historical Modrinth version-name URLs", LegacyVersionLinks);
         yield return ("pack update incomplete schema one records require a warning or the correct old package", LegacyBaseline);
         yield return ("pack update unknown metadata cannot alone establish a duplicate mod", UnknownMetadata);
         yield return ("pack update download failure, cancellation and corrupted payloads leave the instance intact", DownloadFailures);
@@ -34,6 +35,24 @@ internal static class PackUpdateThreeWayTests {
         yield return ("pack update canceled planning and hashing preserve the instance and throw cancellation", PlanningCancellation);
     }
 
+    private static void LegacyVersionLinks() {
+        using Context f = new();
+        Spec mod = new("mods/legacy.jar", Fabric("legacy", "1"), "oldproject");
+        foreach (string segment in new[] { "1.1.1+1.17", "1.1.1%2B1.17", "OldId123" }) {
+            f.Package([mod]);
+            using (ZipArchive zip = ZipFile.Open(f.LastArchive!, ZipArchiveMode.Update)) {
+                ZipArchiveEntry entry = zip.GetEntry("modrinth.index.json")!;
+                JObject json;
+                using (StreamReader input = new(entry.Open())) json = JObject.Parse(input.ReadToEnd());
+                json["files"]![0]!["downloads"] = new JArray("https://cdn.modrinth.com/data/oldproject/versions/" + segment + "/legacy.jar");
+                entry.Delete();
+                using StreamWriter output = new(zip.CreateEntry("modrinth.index.json").Open()); output.Write(json.ToString());
+            }
+            var declared = f.Engine.ReadPackage(f.LastArchive!, f.StagePath(), CancellationToken.None).Files[mod.Relative];
+            Require(declared.Identity == "modrinth:oldproject", "A historical version-name URL lost its independent project identity.");
+            Require(declared.FileIdentity == (segment == "OldId123" ? "modrinth:OldId123" : null), "A version-name URL fabricated an exact platform file identity.");
+        }
+    }
     private static void SharedDependencies() {
         using Context f = new();
         Spec ae2 = new("mods/appliedenergistics2-19.2.17.jar", Neo("ae2", "19.2.17"), "ae2project");

@@ -129,8 +129,14 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                     value.OptionalFile = item["env"]?["client"]?.ToString() == "optional";
                     value.Urls = ((JArray)item["downloads"]!).Select(url => url.ToString()).ToList();
                     foreach (string url in value.Urls) {
-                        Match match = Regex.Match(url, @"\Ahttps://cdn\.modrinth\.com/data/([A-Za-z0-9]+)/versions/([A-Za-z0-9]+)/");
-                        if (match.Success) { value.Identity = "modrinth:" + match.Groups[1].Value; value.FileIdentity = "modrinth:" + match.Groups[2].Value; break; }
+                        Match project = Regex.Match(url, @"\Ahttps://cdn\.modrinth\.com/data/([A-Za-z0-9]+)/versions/");
+                        if (!project.Success) continue;
+                        value.Identity = "modrinth:" + project.Groups[1].Value;
+                        // Historical URLs also use version names containing dots, plus signs or escapes.
+                        // Project ownership remains known even when no exact platform version ID is available.
+                        Match version = Regex.Match(url, @"\Ahttps://cdn\.modrinth\.com/data/[A-Za-z0-9]+/versions/([A-Za-z0-9]+)/");
+                        if (version.Success) value.FileIdentity = "modrinth:" + version.Groups[1].Value;
+                        break;
                     }
                     AddFile(result, value);
                 }
