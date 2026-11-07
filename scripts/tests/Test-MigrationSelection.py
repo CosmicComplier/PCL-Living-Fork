@@ -49,15 +49,17 @@ def main() -> int:
                                 capture_output=True, text=True, check=True, timeout=30)
         return json.loads(result.stdout)
 
-    def expect(plan: dict, scope: str, native: bool, label: str, paths: list[str] | None = None) -> None:
+    def expect(plan: dict, scope: str, native: bool, label: str, paths: list[str] | None = None, *, docs_only: bool | None = None) -> None:
         nonlocal count
-        require(set(plan) == set(FIELDS) | {"native_run", "reasons", "changed_paths"}, label + ": job/report output keys changed")
-        for name in (*BOOLEAN_FIELDS, "native_run"):
+        require(set(plan) == set(FIELDS) | {"docs_only", "native_run", "reasons", "changed_paths"}, label + ": job/report output keys changed")
+        for name in (*BOOLEAN_FIELDS, "native_run", "docs_only"):
             require(type(plan[name]) is bool, label + ": non-boolean job flag " + name)
         expected = GOLD["scopes"][scope]
         actual = {name: plan[name] for name in FIELDS}
         require(actual == expected, label + ": changed legacy scope\nexpected=" + json.dumps(expected, ensure_ascii=True, sort_keys=True) + "\nactual=" + json.dumps(actual, ensure_ascii=True, sort_keys=True))
         require(plan["native_run"] is native, label + ": native dependency lost or added to unrelated checks")
+        if docs_only is not None:
+            require(plan["docs_only"] is docs_only, label + ": wrong documentation-only decision")
         if paths is not None:
             require(plan["changed_paths"] == paths, label + ": input paths were lost or rewritten")
         count += 1
@@ -80,6 +82,12 @@ def main() -> int:
     mixed = ["modern/Main/FormMain.xaml.cs", "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb"]
     expect(cli(mixed), "world-backups", True, "mixed native and legacy consumers", mixed)
     expect(cli(extra=["--full"]), "complete", True, "explicit complete checkpoint", [])
+    for path in ("README.md", "docs/BUILDING_MODERN.md", "docs/assets/calendar-dark.svg", "modern/Main/SOURCE_PROVENANCE.md"):
+        expect(cli([path]), "no-checks", False, "documentation whitelist: " + path, [path], docs_only=True)
+    for path in ("docs/assets/Generate-ReadmeCalendar.py", "docs/migration/data.json", "docs/AGENTS.md", "docs/../PCLCS/input.md", "docs/a\nREADME.md"):
+        expect(cli([path]), "complete", True, "code or ambiguous doc lookalike: " + path, [path], docs_only=False)
+    expect(cli(["README.md"], extra=["--full"]), "complete", True, "manual full overrides docs whitelist", ["README.md"], docs_only=False)
+    expect(cli(["README.md", "modern/Main/Fixture.cs"]), "no-checks", True, "mixed docs and native input retains product validation", ["README.md", "modern/Main/Fixture.cs"], docs_only=False)
     for path, scope, native in (
         ("PCLCS/Resources/LegacyModFavorites.cs", "mod-favorites-tests", True),
         ("tests/PCLLF.Migration.Tests/LegacyModFavoritesTests.cs", "mod-favorites-tests", False),
@@ -126,11 +134,11 @@ def main() -> int:
         git("commit", "--quiet", "-m", "selection fixture native input")
         native_head = git("rev-parse", "HEAD")
 
-        def event(data: dict, event_name: str, *, scope: str, native: bool, label: str, paths: list[str], ref: str | None = None) -> None:
+        def event(data: dict, event_name: str, *, scope: str, native: bool, label: str, paths: list[str], ref: str | None = None, docs_only: bool | None = None) -> None:
             event_file.write_text(json.dumps(data), encoding="utf-8")
             environment = ENV | {"GITHUB_EVENT_NAME": event_name, "GITHUB_REF": ref or "refs/heads/" + BRANCH}
             plan = cli(extra=["--event-file", str(event_file)], cwd=fixture, env=environment)
-            expect(plan, scope, native, label, paths)
+            expect(plan, scope, native, label, paths, docs_only=docs_only)
 
         event({"before": initial, "after": native_head}, "push", scope="no-checks", native=True,
               label="actual push git diff selects only native input", paths=[native_path])
@@ -152,7 +160,7 @@ def main() -> int:
         event({"before": initial, "after": native_head}, "push", scope="complete", native=True,
               label="main push runs the complete product and migration graphs", paths=[], ref="refs/heads/main")
         event({"before": native_head, "after": native_head}, "push", scope="complete", native=True,
-              label="main empty or documentation-only push cannot skip the product gate", paths=[], ref="refs/heads/main")
+              label="main empty git diff fails closed to complete product checks", paths=[], ref="refs/heads/main")
         event({"pull_request": {"base": {"ref": "main", "sha": diverged_base}, "head": {"sha": native_head}}},
               "pull_request", scope="complete", native=True, label="main PR runs complete acceptance instead of affected-only checks", paths=[], ref="refs/pull/7/merge")
         event({"merge_group": {"base_ref": "refs/heads/main", "base_sha": initial, "head_sha": native_head}},
@@ -166,6 +174,31 @@ def main() -> int:
               label="initial diff base fails closed", paths=[])
         event({"before": "f" * 40, "after": native_head}, "push", scope="complete", native=True,
               label="unavailable git object fails closed", paths=[])
+        # Run actual main push, PR and merge-queue comparisons over docs-only
+        # commits, including deletion and a code-to-doc rename.
+        git("read-tree", native_head)
+        (fixture / "docs/fixture.md").write_text("Updated document fixture.\n", encoding="utf-8")
+        git("add", "docs/fixture.md")
+        docs_head = git("commit-tree", git("write-tree"), "-p", native_head, "-m", "docs-only fixture")
+        event({"before": native_head, "after": docs_head}, "push", scope="no-checks", native=False,
+              label="main docs-only push skips product execution", paths=["docs/fixture.md"], ref="refs/heads/main", docs_only=True)
+        event({"pull_request": {"base": {"ref": "main", "sha": native_head}, "head": {"sha": docs_head}}}, "pull_request", scope="no-checks", native=False,
+              label="main docs-only PR skips product execution", paths=["docs/fixture.md"], ref="refs/pull/8/merge", docs_only=True)
+        event({"merge_group": {"base_ref": "refs/heads/main", "base_sha": native_head, "head_sha": docs_head}}, "merge_group", scope="no-checks", native=False,
+              label="main docs-only merge queue skips product execution", paths=["docs/fixture.md"], docs_only=True)
+        git("update-index", "--force-remove", "docs/fixture.md")
+        deleted_doc = git("commit-tree", git("write-tree"), "-p", docs_head, "-m", "delete retired documentation fixture")
+        event({"before": docs_head, "after": deleted_doc}, "push", scope="no-checks", native=False,
+              label="deleted documentation remains docs-only", paths=["docs/fixture.md"], ref="refs/heads/main", docs_only=True)
+        git("read-tree", native_head)
+        git("mv", native_path, "docs/renamed.md")
+        renamed = git("commit-tree", git("write-tree"), "-p", native_head, "-m", "code renamed into documentation fixture")
+        event({"before": native_head, "after": renamed}, "push", scope="complete", native=True,
+              label="main code-to-doc rename cannot bypass product validation", paths=[], ref="refs/heads/main", docs_only=False)
+        event({"before": native_head, "after": renamed}, "push", scope="no-checks", native=True,
+              label="rename diff retains both old code and new doc paths", paths=["docs/renamed.md", native_path], docs_only=False)
+        event({"before": native_head, "after": docs_head}, "push", scope="complete", native=True,
+              label="docs cannot bypass an unknown branch context", paths=[], ref="refs/heads/unrecognized", docs_only=False)
         event_file.write_text("{not-json", encoding="utf-8")
         expect(cli(extra=["--event-file", str(event_file)], cwd=fixture, env=ENV | {"GITHUB_EVENT_NAME": "push", "GITHUB_REF": "refs/heads/" + BRANCH}),
                "complete", True, "malformed event fails closed", [])
@@ -177,8 +210,8 @@ def main() -> int:
         expect(plan, "no-checks", True, "real newline cannot inject a GitHub job output", [untrusted])
         lines = output.read_text(encoding="utf-8").splitlines()
         values = dict(line.split("=", 1) for line in lines)
-        require(len(lines) == len(FIELDS) + 1 and set(values) == set(FIELDS) | {"native_run"}, "Untrusted path escaped fixed-name GitHub outputs.")
-        require({name: json.loads(value) for name, value in values.items()} == {name: plan[name] for name in (*FIELDS, "native_run")}, "GitHub outputs differ from the actual selected scope.")
+        require(len(lines) == len(FIELDS) + 2 and set(values) == set(FIELDS) | {"docs_only", "native_run"}, "Untrusted path escaped fixed-name GitHub outputs.")
+        require({name: json.loads(value) for name, value in values.items()} == {name: plan[name] for name in (*FIELDS, "native_run", "docs_only")}, "GitHub outputs differ from the actual selected scope.")
         require(json.loads(report.read_text(encoding="utf-8")) == plan, "Saved selection report differs from stdout.")
 
     print("PASS actual migration selection checks: " + str(count) + "; no product build/run", flush=True)

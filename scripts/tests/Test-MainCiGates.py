@@ -52,7 +52,7 @@ def main() -> None:
     for workflow_name, gate_name, selection, validation in (
         ("native-main.yml", "gate", "select", "native"),
         ("migration-validation.yml", "gate", "select", "validate"),
-        ("modern-wpf.yml", "gate", None, "modern-wpf"),
+        ("modern-wpf.yml", "gate", "select", "modern-wpf"),
     ):
         workflow = yaml.load((ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         gate = workflow["jobs"][gate_name]
@@ -65,6 +65,24 @@ def main() -> None:
         if selection:
             assert all(step["env"]["SELECTION_RESULT"] == "${{ needs.select.result }}" for step in steps), workflow_name
         checks += 1
+    # Required check names still complete for docs-only PRs. Only the real
+    # product matrices are skipped; each selection job validates documentation.
+    modern = yaml.load((ROOT / ".github/workflows/modern-wpf.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    assert modern["jobs"]["modern-wpf"]["if"] == "needs.select.outputs.docs_only != 'true'"
+    assert "concurrency" not in modern and "concurrency" in modern["jobs"]["modern-wpf"], "Docs-only selection must not cancel real WPF work"
+    assert modern["jobs"]["gate"]["steps"][-1]["env"]["VALIDATION_SELECTED"] == "${{ needs.select.outputs.docs_only != 'true' }}"
+    for name in ("native-main.yml", "migration-validation.yml", "modern-wpf.yml"):
+        workflow = yaml.load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        steps = workflow["jobs"]["select"]["steps"]
+        assert any(step.get("if") == "steps.scope.outputs.docs_only == 'true'" and "Check-Documentation.py" in step.get("run", "") for step in steps), name
+        assert any(step.get("with", {}).get("fetch-depth") == "0" for step in steps), (name, "Docs-only detection needs complete diff history")
+        checks += 1
+    cnb = yaml.load((ROOT / ".github/workflows/cnb-checks.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    cnb_steps = cnb["jobs"]["check"]["steps"]
+    assert any(step.get("with", {}).get("fetch-depth") == "0" for step in cnb_steps)
+    assert any(step.get("if") == "steps.scope.outputs.docs_only == 'true'" and "Check-Documentation.py" in step.get("run", "") for step in cnb_steps)
+    assert all(step.get("if") == "steps.scope.outputs.docs_only != 'true'" for step in cnb_steps if step.get("run", "").startswith("python scripts/Test-Cnb"))
+    checks += 1
     for selection, selected, validation, passed in (
         ("success", "true", "success", True),
         ("success", "true", "failure", False),

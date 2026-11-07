@@ -25,11 +25,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Select checks from the actual changed paths
+        id: scope
+        run: python scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT"
+      - name: Validate documentation-only changes
+        if: steps.scope.outputs.docs_only == 'true'
+        run: python scripts/Check-Documentation.py
       - name: Verify canonical artifacts and stable versus preview manifests
+        if: steps.scope.outputs.docs_only != 'true'
         run: python scripts/Test-CnbMirror.py
       - name: Verify receipt compatibility idempotence and bounded triggers
+        if: steps.scope.outputs.docs_only != 'true'
         run: python scripts/Test-CnbTrigger.py

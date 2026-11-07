@@ -13,12 +13,31 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}
-  cancel-in-progress: true
-
 jobs:
+  select:
+    name: Select WPF validation scope
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select checks from the actual changed paths
+        id: scope
+        run: python3 scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT"
+      - name: Validate documentation-only changes
+        if: steps.scope.outputs.docs_only == 'true'
+        run: python3 scripts/Check-Documentation.py
+
   modern-wpf:
+    needs: select
+    if: needs.select.outputs.docs_only != 'true'
+    # A skipped documentation-only matrix must not cancel an older real check.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'changes' }}-${{ matrix.configuration }}
+      cancel-in-progress: true
     name: Modern WPF (${{ matrix.configuration }})
     runs-on: windows-latest
     timeout-minutes: 20
@@ -102,7 +121,7 @@ jobs:
   gate:
     name: Modern WPF gate
     if: always()
-    needs: [modern-wpf]
+    needs: [select, modern-wpf]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,7 +131,7 @@ jobs:
           persist-credentials: false
       - name: Require the actual selected validation result
         env:
-          SELECTION_RESULT: success
-          VALIDATION_SELECTED: 'true'
+          SELECTION_RESULT: ${{ needs.select.result }}
+          VALIDATION_SELECTED: ${{ needs.select.outputs.docs_only != 'true' }}
           VALIDATION_RESULT: ${{ needs.modern-wpf.result }}
         run: python scripts/Check-CiGate.py

@@ -432,7 +432,7 @@
       "native": false
     },
     {
-      "path": "docs/MIGRATION_STATUS.md",
+      "path": "docs/BUILDING_MODERN.md",
       "scope": "no-checks",
       "native": false
     },

@@ -36,6 +36,9 @@ jobs:
       - name: Select checks from changed paths and known dependencies
         id: scope
         run: python3 scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT" --report artifacts/migration/check-selection.json
+      - name: Validate documentation-only changes
+        if: steps.scope.outputs.docs_only == 'true'
+        run: python3 scripts/Check-Documentation.py
       - name: Upload selected scope
         uses: actions/upload-artifact@v7
         with:

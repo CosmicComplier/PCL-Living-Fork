@@ -27,10 +27,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Verify the actual selector and preserved routing scopes
-        run: python3 scripts/tests/Test-MigrationSelection.py
+        run: |
+          python3 scripts/tests/Test-MigrationSelection.py
+          python3 scripts/tests/Test-Documentation.py
       - name: Select native checks using actual changed paths
         id: scope
         run: python3 scripts/Select-MigrationChecks.py --event-file "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT" --report artifacts/native-main/check-selection.json
+      - name: Validate documentation-only changes without running the product
+        if: steps.scope.outputs.docs_only == 'true'
+        run: python3 scripts/Check-Documentation.py
       - name: Setup Python for isolated native build-tool regressions
         if: steps.scope.outputs.native_run == 'true'
         uses: actions/setup-python@v6
