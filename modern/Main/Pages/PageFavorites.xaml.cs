@@ -10,7 +10,7 @@ public partial class PageFavorites : MyPageRight, IRefreshable {
     private bool reading;
     public PageFavorites() {
         InitializeComponent();
-        Content.UseFavorites(ResourceFavorites.Store, Refresh, entries => ModMain.FrmFavoritesLeft?.RefreshFavoriteCounts(entries));
+        Content.UseFavorites(ResourceFavorites.Store, Refresh);
         ResourceFavorites.Observe(this, (_, _) => Content.FavoritesChanged());
         Loaded += (_, _) => Refresh();
     }
