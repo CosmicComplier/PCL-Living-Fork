@@ -281,7 +281,7 @@ try{
    foreach($requiredGroup in @('world-metadata','local-data','personal-options','keybindings','quick-play','resource-entry','resource-paths','resource-files','resource-metadata')){if(@($selection.groups) -notcontains $requiredGroup){throw "Complete checkpoint omitted $requiredGroup"}}
    foreach($required in @('Test-Release','Test-ReviewFixes','Test-ModDependencies','Test-IconCompatibility')){if(@($selection.windows_scripts) -notcontains $required){throw "Complete checkpoint omitted $required"}}
   }
-  $documentation=Get-CiSelection @('--path','docs/MIGRATION_GOAL.md')
+  $documentation=Get-CiSelection @('--path','docs/BUILDING_MODERN.md')
   if($documentation.full -or $documentation.product_build -or $documentation.migration_run -or @($documentation.groups).Count -ne 0 -or @($documentation.windows_scripts).Count -ne 0){throw 'Documentation-only change selected product regression work'}
   Write-Output 'PASS: push/PR path coverage includes tracked product, submodule and solution inputs; selection preserves metadata consumers, unknown/full gates and documentation isolation.'
  }

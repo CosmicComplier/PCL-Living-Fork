@@ -51,7 +51,7 @@ internal sealed class ReviewFixesWorkflowChecks(Action<int, bool, string?> asser
             foreach (string required in new[] { "world-metadata", "local-data", "personal-options", "keybindings", "quick-play", "resource-entry", "resource-paths", "resource-files", "resource-metadata" }) C(281, groups.Contains(required, StringComparer.Ordinal), required);
             foreach (string required in new[] { "Test-Release", "Test-ReviewFixes", "Test-ModDependencies", "Test-IconCompatibility" }) C(282, consumers.Contains(required, StringComparer.Ordinal), required);
         }
-        JsonElement documentation = Selection("--path", "docs/MIGRATION_GOAL.md");
+        JsonElement documentation = Selection("--path", "docs/BUILDING_MODERN.md");
         C(285, !Flag(documentation, "full") && !Flag(documentation, "product_build") && !Flag(documentation, "migration_run") && Names(documentation, "groups").Length == 0 && Names(documentation, "windows_scripts").Length == 0);
         Console.WriteLine("PASS review Workflow SOURCE/CLI ONLY: actual same-checkout push/PR patterns over all original tracked/future inputs, real metadata/full/unknown/docs selector results. This section is not counted as Main/Windows runtime equivalence.");
     }

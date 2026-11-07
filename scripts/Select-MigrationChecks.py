@@ -16,6 +16,34 @@ import sys
 
 MAIN_BRANCH = "main"
 MIGRATION_BRANCH = "migration/csharp-modern-dotnet"
+DOCUMENT_FILES = {
+    "README.md", "NOTICE.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
+    "Plain Craft Launcher 2/Images/Branding/DESIGN.md",
+    "modern/Main/SOURCE_PROVENANCE.md", "modern/BuildEvents/tests/README.md",
+    "modern/BuildResources/README.md", "modern/BuildResources/tests/README.md",
+    "tests/PCLLF.Native.Facade.Tests/README.md",
+}
+
+
+def is_documentation_path(name: str) -> bool:
+    # Only repository-relative, unambiguous paths enter the fast path. Files
+    # under docs/ are not automatically docs: fixtures and generators are code.
+    if not isinstance(name, str) or "\\" in name or any(ord(char) < 32 for char in name):
+        return False
+    if any(part in {"", ".", ".."} for part in name.split("/")):
+        return False
+    if name.rsplit("/", 1)[-1].casefold() in {"agents.md", "skill.md"}:
+        return False
+    if name in DOCUMENT_FILES:
+        return True
+    suffix = Path(name).suffix.lower()
+    return (name.startswith("docs/") and suffix in {".md", ".mdx", ".rst", ".adoc"}) or (
+        name.startswith("docs/assets/") and suffix in {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif"})
+
+
+def documentation_only(paths: list[str]) -> bool:
+    return bool(paths) and all(is_documentation_path(name) for name in paths)
+
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
           "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation")
 # Resources is a fixed feature alias, not every group appended after the first five.
@@ -216,6 +244,9 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
     cnb_tooling_change = False
     reasons = [reason]
     unknown = []
+    docs_only = not full and documentation_only(paths)
+    if docs_only:
+        reasons.append("documentation-only whitelist: lightweight document validation, no product execution")
 
     def include(selected, checks, *, io_oracle=False, build=True):
         nonlocal oracle, product
@@ -225,6 +256,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         product |= build
 
     for name in paths:
+        if docs_only:
+            continue
         # Product directories are considered before documentation extensions.
         leaf = name.rsplit("/", 1)[-1]
         # Common source changes affect the modern product as well as whatever
@@ -381,7 +414,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include((*RESOURCE_GROUPS, "quick-play", "local-data", "personal-options", "keybindings", "world-metadata"), STORE_CHECKS, io_oracle=True)
         elif name.startswith(("PCLCS/", "Plain Craft Launcher 2/", "MeloongCore")) or name == ".gitmodules":
             unknown.append(name)
-        elif name.startswith("docs/") or name.lower().endswith(".md") or name in {"LICENCE", "LICENSE", ".gitignore"}:
+        elif is_documentation_path(name) or name in {"LICENCE", "LICENSE", ".gitignore"}:
             pass
         else:
             unknown.append(name)
@@ -399,7 +432,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         oracle = inventory = product = native = True
     # Any product build retains credential, legacy-update build/handoff and artifact gates in build.yml.
     selected_scripts = [name for name in SCRIPTS if name in scripts]
-    return {"full": full, "native_run": native, "product_build": product, "migration_run": bool(groups or oracle or inventory),
+    return {"full": full, "docs_only": docs_only, "native_run": native, "product_build": product, "migration_run": bool(groups or oracle or inventory),
             "groups": [name for name in GROUPS if name in groups], "windows_scripts": selected_scripts,
             "world_checks": bool(scripts & BULK_CHECKS), "engine_only": "Test-WorldBackups" in scripts,
             "oracle": oracle, "inventory": inventory or full, "reasons": reasons, "changed_paths": paths}
@@ -413,25 +446,27 @@ def event_selection(event_file: str) -> tuple[list[str], bool, str]:
     pr = event.get("pull_request")
     if event_name == "workflow_dispatch":
         return [], True, "manual complete checkpoint"
-    if event_name == "merge_group":
-        return [], True, "merge queue combined snapshot: complete checkpoint"
-    if event_name not in {"push", "pull_request"}:
+    if event_name not in {"push", "pull_request", "merge_group"}:
         return [], True, "unknown event: complete checkpoint"
-    if event_name == "pull_request":
+    if event_name == "merge_group":
+        group = event.get("merge_group")
+        if not isinstance(group, dict) or group.get("base_ref") != "refs/heads/main":
+            return [], True, "malformed merge queue context: complete checkpoint"
+        branch = MAIN_BRANCH
+        base, head, separator = group.get("base_sha"), group.get("head_sha"), ".."
+    elif event_name == "pull_request":
         if not isinstance(pr, dict) or not isinstance(pr.get("base"), dict) or not isinstance(pr.get("head"), dict):
             return [], True, "malformed PR context: complete checkpoint"
         branch = pr["base"].get("ref")
     else:
         branch = os.environ.get("GITHUB_REF", event.get("ref", "")).removeprefix("refs/heads/")
-    if branch == MAIN_BRANCH:
-        return [], True, "main integration requires complete product and migration checks"
-    if branch != MIGRATION_BRANCH:
+    if branch not in {MAIN_BRANCH, MIGRATION_BRANCH}:
         return [], True, "unrecognized integration context: complete checkpoint"
     if event_name == "pull_request":
         base, head = pr.get("base", {}).get("sha"), pr.get("head", {}).get("sha")
         # PR comparison includes only the proposed delta, not unrelated base commits.
         separator = "..."
-    else:
+    elif event_name == "push":
         base, head, separator = event.get("before"), event.get("after"), ".."
     if not all(isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{40}", value) and set(value) != {"0"} for value in (base, head)):
         return [], True, "missing/initial diff base: complete checkpoint"
@@ -439,7 +474,12 @@ def event_selection(event_file: str) -> tuple[list[str], bool, str]:
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if process.returncode:
         return [], True, "diff unavailable: complete checkpoint"
-    return [value.decode("utf-8") for value in process.stdout.split(b"\0") if value], False, "changed paths"
+    paths = [value.decode("utf-8") for value in process.stdout.split(b"\0") if value]
+    if documentation_only(paths):
+        return paths, False, "verified documentation-only git diff"
+    if branch == MAIN_BRANCH:
+        return [], True, "main code, mixed or empty diff: complete product and migration checks"
+    return paths, False, "changed paths"
 
 
 def main() -> int:
@@ -467,7 +507,7 @@ def main() -> int:
         report.write_text(serialized, encoding="utf-8")
     if args.github_output:
         with Path(args.github_output).open("a", encoding="utf-8", newline="\n") as output:
-            for name in ("full", "native_run", "product_build", "migration_run", "groups", "windows_scripts", "world_checks", "engine_only", "oracle", "inventory"):
+            for name in ("full", "docs_only", "native_run", "product_build", "migration_run", "groups", "windows_scripts", "world_checks", "engine_only", "oracle", "inventory"):
                 output.write(name + "=" + json.dumps(plan[name], separators=(",", ":")) + "\n")
     print(serialized, end="")
     return 0
