@@ -159,6 +159,7 @@ namespace PCL
             Changes = Controller.Changes;
         }
         internal System.Threading.Tasks.Task CloseAndDrainAsync() => Controller.CloseAndDrainAsync();
+        internal void ShowCompatibility() => Controller.ShowKind(4);
         internal static ChangeKind Classify(PackUpdateChange Change)
         {
             return (ChangeKind)PreviewController.Classify(Change);

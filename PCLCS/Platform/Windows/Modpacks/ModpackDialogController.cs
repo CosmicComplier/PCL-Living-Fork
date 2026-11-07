@@ -40,7 +40,10 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); Header.Margin = new Thickness(3, 0, 7, 0);
         Header.Children.Add(Label(title, 15, true)); Header.Children.Add(Label(subtitle, 12, false, "ColorBrushGray2", new Thickness(0, 5, 0, 0))); Children.Add(Header);
         Filters.Columns = filterCount; Filters.Margin = new Thickness(0, 13, 4, 7);
-        Filters.SizeChanged += (_, _) => Filters.Columns = filterCount == 4 && Filters.ActualWidth < 420 ? 2 : filterCount == 3 && Filters.ActualWidth < 430 ? 1 : filterCount;
+        Filters.SizeChanged += (_, _) => {
+            int count = Filters.Children.Count;
+            Filters.Columns = count == 5 ? Filters.ActualWidth < 600 ? 3 : 5 : count == 4 && Filters.ActualWidth < 420 ? 2 : count == 3 && Filters.ActualWidth < 430 ? 1 : Math.Max(1, count);
+        };
         SetRow(Filters, 1); Children.Add(Filters);
         Scroller = host.CreateScroll(); Scroller.Content = Rows; Scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Auto; Scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         SetRow(Scroller, 2); Children.Add(Scroller); Unloaded += (_, _) => host.StopAnimation(AnimationKey);
@@ -60,9 +63,8 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
         if (host.UpdateHint is not null) host.UpdateHint(element, text, tone);
         else if (element is TextBlock label) label.Text = text;
     }
-    public void MoveFiltersIntoContent() {
-        Children.Remove(Filters); RowDefinitions[1].Height = new GridLength(0);
-        Filters.Margin = new Thickness(-3, 0, -3, 6);
+    public void SetFilterText(int key, string text) {
+        foreach (TButton button in Filters.Children) if ((int)button.Tag == key) host.SetButtonText(button, text);
     }
     public void SetCanConfirm(bool value) {
         if (CanConfirm == value) return;

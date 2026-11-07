@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -54,11 +54,9 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         noticeDetails = new Expander { Header = "来源与兼容性详情", Content = notices, FontSize = 12, Margin = new Thickness(4, 0, 7, 9) };
         noticeDetails.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
         if (review is not null && snapshot is not null) {
-            view.MoveFiltersIntoContent();
             fileRows = new StackPanel();
-            StackPanel files = new(); files.Children.Add(view.Filters); files.Children.Add(fileRows);
-            compatibilitySection = view.Section("兼容性处理", compatibility);
-            fileSection = view.Section("文件变更", files);
+            compatibilitySection = view.Section("更新检查", compatibility);
+            fileSection = view.Section("文件变更", fileRows);
             selectionStatus = view.StatusHint("正在检查所选组合…", 0);
             selectionStatus.Tag = "preview-status";
             view.Header.Children.Add(selectionStatus);
@@ -67,6 +65,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
             counts[Kind(value)] = Changes.Count(item => Classify(item) == value);
             view.AddFilter((value == 3 ? "保留 / 自定义" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
         }
+        if (compatibilitySection is not null) view.AddFilter("更新检查", 4, true, ShowKind);
         ShowKind(new[] { 3, 1, 0, 2 }.FirstOrDefault(value => counts[Kind(value)] > 0));
         if (review is not null && snapshot is not null) {
             view.Unloaded += (_, _) => { _ = CloseAndDrainAsync(); view.SetCanConfirm(false); };
@@ -105,14 +104,18 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     public void ShowKind(int value) {
         activeKind = value;
         setKind(value); view.BeginFilter(value);
-        if (compatibilitySection is not null) view.Rows.Children.Add(compatibilitySection);
+        if (value == 4 && compatibilitySection is not null) {
+            view.Rows.Children.Add(compatibilitySection);
+            if (notices.Children.Count > 0) view.Rows.Children.Add(noticeDetails);
+            return;
+        }
         if (fileSection is not null) view.Rows.Children.Add(fileSection);
         StackPanel rows = fileRows ?? view.Rows;
         fileRows?.Children.Clear();
         // Notices share the finite file-list viewport; the fixed title/filter rows must stay compact.
         if (noticeSummary is not null) view.Rows.Children.Add(noticeSummary);
-        if (notices.Children.Count > 0) view.Rows.Children.Add(noticeDetails);
-        string description = value == 3 ? "保留可用的个人模组；不兼容项按卡片说明处理，均先备份。" : value == 2 ? "作者新版的移除项；更新前会备份。" : value == 0 ? "新版新增文件与个人模组所需前置。" : "作者新版的更新项；可选操作以卡片选项为准。";
+        if (compatibilitySection is null && notices.Children.Count > 0) view.Rows.Children.Add(noticeDetails);
+        string description = value == 3 ? "保留可用的个人模组；兼容性问题请在“更新检查”页确认。" : value == 2 ? "作者新版的移除项；更新前会备份。" : value == 0 ? "新版新增文件与个人模组所需前置。" : "作者新版的更新项；可选操作以卡片选项为准。";
         rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(description, 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 10)));
         foreach (var group in Changes.Where(item => Classify(item) == value).GroupBy(item => FolderName(item.Relative!)).OrderBy(item => item.Key)) {
             rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(group.Key + "（" + group.Count() + "）", 13, true, margin: new Thickness(4, 3, 7, 9)));
@@ -275,8 +278,9 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                 }
                 if (selectionStatus is not null) {
                     int pending = result.Actions.Count(action => !action.Selected);
-                    string status = result.Dependencies.HasErrors ? pending > 0 ? "有 " + pending + " 项兼容性处理需要确认，请查看下方选项。" : "仍有兼容性问题，请查看下方检查结果。"
-                        : result.Dependencies.HasUnknown ? "未发现确定冲突；部分声明仍需核对，详见下方。" : "所选组合检查通过，可以更新。";
+                    view.SetFilterText(4, result.Dependencies.HasErrors ? "更新检查（" + Math.Max(1, pending) + "）" : "更新检查");
+                    string status = result.Dependencies.HasErrors ? "请在“更新检查”页确认所需操作，完成后即可更新。"
+                        : result.Dependencies.HasUnknown ? "未发现确定冲突；部分声明可在“更新检查”页核对。" : "所选组合检查通过，可以更新。";
                     view.UpdateStatus(selectionStatus, status, result.Dependencies.HasErrors || result.Dependencies.HasUnknown ? 2 : 0);
                 }
                 double offset = view.Scroller.VerticalOffset;

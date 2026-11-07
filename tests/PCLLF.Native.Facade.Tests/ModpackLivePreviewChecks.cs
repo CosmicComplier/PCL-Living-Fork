@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.IO.Compression;
 using System.Windows;
 using System.Windows.Controls;
@@ -68,8 +68,12 @@ internal static class ModpackLivePreviewChecks
             }
         }
         MyCheckBox Option(string kind, string relative) {
+            if (Convert.ToInt32(Native.Property(preview.GetType(), "ActiveKind").GetValue(preview)) != 4)
+                Native.Call(preview.GetType(), "ShowCompatibility", preview);
             preview.UpdateLayout();
-            return Walk(preview).OfType<MyCheckBox>().Single(box => Equals(box.Tag, "preview-repair:" + kind + ":" + relative));
+            var option = Walk(preview).OfType<MyCheckBox>().Single(box => Equals(box.Tag, "preview-repair:" + kind + ":" + relative));
+            VisualAssetChecks.Pump(() => option.IsLoaded, "Repair option did not load after switching pages.", 2000);
+            return option;
         }
         Border ModifiedCard() {
             Type kinds = Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind");
@@ -99,6 +103,8 @@ internal static class ModpackLivePreviewChecks
             modal.Btn2_Click();
             Native.Check(cancelInvocations == 1, "The native cancel action was blocked by compatibility errors.");
             modal.Btn1_Click(); Native.Check(converter.Result is null, "A disabled confirmation was accepted through the message controller.");
+            Save(modal, "live-preview-files.png");
+            Native.Check(Walk(preview).OfType<MyCard>().Any(card => card.Title == "文件变更") && !Walk(preview).OfType<MyCard>().Any(card => card.Title == "更新检查"), "File page mixed in compatibility decisions.");
             Native.Check(!Option("EnableRequired", "mods/provider-new.jar").Checked && !Option("DisableIncompatible", "mods/legacy-adapter.jar").Checked,
                 "Required-provider/unchanged-author decisions were missing or silently applied.");
             MyCheckBox personalRequired = Option("EnableRequired", "mods/personal-provider.jar");
@@ -108,7 +114,7 @@ internal static class ModpackLivePreviewChecks
                 "The packaged provider lost its distinct author-version label.");
             Save(modal, "live-preview-needs-decisions.png");
             var sections = Walk(preview).OfType<MyCard>().ToArray();
-            Native.Check(sections.Count(card => card.Title is "兼容性处理" or "文件变更") == 2, "Preview did not separate compatibility and file changes into native PCL cards.");
+            Native.Check(sections.Count(card => card.Title == "更新检查") == 1 && !sections.Any(card => card.Title == "文件变更"), "Compatibility page mixed in file changes.");
             Native.Check(Walk(preview).OfType<Expander>().All(details => !details.IsExpanded), "Action details were repeated as expanded error walls.");
             // The original dialog controller follows the owned message panel's
             // real size changes, just as it follows FormMain.PanMsg in production.
@@ -117,6 +123,8 @@ internal static class ModpackLivePreviewChecks
             Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0, "Narrow preview lost its scrolling viewport.");
             foreach (var details in Walk(preview).OfType<Expander>().ToArray()) details.IsExpanded = true;
             window.UpdateLayout(); scroll.ScrollToBottom(); window.UpdateLayout();
+            var filters = (FrameworkElement)Get(preview, "Filters")!;
+            Native.Check(filters.TransformToAncestor(preview).TransformBounds(new Rect(filters.RenderSize)).Bottom <= scroll.TransformToAncestor(preview).TransformBounds(new Rect(scroll.RenderSize)).Top + 1, "Page navigation scrolled with the content.");
             Native.Check(scroll.VerticalOffset > 0 && cancel.IsVisible, "Expanded narrow preview lost scrolling or cancel access.");
             Rect bounds = modal.TransformToAncestor(window).TransformBounds(new Rect(modal.RenderSize));
             Native.Check(bounds.Left >= 0 && bounds.Right <= window.ActualWidth + 1, "Narrow preview escaped the available dialog width.");
