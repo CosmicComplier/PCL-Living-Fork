@@ -93,7 +93,6 @@ dotnet restore .\PCL-Living-Fork.Modern.slnx
 - 相关工程文档：
   - [现代构建与测试说明](docs/BUILDING_MODERN.md)
   - [公开发布约定](docs/PUBLISHING.md)
-  - [C# 迁移与 MMC 兼容工程](docs/MIGRATION.md)
   - [外观与启动器更新通道](docs/theme-and-update-channels.md)
 
 ## 来源与许可

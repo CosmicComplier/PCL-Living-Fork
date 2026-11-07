@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Fabric | 根目录的 `fabric.mod.json` | 分别解析 schema 0 与 1；检查运行环境、必需依赖、版本范围、别名和声明的内嵌 JAR。 |
 | Forge 1.12.2 等旧版 | 类上的 `@Mod`、对应的 `mcmod.info`、核心插件及 `ContainedDeps` | 以实际加载声明确定 ID 和版本；描述文件中的模板、残留现代 TOML、Scala 伴生类不作为独立模组。 |
-| 现代 Forge | `META-INF/mods.toml` | 检查 Forge、Minecraft、Java、FML 版本及客户端依赖；处理文件版本属性和 Jar-in-Jar 声明。 |
+| 现代 Forge | `META-INF/mods.toml` | 解析 Forge、Minecraft、Java、FML 版本及客户端依赖；处理文件版本属性和 Jar-in-Jar 声明。 |
 | NeoForge | 对应游戏版本的 `mods.toml` 或 `neoforge.mods.toml`，以及平台依赖 | 区分 1.20.4 及以前和 1.20.5 及以后的声明格式；FML 版本来自实际 FML 库，不套用 NeoForge 平台版本。 |
 
 Fabric 的规则依据[当前声明规范](https://docs.fabricmc.net/develop/loader/fabric-mod-json)及[早期 schema 解析器](https://github.com/FabricMC/fabric-loader/blob/master/src/main/java/net/fabricmc/loader/impl/metadata/V0ModMetadataParser.java)。
@@ -42,6 +42,8 @@ NeoForge 的规则依据[旧声明格式](https://docs.neoforged.net/docs/1.20.4
 索引损坏或格式过期时自动恢复；取消或文件在处理过程中变化时，不发布不完整索引。修改解析规则或快照结构时应同步递增 `ModDependencyIndex.Schema`。
 
 ## 检查边界
+
+当前模组管理、启动前模组依赖与整合包更新检查忽略 Java 要求项；解析器保留相关声明，游戏启动的 Java 选择仍由版本运行环境处理。
 
 版本范围存在确定满足、确定不满足、无法确认三种结果。Maven 限定符顺序、未解析的模板和动态核心插件保持保守处理。未确认的旧版运行时依赖不会触发猜测性补全。
 
