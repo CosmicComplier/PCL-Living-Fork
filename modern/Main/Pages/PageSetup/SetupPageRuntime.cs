@@ -272,6 +272,10 @@ namespace PCL
                     {
                         return global::PCL.ModMain.FrmMain.BtnTitleSelect4;
                     }
+                case global::PCLCS.LegacySetupShellElement.TitleFavorites:
+                    {
+                        return global::PCL.ModMain.FrmMain.BtnTitleSelect5;
+                    }
                 case global::PCLCS.LegacySetupShellElement.ModifyInstance:
                     {
                         return global::PCL.ModMain.FrmInstanceLeft.ItemModify;

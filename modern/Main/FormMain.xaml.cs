@@ -23,11 +23,17 @@ namespace PCL
         private bool IsWindowLoadFinished = false;
         private readonly WindowCore Controller;
 
-        public FormMain()
+        public FormMain() : this(null) { }
+
+        // Configure existing platform ports before construction for an isolated native
+        // window host. The normal launcher always uses the original ports unchanged.
+        internal FormMain(Action<WindowHost> ConfigureHost)
         {
             // VB's instance initializer captured this; C# forbids that initializer, so create
             // the same lazy ports before the first original constructor operation instead.
-            Controller = new WindowCore(CreateWindowView(), CreateWindowHost());
+            WindowHost Host = CreateWindowHost();
+            ConfigureHost?.Invoke(Host);
+            Controller = new WindowCore(CreateWindowView(), Host);
             Loaded += FormMain_Loaded;
             Closing += FormMain_Closing;
             SizeChanged += (_, _) => FormMain_SizeChanged();
@@ -147,7 +153,7 @@ namespace PCL
         public enum PageType
         {
             Launch = 0, Download = 1, Link = 2, Setup = 3, Other = 4,
-            InstanceSelect = 5, TaskManager = 6, InstanceSetup = 7, ResourceDetail = 8, HelpDetail = 9
+            InstanceSelect = 5, TaskManager = 6, InstanceSetup = 7, ResourceDetail = 8, HelpDetail = 9, Favorites = 10
         }
         public enum PageSubType
         {
@@ -431,6 +437,10 @@ namespace PCL
             switch ((PageType)Page)
             {
                 case PageType.Download: if (ModMain.FrmDownloadLeft == null) ModMain.FrmDownloadLeft = new PageDownloadLeft(); break;
+                case PageType.Favorites:
+                    if (ModMain.FrmFavorites == null) ModMain.FrmFavorites = new PageFavorites();
+                    if (ModMain.FrmFavoritesLeft == null) ModMain.FrmFavoritesLeft = new PageDownloadLeft(ModMain.FrmFavorites);
+                    break;
                 case PageType.Setup: if (ModMain.FrmSetupLeft == null) ModMain.FrmSetupLeft = new PageSetupLeft(); break;
                 case PageType.Other: if (ModMain.FrmOtherLeft == null) ModMain.FrmOtherLeft = new PageOtherLeft(); break;
                 case PageType.InstanceSelect: if (ModMain.FrmSelectLeft == null) ModMain.FrmSelectLeft = new PageSelectLeft(); break;
@@ -445,6 +455,7 @@ namespace PCL
                 case PageType.InstanceSelect: if (ModMain.FrmSelectRight == null) ModMain.FrmSelectRight = new PageSelectRight(); break;
                 case PageType.TaskManager: if (ModMain.FrmSpeedRight == null) ModMain.FrmSpeedRight = new PageSpeedRight(); break;
                 case PageType.ResourceDetail: if (ModMain.FrmDownloadResourceDetail == null) ModMain.FrmDownloadResourceDetail = new PageDownloadResourceDetail(); break;
+                case PageType.Favorites: if (ModMain.FrmFavorites == null) ModMain.FrmFavorites = new PageFavorites(); break;
 #if LEGACY_LINK
                 case PageType.Link: if (ModMain.FrmLinkMain == null) ModMain.FrmLinkMain = new PageLinkMain(); break;
 #endif
@@ -455,6 +466,11 @@ namespace PCL
             switch ((PageType)Page)
             {
                 case PageType.Launch: return new LegacyMainLeftPage { Element = ModMain.FrmLaunchLeft };
+                case PageType.Favorites: return new LegacyMainLeftPage {
+                    Element = ModMain.FrmFavoritesLeft, PageId = () => (int)ModMain.FrmFavoritesLeft.PageID,
+                    PageGet = subType => (MyPageRightView)ModMain.FrmFavoritesLeft.PageGet((PageSubType)subType),
+                    Item = subType => ModMain.FrmFavoritesLeft.NavigationItem((PageSubType)subType)
+                };
                 case PageType.Download: return new LegacyMainLeftPage
                 {
                     Element = ModMain.FrmDownloadLeft, PageId = () => (int)ModMain.FrmDownloadLeft.PageID,
@@ -489,6 +505,7 @@ namespace PCL
                 case PageType.InstanceSelect: return ModMain.FrmSelectRight;
                 case PageType.TaskManager: return ModMain.FrmSpeedRight;
                 case PageType.ResourceDetail: return ModMain.FrmDownloadResourceDetail;
+                case PageType.Favorites: return ModMain.FrmFavorites;
 #if LEGACY_LINK
                 case PageType.Link: return ModMain.FrmLinkMain;
 #endif

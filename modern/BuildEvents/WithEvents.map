@@ -770,6 +770,7 @@ PCL.FormMain	BtnTitleSelect1	global::PCL.MyRadioButton
 PCL.FormMain	BtnTitleSelect2	global::PCL.MyRadioButton
 PCL.FormMain	BtnTitleSelect3	global::PCL.MyRadioButton
 PCL.FormMain	BtnTitleSelect4	global::PCL.MyRadioButton
+PCL.FormMain	BtnTitleSelect5	global::PCL.MyRadioButton
 PCL.FormMain	BtnTitleInner	global::PCL.MyIconButton
 PCL.FormMain	PanMainLeft	global::System.Windows.Controls.Border
 PCL.FormMain	PanBack	global::System.Windows.Controls.Grid

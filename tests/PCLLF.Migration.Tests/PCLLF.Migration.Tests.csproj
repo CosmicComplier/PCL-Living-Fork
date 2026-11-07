@@ -55,7 +55,8 @@
     <Compile Include="../../PCLCS/Minecraft/PackUpdateEngine.Transactions.cs" Link="Production/Minecraft/PackUpdateEngine.Transactions.cs" />
     <Compile Include="../../PCLCS/Resources/ResourceVersionModels.cs" Link="Production/Resources/ResourceVersionModels.cs" />
     <Compile Include="../../PCLCS/Resources/LocalResourceSort.cs" Link="Production/Resources/LocalResourceSort.cs" />
-    <Compile Include="../../PCLCS/Resources/LegacyModFavorites.cs" Link="Production/Resources/LegacyModFavorites.cs" />
+    <Compile Include="../../PCLCS/Resources/ResourceFavorites.cs" Link="Production/Resources/ResourceFavorites.cs" />
+    <Compile Include="../../PCLCS/Resources/ResourceProjectKey.cs" Link="Production/Resources/ResourceProjectKey.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupContracts.cs" Link="Production/WorldBackupContracts.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.cs" Link="Production/WorldBackupEngine.cs" />
     <Compile Include="../../PCLCS/Minecraft/WorldBackupEngine.Restore.cs" Link="Production/WorldBackupEngine.Restore.cs" />

@@ -101,6 +101,8 @@ namespace PCL
 
         // 资源信息分页声明
         public static PageDownloadResourceDetail FrmDownloadResourceDetail;
+        public static PageFavorites FrmFavorites;
+        public static PageDownloadLeft FrmFavoritesLeft;
 
         private readonly static MainHintRuntime<HintType> NativeHints = new MainHintRuntime<HintType>(new MainHintHost<HintType>()
         {

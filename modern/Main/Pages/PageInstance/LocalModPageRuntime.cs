@@ -40,7 +40,6 @@ namespace PCL
     {
         internal static global::PCLLF.Presentation.Mods.LegacyModPageHost<global::PCL.LocalResourceFile, global::PCL.ResourceProject, global::PCL.ResourceVersion, global::PCL.MyLocalModItem, global::PCL.ModMinecraft.McInstance, global::PCL.ModNet.NetFile, global::PCL.MyIconButton, global::PCL.ModDependencyImpactView.Item> CreateHost(global::PCL.PageInstanceMod Owner)
         {
-            var favorites = new FavoriteStore();
             return new global::PCLLF.Presentation.Mods.LegacyModPageHost<global::PCL.LocalResourceFile, global::PCL.ResourceProject, global::PCL.ResourceVersion, global::PCL.MyLocalModItem, global::PCL.ModMinecraft.McInstance, global::PCL.ModNet.NetFile, global::PCL.MyIconButton, global::PCL.ModDependencyImpactView.Item>()
             {
                 Items = new Func<global::System.Collections.Concurrent.ConcurrentDictionary<global::System.String, global::PCL.MyLocalModItem>>(() => Owner.ModItems),
@@ -86,8 +85,6 @@ namespace PCL
                 ConfirmMode = ActionName => global::PCL.ModModpackMode.ConfirmModAction(ActionName),
                 ReadBoolean = new Func<global::System.String, global::System.Boolean>(Key => global::PCL.Settings.Get<bool>(Key)),
                 WriteSetting = new Action<global::System.String, global::System.Object>((Key, Value) => global::PCL.Settings.Set(Key, Value)),
-                FavoriteKeys = favorites.ReadKeys,
-                ToggleFavorite = favorites.Toggle,
                 SelectInstallFiles = new Func<global::System.Collections.Generic.IEnumerable<global::System.String>>(() => global::MeloongCore.Wpf.Dialogs.SelectFile("选择要安装的 Mod", true, filter: new[] { (new[] { "jar", "litemod", "disabled", "old" }, "Mod 文件") })),
                 Explorer = global::PCL.ModBase.OpenExplorer,
                 Website = global::PCL.ModBase.OpenWebsite,
@@ -125,63 +122,6 @@ namespace PCL
             };
         }
 
-        private sealed class FavoriteStore
-        {
-            private ModMinecraft.McInstance instance;
-            private string serialized;
-            private ISet<string> keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            internal ISet<string> ReadKeys()
-            {
-                var target = PageInstanceLeft.Instance;
-                string value = target is null ? "" : Settings.Get<string>(LegacyModFavorites.SettingKey, Instance: target);
-                if (ReferenceEquals(target, instance) && string.Equals(value, serialized, StringComparison.Ordinal))
-                {
-                    serialized = value;
-                    return keys;
-                }
-                instance = target;
-                serialized = value;
-                keys = new HashSet<string>(LegacyModFavorites.Parse(value), StringComparer.OrdinalIgnoreCase);
-                return keys;
-            }
-
-            internal bool Toggle(string key)
-            {
-                var target = PageInstanceLeft.Instance;
-                if (target is null) return false;
-                string normalized = LegacyModFavorites.Normalize(key);
-                bool previous = ReadKeys().Contains(normalized), overflow = false;
-                int count = 0, length = 0;
-                try
-                {
-                    string persisted = ModBase.UpdateIniValue(target.PathVersion + @"PCL\Setup.ini", LegacyModFavorites.SettingKey, old =>
-                    {
-                        List<string> current = LegacyModFavorites.Parse(old);
-                        if (LegacyModFavorites.Contains(current, normalized))
-                            return LegacyModFavorites.Serialize(LegacyModFavorites.Remove(current, normalized));
-                        if (LegacyModFavorites.TryAdd(current, normalized, out _, out string added, out count, out length)) return added;
-                        overflow = true;
-                        return old;
-                    });
-                    // The generic settings writer updates its cache before saving and
-                    // swallows errors. Publish this value only after the checked save.
-                    Settings.Entries[LegacyModFavorites.SettingKey].Set(persisted, target);
-                    if (overflow)
-                    {
-                        Logger.Warn(LegacyModFavorites.OverflowLogLine(count, length), LogBehavior.None);
-                        ModMain.Hint("收藏数量或长度已达上限", ModMain.HintType.Red, false);
-                    }
-                    return ReadKeys().Contains(normalized);
-                }
-                catch (Exception error)
-                {
-                    Logger.Warn(error, "保存 Mod 收藏失败，已保留原设置", LogBehavior.None);
-                    ModMain.Hint("收藏保存失败，已保留原设置", ModMain.HintType.Red, false);
-                    return previous;
-                }
-            }
-        }
         private static LegacyModDependencyIndexResult RebuildIndex(ModMinecraft.McInstance Target, Action<int,int> Progress) {
             var report = ModDependencyOnline.RebuildWithOnline(System.IO.Path.Combine(Target.PathIndie,"mods"),ModDependencyInspector.ContextForInstance(Target),Options:new ModDependencyOnline.LookupOptions {Progress=Progress});
             return new LegacyModDependencyIndexResult {IndexReadFailed=()=>report.IndexReadFailed,IndexPersisted=()=>report.IndexPersisted,OnlineIncomplete=()=>report.OnlineIncomplete};

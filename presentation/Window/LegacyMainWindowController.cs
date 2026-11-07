@@ -61,7 +61,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         get {
             int page = PageCurrent.PageCode;
             return (LegacyMainPage)page switch {
-                LegacyMainPage.Download or LegacyMainPage.Setup or LegacyMainPage.Other or LegacyMainPage.InstanceSetup => EnsureLeft(page).PageId(),
+                LegacyMainPage.Download or LegacyMainPage.Setup or LegacyMainPage.Other or LegacyMainPage.InstanceSetup or LegacyMainPage.Favorites => EnsureLeft(page).PageId(),
                 _ => 0
             };
         }

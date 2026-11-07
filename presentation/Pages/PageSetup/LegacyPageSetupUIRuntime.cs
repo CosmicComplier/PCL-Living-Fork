@@ -88,13 +88,14 @@ public sealed class LegacyPageSetupUIRuntime {
     public void HiddenRefresh() {
         if (Host.Shell(LegacySetupShellElement.TitlePanel) is null || !Host.Shell(LegacySetupShellElement.TitlePanel).IsLoaded) return;
         try {
-            if (!HiddenForceShow && Read("UiHiddenPageDownload") && Read("UiHiddenPageLink") && Read("UiHiddenPageSetup") && Read("UiHiddenPageOther")) Host.Shell(LegacySetupShellElement.TitlePanel).Visibility = Visibility.Collapsed;
+            if (!HiddenForceShow && Read("UiHiddenPageDownload") && Read("UiHiddenPageLink") && Read("UiHiddenPageSetup") && Read("UiHiddenPageOther") && Read("UiHiddenPageFavorites")) Host.Shell(LegacySetupShellElement.TitlePanel).Visibility = Visibility.Collapsed;
             else {
                 Host.Shell(LegacySetupShellElement.TitlePanel).Visibility = Visibility.Visible;
                 Host.Shell(LegacySetupShellElement.TitleDownload).Visibility = Hidden(!HiddenForceShow && Read("UiHiddenPageDownload"));
                 Host.Shell(LegacySetupShellElement.TitleLink).Visibility = Visibility.Collapsed;
                 Host.Shell(LegacySetupShellElement.TitleSetup).Visibility = Hidden(!HiddenForceShow && Read("UiHiddenPageSetup"));
                 Host.Shell(LegacySetupShellElement.TitleOther).Visibility = Hidden(!HiddenForceShow && Read("UiHiddenPageOther"));
+                Host.Shell(LegacySetupShellElement.TitleFavorites).Visibility = Hidden(!HiddenForceShow && Read("UiHiddenPageFavorites"));
             }
             Host.RefreshLaunchButtons();
             if (Host.CurrentUI() is not null) Host.CurrentUI()!.View.CardSwitch().Visibility = Hidden(!HiddenForceShow && Read("UiHiddenFunctionHidden"));
