@@ -107,12 +107,19 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     }
     public void BindRestorePoint(JObject value) { SetLoaderWarning(""); EnvironmentHistoryPagePointPresenter.Bind(value,()=>host.SetResource(null),()=>host.SetEntry(null),point=>host.SetPoint(point),Refresh); }
     public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshFavorite();RefreshResource();}
+    private double FavoriteSlotWidth => view.FavoriteButton().Visibility == Visibility.Visible ? 30 : 0;
     public void RefreshFavorite() {
         TProject? project = host.Entry()?.Project;
         bool isMod = project is not null && host.Point() is null && host.Resource() is null &&
             ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out _) && (project.Types & ResourceFavorite.SupportedTypes) != 0;
+        double previousSlot = FavoriteSlotWidth;
         view.FavoriteButton().Visibility = isMod ? Visibility.Visible : Visibility.Collapsed;
         if (isMod) view.SetFavorite(host.Favorite());
+        double slot = FavoriteSlotWidth;
+        if (host.ButtonStack() is { } actions) actions.Margin = new Thickness(0,0,5+slot,0);
+        // Add only the changed slot. A late platform match may arrive while the
+        // native hover-width animation is running; its remaining deltas still apply.
+        if (slot != previousSlot) view.PaddingRight().Width = new GridLength(Math.Max(0,view.PaddingRight().Width.Value+slot-previousSlot));
     }
     public void FavoriteClick() {
         if (host.Point() is not null || host.Resource() is not null) return;
@@ -176,8 +183,8 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     }}
     public IEnumerable<TButton>? Buttons {get=>buttons;set{
         buttons=value;if(host.ButtonStack() is not null){view.Root().Children.Remove(host.ButtonStack());host.SetButtonStack(null);}
-        if(!value!.Any())return;
-        host.SetButtonStack(new StackPanel{Opacity=0,Margin=new Thickness(0,0,5,0),SnapsToDevicePixels=false,Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Center,UseLayoutRounding=false});
+        if(!value!.Any()){view.PaddingRight().Width=new GridLength(4+FavoriteSlotWidth);return;}
+        host.SetButtonStack(new StackPanel{Opacity=0,Margin=new Thickness(0,0,5+FavoriteSlotWidth,0),SnapsToDevicePixels=false,Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Center,UseLayoutRounding=false});
         Grid.SetColumnSpan(host.ButtonStack()!,10);Grid.SetRowSpan(host.ButtonStack()!,10);
         foreach(TButton button in value!){if(button.Height.Equals(double.NaN))button.Height=25;if(button.Width.Equals(double.NaN))button.Width=25;((StackPanel)host.ButtonStack()!).Children.Add(button);}view.Root().Children.Add(host.ButtonStack());
     }}
@@ -207,8 +214,8 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     public void RefreshColor(object sender,EventArgs e){
         InitLate(sender,e);int time=view.Root().IsMouseOver?120:180;List<ControlAnimation> frames=new();
         if(host.ButtonStack() is not null){
-            if(view.Root().IsMouseOver){frames.Add(animation.Opacity(host.ButtonStack()!,1-host.ButtonStack()!.Opacity,new(time*.7,time*.3)));frames.Add(animation.Double(delta=>view.PaddingRight().Width=new GridLength(Math.Max(0,view.PaddingRight().Width.Value+delta)),5+Buttons!.Count()*25-view.PaddingRight().Width.Value,new(time*.3,time*.7)));}
-            else{frames.Add(animation.Opacity(host.ButtonStack()!,-host.ButtonStack()!.Opacity,new(time*.4)));frames.Add(animation.Double(delta=>view.PaddingRight().Width=new GridLength(Math.Max(0,view.PaddingRight().Width.Value+delta)),4-view.PaddingRight().Width.Value,new(time*.4)));}
+            if(view.Root().IsMouseOver){frames.Add(animation.Opacity(host.ButtonStack()!,1-host.ButtonStack()!.Opacity,new(time*.7,time*.3)));frames.Add(animation.Double(delta=>view.PaddingRight().Width=new GridLength(Math.Max(0,view.PaddingRight().Width.Value+delta)),5+FavoriteSlotWidth+Buttons!.Count()*25-view.PaddingRight().Width.Value,new(time*.3,time*.7)));}
+            else{frames.Add(animation.Opacity(host.ButtonStack()!,-host.ButtonStack()!.Opacity,new(time*.4)));frames.Add(animation.Double(delta=>view.PaddingRight().Width=new GridLength(Math.Max(0,view.PaddingRight().Width.Value+delta)),4+FavoriteSlotWidth-view.PaddingRight().Width.Value,new(time*.4)));}
         }
         LegacyLocalModSelection.Append(animation,frames,RectBack,view.Root().IsMouseOver,Checked,mouseDown);animation.Start(frames,"LocalModItem Color "+host.Uuid());
     }

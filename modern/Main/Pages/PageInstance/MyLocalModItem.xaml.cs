@@ -50,7 +50,8 @@ namespace PCL
                 FavoriteButton = new Func<FrameworkElement>(() => this.BtnFavorite),
                 SetFavorite = new Action<bool>(Value => {
                     this.BtnFavorite.Logo = Value ? ModBase.Logo.IconButtonLikeFill : ModBase.Logo.IconButtonLikeLine;
-                    this.BtnFavorite.ToolTip = Value ? "取消收藏此项目" : "收藏此项目";
+                    this.BtnFavorite.ToolTip = Value ? "已收藏，点击取消收藏" : "收藏此模组";
+                    System.Windows.Automation.AutomationProperties.SetName(this.BtnFavorite, this.BtnFavorite.ToolTip.ToString());
                     this.BtnFavorite.IsEnabled = !ResourceFavorites.IsBusy(Entry?.Project);
                 }),
                 ResourceLogoElement = new Func<FrameworkElement>(() => this.ResourceLogo),

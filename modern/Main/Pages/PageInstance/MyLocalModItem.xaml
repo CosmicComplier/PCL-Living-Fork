@@ -47,11 +47,11 @@
         <local:MyIconButton Grid.Column="2"
             Width="21" Height="21" Margin="-2,-1.6,0,0" x:Name="BtnUpdate" Theme="Black" Opacity="0.4" Visibility="Collapsed" ToolTipService.InitialShowDelay="100"
             Logo="M640 768H384l-32-32V509H213L190 454l298-298h45l298 298L810 509h-138v226z m-224-64h192V477l32-32h93L512 223 290 445H384l32 32zM352 831h320v64h-320z" />
-        <!-- 收藏星标 -->
-        <local:MyIconButton Grid.Column="3"
-            Width="21" Height="21" Margin="-2,-1.6,2,0" x:Name="BtnFavorite" Theme="Black" Opacity="0.4" Visibility="Collapsed"
-            ToolTipService.InitialShowDelay="100" Click="BtnFavorite_Click" />
     </Grid>
+    <!-- Independent action beside the native hover toolbar; project favorites remain visible. -->
+    <local:MyIconButton x:Name="BtnFavorite" Grid.ColumnSpan="6" Grid.RowSpan="4" Panel.ZIndex="1"
+        Width="25" Height="25" Margin="0,0,5,0" HorizontalAlignment="Right" VerticalAlignment="Center"
+        Theme="Color" Visibility="Collapsed" ToolTipService.InitialShowDelay="100" Click="BtnFavorite_Click" />
     <!-- Tag 与 详情 -->
     <StackPanel x:Name="PanTags" Grid.Row="2" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="-1,0,1,0" Visibility="Collapsed" IsHitTestVisible="False">
         <!--<Border Background="{DynamicResource ColorBrush6}" Padding="3,1" CornerRadius="3" Margin="0,0,4,0" SnapsToDevicePixels="True" UseLayoutRounding="False">
