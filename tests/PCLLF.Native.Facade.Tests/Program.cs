@@ -43,7 +43,8 @@ internal static class Program
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
         ["mod-favorites"] = ModFavoriteChecks.Run,
-        ["update-log-prompt"] = UpdateLogPromptChecks.Run
+        ["update-log-prompt"] = UpdateLogPromptChecks.Run,
+        ["instance-sidebar"] = InstanceSidebarChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)
