@@ -42,6 +42,7 @@ namespace PCL
             ConfigureThemeToggle(BtnTitleTheme);
             ConfigureDeferredUpdateButton(BtnTitleUpdate, ModLauncherUpdate.ReopenDeferredUpdate);
             ConfigureTitleClip(PanTitle);
+            ConfigureSidebarCard(SidebarCard, PanMainLeft);
             var titleStars = new ThemeStarfield(12);
             PanTitle.Children.Insert(1, titleStars);
             RegisterName("TitleStars", titleStars);
@@ -90,6 +91,18 @@ namespace PCL
             title.SizeChanged += (_, _) => Refresh();
             title.Loaded += (_, _) => Refresh();
             Refresh();
+        }
+        private static void ConfigureSidebarCard(Border sidebar, Border content)
+        {
+            void RefreshInset()
+            {
+                var inset = content.Child is FrameworkElement { Width: 0 } ? new Thickness(0) : new Thickness(8, 8, 0, 8);
+                if (sidebar.Margin != inset) sidebar.Margin = inset;
+            }
+            EventHandler refresh = (_, _) => RefreshInset();
+            sidebar.Loaded += (_, _) => { content.LayoutUpdated += refresh; RefreshInset(); };
+            sidebar.Unloaded += (_, _) => content.LayoutUpdated -= refresh;
+            RefreshInset();
         }
 
 

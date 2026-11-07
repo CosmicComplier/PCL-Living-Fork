@@ -44,6 +44,7 @@ internal static class WindowChromeChecks {
         Find<System.Windows.Shapes.Path>("ShapeTitleLogo").Visibility = Visibility.Collapsed;
         Native.Call(typeof(FormMain), "ConfigureThemeToggle", null, Find<MyIconButton>("BtnTitleTheme"));
         Native.Call(typeof(FormMain), "ConfigureTitleClip", null, title);
+        Native.Call(typeof(FormMain), "ConfigureSidebarCard", null, sidebar, left);
         left.SizeChanged += (_, args) => Native.Call(typeof(FormMain), "ReflowSidebarCard", null, sidebar, args);
         var cards = new StackPanel { Margin = new Thickness(25) };
         var content = new MyCard { Title = "内容卡片", Margin = new Thickness(0, 0, 0, 15) };
@@ -62,8 +63,10 @@ internal static class WindowChromeChecks {
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown; ModAnimation.AniControlEnabled = 1;
             left.Child = new PageDownloadLeft();
             window.Show(); Layout();
-            foreach (bool launch in new[] { false, true }) {
-                if (launch) {
+            foreach (int scene in new[] { 0, 1, 2 }) {
+                bool launch = scene == 1, noSidebar = scene == 2;
+                if (noSidebar) left.Child = new Grid { Width = 0 };
+                else if (launch) {
                     var panel = new StackPanel { Width = 300, Margin = new Thickness(0, 24, 0, 20) };
                     panel.Children.Add(new TextBlock { Text = "正版  /  离线", HorizontalAlignment = HorizontalAlignment.Center });
                     panel.Children.Add(new TextBlock { Text = "Player", HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 95, 0, 95), FontSize = 20 });
@@ -78,12 +81,13 @@ internal static class WindowChromeChecks {
                     foreach (int width in new[] { 1005, 810 }) {
                         window.Width = width; Layout();
                         Rect side = Bounds(sidebar), card = Bounds(content);
-                        ModpackStageLayoutChecks.Save(form, Path.Combine(environment.Data, $"frame-{(launch ? "launch" : "download")}-{(dark ? "dark" : "light")}-{width}.png"), (int)form.ActualWidth, (int)form.ActualHeight);
-                        Native.Check(Math.Abs(side.Left - 8) < 1 && Math.Abs(side.Top - title.ActualHeight - 8) < 1 &&
+                        ModpackStageLayoutChecks.Save(form, Path.Combine(environment.Data, $"frame-{(noSidebar ? "full-width" : launch ? "launch" : "download")}-{(dark ? "dark" : "light")}-{width}.png"), (int)form.ActualWidth, (int)form.ActualHeight);
+                        Native.Check(noSidebar ? main.ColumnDefinitions[0].ActualWidth < 1 && Math.Abs(card.Left - 25) < 1 && Math.Abs(form.ActualWidth - card.Right - 25) < 1 :
+                            Math.Abs(side.Left - 8) < 1 && Math.Abs(side.Top - title.ActualHeight - 8) < 1 &&
                             Math.Abs(form.ActualHeight - side.Bottom - 8) < 1 && Math.Abs(card.Top - title.ActualHeight - 25) < 1 &&
                             Math.Abs(card.Left - side.Right - 25) < 1 && Math.Abs(form.ActualWidth - card.Right - 25) < 1,
-                            "Sidebar did not use its tighter 8-DIP inset while content retained 25-DIP spacing.");
-                        Native.Check(Math.Abs(Bounds(background).Left - side.Left) < 1 && Math.Abs(background.ActualWidth - sidebar.ActualWidth) < 1 && Math.Abs(background.ActualHeight - sidebar.ActualHeight) < 1,
+                            $"Sidebar/content inset differs: scene={scene}, side={side}, card={card}, column={main.ColumnDefinitions[0].ActualWidth}.");
+                        Native.Check(noSidebar ? background.ActualWidth < 1 : Math.Abs(Bounds(background).Left - side.Left) < 1 && Math.Abs(background.ActualWidth - sidebar.ActualWidth) < 1 && Math.Abs(background.ActualHeight - sidebar.ActualHeight) < 1,
                             $"Animated sidebar background and actual content card diverged: background={Bounds(background)}, sidebar={side}, desired={sidebar.DesiredSize}, width={sidebar.Width}/{sidebar.MinWidth}/{sidebar.MaxWidth}, measure={sidebar.IsMeasureValid}, sameChild={ReferenceEquals(sidebar.Child,left)}, left={left.RenderSize}, desiredLeft={left.DesiredSize}, column={main.ColumnDefinitions[0].Width}/{main.ColumnDefinitions[0].ActualWidth}.");
                         foreach (var element in new FrameworkElement[] { title }) {
                             Native.Check(VisualTreeHelper.GetClip(element) is RectangleGeometry clip && clip.RadiusX == 6 && clip.RadiusY == 6 &&
