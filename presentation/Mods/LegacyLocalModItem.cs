@@ -39,6 +39,7 @@ public sealed class LegacyLocalModItemHost<TMod,TProject,TVersion,TEntry,TInfo,T
     public Action<TMod?> SetEntry = null!;
     // Only the platform project attached by the existing online matcher can be saved.
     public Func<bool> Favorite = null!;
+    public Func<TProject?> FavoriteProject = null!;
     public Action<TProject> ToggleFavorite = null!;
     public Func<TEntry?> Resource = null!;
     public Action<TEntry?> SetResource = null!;
@@ -109,12 +110,12 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshFavorite();RefreshResource();}
     private double FavoriteSlotWidth => view.FavoriteButton().Visibility == Visibility.Visible ? 30 : 0;
     public void RefreshFavorite() {
-        TProject? project = host.Entry()?.Project;
-        bool isMod = project is not null && host.Point() is null && host.Resource() is null &&
+        TProject? project = host.FavoriteProject();
+        bool canFavorite = project is not null && host.Point() is null &&
             ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out _) && (project.Types & ResourceFavorite.SupportedTypes) != 0;
         double previousSlot = FavoriteSlotWidth;
-        view.FavoriteButton().Visibility = isMod ? Visibility.Visible : Visibility.Collapsed;
-        if (isMod) view.SetFavorite(host.Favorite());
+        view.FavoriteButton().Visibility = canFavorite ? Visibility.Visible : Visibility.Collapsed;
+        if (canFavorite) view.SetFavorite(host.Favorite());
         double slot = FavoriteSlotWidth;
         if (host.ButtonStack() is { } actions) actions.Margin = new Thickness(0,0,5+slot,0);
         // Add only the changed slot. A late platform match may arrive while the
@@ -122,10 +123,10 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
         if (slot != previousSlot) view.PaddingRight().Width = new GridLength(Math.Max(0,view.PaddingRight().Width.Value+slot-previousSlot));
     }
     public void FavoriteClick() {
-        if (host.Point() is not null || host.Resource() is not null) return;
-        TMod? entry = host.Entry();
-        TProject? project = entry?.Project;
-        if (project is null || !ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out _)) return;
+        if (host.Point() is not null) return;
+        TProject? project = host.FavoriteProject();
+        if (project is null || !ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out _) ||
+            (project.Types & ResourceFavorite.SupportedTypes) == 0) return;
         host.ToggleFavorite(project);
         RefreshFavorite();
     }

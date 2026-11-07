@@ -23,7 +23,7 @@ namespace PCLLF.Native.Facade.Tests;
 
 // Genuine Main BAML, typed title events, resource rows, matcher callbacks and routing.
 // These are hosted component checks, separate from the genuine product cold entry.
-internal static class ModFavoriteChecks {
+internal static partial class ModFavoriteChecks {
     private static int Pending => (int)Native.Property(Native.Type("PCL.ResourceFavorites"), "PendingCount").GetValue(null)!;
     internal static void Run(FixtureEnvironment environment) {
         using Scope scope = new(environment);
@@ -139,6 +139,7 @@ internal static class ModFavoriteChecks {
         Native.Check(page.FindName("Content") is PageResource && title.Logo == s.EmptyIcon, "Favorites must reuse the download PageResource and original hollow favorite glyph");
         OnlineSearchBindings(s, page);
         Native.Check(ReferenceEquals(Part<Border>(window, "PanMainRight").Child, page) && Part<Panel>(page, "PanResults").Children.Count == 1, "Route did not attach/render the cached project");
+        ResourceRows(s, page);
         ResourceTypes[] kinds = { ResourceTypes.ModPack, ResourceTypes.Map, ResourceTypes.DataPack, ResourceTypes.ResourcePack, ResourceTypes.Shader };
         foreach (var kind in kinds) { var row = Project("Type" + (int)kind, kind).ToResourceItem(false, false).Init(); Click(Part<MyIconButton>(row, "BtnFavorite")); }
         Native.Check(s.Store.Snapshot.Count == 6 && window.PageCurrent.Page == FormMain.PageType.Favorites, "Cloud stars lost categories or bubbled into details");

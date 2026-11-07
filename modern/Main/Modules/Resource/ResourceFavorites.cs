@@ -9,7 +9,7 @@ using PCLCS;
 
 namespace PCL;
 
-/// <summary>Shared by online rows, recognized local mods and the top-level favorites page.</summary>
+/// <summary>One project store for online rows, recognized instance resources and the favorites page.</summary>
 internal static class ResourceFavorites {
     private static readonly FavoriteEvents events = new();
     private static readonly ConcurrentDictionary<ResourceFavoriteIdentity, byte> pending = new();
