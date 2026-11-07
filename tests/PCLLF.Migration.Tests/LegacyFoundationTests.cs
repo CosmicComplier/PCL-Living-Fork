@@ -112,7 +112,7 @@ internal static class LegacyFoundationTests {
             LegacyBaseOperations.IniClearCache(@"\\?\UNC\fixture.invalid\share\Setup.ini", cache);
             Assert(!cache.ContainsKey(unc), "canonical UNC cache identity (no network IO)");
         }
-        foreach (string key in new[] { LegacyModFavorites.SettingKey, LegacyUpdateLogPrompt.Key }) {
+        foreach (string key in new[] { "UiModFavorite", LegacyUpdateLogPrompt.Key }) {
             File.WriteAllText(ini, "Keep:原设置\r\n\r\n;保留注释\r\n" + key + ":old\r\n");
             cache.Clear();
             byte[] original = File.ReadAllBytes(ini);

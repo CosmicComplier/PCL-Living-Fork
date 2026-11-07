@@ -30,7 +30,8 @@ public sealed partial class LocalResourceLoaderEngine<TLocal, TProject, TVersion
             uint hash = (uint)project["file"]!["fileFingerprint"]!;
             foreach (TLocal entry in mods) {
                 if (entry.CurseForgeHash != hash) continue;
-                if (host.ProjectCache().ContainsKey(projectId) && entry.Project is null) entry.Project = host.ProjectCache()[projectId];
+                string key = ResourceProjectKey.Get(ResourcePlatforms.CurseForge, projectId);
+                if (host.ProjectCache().TryGetValue(key, out TProject? cached) && cached.Platform == ResourcePlatforms.CurseForge && entry.Project is null) entry.Project = cached;
                 int id = Conversions.ToInteger(projectId);
                 if (!mapping.ContainsKey(id)) mapping[id] = new List<TLocal>();
                 mapping[id].Add(entry);

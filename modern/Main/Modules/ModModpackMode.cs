@@ -52,6 +52,7 @@ namespace PCL
                 SetupSystem = (global::System.Int32)global::PCL.FormMain.PageSubType.SetupSystem,
                 Download = (global::System.Int32)global::PCL.FormMain.PageType.Download,
                 Other = (global::System.Int32)global::PCL.FormMain.PageType.Other,
+                Favorites = (global::System.Int32)global::PCL.FormMain.PageType.Favorites,
                 Link = (global::System.Int32)global::PCL.FormMain.PageType.Link,
                 SetupPage = (global::System.Int32)global::PCL.FormMain.PageType.Setup,
                 InstanceBackups = (global::System.Int32)global::PCL.FormMain.PageSubType.InstanceBackups,
@@ -70,6 +71,7 @@ namespace PCL
                 Link = View.BtnTitleSelect2,
                 Setup = View.BtnTitleSelect3,
                 Other = View.BtnTitleSelect4,
+                Favorites = View.BtnTitleSelect5,
                 SetupText = new Action<global::System.String>(Value => View.BtnTitleSelect3.Text = Value)
             };
         }

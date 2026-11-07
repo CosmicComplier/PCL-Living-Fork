@@ -20,7 +20,8 @@ public sealed class ResourceCatalogHost<TProject, TVersion> where TProject : Res
 // LF ResourceProject/ResourceVersion fetch and dependency-resolution pipeline, LF LICENCE.
 // Fixed CE 1a7653127d578efdb2a9388999a3fdc67d9e49d5 ModComp.cs/CompFilesGet
 // supplied same-source C# reference only. Its ConcurrentDictionary and shorter CF
-// request are not adopted: real LF cache identity, retry pageSize and failure remain.
+// request are not adopted. Retry pageSize/failure behavior remains; project and
+// version caches include the provider so equal raw IDs cannot return another platform.
 public sealed class ResourceCatalogPipeline<TProject, TVersion>
     where TProject : ResourceProjectModelData where TVersion : ResourceVersionModelData {
     private readonly ResourceCatalogHost<TProject, TVersion> host;
@@ -31,7 +32,8 @@ public sealed class ResourceCatalogPipeline<TProject, TVersion>
     }
     public TProject FromProjectId(string projectId, ResourcePlatforms platform) {
         ValidatePlatform(platform);
-        if (host.ProjectCache().ContainsKey(projectId)) return host.ProjectCache()[projectId];
+        string key = ResourceProjectKey.Get(platform, projectId);
+        if (host.ProjectCache().TryGetValue(key, out TProject? cached) && cached.Platform == platform) return cached;
         return host.CreateProject((JObject)(platform == ResourcePlatforms.CurseForge
             ? host.Request("https://api.curseforge.com/v1/mods/" + projectId, null, null, null)["data"]!
             : host.Request("https://api.modrinth.com/v2/project/" + projectId, null, null, null)));
@@ -40,7 +42,8 @@ public sealed class ResourceCatalogPipeline<TProject, TVersion>
         ValidatePlatform(platform);
         List<string> missingProjectIds = new();
         foreach (string projectId in projectIds) {
-            if (host.ProjectCache().ContainsKey(projectId)) yield return host.ProjectCache()[projectId];
+            string key = ResourceProjectKey.Get(platform, projectId);
+            if (host.ProjectCache().TryGetValue(key, out TProject? cached) && cached.Platform == platform) yield return cached;
             else missingProjectIds.Add(projectId);
         }
         if (!missingProjectIds.Any()) yield break;
@@ -55,7 +58,8 @@ public sealed class ResourceCatalogPipeline<TProject, TVersion>
     public List<TVersion> VersionsFromProjectId(string projectId, ResourcePlatforms platform, bool loadDependencies = true) {
         ValidatePlatform(platform);
         TProject targetProject = FromProjectId(projectId, platform);
-        if (!host.VersionCache().ContainsKey(projectId)) {
+        string key = ResourceProjectKey.Get(platform, projectId);
+        if (!host.VersionCache().ContainsKey(key)) {
             host.Info($"开始获取项目版本列表：{projectId}");
             JArray? resultJsonArray = null;
             if (platform == ResourcePlatforms.CurseForge) {
@@ -73,10 +77,10 @@ public sealed class ResourceCatalogPipeline<TProject, TVersion>
                 }
             } else resultJsonArray = (JArray)host.Request($"https://api.modrinth.com/v2/project/{projectId}/version?include_changelog=false", null, null, null);
             HashSet<string?> seen = new();
-            host.VersionCache()[projectId] = resultJsonArray!.Select(value => ResourceVersionRules.FromPlatformJson((JObject)value, targetProject.Types, host.CreateVersion))
+            host.VersionCache()[key] = resultJsonArray!.Select(value => ResourceVersionRules.FromPlatformJson((JObject)value, targetProject.Types, host.CreateVersion))
                 .Where(value => value.DownloadAvailable).Where(value => seen.Add(value.Id)).ToList();
         }
-        List<TVersion> result = host.VersionCache()[projectId];
+        List<TVersion> result = host.VersionCache()[key];
         if (!loadDependencies) return result;
         List<string> dependencies = result.SelectMany(file => file.RawDependencies).Distinct().ToList();
         if (dependencies.Any()) {

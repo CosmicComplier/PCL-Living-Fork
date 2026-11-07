@@ -19,7 +19,8 @@ internal static class A003Checks {
     internal static void Run() {
         UpdateLogChecks();
         ModFavoriteChecks();
-        Console.WriteLine("PASS A-003 controllers: version-scoped automatic notes, automatic/manual routing, once-per-session upgrade/startup gate, independent update checks, cached favorites filtering/counts/empty state and search/sort.");
+        ResourceProjectIdentityChecks.Run();
+        Console.WriteLine("PASS A-003 controllers: version-scoped automatic notes, automatic/manual routing, once-per-session upgrade/startup gate, independent update checks, the original four local mod filters and search/sort.");
     }
 
     // ---------- A-003.1 update-log prompt ----------
@@ -112,129 +113,46 @@ internal static class A003Checks {
         }) { }
     }
 
+    // The local page retains its original four filters; favorites now live in the
+    // launcher-wide resource page and never filter or rebuild this file list.
     private static void ModFavoriteChecks() {
         string root = Path.Combine(Path.GetTempPath(), "pcl-a003-mods-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try {
-            List<FakeMod> mods = new();
-            string[] names = { "Alpha.jar", "Beta.jar.disabled", "Gamma.jar" };
-            DateTime created = new(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            for (int index = 0; index < names.Length; index++) {
-                string file = Path.Combine(root, names[index]);
-                File.WriteAllBytes(file, new byte[] { 1 });
-                File.SetCreationTimeUtc(file, created.AddDays(index));
-                FakeMod mod = new(file) { Display = "needle " + (index + 1) };
-                mods.Add(mod);
+            var mods = new List<FakeMod>();
+            foreach (string name in new[] { "Alpha.jar", "Beta.jar.disabled", "Gamma.jar" }) {
+                string file = Path.Combine(root, name); File.WriteAllBytes(file, new byte[] { 1 });
+                mods.Add(new FakeMod(file) { Display = name });
             }
-
-            HashSet<string> favorites = new(StringComparer.OrdinalIgnoreCase) { "alpha.jar" };
-            int favoriteReads = 0;
-            int loaderCalls = 0;
-            ConcurrentDictionary<string, Border> items = new();
-            List<string> selected = new();
-            bool[] checkedState = new bool[5];
-            string[] texts = new string[5];
-            string emptyTitle = null, emptyHint = null;
-            string search = "";
-            Panel list = new StackPanel();
-            Border empty = new();
-            Border[] filterElements = Enumerable.Range(0, 5).Select(index => new Border { Tag = index }).ToArray();
-            ResourcePageFilter[] filters = filterElements.Select((element, index) => new ResourcePageFilter(element, index,
-                () => checkedState[index], value => checkedState[index] = value, value => texts[index] = value)).ToArray();
-
-            LegacyModPageView view = new() {
+            var items = new ConcurrentDictionary<string, Border>();
+            var selected = new List<string>();
+            bool[] states = new bool[4]; string[] texts = new string[4];
+            Panel list = new StackPanel(); Border empty = new(); string search = ""; int loaderCalls = 0;
+            var filters = Enumerable.Range(0, 4).Select(index => new ResourcePageFilter(new Border(), index,
+                () => states[index], value => states[index] = value, value => texts[index] = value)).ToArray();
+            var view = new LegacyModPageView {
                 Root = () => new Border(), Back = () => new Border(), Empty = () => empty, ListBack = () => new Border(),
                 List = () => list, Search = () => search, SetSearch = value => search = value,
                 SetSelectionText = _ => { }, ScrollHome = () => { }, FocusBack = () => { }, EnableIndex = _ => { }, IndexText = _ => { },
                 Filters = () => filters, EnableDisable = _ => { }, EnableEnable = _ => { }, EnableUpdate = _ => { },
-                SelectionBar = (int count, ref int previous, bool animate) => { }, SetEmptyTitle = value => emptyTitle = value, SetEmptyHint = value => emptyHint = value
+                SelectionBar = (int count, ref int previous, bool animate) => { }, SetEmptyTitle = _ => { }, SetEmptyHint = _ => { }
             };
-            LegacyModPageHost<FakeMod, ResourceProjectModelData, ResourceVersionModelData, Border, object, object, Border, ModDependencyImpactItemData> host = new() {
+            var host = new LegacyModPageHost<FakeMod, ResourceProjectModelData, ResourceVersionModelData, Border, object, object, Border, ModDependencyImpactItemData> {
                 Output = () => mods, Items = () => items, Selected = () => selected, SetSelected = value => selected = value,
                 Instance = () => null, AnimationControl = () => 0, ChangeAnimationControl = _ => { },
-                LoaderRun = type => { loaderCalls++; return true; },
-                NewItem = (entry, isSelected) => new Border { Tag = entry },
-                BindUpdate = (_, _) => { }, SetChecked = (_, _) => { },
-                FavoriteKeys = () => { favoriteReads++; return favorites; },
-                ToggleFavorite = key => {
-                    // Same normalization the product runtime applies before Settings.Set.
-                    string normalized = LegacyModFavorites.Normalize(key);
-                    if (favorites.Remove(normalized)) return false;
-                    favorites.Add(normalized); return true;
-                }
+                LoaderRun = type => { loaderCalls++; return true; }, NewItem = (entry, isSelected) => new Border { Tag = entry },
+                BindUpdate = (_, _) => { }, SetChecked = (_, _) => { }
             };
-            LegacyModPage<FakeMod, ResourceProjectModelData, ResourceVersionModelData, Border, object, object, Border, ModDependencyImpactItemData> page = new(view, host);
-
-            page.LoadUI();
-            Check(page.ListRebuildSerial == 1, "LoadUI must increment ListRebuildSerial once.");
-            Check(VisibleRows(list).Count == 3 && items.Count == 3, "Initial render must show all three mods.");
-            int serial = page.ListRebuildSerial;
-            Check(loaderCalls == 0, "LoadUI must not run the loader.");
-            int reads = favoriteReads;
-            page.RefreshBars();
-            Check(favoriteReads == reads + 1, "Counting favorites must take one set snapshot for the entire list.");
-
-            // Toggling a favorite must not rebuild the list or reload it.
-            bool nowFavorite = page.ToggleFavorite("beta.jar");
-            Check(nowFavorite && favorites.Contains("beta.jar"), "Star must add the EnabledName key.");
-            Check(page.ListRebuildSerial == serial && loaderCalls == 0, "Favorite toggle must not rebuild/reload the list.");
-            Check(VisibleRows(list).Count == 3 && items.Count == 3, "Favorite toggle must keep every row in place.");
-            Check(page.IsFavorite("BETA.jar"), "Favorite lookup is OrdinalIgnoreCase on EnabledName.");
-
-            Check(!page.ToggleFavorite("ALPHA.jar") && !favorites.Contains("alpha.jar"), "Second click must remove the same normalized key.");
-            Check(page.ListRebuildSerial == serial, "Un-favorite must not rebuild the list either.");
-
-            // Favorites filter + counts, including the always-visible 0 case.
-            favorites.Clear(); favorites.Add("alpha.jar"); favorites.Add("gamma.jar");
-            page.FilterChanged(4);
-            Check(page.Filter == LegacyModFilter.Favorites, "FilterChanged(4) must select LegacyModFilter.Favorites.");
-            Check(VisibleRows(list).Count == 2, "Favorites filter must show only favorited rows.");
-            Check(texts[4] == "收藏 (2)", "Favorites filter must show 收藏 (n) with the current search scope.");
-            Check(page.ListRebuildSerial == serial, "Filtering must not rebuild the list.");
-            reads = favoriteReads;
-            page.RefreshUI();
-            Check(favoriteReads == reads + 2, "Favorites filtering/counting must use two snapshots regardless of row count.");
-
-            // Search + favorites + sort combine without touching the rebuild counter.
-            search = "gamma";
-            page.SearchRun();
-            Check(VisibleRows(list).Count == 1 && VisibleRows(list)[0].Tag == mods[2], "Search must intersect with favorites.");
+            var page = new LegacyModPage<FakeMod, ResourceProjectModelData, ResourceVersionModelData, Border, object, object, Border, ModDependencyImpactItemData>(view, host);
+            page.LoadUI(); int serial = page.ListRebuildSerial;
+            Check(items.Count == 3 && list.Children.Count == 3 && filters.Length == 4, "Local page must keep its four original file filters.");
+            page.FilterChanged(1); Check(list.Children.Count == 2, "Enabled scope changed.");
+            page.FilterChanged(2); Check(list.Children.Count == 1, "Disabled scope changed.");
+            page.FilterChanged(4); Check(page.Filter == LegacyModFilter.All && list.Children.Count == 3, "Obsolete favorites filter must fall back to All.");
+            search = "gamma"; page.SearchRun(); Check(list.Children.Count == 1, "Search changed.");
             page.SortOrder = LocalResourceSortOrder.AddedOldest;
-            Check(VisibleRows(list).Count == 1 && VisibleRows(list)[0].Tag == mods[2], "Sorting must keep the favorites+search result correct.");
-            search = "";
-            page.SearchRun();
-            Check(VisibleRows(list).Count == 2, "Clearing search must restore both favorites.");
-            Check(page.ListRebuildSerial == serial, "Search/sort must not rebuild the list.");
-
-            // The other radio filters retain their own independent scopes.
-            favorites.Clear(); favorites.Add("alpha.jar"); favorites.Add("beta.jar"); favorites.Add("gamma.jar");
-            page.FilterChanged(1);
-            Check(VisibleRows(list).Count == 2 && VisibleRows(list).All(item => ((FakeMod)item.Tag).IsEnabled),
-                "Enabled filtering must keep its original scope.");
-            page.FilterChanged(2);
-            Check(VisibleRows(list).Count == 1 && !((FakeMod)VisibleRows(list)[0].Tag).IsEnabled, "Disabled filtering must keep its original scope.");
-            page.FilterChanged(3);
-            Check(VisibleRows(list).Count == 0, "Update filtering must keep only updated mods (none here).");
-
-            // 0 favorites gives an empty list plus the dedicated empty state.
-            favorites.Clear();
-            page.FilterChanged(4);
-            Check(VisibleRows(list).Count == 0, "Empty favorites filter must show no rows.");
-            Check(emptyTitle == "暂无收藏的 Mod" && emptyHint is not null && empty.Visibility == System.Windows.Visibility.Visible,
-                "Empty favorites filter must show its own empty state.");
-            Check(page.ListRebuildSerial == serial, "Empty favorites must not rebuild the list.");
-            page.FilterChanged(3);
-            Check(empty.Visibility == System.Windows.Visibility.Collapsed, "Leaving empty favorites must not leave a stale favorites empty state.");
-
-            // ReloadModList is the only other serial writer and keeps favorites.
-            page.ReloadModList();
-            Check(page.ListRebuildSerial == serial + 1 && loaderCalls == 1, "ReloadModList success must increment the serial once.");
-            Check(favorites.Count == 0, "ReloadModList must not clear favorites.");
-        } finally {
-            try { Directory.Delete(root, true); } catch { }
-        }
-
-        static List<Border> VisibleRows(Panel panel) => panel.Visibility == System.Windows.Visibility.Visible ? panel.Children.Cast<Border>().ToList() : new List<Border>();
+            Check(page.ListRebuildSerial == serial && loaderCalls == 0, "Local filters/search/sort rebuilt the loader.");
+        } finally { Directory.Delete(root, true); }
     }
 
     private static void Check(bool condition, string message) {

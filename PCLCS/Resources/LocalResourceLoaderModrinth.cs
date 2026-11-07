@@ -23,7 +23,8 @@ public sealed partial class LocalResourceLoaderEngine<TLocal, TProject, TVersion
             if (!versions.ContainsKey(entry.ModrinthHash)) continue;
             if ((string?)versions[entry.ModrinthHash]!["files"]![0]!["hashes"]!["sha1"] != entry.ModrinthHash) continue;
             string projectId = versions[entry.ModrinthHash]!["project_id"]!.ToString();
-            if (host.ProjectCache().ContainsKey(projectId) && entry.Project is null) entry.Project = host.ProjectCache()[projectId];
+            string key = ResourceProjectKey.Get(ResourcePlatforms.Modrinth, projectId);
+            if (host.ProjectCache().TryGetValue(key, out TProject? cached) && cached.Platform == ResourcePlatforms.Modrinth && entry.Project is null) entry.Project = cached;
             if (!mapping.ContainsKey(projectId)) mapping[projectId] = new List<TLocal>();
             mapping[projectId].Add(entry);
             TVersion file = host.ReadVersion((JObject)versions[entry.ModrinthHash]!, ResourceTypes.Mod);

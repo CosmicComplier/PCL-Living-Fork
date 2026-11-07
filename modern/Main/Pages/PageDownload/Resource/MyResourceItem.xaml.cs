@@ -30,6 +30,27 @@ namespace PCL
             __LfAttachOwnHandles();
             this.Uuid = ModBase.GetUuid();
             this.InitializeComponent();
+            ResourceFavorites.Observe(this, (_, _) => RefreshFavorite());
+        }
+
+        private ResourceProject FavoriteProject;
+        internal ResourceTypes? ResourceTypeContext;
+        internal void BindFavorite(ResourceProject project) { FavoriteProject = project; RefreshFavorite(); }
+        internal void RefreshFavorite() {
+            BtnFavorite.Visibility = ResourceFavorites.CanFavorite(FavoriteProject) ? Visibility.Visible : Visibility.Collapsed;
+            bool saved = ResourceFavorites.IsFavorite(FavoriteProject);
+            BtnFavorite.Logo = saved ? ModBase.Logo.IconButtonLikeFill : ModBase.Logo.IconButtonLikeLine;
+            BtnFavorite.ToolTip = saved ? "取消收藏此项目" : "收藏此项目";
+            BtnFavorite.IsEnabled = !ResourceFavorites.IsBusy(FavoriteProject);
+        }
+        // Let MyIconButton receive its native mouse event, but prevent the parent
+        // resource row from interpreting the same gesture as an open-detail click.
+        private void Favorite_MouseButton(object sender, MouseButtonEventArgs e) {
+            Service.MouseLeave();
+        }
+        private void BtnFavorite_Click(object sender, EventArgs e) {
+            ResourceFavorites.Toggle(FavoriteProject);
+            RefreshFavorite();
         }
 
         private static (ResourceSearcher.SearchRequest Search, ModMinecraft.McInstance Instance) ReadCurrentDownloadContext() {
@@ -52,7 +73,15 @@ namespace PCL
                 CurrentSearch = ReadCurrentSearch, CurrentDownloadContext = ReadCurrentDownloadContext,
                 CurrentArguments = new Func<object[]>(() => ModMain.FrmMain.PageCurrent.Additional as object[]),
                 CurrentInstance = new Func<ModMinecraft.McInstance>(() => PageInstanceLeft.Instance),
-                OpenDetail = new Action<object[]>(Arguments => ModMain.FrmMain.PageChange(new FormMain.PageStackData() { Page = FormMain.PageType.ResourceDetail, Additional = Arguments })),
+                OpenDetail = new Action<object[]>(Arguments => {
+                    if (ModMain.FrmMain.PageCurrent.Page == FormMain.PageType.Favorites) {
+                        ResourceTypes type = (ResourceTypes)Arguments[4];
+                        if (ResourceTypeContext.HasValue && ((ResourceProject)Arguments[0]).Types.HasFlag(ResourceTypeContext.Value))
+                            Arguments[4] = ResourceTypeContext.Value;
+                        else if (type == ResourceTypes.ModOrDataPack) Arguments[4] = ResourceTypes.Mod;
+                    }
+                    ModMain.FrmMain.PageChange(new FormMain.PageStackData() { Page = FormMain.PageType.ResourceDetail, Additional = Arguments });
+                }),
                 RaiseClick = RaiseNativeClick,
                 TextTrimmed = ModBase.IsTextTrimmed,
                 Brush = new Func<string, Brush>(Color => new ModBase.MyColor(Color)),
@@ -127,6 +156,7 @@ namespace PCL
         public delegate void ClickEventHandler(object sender, MouseButtonEventArgs e);
         private void Button_MouseUp(object sender, MouseButtonEventArgs e)
         {
+            if (BtnFavorite.IsMouseOver) { Service.MouseLeave(); return; }
             Service.MouseUp(sender, e);
         }
 
@@ -142,6 +172,7 @@ namespace PCL
 
         private void Button_MouseDown(object sender, MouseButtonEventArgs e)
         {
+            if (BtnFavorite.IsMouseOver) return;
             Service.MouseDown();
         }
 

@@ -83,6 +83,9 @@ def main() -> int:
     for path, scope, native in (
         ("PCLCS/Resources/LegacyModFavorites.cs", "mod-favorites-tests", True),
         ("tests/PCLLF.Migration.Tests/LegacyModFavoritesTests.cs", "mod-favorites-tests", False),
+        ("PCLCS/Resources/ResourceFavorites.cs", "mod-favorites-tests", True),
+        ("PCLCS/Resources/ResourceProjectKey.cs", "mod-favorites-tests", True),
+        ("tests/PCLLF.Migration.Tests/ResourceFavoriteTests.cs", "mod-favorites-tests", False),
         ("PCLCS/Settings/LegacyUpdateLogPrompt.cs", "settings-tests", True),
         ("tests/PCLLF.Migration.Tests/UpdateLogPromptTests.cs", "settings-tests", False),
     ):

@@ -37,10 +37,9 @@ public sealed class LegacyLocalModItemHost<TMod,TProject,TVersion,TEntry,TInfo,T
     public Func<int> Uuid = null!, NameStyle = null!;
     public Func<TMod?> Entry = null!;
     public Action<TMod?> SetEntry = null!;
-    // A-003.2: page-owned favorite identity for this row; ToggleFavorite persists the
-    // EnabledName key and the row only re-reads its own visual state.
+    // Only the platform project attached by the existing online matcher can be saved.
     public Func<bool> Favorite = null!;
-    public Action<string> ToggleFavorite = null!;
+    public Action<TProject> ToggleFavorite = null!;
     public Func<TEntry?> Resource = null!;
     public Action<TEntry?> SetResource = null!;
     public Func<JObject?> Point = null!;
@@ -109,15 +108,18 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     public void BindRestorePoint(JObject value) { SetLoaderWarning(""); EnvironmentHistoryPagePointPresenter.Bind(value,()=>host.SetResource(null),()=>host.SetEntry(null),point=>host.SetPoint(point),Refresh); }
     public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshFavorite();RefreshResource();}
     public void RefreshFavorite() {
-        bool isMod = host.Entry() is not null && host.Point() is null && host.Resource() is null;
+        TProject? project = host.Entry()?.Project;
+        bool isMod = project is not null && host.Point() is null && host.Resource() is null &&
+            ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out _) && (project.Types & ResourceFavorite.SupportedTypes) != 0;
         view.FavoriteButton().Visibility = isMod ? Visibility.Visible : Visibility.Collapsed;
         if (isMod) view.SetFavorite(host.Favorite());
     }
     public void FavoriteClick() {
         if (host.Point() is not null || host.Resource() is not null) return;
         TMod? entry = host.Entry();
-        if (entry is null) return;
-        host.ToggleFavorite(entry.EnabledName);
+        TProject? project = entry?.Project;
+        if (project is null || !ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out _)) return;
+        host.ToggleFavorite(project);
         RefreshFavorite();
     }
     private void RefreshResource() {

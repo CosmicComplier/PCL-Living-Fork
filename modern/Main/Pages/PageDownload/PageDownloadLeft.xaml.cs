@@ -13,6 +13,8 @@ namespace PCL
         public PCL.FormMain.PageSubType PageID;
         private PCL.PageDownloadMap MapPage;
         private NavigationCore Controller;
+        private readonly PageFavorites FavoritePage;
+        private bool FavoriteReady;
         private NavigationCore Service
         {
             get
@@ -23,11 +25,36 @@ namespace PCL
             }
         }
 
-        public PageDownloadLeft()
+        public PageDownloadLeft() : this(null) { }
+
+        // The favorites navigator uses this exact BAML and its original category icons,
+        // spacing and selection controls. Its data source never starts a download loader.
+        internal PageDownloadLeft(PageFavorites Favorites)
         {
+            FavoritePage = Favorites;
             __LfAttachOwnHandles();
             this.PageID = PCL.FormMain.PageSubType.DownloadInstall;
             this.InitializeComponent();
+            if (FavoritePage is not null) {
+                ItemInstall.Title = "全部收藏";
+                ItemInstall.Logo = ModBase.Logo.IconButtonLikeLine;
+                foreach (MyListItem item in PanItem.Children.OfType<MyListItem>()) item.Buttons = Array.Empty<MyIconButton>();
+                foreach (TextBlock label in PanItem.Children.OfType<TextBlock>()) label.Text = "收藏资源";
+                FavoriteReady = true;
+            }
+        }
+
+        internal static ResourceTypes? FavoriteCategory(int Code) => Code switch {
+            0 => null, 2 => ResourceTypes.Mod, 3 => ResourceTypes.ModPack, 7 => ResourceTypes.Map,
+            4 => ResourceTypes.DataPack, 5 => ResourceTypes.ResourcePack, 6 => ResourceTypes.Shader,
+            _ => throw new ArgumentOutOfRangeException(nameof(Code))
+        };
+        internal MyListItem NavigationItem(FormMain.PageSubType ID) => NativeItem((int)ID);
+        internal void RefreshFavoriteCounts(IEnumerable<ResourceFavorite> Entries) {
+            string[] titles = { "全部收藏", "Mod", "整合包", "地图", "数据包", "资源包", "光影包" };
+            int[] codes = { 0, 2, 3, 7, 4, 5, 6 };
+            var values = Entries.ToArray();
+            for (int index = 0; index < codes.Length; index++) NativeItem(codes[index]).Title = titles[index] + " (" + values.Count(entry => entry.Matches(FavoriteCategory(codes[index]), null)) + ")";
         }
 
         private DownloadNavigationHost<PCL.MyPageRight, PCL.FormMain.PageSubType> CreateHost()
@@ -377,21 +404,33 @@ namespace PCL
 
         private void PageCheck(FrameworkElement sender, PCL.ModBase.RouteEventArgs e)
         {
+            if (FavoritePage is not null) {
+                if (FavoriteReady) { PageID = (FormMain.PageSubType)Convert.ToInt32(sender.Tag); FavoritePage.ChooseCategory(FavoriteCategory((int)PageID)); }
+                return;
+            }
             Service.Check(sender);
         }
 
         private void MapButtonInit()
         {
+            if (FavoritePage is not null) return;
             Service.InitializeMapButton();
         }
 
         public object PageGet(PCL.FormMain.PageSubType ID = (PCL.FormMain.PageSubType)(-1))
         {
+            if (FavoritePage is not null) { if ((int)ID >= 0) PageChange(ID); return FavoritePage; }
             return Service.Get(ID);
         }
 
         public void PageChange(PCL.FormMain.PageSubType ID)
         {
+            if (FavoritePage is not null) {
+                PageID = ID;
+                NativeItem((int)ID).Checked = true;
+                FavoritePage.ChooseCategory(FavoriteCategory((int)ID));
+                return;
+            }
             Service.Change(ID);
         }
 
@@ -402,21 +441,25 @@ namespace PCL
 
         public void Refresh_Click(object sender, EventArgs e)
         {
+            if (FavoritePage is not null) { FavoritePage.Refresh(); return; }
             Service.RefreshClick(sender);
         }
 
         public void Refresh()
         {
+            if (FavoritePage is not null) { FavoritePage.Refresh(); return; }
             Service.Refresh();
         }
 
         public void Refresh(PCL.FormMain.PageSubType SubType)
         {
+            if (FavoritePage is not null) { FavoritePage.Refresh(); return; }
             Service.Refresh(SubType);
         }
 
         private void ItemInstall_Click(object sender, MouseButtonEventArgs e)
         {
+            if (FavoritePage is not null) return;
             Service.InstallClick();
         }
 

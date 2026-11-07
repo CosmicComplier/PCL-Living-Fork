@@ -44,6 +44,13 @@ global::PCL.MyIconButton current=__lfMain_BtnTitleMin; if(current!=null) {
 current.Click += hook0;
 }
 } }
+private global::PCL.MyRadioButton __lfMain_BtnTitleSelect5;
+internal virtual global::PCL.MyRadioButton BtnTitleSelect5 { get {return __lfMain_BtnTitleSelect5;} [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.Synchronized)] set {
+global::PCL.MyRadioButton.CheckEventHandler hook0 = new global::PCL.MyRadioButton.CheckEventHandler(this.BtnTitleSelect_CheckEvent);
+global::PCL.MyRadioButton previous=__lfMain_BtnTitleSelect5; if(previous!=null) previous.Check -= hook0;
+__lfMain_BtnTitleSelect5=value;
+global::PCL.MyRadioButton current=__lfMain_BtnTitleSelect5; if(current!=null) current.Check += hook0;
+} }
 private global::PCL.MyRadioButton __lfMain_BtnTitleSelect0;
 internal virtual global::PCL.MyRadioButton BtnTitleSelect0 { get {return __lfMain_BtnTitleSelect0;} [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.Synchronized)] set {
 global::PCL.MyRadioButton.CheckEventHandler hook0 = new global::PCL.MyRadioButton.CheckEventHandler(this.BtnTitleSelect_CheckEvent);

@@ -21,21 +21,21 @@ internal static class LegacySettingsTests {
         yield return ("settings migration retains corrupt groups and merges only validated accounts", MigrationGroups);
         yield return ("settings Microsoft upgrade preserves explicit V2 logout and corrupt originals", LegacyMicrosoftUpgrade);
         yield return ("settings preferences respect explicit empty PCL values and rollback", PreferenceRollback);
-        yield return ("settings mod favorites persist only in the instance Setup.ini", FavoritesInstanceOnly);
-        yield return ("settings mod favorites require an instance during read, write and direct save", FavoritesRequireInstance);
     }
     private static void Definitions() {
         var fixture = new Fixture();
         // LF main50 adds source/channel/color-mode/panel-opacity; no baseline key is removed.
-        // A-003 uses a version dismissal (not a permanent bool) and instance favorites.
+        // Notes use a version dismissal. Project favorites own their global JSON store;
+        // the obsolete per-file favorite key is deliberately absent from active settings.
         Equal(211, fixture.Entries.Count);
         Equal("", fixture.Entries[LegacyUpdateLogPrompt.Key].DefaultValue);
         Equal(typeof(string), fixture.Entries[LegacyUpdateLogPrompt.Key].Type);
         Equal(LegacySettingSource.Normal, fixture.Entries[LegacyUpdateLogPrompt.Key].Source);
         Equal(false, fixture.Entries.ContainsKey("SystemUpdateLogPrompt"));
-        Equal("", fixture.Entries["UiModFavorite"].DefaultValue);
-        Equal(typeof(string), fixture.Entries["UiModFavorite"].Type);
-        Equal(LegacySettingSource.Instance, fixture.Entries["UiModFavorite"].Source);
+        Equal(false, fixture.Entries.ContainsKey("UiModFavorite"));
+        Equal(false, fixture.Entries["UiHiddenPageFavorites"].DefaultValue);
+        Equal(typeof(bool), fixture.Entries["UiHiddenPageFavorites"].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries["UiHiddenPageFavorites"].Source);
         foreach (string key in new[] { "ToolLauncherUpdateSource", "ToolLauncherUpdateChannel", "UiLauncherColorMode" }) {
             Equal(0, fixture.Entries[key].DefaultValue);
             Equal(typeof(int), fixture.Entries[key].Type);
@@ -110,34 +110,6 @@ internal static class LegacySettingsTests {
         Equal(5, fixture.Engine.Get("VersionWorldBackupRetention", second));
         Equal("7", fixture.Ini[(first.Path + "PCL\\Setup.ini", "VersionWorldBackupRetention")]);
         Throws<NullReferenceException>(() => fixture.Engine.Get("VersionWorldBackupRetention"));
-    }
-    private static void FavoritesInstanceOnly() {
-        var fixture = new Fixture();
-        var instance = new Instance("C:\\synthetic-instance\\");
-        Equal("", fixture.Engine.Get("UiModFavorite", instance));
-        fixture.Engine.Set("UiModFavorite", "alpha|BETA|alpha", instance);
-        // Normalized storage is written to the instance PCL\Setup.ini only.
-        Equal("alpha|BETA|alpha", fixture.Ini[(instance.Path + "PCL\\Setup.ini", "UiModFavorite")]);
-        Equal(false, fixture.Ini.ContainsKey(("Setup", "UiModFavorite")));
-        Equal("alpha|BETA|alpha", fixture.Engine.Get("UiModFavorite", instance));
-        // A second instance sees its own cache/file, never the launcher Setup.ini.
-        var other = new Instance("C:\\other-instance\\");
-        Equal("", fixture.Engine.Get("UiModFavorite", other));
-        Equal(false, fixture.Ini.ContainsKey(("Setup", "UiModFavorite")));
-        // Undoing a favorite rewrites the same instance file.
-        fixture.Engine.Set("UiModFavorite", "alpha", instance);
-        Equal("alpha", fixture.Ini[(instance.Path + "PCL\\Setup.ini", "UiModFavorite")]);
-        Equal(false, fixture.Ini.ContainsKey(("Setup", "UiModFavorite")));
-    }
-    private static void FavoritesRequireInstance() {
-        var fixture = new Fixture();
-        Throws<NullReferenceException>(() => fixture.Engine.Get("UiModFavorite"));
-        // Set() logs and swallows the missing instance, but must never fall back to
-        // launcher Setup.ini (that would create a second truth for the same key).
-        fixture.Engine.Set("UiModFavorite", "alpha");
-        Equal(false, fixture.Ini.ContainsKey(("Setup", "UiModFavorite")));
-        Throws<Exception>(() => fixture.Engine.SaveEntry(fixture.Entries["UiModFavorite"], null));
-        Equal(false, fixture.Ini.ContainsKey(("Setup", "UiModFavorite")));
     }
     private static void AccountRollback() {
         var fixture = new Fixture();

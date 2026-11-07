@@ -7,10 +7,12 @@ namespace PCLCS;
 
 public sealed class ModpackModeRoutes {
     public int SetupLaunch, SetupSystem, Download, Other, Link, SetupPage, InstanceBackups, InstanceSaves, InstanceExport, InstanceOverall;
+    public int Favorites = 10;
 }
 public sealed class ModpackModeHeaderView {
     public Panel Panel = null!;
     public UIElement Download = null!, Link = null!, Setup = null!, Other = null!;
+    public UIElement? Favorites;
     public Action<string> SetupText = null!;
 }
 public sealed class ModpackModeSetupView {
