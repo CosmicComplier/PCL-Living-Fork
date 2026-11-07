@@ -131,6 +131,7 @@ namespace PCL
         /// 图标按钮，心（空心），1.1x
         /// </summary>
             public const string IconButtonLikeLine = LegacyBaseIcons.IconButtonLikeLine;
+            public const string IconButtonTheme = LegacyBaseIcons.IconButtonTheme;
             /// <summary>
         /// 图标按钮，心（实心），1.1x
         /// </summary>
