@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -36,10 +37,17 @@ public partial class PageInstancePackUpdate : IRefreshable {
         BtnOnline.IsEnabled = BtnLocal.IsEnabled = BtnBackups.IsEnabled = false;
         if (owner is null) { LabVersion.Text = "未选择版本"; return; }
         LabName.Text = owner.Name; LabVersion.Text = "正在读取…"; LabSource.Text = "";
-        try { ImgPack.Source = (ImageSource)new MyBitmap(owner.Logo); } catch { ImgPack.Source = null; }
+        try {
+            string logo = owner.Logo;
+            if (!string.IsNullOrWhiteSpace(logo) && !Path.IsPathRooted(logo) && !Uri.TryCreate(logo, UriKind.Absolute, out _))
+                logo = Path.GetFullPath(Path.Combine(owner.PathVersion, logo));
+            ImgPack.Source = string.IsNullOrWhiteSpace(logo) ? null : (ImageSource)new MyBitmap(logo);
+        } catch { ImgPack.Source = null; }
         if (ImgPack.Source is null) try { ImgPack.Source = (ImageSource)new MyBitmap(ModBase.PathImage + "Blocks/Grass.png"); } catch { }
+        bool recordRead = false;
         try {
             JObject data = await Task.Run(() => ModpackUpdate.ReadManifest(owner.PathVersion)).ConfigureAwait(false);
+            recordRead = true;
             await Dispatcher.InvokeAsync(() => {
             if (current != revision || !Current()) return;
             record = data;
@@ -58,7 +66,8 @@ public partial class PageInstancePackUpdate : IRefreshable {
             if (Dispatcher.HasShutdownStarted) return;
             try { await Dispatcher.InvokeAsync(() => {
             if (current != revision || !Current()) return;
-            LabVersion.Text = "记录读取失败"; HintState.Theme = MyHint.Themes.Yellow; HintState.Text = error.Message;
+            if (!recordRead) LabVersion.Text = "记录读取失败";
+            HintState.Theme = MyHint.Themes.Yellow; HintState.Text = (recordRead ? "页面加载失败：" : "") + error.Message;
             BtnBackups.IsEnabled = true;
             }); } catch (OperationCanceledException) { }
         }
@@ -107,7 +116,9 @@ public partial class PageInstancePackUpdate : IRefreshable {
             record?["source"] is null ? "没有在线来源记录，可从文件更新。" : "已获取 " + catalog.Count + " 个版本，显示 " + PanVersions.Children.Count + " 个；点击版本查看并选择更新。";
     }
     private MyListItem VersionRow(string title, string info, bool current) {
-        var row = new MyListItem { Title = title, Info = info, Height = 62, Type = current ? MyListItem.CheckType.None : MyListItem.CheckType.Clickable, Logo = string.IsNullOrWhiteSpace(displayed?.Logo) ? ModBase.PathImage + "Blocks/Grass.png" : displayed.Logo, Margin = new Thickness(3, 0, 3, 6) };
+        // The optional instance artwork was already resolved and decoded above.
+        // Do not ask each row to reopen the stored, possibly relative logo path.
+        var row = new MyListItem { Title = title, Info = info, Height = 62, Type = current ? MyListItem.CheckType.None : MyListItem.CheckType.Clickable, Logo = ModBase.PathImage + "Blocks/Grass.png", Margin = new Thickness(3, 0, 3, 6) };
         row.ColumnLogo.MinWidth = 55;
         if (row.PathLogo is Canvas canvas && ImgPack.Source is not null) canvas.Background = new ImageBrush(ImgPack.Source) { Stretch = Stretch.Uniform };
         if (current) {

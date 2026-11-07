@@ -41,11 +41,22 @@ internal static class ModpackSidebarChecks {
             JObject manifest = (JObject)Native.Static("PCL.ModpackUpdate", "Manifest", package)!;
             Directory.CreateDirectory(Path.Combine(instance.PathVersion, "PCL"));
             File.WriteAllText(Path.Combine(instance.PathVersion, "PCL", "ModpackOrigin.json"), manifest.ToString());
+            instance.Logo = @"PCL\Logo.png"; // Missing relative custom artwork must not break the record/catalog.
             page.Refresh();
             VisualAssetChecks.Pump(() => ((TextBlock)page.FindName("LabListStatus")).Text.StartsWith("已获取", StringComparison.Ordinal), "Recorded pack catalog did not refresh.", 5000);
             Native.Check(version.Text == "12.3.0" && ((MyButton)page.FindName("BtnOnline")).IsEnabled, "Recognized pack lost its version or online update entry.");
             var versions = (StackPanel)page.FindName("PanVersions");
             Native.Check(versions.Children.Count == 2 && ((MyListItem)versions.Children[0]).Title == "14.1.2" && ((MyListItem)versions.Children[1]).Children.OfType<Border>().Any(border => Equals(border.Tag, "current-pack-version")), "Catalog order or current version marker is incorrect.");
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 40, 160, 255, 255, 40, 160, 255, 255 }, 8)));
+            using (var imageFile = File.Create(Path.Combine(instance.PathVersion, "PCL", "valid-logo.png"))) encoder.Save(imageFile);
+            instance.Logo = @"PCL\valid-logo.png"; page.Refresh();
+            VisualAssetChecks.Pump(() => ((TextBlock)page.FindName("LabListStatus")).Text.StartsWith("已获取", StringComparison.Ordinal), "Relative custom logo blocked the catalog.", 5000);
+            Native.Check(((Image)page.FindName("ImgPack")).Source is BitmapSource bitmap && bitmap.PixelWidth == 2 && bitmap.PixelHeight == 1, "Custom logo was not resolved relative to the selected instance.");
+            File.WriteAllText(Path.Combine(instance.PathVersion, "PCL", "broken-logo.png"), "invalid image");
+            instance.Logo = @"PCL\broken-logo.png"; page.Refresh();
+            VisualAssetChecks.Pump(() => ((TextBlock)page.FindName("LabListStatus")).Text.StartsWith("已获取", StringComparison.Ordinal), "Broken artwork blocked the catalog.", 5000);
+            Native.Check(version.Text == "12.3.0" && versions.Children.Count == 2, "Artwork failure was misreported as a record error.");
             ((MySearchBox)page.FindName("TextSearchVersion")).Text = "12.3";
             Native.Check(versions.Children.Count == 1, "Pack version search did not filter rows.");
             ((MySearchBox)page.FindName("TextSearchVersion")).Text = "";
