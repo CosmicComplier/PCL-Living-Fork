@@ -50,13 +50,6 @@ namespace PCL
             _ => throw new ArgumentOutOfRangeException(nameof(Code))
         };
         internal MyListItem NavigationItem(FormMain.PageSubType ID) => NativeItem((int)ID);
-        internal void RefreshFavoriteCounts(IEnumerable<ResourceFavorite> Entries) {
-            string[] titles = { "全部收藏", "Mod", "整合包", "地图", "数据包", "资源包", "光影包" };
-            int[] codes = { 0, 2, 3, 7, 4, 5, 6 };
-            var values = Entries.ToArray();
-            for (int index = 0; index < codes.Length; index++) NativeItem(codes[index]).Title = titles[index] + " (" + values.Count(entry => entry.Matches(FavoriteCategory(codes[index]), null)) + ")";
-        }
-
         private DownloadNavigationHost<PCL.MyPageRight, PCL.FormMain.PageSubType> CreateHost()
         {
             var Host = CreateFrameHost();

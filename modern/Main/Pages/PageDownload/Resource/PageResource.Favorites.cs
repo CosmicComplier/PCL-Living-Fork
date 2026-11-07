@@ -13,7 +13,6 @@ namespace PCL;
 public partial class PageResource {
     private ResourceFavoriteStore FavoriteStore;
     private Action FavoriteReload;
-    private Action<IReadOnlyList<ResourceFavorite>> FavoriteCounts;
     private ResourceTypes? FavoriteCategory;
     private IReadOnlyList<ResourceFavorite> FavoriteEntries;
     private Exception FavoriteError;
@@ -21,9 +20,9 @@ public partial class PageResource {
     private TextBlock FavoriteStatus;
     private bool FavoriteLoading, FavoriteRebuilding;
 
-    internal void UseFavorites(ResourceFavoriteStore store, Action reload, Action<IReadOnlyList<ResourceFavorite>> counts) {
+    internal void UseFavorites(ResourceFavoriteStore store, Action reload) {
         if (IsLoaded) throw new InvalidOperationException("收藏数据源必须在页面加载前设置。");
-        FavoriteStore = store; FavoriteReload = reload; FavoriteCounts = counts;
+        FavoriteStore = store; FavoriteReload = reload;
         FavoriteStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(15) };
         FavoriteStatus.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3");
         BtnSearchInstallModPack.Visibility = Visibility.Collapsed;
@@ -107,7 +106,6 @@ public partial class PageResource {
     private void RenderFavorites() {
         if (FavoriteLoading) return;
         var all = FavoriteEntries ?? FavoriteStore.Snapshot;
-        FavoriteCounts(all.Where(entry => FavoriteQuery.Matches(entry, true)).ToArray());
         var shown = all.Where(entry => FavoriteQuery.Matches(entry)).ToArray();
         int pages = Math.Max(1, (shown.Length + PAGE_SIZE - 1) / PAGE_SIZE); Page = Math.Clamp(Page, 0, pages - 1);
         PanProjects.Children.Clear();
