@@ -52,7 +52,7 @@ public sealed class PackUpdateFlowHost<TPackage, TPlan, TNetFile, TVersion, TIns
     public Func<string> TempFolder = null!;
     public Func<TTask, CancellationToken> Cancellation = null!;
     public Action<TTask, double> SetProgress = null!;
-    public Action<TTask, string> SetStage = (_, _) => { };
+    public Action<TTask, PackUpdateStage, PackUpdateStageState, string?> SetStage = (_, _, _, _) => { };
     public Func<TTask, double, double, TProgress> Progress = null!;
     public Action<TTask, string> SetOutput = null!;
     public Func<PackUpdateRuntimeRequest, TCombo> CreateRuntime = null!;

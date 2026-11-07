@@ -171,6 +171,7 @@
 <Compile Include="Pages/PageSetup/PageSetupUI.xaml.cs" />
 <Compile Include="Pages/PageSetup/SettingService.cs" />
 <Compile Include="Pages/PageSpeedLeft.xaml.cs" />
+<Compile Include="Pages/PageSpeedLeft.PackStages.cs" />
 <Compile Include="Pages/PageSpeedRight.xaml.cs" />
 <Compile Include="Application.xaml.cs" />
 <Compile Include="Controls/MyListItem.xaml.cs" />
@@ -323,6 +324,7 @@
   <Compile Include="Modules/Base/FileTaskProgress.cs" />
   <Compile Include="Modules/ModTheme.cs" />
   <Compile Include="Controls/ModernTooltipTheme.cs" />
+<Compile Include="Controls/LauncherUpdateCardBackground.cs" />
   <Resource Include="Images/Branding/DefaultBackgroundNight.png" />
   <Compile Include="Modules/Minecraft/ModDependencyIndex.cs" />
 </ItemGroup>

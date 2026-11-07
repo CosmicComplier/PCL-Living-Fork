@@ -13,8 +13,9 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
     where TVersion : ResourceVersionModelData where TInstance : class where TTask : class where TCombo : class where TWorker : class where TProgress : class {
     public void Execute(TInstance instance, bool online, string? archivePath, TTask task, string? requestedVersion = null) {
         CancellationToken token = host.Cancellation(task); string stage = host.TempFolder();
-        void Stage(string text) => host.SetStage(task, text);
-        Stage("读取整合包记录");
+        void Stage(PackUpdateStage phase, string? detail = null) => host.SetStage(task, phase, PackUpdateStageState.Running, detail);
+        void Done(PackUpdateStage phase) => host.SetStage(task, phase, PackUpdateStageState.Finished, null);
+        Stage(PackUpdateStage.ReadRecord);
         host.SetProgress(task, 0.03);
         if (update.Pending(host.VersionFolder(instance)).Any()) {
             if (host.Message("上次整合包更新被中断，需要先恢复更新前的文件。", "恢复整合包", "恢复", "取消", true) != 1) throw new OperationCanceledException();
@@ -28,7 +29,7 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         double inputStart = 0.03;
         if (PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.RequiresBaselineRepair(baseline)) {
             TPackage? original = null;
-            Stage("获取并核对原始整合包");
+            Stage(PackUpdateStage.ReadRecord, "获取并核对当前版本原始整合包");
             string? automaticFailure = null;
             if (baseline is not null) {
                 try {
@@ -52,17 +53,21 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
             inputStart = 0.08; host.SetProgress(task, inputStart);
         }
         JObject? source = null;
-        Stage("选择并下载新版整合包");
+        Done(PackUpdateStage.ReadRecord);
+        Stage(PackUpdateStage.PreparePackage, "选择并下载新版整合包");
         if (online) archivePath = ChooseOnline(baseline!, stage, token, ref source, host.Progress(task, inputStart, 0.12), requestedVersion);
         host.SetProgress(task, 0.12);
-        Stage("读取新版文件清单");
+        Stage(PackUpdateStage.PreparePackage, "读取新版文件清单");
         TPackage package = update.ReadPackage(archivePath!, Path.Combine(stage, "next"), token);
         package.Source = source;
         EnsureOriginUnchanged();
-        Stage("比较作者文件与本地修改");
+        Done(PackUpdateStage.PreparePackage);
+        Stage(PackUpdateStage.CompareFiles);
         TPlan plan = update.Plan(root, baseline, package, token);
         host.SetProgress(task, 0.15);
-        update.DownloadChanges(plan, stage, token, (files, cancel) => host.Download(files, cancel, host.Progress(task, 0.15, 0.65)), Stage);
+        Done(PackUpdateStage.CompareFiles);
+        Stage(PackUpdateStage.PrepareFiles);
+        update.DownloadChanges(plan, stage, token, (files, cancel) => host.Download(files, cancel, host.Progress(task, 0.15, 0.65)), text => Stage(PackUpdateStage.PrepareFiles, text));
         host.SetProgress(task, 0.65);
         bool runtimeChanged = !Same(host.Version(instance).VanillaName, package.Minecraft) || host.Version(instance).ModLoaderVersions.Count != package.Loaders.Count ||
             package.Loaders.Any(pair => !host.Version(instance).ModLoaderVersions.ContainsKey(pair.Key) || !Same(host.Version(instance).ModLoaderVersions[pair.Key], pair.Value));
@@ -71,9 +76,11 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
             runtimeBefore[relative] = PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(update.Target(host.VersionFolder(instance), relative), token: token);
         string summary = package.Name + " " + package.Version + "\r\n" + $"默认执行作者变更 {plan.Changes.Count(item => item.ApplyAuthor)} 项，保留或待确认 {plan.Changes.Count(item => !item.ApplyAuthor)} 项；冲突可在预览中逐项选择。" + "\r\n" +
             (runtimeChanged ? "Minecraft 或加载器将更新；存档会保留，请确认新版本兼容。" : "");
-        Stage("等待确认更新预览");
+        Done(PackUpdateStage.PrepareFiles);
+        host.SetStage(task, PackUpdateStage.ConfirmPreview, PackUpdateStageState.AwaitingConfirmation, "等待玩家确认，尚未应用文件");
         if (host.Preview(summary, plan, () => host.Version(instance)) != 1) throw new OperationCanceledException();
-        Stage("复查所选更新方案");
+        Done(PackUpdateStage.ConfirmPreview);
+        Stage(PackUpdateStage.ValidateChoices);
         PackDependencyGraphResult dependencies = update.CheckDependencies(plan, token);
         plan.DependencyCheck = dependencies;
         if (dependencies.HasErrors) throw new IOException("所选更新后的模组组合存在依赖或冲突问题，未提交更新。请调整作者版本与个人覆盖的选择：\r\n" + string.Join("\r\n", dependencies.Errors));
@@ -83,9 +90,10 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
             plan.AllowUnverifiedDependencies = true;
         }
         update.ValidateChoices(plan, token);
+        Done(PackUpdateStage.ValidateChoices);
         Dictionary<string, string> extras = new(StringComparer.OrdinalIgnoreCase);
         if (runtimeChanged) {
-            Stage("准备 Minecraft 与加载器组件");
+            Stage(PackUpdateStage.PrepareRuntime);
             string buildFolder = Path.Combine(stage, "runtime", host.Name(instance)) + "\\";
             var request = new PackUpdateRuntimeRequest { Name = host.Name(instance), BuildFolder = buildFolder, Minecraft = package.Minecraft!, Loaders = package.Loaders,
                 MinecraftFolder = Path.GetDirectoryName(Path.GetDirectoryName(host.VersionFolder(instance).TrimEnd('\\'))) + "\\" };
@@ -104,26 +112,38 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
             config["MinecraftInstallManifest"] = newConfig["MinecraftInstallManifest"]?.DeepClone();
             string configPayload = Path.Combine(stage, "updated-config.json");
             File.WriteAllText(configPayload, config.ToString()); extras.Add("PCL/config.json", configPayload);
+            Done(PackUpdateStage.PrepareRuntime);
         }
+        else host.SetStage(task, PackUpdateStage.PrepareRuntime, PackUpdateStageState.Skipped, "Minecraft 与加载器版本未变化，无需更新");
+        Stage(PackUpdateStage.MigrateSettings, "复查当前环境与运行状态");
         token.ThrowIfCancellationRequested();
         if (host.HasRunningGame() || host.HasRunningSessions() || host.LaunchLoading()) throw new IOException("游戏已开始运行，未替换文件。");
         foreach (var pair in runtimeBefore)
             if (!Same(PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(update.Target(host.VersionFolder(instance), pair.Key), token: token), pair.Value)) throw new IOException("游戏组件或版本设置在预览后发生变化，请重新检查更新。");
         host.SetProgress(task, 0.85);
-        Stage("迁移个人游戏设置");
+        Stage(PackUpdateStage.MigrateSettings);
         host.BeforeMinecraftChange(instance, host.Version(instance).VanillaName, package.Minecraft!, token);
-        host.SetProgress(task, 0.87); Stage("备份更新前的环境"); host.CaptureHistory(instance, "整合包更新前", token);
+        Done(PackUpdateStage.MigrateSettings);
+        host.SetProgress(task, 0.87); Stage(PackUpdateStage.CaptureHistory); host.CaptureHistory(instance, "整合包更新前", token);
+        Done(PackUpdateStage.CaptureHistory);
+        Stage(PackUpdateStage.BackupFiles);
         host.SetProgress(task, 0.9);
         EnsureOriginUnchanged();
         update.ValidateChoices(plan, token);
         int operationCount = update.PlannedOperationCount(plan, token) + extras.Count + 1;
-        Stage("校验并备份待替换文件");
         string backup = update.Commit(plan, host.VersionFolder(instance), token, extras,
-            index => Stage("应用文件更新（" + (index + 1) + "/" + operationCount + "）"),
+            index => {
+                // The first callback runs only after all original files and the
+                // transaction journal have been durably staged by Commit.
+                if (index == 0) Done(PackUpdateStage.BackupFiles);
+                Stage(PackUpdateStage.ApplyFiles, "文件 " + (index + 1) + "/" + operationCount);
+            },
             value => host.SetProgress(task, 0.9 + 0.08 * Math.Min(1, Math.Max(0, value))));
+        Done(PackUpdateStage.ApplyFiles);
         host.SetProgress(task, 0.98); host.SetOutput(task, backup);
-        Stage("刷新版本信息");
+        Stage(PackUpdateStage.RefreshInstance);
         ReloadInstance(instance); host.Info("整合包更新完成，原文件备份：" + backup);
+        Done(PackUpdateStage.RefreshInstance);
         void EnsureOriginUnchanged() {
             if (!Same(originBefore, PackUpdateEngine<TFile, TPackage, TChange, TPlan, TNetFile>.Digest(originPath, token: token)))
                 throw new IOException("整合包作者记录在处理期间发生变化，请重新检查更新；未覆盖变动后的记录。");

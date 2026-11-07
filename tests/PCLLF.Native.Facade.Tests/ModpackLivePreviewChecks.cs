@@ -113,6 +113,12 @@ internal static class ModpackLivePreviewChecks
             preview.UpdateLayout();
             VisualAssetChecks.Pump(() => Walk(preview).OfType<Image>().Any(img => Equals(img.Tag, "preview-file-icon") && img.Source is not null), "Embedded mod artwork did not load.", 8000);
             Native.Check(Walk(preview).OfType<Image>().Where(img => Equals(img.Tag, "preview-file-icon")).All(img => img.Stretch == Stretch.Uniform), "Artwork was stretched out of proportion.");
+            Native.Check(Walk(preview).OfType<Image>().Where(img => Equals(img.Tag, "preview-file-icon")).All(img => {
+                if (img.Width != 34 || img.Height != 34 || img.Clip is not RectangleGeometry clip || clip.RadiusX <= 0 || clip.RadiusY <= 0) return false;
+                if (img.Source is not ImageSource source) return clip.Rect == new Rect(0, 0, 34, 34);
+                double scale = 34 / Math.Max(source.Width, source.Height);
+                return Math.Abs(clip.Rect.Width - source.Width * scale) < 0.01 && Math.Abs(clip.Rect.Height - source.Height * scale) < 0.01;
+            }), "Square or wide Uniform artwork lacks a rounded clip around its visible content.");
             Save(modal, "live-preview-files.png");
             Native.Check(Walk(preview).OfType<MyCard>().Any(card => card.Title == "文件变更") && !Walk(preview).OfType<MyCard>().Any(card => card.Title == "更新检查"), "File page mixed in compatibility decisions.");
             Native.Check(!Option("EnableRequired", "mods/provider-new.jar").Checked && !Option("DisableIncompatible", "mods/legacy-adapter.jar").Checked,

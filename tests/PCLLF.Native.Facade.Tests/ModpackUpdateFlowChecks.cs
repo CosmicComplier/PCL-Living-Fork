@@ -104,11 +104,22 @@ internal static class ModpackUpdateFlowChecks
         flow.Messages.Clear(); flow.Archives.Enqueue(next); flow.Archives.Enqueue(old);
         flow.Confirm = (_, _, _, _, _) => 1;
         object? shown = null;
-        flow.Preview = plan => { shown = plan; return 2; };
+        flow.Preview = plan => {
+            shown = plan;
+            var stages = Stages(flow.Step!);
+            Check(stages.Single(item => item.Stage == PackUpdateStage.ConfirmPreview).State == PackUpdateStageState.AwaitingConfirmation &&
+                stages.Where(item => item.Stage < PackUpdateStage.ConfirmPreview).All(item => item.State == PackUpdateStageState.Finished) &&
+                stages.Where(item => item.Stage > PackUpdateStage.ConfirmPreview).All(item => item.State == PackUpdateStageState.Waiting),
+                "FLOW-stages-preview", "Actual preview did not expose completed, awaiting-confirmation and unexecuted stages together.");
+            Check(flow.Combo!.GetLoaderList().Count == 1 && flow.Step!.Name == "比较并更新整合包文件", "FLOW-stages-single-worker", "Presentation stages changed the actual loader chain or renamed its worker.");
+            ModpackStageLayoutChecks.CaptureTask(flow.Combo, Path.Combine(root, "stages-awaiting-preview.png"));
+            return 2;
+        };
         TraceStage("preview-refusal-start"); flow.Start(declined); flow.WaitStopped(); TraceStage("preview-refusal-stopped");
         Check(shown is not null && shown.GetType().Assembly == Native.Main && Changes(shown).Any(Conflict), "FLOW-03-plan", "preview did not receive actual personal-preserving plan");
         Check(flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded && flow.Messages.SequenceEqual(new[] { "补全整合包记录" }), "FLOW-03", "preview rejection did not cancel after establishing the correct origin");
-        Check(flow.Step.Name == "等待确认更新预览", "FLOW-stage-preview", "The real task did not expose the preview waiting phase.");
+        Check(Stages(flow.Step).Single(item => item.Stage == PackUpdateStage.ConfirmPreview).State == PackUpdateStageState.Canceled &&
+            Stages(flow.Step).Where(item => item.Stage > PackUpdateStage.ConfirmPreview).All(item => item.State == PackUpdateStageState.Waiting), "FLOW-stage-preview", "Preview cancellation marked unexecuted stages complete or lost the canceled stage.");
         Check(File.ReadAllText(Path.Combine(declined.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(declined.PathIndie, "config/personal.txt")) == "my-edit" && Update("ReadManifest", declined.PathVersion) is null, "FLOW-03-bytes", "refused preview committed files or persisted origin");
 
         // Cancel the REAL taskbar combo while the existing confirmation primitive
@@ -160,6 +171,11 @@ internal static class ModpackUpdateFlowChecks
         Check(externalVersion is not null && File.ReadAllText(versionJson) == externalVersion && File.ReadAllText(Path.Combine(stale.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(stale.PathIndie, "config/personal.txt")) == "my-edit" && File.ReadAllText(Path.Combine(stale.PathVersion, "PCL", "ModpackOrigin.json")) == staleOrigin,
             "FLOW-09-bytes", "stale-preview rejection changed external runtime edits or author/personal/origin bytes");
         Check(!Directory.Exists(Path.Combine(stale.PathVersion, "PCL", "PackUpdateBackups")), "FLOW-09-backup", "stale runtime preview created a commit transaction");
+        Check(Stages(flow.Step).Single(item => item.Stage == PackUpdateStage.MigrateSettings).State == PackUpdateStageState.Failed &&
+            Stages(flow.Step).Single(item => item.Stage == PackUpdateStage.PrepareRuntime).State == PackUpdateStageState.Skipped &&
+            Stages(flow.Step).Where(item => item.Stage >= PackUpdateStage.CaptureHistory).All(item => item.State == PackUpdateStageState.Waiting),
+            "FLOW-stages-failed", "Failure did not preserve an explicit runtime skip and unexecuted file stages.");
+        ModpackStageLayoutChecks.CaptureTask(flow.Combo!, Path.Combine(root, "stages-failed.png"));
 
         // Schema 1 could have lost edited entries during RecordInstalled.
         // Matching names, versions, Minecraft and loaders alone cannot validate
@@ -202,6 +218,8 @@ internal static class ModpackUpdateFlowChecks
         int infos = flow.Infos.Count;
         TraceStage("accepted-start"); flow.Start(accepted); flow.WaitStopped(); TraceStage("accepted-stopped");
         Check(flow.Worker!.LastSucceeded && flow.Step!.State == ModBase.LoadState.Finished && previews == 1 && flow.Infos.Count == infos + 1, "FLOW-06", "accepted real workflow did not finish: " + flow.Step.Error);
+        Check(Stages(flow.Step).All(item => item.State == (item.Stage == PackUpdateStage.PrepareRuntime ? PackUpdateStageState.Skipped : PackUpdateStageState.Finished)),
+            "FLOW-stages-complete", "Successful actual workflow skipped work implicitly or retained an unfinished stage.");
         Check(File.ReadAllText(Path.Combine(accepted.PathIndie, "config/author.txt")) == "new-author" && File.ReadAllText(Path.Combine(accepted.PathIndie, "config/personal.txt")) == "my-edit", "FLOW-07", "accepted workflow lost author update or personal modification");
         string backup = flow.Step.Output;
         Check(!string.IsNullOrEmpty(backup) && Native.Full(backup).StartsWith(Native.Full(accepted.PathVersion) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(backup, "transaction.json")), "FLOW-07-backup", "real step did not publish owned durable backup");
@@ -223,6 +241,9 @@ internal static class ModpackUpdateFlowChecks
         environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS native modpack-update workflow: FLOW-01..11 and automatic schema-1 origins (exact Modrinth/CurseForge versions, primary archive, hash/project/origin guards, cancellation, personal preservation, transactional schema-2 commit).");
     }
+
+    private static PackUpdateStageSnapshot[] Stages(ModLoader.LoaderBase task) =>
+        (PackUpdateStageSnapshot[])Native.Static("PCL.ModpackUpdateFlow", "GetStageSnapshot", new List<ModLoader.LoaderBase> { task })!;
 
     private static void AutomaticOrigins(LiveFlow flow, string minecraft, string root, string old, string next)
     {
@@ -544,6 +565,17 @@ internal static class ModpackUpdateFlowChecks
             Replace("SetProgress", new Action<ModLoader.LoaderTask<string, string>, double>((task, value) => {
                 string step = "progress-" + value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
                 TraceStage(step + "-before"); setProgress(task, value); TraceStage(step + "-return");
+            }));
+            bool capturedInspection = false;
+            var setStage = (Action<ModLoader.LoaderTask<string, string>, PackUpdateStage, PackUpdateStageState, string?>)Native.Get(host, "SetStage")!;
+            Replace("SetStage", new Action<ModLoader.LoaderTask<string, string>, PackUpdateStage, PackUpdateStageState, string?>((task, phase, state, detail) => {
+                setStage(task, phase, state, detail);
+                if (capturedInspection || phase != PackUpdateStage.PrepareFiles || detail != "检查个人模组与补全前置") return;
+                capturedInspection = true;
+                Check(Stages(task).Single(item => item.Stage == phase).State == PackUpdateStageState.Running &&
+                    Stages(task).Where(item => item.Stage > phase).All(item => item.State == PackUpdateStageState.Waiting),
+                    "FLOW-stages-inspecting", "Actual mod inspection did not retain a running phase and waiting later stages.");
+                ModpackStageLayoutChecks.CaptureTask(Combo!, Path.Combine(root, "stages-inspecting-mods.png"));
             }));
             var reset = (Action<ModMinecraft.McInstance>)Native.Get(host, "ResetSettings")!;
             Replace("ResetSettings", new Action<ModMinecraft.McInstance>(instance => { TraceStage("reload-reset-before"); reset(instance); TraceStage("reload-reset-return"); }));

@@ -3,7 +3,7 @@
     x:Class="PCL.PageSetupUpdate" PanScroll="PanBack">
     <local:MyScrollViewer x:Name="PanBack" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="25,25,25,10">
-            <local:MyCard Title="启动器更新" Margin="0,0,0,15">
+            <local:MyCard x:Name="CardLauncherUpdate" Title="启动器更新" Margin="0,0,0,15">
                 <StackPanel Margin="25,40,25,20">
                     <Grid x:Name="HeaderGrid">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

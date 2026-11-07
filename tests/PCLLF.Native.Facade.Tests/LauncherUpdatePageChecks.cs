@@ -141,6 +141,7 @@ internal static class LauncherUpdatePageChecks
                 using FileStream stream = File.Create(path); png.Save(stream);
             }
             SavePreview("");
+            LauncherUpdateCardBackgroundChecks.Run(page, Path.Combine(environment.Data, "update-card"));
             var header = (Grid)page.FindName("HeaderGrid");
             var options = (Grid)page.FindName("PanUpdateOptions");
             var identity = (FrameworkElement)page.FindName("PanIdentity");

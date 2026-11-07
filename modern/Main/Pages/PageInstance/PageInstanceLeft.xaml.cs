@@ -92,6 +92,7 @@ namespace PCL
             this.ResourcePages = new global::System.Collections.Generic.Dictionary<global::PCL.FormMain.PageSubType, global::PCL.PageInstanceResources>();
             this.NavigationView = new global::PCLCS.InstanceNavigationView<global::PCL.MyListItem>();
             this.InitializeComponent();
+            this.ItemPackUpdate.Logo = ModBase.Logo.IconButtonRefresh;
             this.ItemPackUpdate.Check += (sender, _) => this.Controller.Check((FrameworkElement)sender);
         }
 

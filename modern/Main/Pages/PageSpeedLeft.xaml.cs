@@ -25,10 +25,18 @@ namespace PCL
             this.IsLoad = false;
             this.RightCards = new Dictionary<string, MyCard>();
             this.InitializeComponent();
+            UpdateMetricLayout(ModBase.ModeDebug);
+        }
+
+        private void UpdateMetricLayout(bool debug)
+        {
+            PanThread.Visibility = debug ? Visibility.Visible : Visibility.Collapsed;
+            PanMetrics.RowDefinitions[5].Height = debug ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e)
         {
+            UpdateMetricLayout(ModBase.ModeDebug);
             FileRates.Reset();
             // 进入时就刷新一次显示
             Watcher();
@@ -44,14 +52,6 @@ namespace PCL
             };
             timer.Tick += (_, __) => Watcher();
             timer.Start();
-            // 非调试模式隐藏线程数
-            if (!ModBase.ModeDebug)
-            {
-                this.RowDefinitions[12].Height = new GridLength(0d);
-                this.RowDefinitions[13].Height = new GridLength(0d);
-                this.RowDefinitions[14].Height = new GridLength(0d);
-                this.RowDefinitions[15].Height = new GridLength(0d);
-            }
         }
 
         // 定时器任务
@@ -114,10 +114,18 @@ namespace PCL
             {
                 // 获取实际加载器列表
                 List<ModLoader.LoaderBase> LoaderList = (List<ModLoader.LoaderBase>)NewLateBinding.LateGet(Loader, null, "GetLoaderList", Array.Empty<object>(), null, null, null);
+                var PackStages = ModpackUpdateFlow.GetStageSnapshot(LoaderList);
                 if (RightCards.ContainsKey(Loader.Name))
                 {
                     // 已有此卡片
                     Grid Card = RightCards[Loader.Name];
+                    if (PackStages is not null && Loader.State is ModBase.LoadState.Loading or ModBase.LoadState.Waiting or ModBase.LoadState.Failed &&
+                        Card.Children.Count > 3 && Card.Children[3] is Grid PackStageRows)
+                    {
+                        RefreshPackStages(PackStageRows, PackStages, Loader.State == ModBase.LoadState.Failed ? Loader.Error : null);
+                        Card.Tag = Loader.Progress + (double)Loader.State;
+                        return;
+                    }
                     // Stage text can change during hashing or while waiting for the
                     // preview, even when the aggregate percentage stays the same.
                     if (Loader.State == ModBase.LoadState.Loading && Card.Children.Count > 3 && Card.Children[3] is Grid StageRows)
@@ -323,9 +331,12 @@ namespace PCL
                             });
                             RightCards.Remove(Loader.Name);
                             ModLoader.LoaderTaskbar.Remove(Loader);
+                            ModpackUpdateFlow.ReleaseStages(LoaderList);
                             Logger.Info($"关闭任务管理卡片：{Loader.Name}，且移出任务列表");
                             ModBase.RunInThread(() => Loader.Cancel());
                         };
+                        if (PackStages is not null && Card.Children.Count > 3 && Card.Children[3] is Grid PackStageRows)
+                            RefreshPackStages(PackStageRows, PackStages, Loader.State == ModBase.LoadState.Failed ? Loader.Error : null);
                         // 如果已经失败，再刷新一次，修改成失败的控件
                         if (Loader.State == ModBase.LoadState.Failed)
                         {
@@ -348,6 +359,7 @@ namespace PCL
 
         public void TaskRemove(object Loader)
         {
+            if (Loader is ModLoader.LoaderCombo<string> Combo) ModpackUpdateFlow.ReleaseStages(Combo.GetLoaderList());
             if (RightCards.ContainsKey(Conversions.ToString(Conversions.ToString(NewLateBinding.LateGet(Loader, null, "Name", Array.Empty<object>(), null, null, null)))))
             {
                 ModBase.RunInUiWait(() =>

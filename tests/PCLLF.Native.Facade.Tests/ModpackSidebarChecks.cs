@@ -36,6 +36,9 @@ internal static class ModpackSidebarChecks {
             var left = new PageInstanceLeft();
             var item = (MyListItem)left.FindName("ItemPackUpdate");
             Native.Check(item.Title == "整合包更新" && Convert.ToInt32(item.Tag) == 15, "Pack update sidebar entry is missing.");
+            Native.Check(item.Logo == ModBase.Logo.IconButtonRefresh && item.LogoScale == 0.95 && item.Height == 36,
+                "Pack update navigation did not reuse the complete native refresh geometry and sidebar sizing.");
+            ModpackStageLayoutChecks.Save(left, Path.Combine(root, "pack-update-sidebar-refresh-icon.png"), 200, 640);
             var page = (PageInstancePackUpdate)Native.Call(typeof(PageInstanceLeft), "PageGet", left, FormMain.PageSubType.InstancePackUpdate)!;
             page.Refresh();
             var version = (TextBlock)page.FindName("LabVersion");

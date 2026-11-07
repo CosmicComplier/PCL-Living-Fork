@@ -25,7 +25,7 @@ public sealed partial class ModpackUpdatePreviewController<TFile, TPackage, TCha
             : "M6,2 L21,2 28,9 28,31 6,31 Z M21,2 L21,10 28,10 M11,17 L23,17 M11,23 L23,23";
         var fallback = new System.Windows.Shapes.Path { Data = Geometry.Parse(shape), Width = 30, Height = 30, Stretch = Stretch.Uniform, StrokeThickness = 1.6, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 3, 0, 0) };
         fallback.SetResourceReference(System.Windows.Shapes.Path.StrokeProperty, "ColorBrushGray3"); row.Children.Add(fallback);
-        Image image = new() { Width = 34, Height = 34, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Tag = "preview-file-icon" };
+        Image image = new() { Width = 34, Height = 34, Stretch = Stretch.Uniform, Clip = new RectangleGeometry(new Rect(0, 0, 34, 34), 6, 6), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Tag = "preview-file-icon" };
         row.Children.Add(image); Grid.SetColumn(body, 1); row.Children.Add(body);
         string? file = change.ApplyAuthor ? change.Incoming?.Payload : null;
         if (file is null && plan.Root is not null && change.LocalRelative is not null) {
@@ -59,7 +59,17 @@ public sealed partial class ModpackUpdatePreviewController<TFile, TPackage, TCha
             }
             ImageSource? source = await read.ConfigureAwait(false);
             if (source is null || closed || view.Dispatcher.HasShutdownStarted) return;
-            await view.Dispatcher.InvokeAsync(() => { if (!closed) { image.Source = source; fallback.Visibility = Visibility.Collapsed; } });
+            await view.Dispatcher.InvokeAsync(() => { if (!closed) {
+                image.Source = source;
+                // Clip the actual Uniform content rectangle, including wide
+                // artwork whose corners sit inside the square letterbox.
+                if (source.Width > 0 && source.Height > 0) {
+                    double scale = 34 / Math.Max(source.Width, source.Height), width = source.Width * scale, height = source.Height * scale;
+                    double radius = Math.Min(6, Math.Min(width, height) / 2);
+                    image.Clip = new RectangleGeometry(new Rect((34 - width) / 2, (34 - height) / 2, width, height), radius, radius);
+                }
+                fallback.Visibility = Visibility.Collapsed;
+            } });
         } catch (Exception) { /* Optional artwork never blocks update decisions. */ }
     }
 }
