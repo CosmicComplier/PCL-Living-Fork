@@ -26,6 +26,10 @@ public static partial class ModLauncherUpdate {
         Volatile.Write(ref deferredRelease, new DeferredRelease(null, UpdateSource.Cnb));
         RefreshDeferredUpdateIndicator();
     }
+    private static void ResetDeferredUpdateIndicator() {
+        Volatile.Write(ref deferredRelease, null);
+        RefreshDeferredUpdateIndicator();
+    }
     private static void RefreshDeferredUpdateIndicator() => ModBase.RunInUi(() => {
         if (ModMain.FrmMain?.BtnTitleUpdate is MyIconButton button) FormMain.RefreshDeferredUpdateButton(button);
     });

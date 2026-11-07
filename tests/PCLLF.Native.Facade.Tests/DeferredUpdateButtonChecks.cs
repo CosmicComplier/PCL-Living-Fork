@@ -48,6 +48,11 @@ internal static class DeferredUpdateButtonChecks {
             Native.Check(button.Visibility == Visibility.Collapsed, "Stable-only updates exposed a deferred prerelease.");
             Native.Cache("ToolLauncherUpdateChannel", 1); Refresh();
             Native.Check(button.IsVisible && Tag() == next + "-pre-1", "Enabling prereleases did not restore the eligible deferred update.");
+            Native.Cache("ToolLauncherUpdateChannel", 0);
+            Native.Cache("ToolLauncherUpdateIgnoredTag", next + "-pre-1");
+            Native.Static("PCL.ModLauncherUpdate", "ClearDeferredUpdate");
+            Native.Static("PCL.ModLauncherUpdate", "ChangeUpdateChannel", 1, (Func<bool>)(() => true)); Refresh();
+            Native.Check(button.IsVisible && Tag() == next + "-pre-1", "A previous stable-channel check suppressed the deferred update after changing subscriptions.");
             state.SetValue(null, null); Native.Cache("ToolLauncherUpdateIgnoredTag", "v" + ModBase.ReleaseBaselineVersion); Refresh();
             Native.Check(button.Visibility == Visibility.Collapsed, "The installed build was still offered as a deferred update.");
             Native.Cache("ToolLauncherUpdateIgnoredTag", "invalid"); Refresh();

@@ -140,7 +140,7 @@
                         <TextBlock SnapsToDevicePixels="False" IsHitTestVisible="False" Name="LabTitleInner" VerticalAlignment="Center" Margin="47,1,144,0" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource ColorBrushTitleForeground}" FontSize="15" />
                     </Grid>
                 </Grid>
-                <Grid x:Name="PanLeft" Grid.Row="1" HorizontalAlignment="Left" Margin="12,12,0,12" SnapsToDevicePixels="True">
+                <Grid x:Name="PanLeft" Grid.Row="1" HorizontalAlignment="Left" Margin="8,8,0,8" SnapsToDevicePixels="True">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="1*"/>
@@ -166,7 +166,7 @@
                         <Border x:Name="PanMainRight" RenderOptions.BitmapScalingMode="NearestNeighbor" UseLayoutRounding="False" SnapsToDevicePixels="False">
                         </Border>
                     </Border>
-                    <Border x:Name="SidebarCard" CornerRadius="6" Margin="12,12,0,12" Grid.IsSharedSizeScope="True" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                    <Border x:Name="SidebarCard" CornerRadius="6" Margin="8,8,0,8" Grid.IsSharedSizeScope="True" UseLayoutRounding="True" SnapsToDevicePixels="True">
                         <Border x:Name="PanMainLeft" RenderOptions.BitmapScalingMode="NearestNeighbor" UseLayoutRounding="False" SnapsToDevicePixels="False">
                         </Border>
                     </Border>

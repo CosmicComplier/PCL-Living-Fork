@@ -79,10 +79,10 @@ internal static class WindowChromeChecks {
                         window.Width = width; Layout();
                         Rect side = Bounds(sidebar), card = Bounds(content);
                         ModpackStageLayoutChecks.Save(form, Path.Combine(environment.Data, $"frame-{(launch ? "launch" : "download")}-{(dark ? "dark" : "light")}-{width}.png"), (int)form.ActualWidth, (int)form.ActualHeight);
-                        Native.Check(Math.Abs(side.Left - 12) < 1 && Math.Abs(side.Top - title.ActualHeight - 12) < 1 &&
-                            Math.Abs(form.ActualHeight - side.Bottom - 12) < 1 && Math.Abs(card.Top - title.ActualHeight - 25) < 1 &&
+                        Native.Check(Math.Abs(side.Left - 8) < 1 && Math.Abs(side.Top - title.ActualHeight - 8) < 1 &&
+                            Math.Abs(form.ActualHeight - side.Bottom - 8) < 1 && Math.Abs(card.Top - title.ActualHeight - 25) < 1 &&
                             Math.Abs(card.Left - side.Right - 25) < 1 && Math.Abs(form.ActualWidth - card.Right - 25) < 1,
-                            "Sidebar did not use its tighter 12-DIP inset while content retained 25-DIP spacing.");
+                            "Sidebar did not use its tighter 8-DIP inset while content retained 25-DIP spacing.");
                         Native.Check(Math.Abs(Bounds(background).Left - side.Left) < 1 && Math.Abs(background.ActualWidth - sidebar.ActualWidth) < 1 && Math.Abs(background.ActualHeight - sidebar.ActualHeight) < 1,
                             $"Animated sidebar background and actual content card diverged: background={Bounds(background)}, sidebar={side}, desired={sidebar.DesiredSize}, width={sidebar.Width}/{sidebar.MinWidth}/{sidebar.MaxWidth}, measure={sidebar.IsMeasureValid}, sameChild={ReferenceEquals(sidebar.Child,left)}, left={left.RenderSize}, desiredLeft={left.DesiredSize}, column={main.ColumnDefinitions[0].Width}/{main.ColumnDefinitions[0].ActualWidth}.");
                         foreach (var element in new FrameworkElement[] { title }) {
@@ -98,7 +98,7 @@ internal static class WindowChromeChecks {
             }
             Native.Check(!window.IsActive, "Frame fixture took desktop focus.");
             environment.AssertNoForbiddenIo();
-            Console.WriteLine("PASS actual window XAML chrome: native download sidebar and launch-width fixture, 12-DIP sidebar/25-DIP content insets, native rounded card background/title clip, page-width reflow, light/dark palettes and minimum/default resizing; no launcher startup or accounts.");
+            Console.WriteLine("PASS actual window XAML chrome: native download sidebar and launch-width fixture, 8-DIP sidebar/25-DIP content insets, native rounded card background/title clip, page-width reflow, light/dark palettes and minimum/default resizing; no launcher startup or accounts.");
         } finally {
             window.Content = null; window.Close(); app.MainWindow = oldMain; app.ShutdownMode = oldMode;
             ModAnimation.AniControlEnabled = suppression; Settings.Set("UiLauncherColorMode", oldTheme);

@@ -42,7 +42,7 @@ namespace PCL
             if (Value == (int)PreferredUpdateChannel()) return true;
             if (Value == 1 && (Confirm is null || !Confirm())) return false;
             Settings.Set("ToolLauncherUpdateChannel", Value);
-            RefreshDeferredUpdateIndicator();
+            ResetDeferredUpdateIndicator();
             return true;
         }
         internal static UpdateSource PreferredUpdateSource()
