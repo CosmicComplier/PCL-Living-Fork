@@ -2,11 +2,15 @@
 
 ## 更新通道
 
-“设置 → 启动器”按版本、更新源、更新通道显示。`ToolLauncherUpdateChannel` 是本地设置，默认 0，仅接收正式发布版；1 同时接收正式发布版与预发布版。启用预发布前使用原生警告弹窗确认，取消不保存；读取已保存设置、重开设置页和回到正式通道不重复询问。
+“设置 → 更新”独立显示当前版本、更新源、更新通道、版本搜索和发布列表。`ToolLauncherUpdateChannel` 是本地设置，默认 0，仅接收正式发布版；1 同时接收正式发布版与预发布版。启用预发布前使用原生警告弹窗确认，取消不保存；读取已保存设置、重开设置页和回到正式通道不重复询问。
 
 CNB 正式通道读取 `latest.json`，可选通道读取 `latest-preview.json`。后者只前进到更新的正式或预发布版本，旧正式版的定时同步不会把它降级。GitHub 可选通道检查发布列表，过滤草稿、状态不一致和附件不完整的项。下载、切换单次源和备用源均固定已确认的版本与 SHA256。
 
 版本先比较四段数字（缺省修订号视为 0），同版本中正式版高于预发布版。预发布序号自然排序，例如 `pre-1 < pre-2 < pre-10 < 正式版`。纯正式通道仍会过滤预发布。
+
+开发构建显示 `dev_edition`，使用内部发布基线参与更新比较。启动时发现更高且未忽略的版本才显示更新提示；“暂不更新”记住该标签，标题栏更新按钮可重新打开提示。
+
+启动更新说明与发现新版本是独立流程。更新说明窗口中的“下次更新前不再弹出”只记录当前构建身份，版本变化后重新提示；手动查看始终可用，也可取消勾选恢复当前版本的自动说明。正式版优先读取当前版本的 Release Markdown，离线或开发构建使用本地简述。
 
 ## 深色外观
 
@@ -14,7 +18,7 @@ CNB 正式通道读取 `latest.json`，可选通道读取 `latest-preview.json`�
 
 “窗口不透明度”控制整个窗口；“面板不透明度”通过 `UiPanelOpacity` 同时控制侧栏与顶层卡片底色，文字、图标和交互元素保持完整不透明度。背景图片沿用独立的现有滑块，三者互不改写。
 
-实现参考 CE 的[主题服务](https://github.com/PCL-Community/PCL-CE/blob/dev/PCL.Core/UI/Theme/ThemeService.cs)和[窗口适配](https://github.com/PCL-Community/PCL-CE/blob/dev/Plain%20Craft%20Launcher%202/Modules/UI/Theme/ThemeManager.cs)，适配现有 VB.NET / .NET Framework 4.8 控件。使用动态资源，控件在 Loaded / Unloaded 间订阅刷新，切换模式时停止旧的颜色状态，再恢复正常的悬停、选中、禁用交互。
+现行主题实现位于 [LegacyThemeService](../presentation/Foundation/LegacyThemeService.cs)和 [ModTheme](../modern/Main/Modules/ModTheme.cs)，由 C#/.NET 10 WPF 宿主接入。固定来源与许可见 [SOURCE_PROVENANCE](../modern/Main/SOURCE_PROVENANCE.md)。使用动态资源，控件在 Loaded / Unloaded 间订阅刷新，切换模式时停止旧的颜色状态，再恢复正常的悬停、选中、禁用交互。
 
 覆盖主窗口背景与标题栏、侧栏、卡片、文本框、按钮、单选/复选/下拉控件、滚动条、右键菜单、工具提示、原生确认/输入/登录弹窗、依赖关系与影响视图、整合包版本选择和更新预览。附属 WPF 窗口使用同一资源和支持时的深色标题栏。
 
