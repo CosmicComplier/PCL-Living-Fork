@@ -108,6 +108,8 @@ internal static class PackLaunchOriginChecks
         WriteManifest(instance.PathVersion, manifest);
         LegacyLaunchDependencyContext context = (LegacyLaunchDependencyContext)Native.Static("PCL.ModLaunch", "DependencyContext", instance, "17", Path.Combine(instance.PathIndie, "mods"))!;
         LegacyLaunchDependencyReport checkedReport = context.Inspect(CancellationToken.None);
+        Native.Check((bool)Native.Get(Native.Get(checkedReport.Source, "Context")!, "IgnoreJavaRequirements")!, "Launch context still checks Java as a mod requirement.");
+        Native.Check((bool)Native.Get(checkedReport.Source, "OnlineAttempted")!, "Launch context skipped platform comparison.");
         PackDependencyOrigin origin = (PackDependencyOrigin)Native.Get(checkedReport.Source, "PackOrigin")!;
         Native.Check(origin.IsPack && origin.Complete && checkedReport.NeedsAttention &&
             Native.Full(origin.VersionFolder) == Native.Full(instance.PathVersion) && Native.Full(origin.GameRoot) == Native.Full(instance.PathIndie),

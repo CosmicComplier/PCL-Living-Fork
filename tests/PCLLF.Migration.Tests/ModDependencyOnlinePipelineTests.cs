@@ -19,12 +19,41 @@ using Online = PCLCS.ModDependencyOnlinePipeline<ModDependencyInspectorPipelineT
 // its project/version selection policies are not imported into these LF assertions.
 internal static class ModDependencyOnlinePipelineTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
+        yield return ("platform review uses exact active files and keeps local errors authoritative", PlatformReview);
         yield return ("mod online pipeline maps real SHA1 matches without promoting project IDs into the local graph", ExactModrinth);
         yield return ("mod online pipeline streams real fingerprints and requires content size game and project identity", ContentGuards);
         yield return ("mod online pipeline clones cached JSON and expires content results while remapping current paths", CacheAndFreshPaths);
         yield return ("mod online pipeline retains local errors and honors offline HTTP429 and HTTP503 cooldowns", CooldownsAndLocalErrors);
         yield return ("mod online pipeline bounds actual files bytes requests and caller or elapsed cancellation", BudgetsAndCancellation);
         yield return ("mod online pipeline keeps candidates and explicit disabled targets separate from reliable startup metadata", CandidatesAndTargets);
+    }
+    private static void PlatformReview() {
+        using Fixture fixture = new();
+        string folder = fixture.Folder("platform-review"), owner = fixture.Jar(folder, "owner.jar"), peer = fixture.Jar(folder, "peer.jar", "local_peer");
+        Network network = new(); ExactResponses(network, owner, peer);
+        Report report = Engine(network).Enrich(Scan(folder), folder, options: network.CreateOptions());
+        var file = OnlineFileInfo(report, owner); var project = file.Matches.Single(match => match.Platform == "Modrinth");
+        var requirement = project.Dependencies.Single(dependency => dependency.ProjectId == "PeerP");
+        project.Dependencies.Clear(); project.Dependencies.Add(requirement);
+        foreach (var other in report.OnlineFiles.Where(item => item != file)) other.IsSupplementTarget = false;
+        Equal(0, report.PlatformReviewNotes().Count);
+        var mismatch = new ModDependencyInspectorPipelineTests.Issue {
+            Owner = new ModDependencyInspectorPipelineTests.Mod { RootPath = owner }, IsError = true, KindValue = ModDependencyIssueKind.VersionMismatch
+        };
+        mismatch.RelatedMods.Add(new ModDependencyInspectorPipelineTests.Mod { IsBuiltin = true });
+        report.Issues.Add(mismatch);
+        Equal(0, report.PlatformReviewNotes().Count);
+        mismatch.RelatedMods.Clear(); mismatch.RelatedMods.Add(new ModDependencyInspectorPipelineTests.Mod { RootPath = peer });
+        True(report.PlatformReviewNotes().Single().Contains("内嵌声明"), "A platform match concealed a local version conflict.");
+        report.Issues.Remove(mismatch);
+        requirement.Kind = "incompatible";
+        True(report.PlatformReviewNotes().Single().Contains("平台声明不兼容"), "An exact enabled platform conflict was hidden.");
+        bool before = report.HasErrors;
+        project.IsExact = false; Equal(0, report.PlatformReviewNotes().Count);
+        project.IsExact = true; file.Enabled = false; Equal(0, report.PlatformReviewNotes().Count);
+        file.Enabled = true; requirement.Kind = "required"; requirement.EnabledPaths.Clear();
+        True(report.PlatformReviewNotes().Single().Contains("平台声明必需"), "Disabled or unconfirmed platform requirements were hidden.");
+        Equal(before, report.HasErrors);
     }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new InvalidOperationException($"Expected {expected}, got {actual}."); }
     private static void True(bool value, string message) { if (!value) throw new InvalidOperationException(message); }

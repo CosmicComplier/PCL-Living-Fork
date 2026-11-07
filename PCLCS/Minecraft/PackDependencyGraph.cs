@@ -34,7 +34,7 @@ public static class PackDependencyGraph {
         if (loaders is null) throw new ArgumentNullException(nameof(loaders));
         token.ThrowIfCancellationRequested();
         PackDependencyGraphResult result = new();
-        PackUpdateModInspection.InspectionContext context = new() { MinecraftVersion = minecraft, JavaVersion = javaVersion, LoaderKnown = loaders.Count > 0 };
+        PackUpdateModInspection.InspectionContext context = new() { MinecraftVersion = minecraft, JavaVersion = javaVersion, LoaderKnown = loaders.Count > 0, IgnoreJavaRequirements = true };
         foreach (var loader in loaders) {
             string? id = loader.Key switch {
                 ModLoaders.Fabric => "fabricloader", ModLoaders.Forge => "forge",

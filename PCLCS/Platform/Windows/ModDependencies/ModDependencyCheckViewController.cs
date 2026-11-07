@@ -45,6 +45,8 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
         if (plan.Items.Count > 0) actions.Add(plan.Items.Count + " 个必需前置待补全");
         if (report.PackOrigin?.NeedsAttention == true) actions.Add("整合包作者文件需要核对");
         if (report.PackOrigin?.IsPack == true && report.MetadataIncomplete) actions.Add("部分模组声明尚未确认");
+        List<string> platformNotes = report.PlatformReviewNotes();
+        if (platformNotes.Count > 0) actions.Add(platformNotes.Count + " 项平台声明需要核对");
         if (actions.Count == 0) {
             int environmentCount = report.Issues.Where(item => item.IsError && item.Requirement is not null).Select(item => RuntimeOwnerId(item.Requirement!.Id, report.Context)).Where(id => id != "").Distinct().Count();
             int modCount = report.Issues.Count(item => item.IsError && (item.Requirement is null || RuntimeOwnerId(item.Requirement.Id, report.Context) == ""));
@@ -59,7 +61,7 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
         scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         scroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Grid.SetRow(scroll, 1); view.Children.Add(scroll);
-        if (plan.Items.Count == 0 && plan.Enables.Count == 0 && report.OnlineAttempted) {
+        if (plan.Items.Count == 0 && plan.Enables.Count == 0 && report.OnlineAttempted && report.HasErrors) {
             string reason = plan.Notes.LastOrDefault() ?? report.OnlineNotes.LastOrDefault() ?? "尚未匹配到可用的前置下载信息，请检查下载源连接后重试。";
             groups.Children.Add(host.CreateWarningHint("暂不能自动补全：" + reason, new Thickness(3, 3, 7, 10)));
         }
@@ -115,6 +117,8 @@ public static class ModDependencyCheckViewController<TContext, TMod, TDependency
             AddGroup(groups, title + "（" + issues.Count + "）", entries, true, host);
         }
         TCard? details = null;
+        if (platformNotes.Count > 0) AddGroup(groups, "平台声明与本地状态（" + platformNotes.Count + "）",
+            platformNotes.Select(note => Tuple.Create<string?, string?, TMod?>("平台声明待核对", note, null)).ToList(), true, host, true);
         List<string> notes = report.Notices.Concat(plan.Notes ?? new List<string>()).Distinct().ToList();
         if (notes.Count > 0 || report.MetadataIncomplete || report.OnlineNotes.Count > 0) {
             notes.AddRange(report.OnlineNotes);

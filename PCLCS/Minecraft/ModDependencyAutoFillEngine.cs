@@ -122,7 +122,10 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
             report.Edges.Any(edge => ActiveOwner(edge.Owner) && edge.Requirement.KindValue == ModDependencyKind.Required &&
                 (edge.Requirement.IsUnknown || edge.Evaluated && edge.StateValue != ModDependencyMatchState.Satisfied)) ||
             report.Mods.Where(ActiveOwner).Any(owner => owner.Dependencies.Any(requirement =>
-                requirement.KindValue == ModDependencyKind.Required && requirement.IsUnknown));
+                requirement.KindValue == ModDependencyKind.Required && requirement.IsUnknown && !(report.Context.IgnoreJavaRequirements && requirement.Id == "java"))) ||
+            report.OnlineFiles.Where(file => file.Enabled && SameFilePath(file.FullPath, path)).Any(file => file.Matches.Where(match => match.IsExact).Any(match =>
+                match.Dependencies.Any(dependency => dependency.Kind == "required" && dependency.EnabledPaths.Count == 0 &&
+                    ModDependencyInspection<TContext,TMod,TDependency,TEdge,TIssue,TImpact,TReport,TOnlineProject,TOnlineDependency,TOnlineFile>.RuntimeProvidersForPlatformDependency(report, file.FullPath, dependency).Count == 0)));
     }
     public TPlan BuildPlan(string root, TReport report, CancellationToken token, TOptions? options = null) {
         TPlan result = Prepare(root, report, token);
@@ -133,6 +136,7 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
             // Freeze locally proven needs before platform enrichment can introduce
             // project-level declarations that the loaded combination already fulfils.
             TReport eligibility = result.Enables.Count == 0 ? report : WithEnabledFiles(report, result.Enables.Select(item => item.Source), token);
+            if (!ReferenceEquals(eligibility, report)) eligibility.OnlineFiles.AddRange(report.OnlineFiles);
             personalRepairRoots = new(eligibility.Mods.Where(value => value.Enabled && !value.IsNested && origin.IsPersonal(value.RootPath) &&
                 NeedsPersonalRepair(eligibility, value.RootPath)).Select(value => FilePathKey(value.RootPath)), StringComparer.Ordinal);
             if (personalRepairRoots.Count == 0) return result;

@@ -5,6 +5,7 @@ using PCLCS;
 
 internal static class PackUpdateGraphTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
+        yield return ("pack mod checks ignore Java declarations without suppressing Minecraft errors", IgnoreJava);
         yield return ("pack update final graph reuses an author dependency for a personal mod", AuthorUpgradeSatisfiesPersonal);
         yield return ("pack update replaces an incompatible personal author override before judging its consumer", AuthorReplacementBeforeDisabling);
         yield return ("pack update pairs a unique personal mod with its new author version and preserves later upgrade choices", PersonalAuthorComponentUpdate);
@@ -39,6 +40,18 @@ internal static class PackUpdateGraphTests {
         yield return ("pack preview restores author providers hidden by personal overrides without blaming author consumers", PreviewHiddenAuthorProvider);
         yield return ("pack preview independent author runtime errors remain actionable with absent optional files", PreviewOptionalAuthorRuntime);
         yield return ("pack preview restores a modified duplicate and an explicitly retained author version against the new baseline", PreviewPackFirstReplacementChoices);
+    }
+    private static void IgnoreJava() {
+        using Fixture f = new();
+        FileSpec java = f.Spec("mods/java.jar", "java_fixture", "1.0", new() { ["java"] = ">=25" });
+        f.Install(java);
+        foreach (string? selected in new string?[] { null, "17" }) {
+            var result = PackDependencyGraph.Check(new[] { f.Target(java.Relative) }, "1.21.1", new() { [ModLoaders.Fabric] = "0.16.0" }, javaVersion: selected);
+            Require(!result.HasErrors && !result.HasUnknown && !result.Warnings.Any(text => text.Contains("java", StringComparison.OrdinalIgnoreCase)), "Java requirement remained a mod compatibility prompt.");
+        }
+        FileSpec minecraft = f.Spec("mods/minecraft.jar", "minecraft_fixture", "1.0", new() { ["minecraft"] = "0.1" });
+        f.Install(minecraft);
+        Require(PackDependencyGraph.Check(new[] { f.Target(minecraft.Relative) }, "1.21.1", new() { [ModLoaders.Fabric] = "0.16.0" }).HasErrors, "Ignoring Java suppressed Minecraft checking.");
     }
 
     private static void PreviewPackFirstReplacementChoices() {

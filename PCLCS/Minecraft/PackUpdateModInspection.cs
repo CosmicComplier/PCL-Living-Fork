@@ -38,7 +38,7 @@ public static class PackUpdateModInspection {
         PackModInspection result = new() {
             Enabled = !path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".old", StringComparison.OrdinalIgnoreCase)
         };
-        InspectionContext context = new() { MinecraftVersion = minecraft, LoaderKnown = loaders.Count > 0 };
+        InspectionContext context = new() { MinecraftVersion = minecraft, LoaderKnown = loaders.Count > 0, IgnoreJavaRequirements = true };
         foreach (var pair in loaders) context.LoaderVersions[pair.Key] = pair.Value;
         if (loaders.ContainsKey("quilt_loader") && !context.LoaderVersions.ContainsKey("fabricloader")) context.LoaderVersions["fabricloader"] = null;
         if (loaders.ContainsKey("neoforge") && minecraft == "1.20.1") context.LoaderVersions["forge"] = loaders["neoforge"];

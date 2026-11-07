@@ -80,7 +80,8 @@ internal static class PackDependencyGraphTests {
         string unknown = f.Fabric("unknown.jar", Fabric("uncertain", "1", new JObject { ["java"] = ">=17" }));
         Require(Check(damaged).HasUnknown, "Malformed metadata was considered verified.");
         var missingJava = Check(unknown);
-        Require(missingJava.HasUnknown && missingJava.Warnings.Any(text => text.Contains("unknown.jar") && text.Contains("java")), "Unknown Java runtime requirement was not identified with its actual owner file.");
+        Clean(missingJava);
+        Require(!missingJava.Warnings.Any(text => text.Contains("java")), "Java-only declarations should not create update warnings.");
         Clean(PackDependencyGraph.Check([unknown], "1.21.1", FabricLoader(), javaVersion: "21.0.1"));
         Require(Check(Path.Combine(f.Root, "missing.jar")).HasUnknown, "A missing proposed payload was considered verified.");
         var noContext = PackDependencyGraph.Check([unknown], null, new());

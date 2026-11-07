@@ -102,6 +102,8 @@ python scripts/tests/Test-MigrationSelection.py
 
 Windows 产品构建后，实际 Main／WPF 预览与更新任务回归入口：
 
+启动前检查会对当前文件进行有时间与请求预算的精确平台匹配，对照平台依赖和内嵌声明；不使用名称搜索候选判定缺失。平台待核对项单独显示，不覆盖加载器声明中的确定错误，联网失败保留本地结果。玩家选择“仍然启动”后，平台声明发生变化会要求重新确认。模组依赖检查不再评估 Java 要求，整包预览也不再生成逐模组的 Java 未知提示；Minecraft、加载器与模组之间的约束继续检查。
+
 ```powershell
 dotnet run --project tests/PCLLF.Native.Facade.Tests -c Release --no-build -- --groups modpack-update,launch-dependencies
 ```

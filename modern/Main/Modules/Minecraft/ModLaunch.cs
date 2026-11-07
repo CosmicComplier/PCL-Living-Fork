@@ -769,6 +769,10 @@ namespace PCL
                 var report = origin.IsPack ? ModDependencyInspector.ScanRaw(ModsFolder, Context, Token, true) :
                     ModDependencyInspector.Inspect(ModsFolder, Context, Token);
                 report.PackOrigin = origin;
+                ModDependencyOnline.Enrich(report, ModsFolder, Token, new ModDependencyOnline.LookupOptions {
+                    ComparePlatformDependencies = true, MaxSearchFiles = 0, MaxFiles = 512
+                });
+                Token.ThrowIfCancellationRequested();
                 return DependencyReport(ModsFolder, report);
             } };
         }
@@ -779,7 +783,7 @@ namespace PCL
             {
                 Source = Report,
                 ReadHasErrors = new Func<global::System.Boolean>(() => Report.HasErrors),
-                ReadNeedsAttention = () => Report.HasErrors || Report.PackOrigin?.NeedsAttention == true ||
+                ReadNeedsAttention = () => Report.HasErrors || Report.PlatformReviewNotes().Count > 0 || Report.PackOrigin?.NeedsAttention == true ||
                     Report.PackOrigin?.IsPack == true && Report.MetadataIncomplete,
                 WasAccepted = new Func<global::System.Boolean>(() => global::PCL.LaunchDependencyCheck.WasAccepted(Folder, Report)),
                 Accept = new Action(() => global::PCL.LaunchDependencyCheck.Accept(Folder, Report)),

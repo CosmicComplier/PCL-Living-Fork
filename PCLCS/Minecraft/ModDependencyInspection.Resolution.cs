@@ -344,7 +344,7 @@ public static global::System.String FilePathKey(global::System.String fullPath)
                         Requirement = Requirement,
                         StateValue = Value.State,
                         Providers = Value.Providers,
-                        Evaluated = ((RequiredKeys.Contains(Item.Key)) && (SideApplies(Requirement.Side, report.Context))),
+                        Evaluated = ((RequiredKeys.Contains(Item.Key)) && (SideApplies(Requirement.Side, report.Context))) && !(report.Context.IgnoreJavaRequirements && Requirement.Id == "java"),
                         ConditionBypassed = (Requirement.Unless is not null && (Resolve(Requirement.Unless, Map, report.Context).State == ModDependencyMatchState.Satisfied))
                     };
                     report.Edges.Add(Edge);

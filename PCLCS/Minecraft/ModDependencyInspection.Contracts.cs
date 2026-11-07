@@ -36,6 +36,7 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
         public string? MinecraftVersion, JavaVersion;
         public string Side = "client";
         public bool LoaderKnown;
+        public bool IgnoreJavaRequirements;
         public Dictionary<string, string?> LoaderVersions = new(StringComparer.Ordinal);
         public Dictionary<string, string?> AdditionalBuiltins = new(StringComparer.Ordinal);
         public string? LegacyForgeVersionFolder;
@@ -136,6 +137,25 @@ public sealed partial class ModDependencyInspection<TContext, TMod, TDependency,
         public List<string> OnlineNotes = new();
         public Dictionary<string, List<TEdge>> ReverseDependencies = new(StringComparer.Ordinal);
         public bool HasErrors => Issues.Any(issue => issue.IsError);
+        // Platform declarations are reviewed alongside local constraints, never
+        // promoted into loader errors or accepted from name-search candidates.
+        public List<string> PlatformReviewNotes() {
+            List<string> notes = new();
+            foreach (TOnlineFile file in OnlineFiles.Where(file => file.Enabled && file.IsSupplementTarget))
+                foreach (TOnlineProject project in file.Matches.Where(project => project.IsExact))
+                    foreach (TOnlineDependency dependency in project.Dependencies) {
+                        string source = System.IO.Path.GetFileName(file.FullPath) + " · " + project.Platform + " 版本 " + project.VersionId;
+                        string requested = dependency.DisplayName + (string.IsNullOrEmpty(dependency.VersionId) ? "" : "（平台版本 " + dependency.VersionId + "）");
+                        if (dependency.Kind == "required" && dependency.EnabledPaths.Count == 0)
+                            notes.Add(source + "\r\n平台声明必需：" + requested + "\r\n" + dependency.Status + "。请结合内嵌声明核对，未据此判定加载器错误。");
+                        else if (dependency.Kind == "incompatible" && dependency.EnabledPaths.Count > 0)
+                            notes.Add(source + "\r\n平台声明不兼容：" + requested + "\r\n当前启用：" + string.Join("、", dependency.EnabledPaths.Select(System.IO.Path.GetFileName)) + "。请核对平台与内嵌声明的差异。");
+                        else if (dependency.Kind == "required" && dependency.EnabledPaths.Count > 0 && Issues.Any(issue => issue.IsError && issue.Owner is not null &&
+                            SameFilePath(issue.Owner.RootPath, file.FullPath) && issue.RelatedMods.Any(mod => !mod.IsBuiltin && !string.IsNullOrWhiteSpace(mod.RootPath) && dependency.EnabledPaths.Any(path => SameFilePath(path, mod.RootPath)))))
+                            notes.Add(source + "\r\n平台依赖已匹配：" + requested + "；但内嵌声明的版本或冲突检查未通过，仍须处理下方本地声明问题。");
+                    }
+            return notes.Distinct(StringComparer.Ordinal).ToList();
+        }
         public string ToSummary(int maxIssues = 30) {
             List<string> lines = new() {
                 "已检查 " + Mods.Where(item => item.Enabled && !item.IsNested).Select(item => item.RootPath).Distinct(StringComparer.OrdinalIgnoreCase).Count() +
