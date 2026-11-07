@@ -37,6 +37,8 @@
 <Compile Include="Modules/Base/PclLogger.cs" />
 <Compile Include="Modules/Resource/LocalResourceFile.cs" />
 <Compile Include="Modules/Resource/ResourceProject.cs" />
+<Compile Include="Modules/Resource/ResourceFavorites.cs" />
+<Compile Include="Pages/PageFavorites.xaml.cs" />
 <Compile Include="Modules/Resource/ResourceVersion.cs" />
 <Compile Include="Modules/Resource/ResourceSearcher.cs" />
 <Compile Include="Modules/Minecraft/ModJava.cs" />
@@ -200,6 +202,7 @@
 <Page Include="Controls/MyMsg/MyMsgText.xaml" />
 <Page Include="Controls/MySearchBox.xaml" />
 <Page Include="FormMain.xaml" />
+<Page Include="Pages/PageFavorites.xaml" />
 <Page Include="Pages/PageInstance/MyLocalModItem.xaml" />
 <Page Include="Pages/PageDownload/Resource/MyResourceItem.xaml" />
 <Page Include="Pages/PageDownload/Resource/PageResource.xaml" />

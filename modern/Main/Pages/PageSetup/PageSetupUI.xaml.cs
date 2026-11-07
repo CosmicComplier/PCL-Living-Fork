@@ -47,6 +47,9 @@ namespace PCL
             };
             __LfAttachOwnHandles();
             this.InitializeComponent();
+            CheckHiddenPageFavorites.Change += (_, user) => {
+                if (user) ModBase.RunInUi(() => HiddenRefresh(), true);
+            };
         }
 
         internal static global::System.Boolean ReadHiddenForceShow()

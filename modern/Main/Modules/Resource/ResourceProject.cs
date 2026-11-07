@@ -29,10 +29,14 @@ namespace PCL
         {
             return ResourceCatalogRuntime.Pipeline.FromProjectIds(ProjectIds, Platform);
         }
-        public MyVirtualizingElement<MyResourceItem> ToResourceItem(bool ShowMcVersionDesc, bool ShowLoaderDesc)
+        public MyVirtualizingElement<MyResourceItem> ToResourceItem(bool ShowMcVersionDesc, bool ShowLoaderDesc, ResourceTypes? ResourceTypeContext = null)
         {
             var Context = ResourcePresentation.ProjectContext(this, ShowMcVersionDesc, ShowLoaderDesc);
-            return new MyVirtualizingElement<MyResourceItem>(() => ResourcePresentation.ProjectRow(this, Context, CreateItemHost())) { Height = 64d };
+            return new MyVirtualizingElement<MyResourceItem>(() => {
+                MyResourceItem Row = ResourcePresentation.ProjectRow(this, Context, CreateItemHost());
+                Row.ResourceTypeContext = ResourceTypeContext;
+                return Row;
+            }) { Height = 64d };
         }
         public void ApplyLogoToMyImage(MyImage Img)
         {
@@ -65,7 +69,7 @@ namespace PCL
             return new ResourceProjectListHost<MyResourceItem>()
             {
                 Create = new Func<MyResourceItem>(() => new MyResourceItem()),
-                SetTag = new Action<MyResourceItem, object>((Row, Value) => Row.Tag = Value),
+                SetTag = new Action<MyResourceItem, object>((Row, Value) => { Row.Tag = Value; Row.BindFavorite((ResourceProject)Value); }),
                 SetLogoSource = new Action<MyResourceItem, string>((Row, Value) => Row.PathLogo.Source = Value),
                 SetLogoFallback = new Action<MyResourceItem, string>((Row, Value) => Row.PathLogo.FallbackSource = Value),
                 SetTitle = new Action<MyResourceItem, string>((Row, Value) => Row.Title = Value),
@@ -108,7 +112,7 @@ namespace PCL
         internal static readonly ResourceProjectServices ProjectServices = new ResourceProjectServices()
         {
             ReadVersion = new Func<JObject, ResourceTypes, ResourceVersionModelData>((Data, Types) => ResourceVersion.FromPlatformJson(Data, Types)),
-            StoreCache = new Action<ResourceProjectModelData>(Project => ResourceProject.Cache[Project.Id] = (ResourceProject)Project),
+            StoreCache = new Action<ResourceProjectModelData>(Project => ResourceProject.Cache[ResourceProjectKey.Get(Project.Platform, Project.Id)] = (ResourceProject)Project),
             MirrorUrl = ModDownload.DlSourceModGet,
             AllDrops = new Func<List<int>>(() => ModDownload.AllDrops),
             ImageRoot = new Func<string>(() => ModBase.PathImage),

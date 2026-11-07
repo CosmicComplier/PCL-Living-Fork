@@ -25,10 +25,13 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         if (stack.PageCode == (int)LegacyMainPage.Other && subType > 2) subType = 1;
         if (string.IsNullOrEmpty(PageNameGet(stack))) {
             PageChangeExit(); host.WriteChangingPage(true);
-            ((MyRadioButtonView)view.PanTitleSelect().Children[stack.PageCode]).SetChecked(true, true, string.IsNullOrEmpty(PageNameGet(PageCurrent)));
+            // Page codes are stable persisted identities, not title-panel indexes.
+            MyRadioButtonView title = view.PanTitleSelect().Children.OfType<MyRadioButtonView>()
+                .First(button => Conversions.ToInteger(LegacyBaseOperations.Val(button.Tag)) == stack.PageCode);
+            title.SetChecked(true, true, string.IsNullOrEmpty(PageNameGet(PageCurrent)));
             host.WriteChangingPage(false);
             switch ((LegacyMainPage)stack.PageCode) {
-                case LegacyMainPage.Download: case LegacyMainPage.Setup: case LegacyMainPage.Other:
+                case LegacyMainPage.Download: case LegacyMainPage.Setup: case LegacyMainPage.Other: case LegacyMainPage.Favorites:
                     EnsureLeft(stack.PageCode).Item(subType).SetChecked(true, true, Same(stack, PageCurrent)); break;
             }
             PageChangeActual(stack, subType);
@@ -76,7 +79,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             PageLast = PageCurrent; PageCurrent = stack;
             switch ((LegacyMainPage)stack.PageCode) {
                 case LegacyMainPage.Launch: PageChangeAnim(host.LeftPage(stack.PageCode).Element, host.RightPage(stack.PageCode)); break;
-                case LegacyMainPage.Download: case LegacyMainPage.Setup: case LegacyMainPage.Other: {
+                case LegacyMainPage.Download: case LegacyMainPage.Setup: case LegacyMainPage.Other: case LegacyMainPage.Favorites: {
                     LegacyMainLeftPage left = EnsureLeft(stack.PageCode); PageChangeAnim(left.Element, left.PageGet(subType)); break;
                 }
                 case LegacyMainPage.InstanceSetup: {

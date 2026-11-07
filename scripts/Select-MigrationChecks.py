@@ -278,7 +278,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mod-dependency-online",), (), build=False)
             elif stem in {"LegacySettings", "SettingsMicrosoftIsolation", "UpdateLogPrompt"}:
                 include(("settings",), (), build=False)
-            elif stem == "LegacyModFavorites":
+            elif stem in {"LegacyModFavorites", "ResourceFavorite"}:
                 include(("mod-favorites",), (), build=False)
             elif stem == "LegacyValidationLoader":
                 include(("validation-loaders",), (), build=False)
@@ -306,7 +306,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 unknown.append(name)
         elif name.startswith("scripts/Test-") and leaf.removesuffix(".ps1") in SCRIPTS:
             include((), (leaf.removesuffix(".ps1"),))
-        elif name == "PCLCS/Resources/LegacyModFavorites.cs":
+        elif name in {"PCLCS/Resources/LegacyModFavorites.cs", "PCLCS/Resources/ResourceFavorites.cs", "PCLCS/Resources/ResourceProjectKey.cs"}:
             include(("mod-favorites",), (), build=False)
         elif name == "PCLCS/Settings/LegacyUpdateLogPrompt.cs":
             include(("settings",), (), build=False)

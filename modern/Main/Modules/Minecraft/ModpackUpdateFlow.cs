@@ -73,7 +73,7 @@ namespace PCL
                 Preview = global::PCL.ModpackUpdateFlow.Preview,
                 SelectVersion = global::PCL.ModpackUpdateFlow.SelectOnlineVersion,
                 Project = new Func<global::System.String, global::PCLCS.ResourcePlatforms, global::PCLCS.ResourceProjectModelData>((Id, Platform) => global::PCL.ResourceProject.FromProjectId(Id, Platform)),
-                RemoveVersionCache = new Action<global::System.String>(Id => global::PCL.ResourceVersion.ProjectFilesCache.Remove(Id)),
+                RemoveVersionCache = new Action<global::System.String>(Id => ResourceProjectKey.Invalidate(global::PCL.ResourceVersion.ProjectFilesCache, Id)),
                 Versions = global::PCL.ResourceVersion.FromProjectId,
                 ToUpdateFile = new Func<global::PCL.ResourceVersion, global::System.String, global::System.String, global::PCLCS.ModLoaders, global::PCL.ModNet.NetFile>((Version, Destination, Game, Loaders) => Version.ToNetFile(Destination, global::PCL.ResourceVersion.DownloadReason.Update, Game, Loaders)),
                 Download = global::PCL.ModpackUpdate.DownloadFilesWithProgress,

@@ -158,7 +158,6 @@ public static class LegacySettingsDefinitions {
         Add("UiLauncherThemeHide", "0|1|2|3|4", LegacySettingSource.Registry, true);
         Add("UiLauncherThemeHide2", "0|1|2|3|4", LegacySettingSource.Registry, true);
         Add("UiLauncherLogo", false);
-        Add("UiModFavorite", "", LegacySettingSource.Instance);
         Add("UiLauncherEmail", false);
         Add("UiBackgroundMode", 0);
         Add("UiBackgroundColorful", true);
@@ -177,6 +176,7 @@ public static class LegacySettingsDefinitions {
         Add("UiMusicRandom", true);
         Add("UiMusicAuto", true);
         Add("UiHiddenPageDownload", false);
+        Add("UiHiddenPageFavorites", false);
         Add("UiHiddenPageLink", false);
         Add("UiHiddenPageSetup", false);
         Add("UiHiddenPageOther", false);

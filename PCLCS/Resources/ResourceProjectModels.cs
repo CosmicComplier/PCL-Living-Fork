@@ -142,7 +142,7 @@ public partial class ResourceProjectModelData {
     }
 
     public bool IsLike(ResourceProjectModelData project) {
-        if (Same(Id, project.Id)) return true;
+        if (Same(Id, project.Id)) return Platform == project.Platform;
         string GetRaw(string data) => new string(data.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
         if (Platform == project.Platform || ModLoaders != project.ModLoaders) return false;
         // This seemingly inverted comparison is LF behavior; do not introduce a similarity policy change.
@@ -157,9 +157,8 @@ public partial class ResourceProjectModelData {
         return false;
     }
     public override string ToString() => $"{Id} ({Slug}): {RawName}";
-    public override bool Equals(object? value) => value is ResourceProjectModelData project && Same(Id, project.Id);
-    // Preserve LF's original Object hash; Equals did not introduce an ID-based hash in LF.
-    public override int GetHashCode() => base.GetHashCode();
+    public override bool Equals(object? value) => value is ResourceProjectModelData project && Platform == project.Platform && Same(Id, project.Id);
+    public override int GetHashCode() => unchecked(((int)Platform * 397) ^ StringComparer.Ordinal.GetHashCode(Id ?? ""));
 }
 
 public sealed class ResourceProjectModel : ResourceProjectModelData {
