@@ -40,6 +40,9 @@ namespace PCL
             Controller.ConstructBeforeXaml();
             InitializeComponent();
             ConfigureThemeToggle(BtnTitleTheme);
+            var titleStars = new ThemeStarfield(12);
+            PanTitle.Children.Insert(1, titleStars);
+            RegisterName("TitleStars", titleStars);
             Controller.ConstructAfterXaml();
         }
         private static void ConfigureThemeToggle(MyIconButton button)

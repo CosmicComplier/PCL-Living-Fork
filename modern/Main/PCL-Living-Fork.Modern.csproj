@@ -325,6 +325,8 @@
   <Compile Include="Modules/ModTheme.cs" />
   <Compile Include="Controls/ModernTooltipTheme.cs" />
 <Compile Include="Controls/LauncherUpdateCardBackground.cs" />
+<Compile Include="Controls/ThemeStarfield.cs" />
+<Compile Include="Controls/ThemeTransition.cs" />
   <Resource Include="Images/Branding/DefaultBackgroundNight.png" />
   <Compile Include="Modules/Minecraft/ModDependencyIndex.cs" />
 </ItemGroup>

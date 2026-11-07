@@ -14,6 +14,8 @@ internal static class TitleThemeToggleChecks {
         var button = new MyIconButton { Width = 28, Height = 28, Theme = MyIconButton.Themes.White, LogoScale = .72 };
         Native.Call(typeof(FormMain), "ConfigureThemeToggle", null, button);
         var header = new Grid { Width = 300, Height = 48, Background = System.Windows.Media.Brushes.SteelBlue };
+        var stars = (Canvas)Activator.CreateInstance(Native.Type("PCL.ThemeStarfield"), Native.Flags, null, new object[] { 12 }, null)!;
+        header.Children.Add(stars);
         header.Children.Add(button);
         var window = new Window { Content = header, Width = 350, Height = 90, Left = -30000, Top = -30000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
         try {
@@ -21,12 +23,15 @@ internal static class TitleThemeToggleChecks {
             ModMain.FrmSetupUI = new PageSetupUI();
             window.Show(); window.UpdateLayout();
             Settings.Set("UiLauncherColorMode", 0);
+            Native.Check(stars.Visibility == Visibility.Collapsed && !stars.IsHitTestVisible, "Titlebar stars remained visible in light mode or intercepted input.");
             string moon = button.Logo;
             Click(button);
             Native.Check(Settings.Get<int>("UiLauncherColorMode") == 1 && LegacyThemePalette.IsDarkTheme && button.Logo != moon && button.ToolTip?.ToString() == "切换到浅色主题", "Title toggle failed to enter dark mode or refresh its icon.");
             Native.Check(((ComboBox)ModMain.FrmSetupUI.FindName("ComboLauncherColorMode")).SelectedIndex == 1, "Personalization selector did not follow the title toggle.");
+            Native.Check(stars.IsVisible && stars.Children.Count == 12, "Title toggle did not reveal the sparse dark-mode titlebar stars.");
             Click(button);
             Native.Check(Settings.Get<int>("UiLauncherColorMode") == 0 && !LegacyThemePalette.IsDarkTheme && button.Logo == moon, "Second title toggle failed to restore light mode.");
+            Native.Check(!stars.IsVisible && !((System.Windows.Threading.DispatcherTimer)Native.Get(stars, "watcher")!).IsEnabled, "Light mode retained titlebar star work.");
             ModBase.IniClearCache("Setup"); Settings.Entries["UiLauncherColorMode"].ValueCache.Clear();
             Native.Check(Settings.Get<int>("UiLauncherColorMode") == 0 && ModBase.ReadIni("Setup", "UiLauncherColorMode", "") == "0", "Title theme selection was not persisted.");
             Settings.Set("UiLauncherColorMode", 1);

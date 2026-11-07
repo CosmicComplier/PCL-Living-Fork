@@ -186,7 +186,15 @@ namespace PCL
         }
         public static void ThemeRefresh(global::System.Int32 NewTheme = -(1))
         {
-            global::PCL.ModSecret.PaletteService.Refresh(NewTheme);
+            var dispatcher = global::System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is not null && !dispatcher.CheckAccess()) {
+                dispatcher.Invoke(() => ThemeRefresh(NewTheme));
+                return;
+            }
+            var main = ModMain.FrmMain;
+            if (main is not null && ModTheme.IsDarkTheme != (Settings.Get<int>("UiLauncherColorMode") == 1))
+                ThemeTransition.Apply(main.PanForm, () => PaletteService.Refresh(NewTheme));
+            else PaletteService.Refresh(NewTheme);
         }
         internal static global::System.Windows.Media.Brush CreateTitleBackground() => PaletteService.CreateTitleBackground();
         public static void ThemeRefreshMain()

@@ -12,8 +12,9 @@ namespace PCL;
 // This background belongs only to the launcher identity card. Native clocks
 // animate brush transforms; no layout, file work or update state is animated.
 internal sealed class LauncherUpdateCardBackground : Grid {
-    private readonly Rectangle first = new(), second = new();
+    private readonly Rectangle first = new(), second = new(), third = new();
     private readonly TranslateTransform firstFlow = new(), secondFlow = new();
+    private readonly TranslateTransform thirdFlow = new();
     private readonly List<AnimationClock> clocks = new();
     private readonly DispatcherTimer settingsWatcher;
     private bool moving;
@@ -21,11 +22,13 @@ internal sealed class LauncherUpdateCardBackground : Grid {
 
     internal LauncherUpdateCardBackground() {
         IsHitTestVisible = false;
-        Children.Add(first); Children.Add(second);
+        Children.Add(first); Children.Add(second); Children.Add(third); Children.Add(new ThemeStarfield(16));
         Animate(firstFlow, TranslateTransform.XProperty, -0.32, 0.32, 8);
         Animate(firstFlow, TranslateTransform.YProperty, 0.24, -0.24, 8);
         Animate(secondFlow, TranslateTransform.XProperty, 0.3, -0.3, 11);
         Animate(secondFlow, TranslateTransform.YProperty, -0.2, 0.2, 11);
+        Animate(thirdFlow, TranslateTransform.XProperty, -.25, .2, 13);
+        Animate(thirdFlow, TranslateTransform.YProperty, .15, -.15, 13);
         settingsWatcher = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(300) };
         settingsWatcher.Tick += (_, _) => RefreshMotion();
         SizeChanged += (_, args) => Clip = new RectangleGeometry(new Rect(new Point(), args.NewSize), 5, 5);
@@ -70,8 +73,8 @@ internal sealed class LauncherUpdateCardBackground : Grid {
             StartPoint = new Point(0, 0), EndPoint = new Point(1, 1),
             GradientStops = new GradientStopCollection {
                 new(dark ? Color.FromRgb(11, 23, 45) : Color.FromRgb(183, 222, 255), 0),
-                new(dark ? Color.FromRgb(18, 43, 79) : Color.FromRgb(248, 252, 255), .48),
-                new(dark ? Color.FromRgb(36, 77, 123) : Color.FromRgb(145, 196, 255), 1)
+                new(dark ? Color.FromRgb(24, 39, 76) : Color.FromRgb(248, 252, 255), .48),
+                new(dark ? Color.FromRgb(38, 56, 92) : Color.FromRgb(196, 206, 250), 1)
             }
         };
         Color blue = dark ? Color.FromArgb(110, 45, 117, 199) : Color.FromArgb(150, 70, 145, 245);
@@ -80,7 +83,8 @@ internal sealed class LauncherUpdateCardBackground : Grid {
             StartPoint = new Point(0, 1), EndPoint = new Point(1, 0), RelativeTransform = firstFlow,
             GradientStops = new GradientStopCollection { new(clear, 0), new(blue, .45), new(clear, 1) }
         };
-        second.Fill = Glow(dark ? Color.FromArgb(80, 64, 108, 164) : Color.FromArgb(225, 255, 255, 255), new Point(.7, .5), secondFlow);
+        second.Fill = Glow(dark ? Color.FromArgb(100, 93, 77, 161) : Color.FromArgb(160, 190, 171, 247), new Point(.78, .55), secondFlow);
+        third.Fill = Glow(dark ? Color.FromArgb(90, 34, 122, 145) : Color.FromArgb(170, 134, 225, 237), new Point(.22, .65), thirdFlow);
     }
     private static Brush Glow(Color color, Point center, Transform flow) {
         var brush = new RadialGradientBrush { Center = center, GradientOrigin = center, RadiusX = 0.55, RadiusY = 1.0, RelativeTransform = flow };

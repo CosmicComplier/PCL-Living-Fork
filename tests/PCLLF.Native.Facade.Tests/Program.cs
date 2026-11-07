@@ -11,6 +11,7 @@ internal static class Program
         ["instance-delete"] = InstanceDeletionChecks.Run,
         ["launcher-update-page"] = LauncherUpdatePageChecks.Run,
         ["title-theme-toggle"] = TitleThemeToggleChecks.Run,
+        ["theme-transition"] = ThemeTransitionChecks.Run,
         ["resource-entry"] = MapResourceChecks.ResourceEntries,
         ["world-details"] = WorldChecks.Run,
         ["registry-names"] = RegistryChecks.Run,

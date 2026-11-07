@@ -18,7 +18,11 @@ internal static class LauncherUpdateCardBackgroundChecks {
             "The update identity card lacks its isolated, clipped, click-through background.");
         var watcher = (DispatcherTimer)Native.Get(background, "settingsWatcher")!;
         var clocks = (List<AnimationClock>)Native.Get(background, "clocks")!;
+        var stars = background.Children.Cast<UIElement>().OfType<Canvas>().Single(layer => layer.GetType().Name == "ThemeStarfield");
+        var starWatcher = (DispatcherTimer)Native.Get(stars, "watcher")!;
+        var starClocks = (List<AnimationClock>)Native.Get(stars, "clocks")!;
         bool Moving() => (bool)Native.Get(background, "moving")!;
+        bool StarsMoving() => (bool)Native.Get(stars, "moving")!;
         int suppression = ModAnimation.AniControlEnabled;
         IDictionary cache = Settings.Entries["SystemDebugAnim"].ValueCache;
         var savedSetting = new List<DictionaryEntry>();
@@ -41,10 +45,23 @@ internal static class LauncherUpdateCardBackgroundChecks {
                 page.UpdateLayout();
                 var baseBrush = (LinearGradientBrush)background.Background;
                 Native.Check((baseBrush.GradientStops[0].Color.B < 100) == dark, "A live theme switch left the identity card using the previous brightness.");
-                Native.Check(baseBrush.GradientStops.All(stop => Blue(stop.Color)) && background.Children.OfType<Rectangle>().All(layer => ((GradientBrush)layer.Fill).GradientStops.All(stop => Blue(stop.Color))),
-                    "The identity card gradient left the requested blue/white hue family.");
+                Native.Check(baseBrush.GradientStops.All(stop => Cool(stop.Color)) && background.Children.OfType<Rectangle>().All(layer => ((GradientBrush)layer.Fill).GradientStops.All(stop => Cool(stop.Color))),
+                    "The identity card gradient left the requested cool hue family.");
+                Native.Check(background.Children.OfType<Rectangle>().Count(layer => layer.Fill is RadialGradientBrush) == 2,
+                    "Cyan and lavender halos are missing from the update card.");
+                VisualAssetChecks.Pump(() => stars.IsVisible == dark && starWatcher.IsEnabled == dark && StarsMoving() == (dark && SystemParameters.ClientAreaAnimation),
+                    "Sparse stars did not follow the current theme and native animation preference.");
+                Native.Check(!stars.IsHitTestVisible && stars.Children.Count == 16, "Card stars intercept input or have lost their sparse layout.");
+                if (dark) {
+                    foreach (var starClock in starClocks) starClock.Controller.SeekAlignedToLastTick(TimeSpan.Zero, TimeSeekOrigin.BeginTime);
+                    double initialOpacity = stars.Children[0].Opacity;
+                    foreach (var starClock in starClocks) starClock.Controller.SeekAlignedToLastTick(TimeSpan.FromSeconds(2.5), TimeSeekOrigin.BeginTime);
+                    Native.Check(stars.Children[0].Opacity > initialOpacity + .1, "Dark-mode stars did not visibly twinkle.");
+                }
                 Native.Check(Contrast(LegacyThemePalette.Brush("ColorBrush1").Color, baseBrush.GradientStops[0].Color) >= 4.5,
                     "Native identity text lost readable contrast over the themed card background.");
+                Native.Check(((SolidColorBrush)((TextBlock)page.FindName("LabBuildStatus")).Foreground).Color == LegacyThemePalette.Brush("ColorBrushTextSecondary").Color,
+                    "The build status did not use the stronger themed secondary text role over the colored background.");
                 ModpackStageLayoutChecks.Save(page, Path.Combine(root, dark ? "launcher-update-card-dark.png" : "launcher-update-card-light.png"), (int)page.ActualWidth, (int)page.ActualHeight);
                 foreach (var clock in clocks) clock.Controller.SeekAlignedToLastTick(TimeSpan.Zero, TimeSeekOrigin.BeginTime);
                 var start = Pixels(background);
@@ -54,8 +71,10 @@ internal static class LauncherUpdateCardBackgroundChecks {
                 Native.Check(change > 4, "Gradient motion remains imperceptible across four seconds: " + change);
                 ModpackStageLayoutChecks.Save(page, Path.Combine(root, dark ? "launcher-update-card-dark-moving.png" : "launcher-update-card-light-moving.png"), (int)page.ActualWidth, (int)page.ActualHeight);
             }
+            Native.Static("PCL.ModTheme", "PrepareThemeTones", true);
+            Native.Static("PCL.ModTheme", "NotifyThemeChanged");
             Native.Cache("SystemDebugAnim", 30);
-            VisualAssetChecks.Pump(() => !Moving() && clocks.All(clock => clock.IsPaused), "Disabling animations while visible did not pause background clocks.");
+            VisualAssetChecks.Pump(() => !Moving() && !StarsMoving() && clocks.Concat(starClocks).All(clock => clock.IsPaused), "Disabling animations while visible did not pause background and star clocks.");
             Native.Cache("SystemDebugAnim", 4);
             VisualAssetChecks.Pump(() => (double)Native.Get(background, "speed")! == 0.5 || !SystemParameters.ClientAreaAnimation,
                 "Changing native animation speed while visible did not reach the background clocks.");
@@ -68,14 +87,14 @@ internal static class LauncherUpdateCardBackgroundChecks {
             VisualAssetChecks.Pump(() => !Moving(), "Native animation suppression did not pause the gradient.");
             ModAnimation.AniControlEnabled = 0;
             page.Visibility = Visibility.Collapsed;
-            Native.Check(!watcher.IsEnabled && !Moving(), "A hidden settings page retained its background watcher or motion.");
+            Native.Check(!watcher.IsEnabled && !Moving() && !starWatcher.IsEnabled && !StarsMoving(), "A hidden settings page retained background or star work.");
             page.Visibility = Visibility.Visible;
             VisualAssetChecks.Pump(() => watcher.IsEnabled, "Returning to the settings page did not restore the background watcher.");
             card.BorderChild = null!;
-            VisualAssetChecks.Pump(() => !background.IsLoaded && !watcher.IsEnabled && !Moving(), "An unloaded identity background retained live animation work.");
+            VisualAssetChecks.Pump(() => !background.IsLoaded && !watcher.IsEnabled && !Moving() && !starWatcher.IsEnabled && !StarsMoving(), "An unloaded identity background retained live animation work.");
             card.BorderChild = background;
             VisualAssetChecks.Pump(() => background.IsLoaded && watcher.IsEnabled, "Reloading the identity card did not restore its background.");
-            Console.WriteLine("PASS native launcher identity background: live light/dark/light blue palettes, readable text, rounded click-through layer, animation disable/speed/suppression, Windows reduced motion and hide/unload/reload lifetime.");
+            Console.WriteLine("PASS native launcher identity background: live cool palettes and cyan/lavender halos, dark-only twinkling stars, readable text, click-through layers, native animation preferences and hide/unload/reload lifetime.");
         }
         finally {
             page.Visibility = Visibility.Visible;
@@ -96,7 +115,7 @@ internal static class LauncherUpdateCardBackgroundChecks {
         var image = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth), (int)Math.Ceiling(element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
         image.Render(element); byte[] bytes = new byte[image.PixelWidth * image.PixelHeight * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0); return bytes;
     }
-    private static bool Blue(Color color) => color.B >= color.G && color.G >= color.R;
+    private static bool Cool(Color color) => color.B >= color.G && color.B >= color.R && color.R <= color.G + 40;
     private static double Contrast(Color foreground, Color background) {
         static double Luminance(Color color) {
             static double Channel(byte value) { double channel = value / 255d; return channel <= 0.04045 ? channel / 12.92 : Math.Pow((channel + 0.055) / 1.055, 2.4); }
