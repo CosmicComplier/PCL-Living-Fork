@@ -423,7 +423,7 @@ namespace PCL
 
         // ini
 
-        private readonly static ConcurrentDictionary<string, ConcurrentDictionary<string, string>> IniCache = new ConcurrentDictionary<string, ConcurrentDictionary<string, string>>();
+        private readonly static ConcurrentDictionary<string, ConcurrentDictionary<string, string>> IniCache = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>
     /// 清除某 ini 文件的运行时缓存。
     /// </summary>
@@ -476,6 +476,11 @@ namespace PCL
         {
             BaseOps.WriteIni(FileName, Key, Value, IniCache);
         }
+
+        // A checked transaction uses the same lock/cache as ordinary INI settings.
+        // Its updater only computes a value; any UI/logging belongs outside it.
+        internal static string UpdateIniValue(string file, string key, Func<string, string> update)
+            => BaseOps.UpdateIniValue(file, key, value => update(value ?? ""), IniCache) ?? "";
 
         // 权限检查
 

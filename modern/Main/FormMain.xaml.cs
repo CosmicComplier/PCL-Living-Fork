@@ -256,6 +256,7 @@ namespace PCL
                 ReadInteger = key => Settings.Get<int>(key), ReadString = key => Settings.Get<string>(key),
                 ReadBoolean = key => Settings.Get<bool>(key), HasSaved = key => Settings.HasSaved(key),
                 DefaultValue = key => Settings.GetDefault(key), WriteSetting = (key, value) => Settings.Set(key, value), ResetSetting = key => Settings.Reset(key),
+                UpdateLogIdentity = () => CurrentUpdateLogIdentity,
                 HasIniKey = (file, key) => ModBase.HasIniKey(file, key), ThemeRefresh = value => ModSecret.ThemeRefresh(value),
                 ThemeRefreshMain = () => ModSecret.ThemeRefreshMain(), RefreshHidden = () => PageSetupUI.HiddenRefresh(),
                 RefreshBackground = (first, second) => PageSetupUI.BackgroundRefresh(first, second), RefreshMusic = (first, second) => ModMusic.MusicRefreshPlay(first, second),
@@ -337,6 +338,30 @@ namespace PCL
             InoutFluent = power => new ModAnimation.AniEaseInoutFluent((ModAnimation.AniEasePower)(int)power),
             Start = (frames, name, refresh) => ModAnimation.AniStart(frames, name, refresh), Stop = name => ModAnimation.AniStop(name), Speed = () => ModAnimation.AniSpeed
         };
+
+        internal static string CurrentUpdateLogIdentity => LegacyUpdateLogPrompt.BuildIdentity(
+            ModBase.VersionBaseName, ModBase.ReleaseBaselineVersion, ModBase.ReleaseBaselineIsPrerelease,
+            ModBase.VersionCode, (int)ModBase.BuildType);
+
+        internal static bool IsCurrentUpdateLogSuppressed => !LegacyUpdateLogPrompt.ShouldShow(
+            key => Settings.Get<string>(key), CurrentUpdateLogIdentity);
+
+        internal static bool PersistUpdateLogSuppression(bool suppress)
+        {
+            try
+            {
+                string persisted = ModBase.UpdateIniValue("Setup", LegacyUpdateLogPrompt.Key,
+                    old => LegacyUpdateLogPrompt.UpdateDismissal(old, CurrentUpdateLogIdentity, suppress));
+                Settings.Entries[LegacyUpdateLogPrompt.Key].Set(persisted, null);
+                Logger.Info($"已保存当前版本更新说明弹窗设置：{suppress}");
+                return true;
+            }
+            catch (Exception error)
+            {
+                Logger.Error(error, "保存更新说明弹窗设置失败，未保留本次更改", LogBehavior.None);
+                return false;
+            }
+        }
 
         private static LegacyMainTerminationHost CreateTerminationHost() => new LegacyMainTerminationHost
         {

@@ -25,6 +25,8 @@ public sealed class LegacyLocalModItemView {
     public Func<TextBlock?> Subtitle = null!;
     public Func<Panel> Tags = null!;
     public Func<FrameworkElement> UpdateButton = null!, ResourceLogoElement = null!, PathLogoElement = null!;
+    public Func<FrameworkElement> FavoriteButton = null!;
+    public Action<bool> SetFavorite = null!;
     public Func<Image> ResourceLogo = null!;
     public Func<ColumnDefinition> PaddingRight = null!, TitleColumn = null!, SubtitleColumn = null!, ExtendColumn = null!;
     public Action<string?> SetPathLogo = null!, SetPathFallback = null!;
@@ -35,6 +37,10 @@ public sealed class LegacyLocalModItemHost<TMod,TProject,TVersion,TEntry,TInfo,T
     public Func<int> Uuid = null!, NameStyle = null!;
     public Func<TMod?> Entry = null!;
     public Action<TMod?> SetEntry = null!;
+    // A-003.2: page-owned favorite identity for this row; ToggleFavorite persists the
+    // EnabledName key and the row only re-reads its own visual state.
+    public Func<bool> Favorite = null!;
+    public Action<string> ToggleFavorite = null!;
     public Func<TEntry?> Resource = null!;
     public Action<TEntry?> SetResource = null!;
     public Func<JObject?> Point = null!;
@@ -101,7 +107,19 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
         }
     }
     public void BindRestorePoint(JObject value) { SetLoaderWarning(""); EnvironmentHistoryPagePointPresenter.Bind(value,()=>host.SetResource(null),()=>host.SetEntry(null),point=>host.SetPoint(point),Refresh); }
-    public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshResource();}
+    public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshFavorite();RefreshResource();}
+    public void RefreshFavorite() {
+        bool isMod = host.Entry() is not null && host.Point() is null && host.Resource() is null;
+        view.FavoriteButton().Visibility = isMod ? Visibility.Visible : Visibility.Collapsed;
+        if (isMod) view.SetFavorite(host.Favorite());
+    }
+    public void FavoriteClick() {
+        if (host.Point() is not null || host.Resource() is not null) return;
+        TMod? entry = host.Entry();
+        if (entry is null) return;
+        host.ToggleFavorite(entry.EnabledName);
+        RefreshFavorite();
+    }
     private void RefreshResource() {
         TEntry resource=host.Resource()!;string? localName=resource.IsDirectory?resource.Name:System.IO.Path.GetFileNameWithoutExtension(resource.Name);
         Title=string.IsNullOrWhiteSpace(resourceInfo?.ProjectName)?localName:resourceInfo!.ProjectName;
@@ -167,6 +185,7 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
     public string GetUpdateCompareDescription()=>LegacyLocalModText.Compare<TMod,TProject,TVersion>(host.Entry()!,host.FormatTime);
     public void FirstViewport(){enteredViewport=true;Refresh();}
     public void Refresh(){
+        RefreshFavorite();
         if(host.Entry() is null || !host.Entry()!.IsEnabled)SetLoaderWarning("");
         if(host.Point() is not null){EnvironmentHistoryPagePointPresenter.Refresh(host.PointView());return;}
         if(host.Resource() is not null){RefreshResource();return;}

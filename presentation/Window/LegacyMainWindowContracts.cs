@@ -98,6 +98,7 @@ public sealed class LegacyMainWindowHost<TStack, TInstance, TAnimation>
     public Func<string, object?> DefaultValue = null!;
     public Action<string, object?> WriteSetting = null!;
     public Action<string> ResetSetting = null!;
+    public Func<string> UpdateLogIdentity = null!;
     public Func<string, string, bool> HasIniKey = null!;
     public Action<int> ThemeRefresh = null!;
     public Action ThemeRefreshMain = null!, RefreshHidden = null!;

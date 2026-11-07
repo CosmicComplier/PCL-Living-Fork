@@ -25,6 +25,7 @@ namespace PCL
             this.SelectedMods = new List<string>();
             Native = new NativePage(CreateView(), LocalModPageRuntime.CreateHost(this)) { SortOrder = LocalResourceSortOrder.AddedNewest };
             this.InitializeComponent();
+            this.BtnFilterFavorite.Check += (Sender, RaiseByMouse) => this.ChangeFilter((MyRadioButton)Sender, RaiseByMouse);
             LocalResourceUi.InitializeSortButton(this.BtnSort, ToggleSort, this.PanSortHeader, this.PanFilter);
             LocalResourceUi.UpdateSortButton(this.BtnSort, (int)Native.SortOrder);
         }
@@ -56,6 +57,7 @@ namespace PCL
                 EnableEnable = new Action<bool>(Value => this.BtnSelectEnable.IsEnabled = Value),
                 EnableUpdate = new Action<bool>(Value => this.BtnSelectUpdate.IsEnabled = Value),
                 EnableIndex = Value => this.BtnManageIndex.IsEnabled = Value, IndexText = Value => this.BtnManageIndex.Text = Value,
+                SetEmptyTitle = Value => this.LabEmptyTitle.Text = Value, SetEmptyHint = Value => this.LabEmptyHint.Text = Value,
                 SelectionBar = RefreshNativeSelectionBar
             };
         }
@@ -69,7 +71,8 @@ namespace PCL
                 new ResourcePageFilter(this.BtnFilterAll, 0, () => this.BtnFilterAll.Checked, Value => this.BtnFilterAll.Checked = Value, Value => this.BtnFilterAll.Text = Value),
                 new ResourcePageFilter(this.BtnFilterEnabled, 1, () => this.BtnFilterEnabled.Checked, Value => this.BtnFilterEnabled.Checked = Value, Value => this.BtnFilterEnabled.Text = Value),
                 new ResourcePageFilter(this.BtnFilterDisabled, 2, () => this.BtnFilterDisabled.Checked, Value => this.BtnFilterDisabled.Checked = Value, Value => this.BtnFilterDisabled.Text = Value),
-                new ResourcePageFilter(this.BtnFilterCanUpdate, 3, () => this.BtnFilterCanUpdate.Checked, Value => this.BtnFilterCanUpdate.Checked = Value, Value => this.BtnFilterCanUpdate.Text = Value)
+                new ResourcePageFilter(this.BtnFilterCanUpdate, 3, () => this.BtnFilterCanUpdate.Checked, Value => this.BtnFilterCanUpdate.Checked = Value, Value => this.BtnFilterCanUpdate.Text = Value),
+                new ResourcePageFilter(this.BtnFilterFavorite, 4, () => this.BtnFilterFavorite.Checked, Value => this.BtnFilterFavorite.Checked = Value, Value => this.BtnFilterFavorite.Text = Value)
             };
         }
 
@@ -120,6 +123,10 @@ namespace PCL
         public void PageOther_Loaded()
         {
             Native.Loaded();
+            // Two instances can share the same mods folder, so LoaderRun may reuse
+            // existing rows. Their favorites still belong to the selected instance.
+            foreach (MyLocalModItem item in ModItems.Values) item.Controller.RefreshFavorite();
+            Native.RefreshUI();
         }
 
         public void ReloadModList(bool ForceReload = false)
@@ -236,7 +243,18 @@ namespace PCL
             All = 0,
             Enabled = 1,
             Disabled = 2,
-            CanUpdate = 3
+            CanUpdate = 3,
+            Favorites = 4
+        }
+
+        public bool IsModFavorite(string Key)
+        {
+            return Native.IsFavorite(Key);
+        }
+
+        public bool ToggleModFavorite(string Key)
+        {
+            return Native.ToggleFavorite(Key);
         }
 
         private void ChangeFilter(MyRadioButton sender, bool raiseByMouse)

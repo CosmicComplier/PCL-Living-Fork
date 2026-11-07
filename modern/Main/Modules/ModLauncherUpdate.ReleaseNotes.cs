@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using MeloongCore.Extensions;
 using Newtonsoft.Json.Linq;
 
@@ -7,8 +6,6 @@ namespace PCL;
 
 public static partial class ModLauncherUpdate
 {
-    private static int AutomaticReleaseNotes;
-
     internal sealed class CurrentReleaseNotes
     {
         internal string Version = "", Markdown = "", Url = "";
@@ -49,15 +46,17 @@ public static partial class ModLauncherUpdate
         return result;
     }
 
-    internal static bool TryShowCurrentReleaseNotes(bool automatic, string summary)
+    internal static bool TryShowCurrentReleaseNotes(bool automatic, string summary, UpdateTransport transport = null)
     {
-        if (!UsesPublishedReleaseNotes(ModBase.VersionBaseName, ModBase.ReleaseBaselineIsPrerelease, ModBase.BuildType)) return false;
-        if (automatic && Interlocked.CompareExchange(ref AutomaticReleaseNotes, 1, 0) != 0) return true;
-        CurrentReleaseNotes notes = ReadCurrentReleaseNotes(ModBase.VersionBaseName, summary, PreferredUpdateSource());
+        if (automatic && FormMain.IsCurrentUpdateLogSuppressed) return true;
+        CurrentReleaseNotes notes = UsesPublishedReleaseNotes(ModBase.VersionBaseName, ModBase.ReleaseBaselineIsPrerelease, ModBase.BuildType)
+            ? ReadCurrentReleaseNotes(ModBase.VersionBaseName, summary, PreferredUpdateSource(), transport)
+            : new CurrentReleaseNotes { Version = ModBase.VersionBaseName, Markdown = summary ?? "", Url = ModBase.LauncherReleasesUrl };
         string caption = "基于 PCL 官方开源版的第三方版本。\r\n" +
-            (notes.FromRelease ? "以下为当前版本的完整发布说明。" : "暂未读取到当前版本的完整发布说明，以下为本地简述。");
+            (notes.FromRelease ? "以下为当前版本的完整发布说明。" : "以下为当前版本的本地简述。");
         int choice = ModMain.MyMsgBoxConfirmContent(caption, ModBase.LauncherDisplayName + " " + notes.Version + " 更新说明", "确定",
-            () => new ReleaseNotesView(notes.Markdown), CancelText: "查看发布页", IsWarn: false);
+            () => new ReleaseNotesPromptView(notes.Markdown, FormMain.IsCurrentUpdateLogSuppressed, FormMain.PersistUpdateLogSuppression),
+            CancelText: "查看发布页", IsWarn: false);
         if (choice == 2) ModBase.OpenWebsite(notes.Url);
         return true;
     }

@@ -80,6 +80,13 @@ def main() -> int:
     mixed = ["modern/Main/FormMain.xaml.cs", "Plain Craft Launcher 2/Modules/Minecraft/WorldBackups.vb"]
     expect(cli(mixed), "world-backups", True, "mixed native and legacy consumers", mixed)
     expect(cli(extra=["--full"]), "complete", True, "explicit complete checkpoint", [])
+    for path, scope, native in (
+        ("PCLCS/Resources/LegacyModFavorites.cs", "mod-favorites-tests", True),
+        ("tests/PCLLF.Migration.Tests/LegacyModFavoritesTests.cs", "mod-favorites-tests", False),
+        ("PCLCS/Settings/LegacyUpdateLogPrompt.cs", "settings-tests", True),
+        ("tests/PCLLF.Migration.Tests/UpdateLogPromptTests.cs", "settings-tests", False),
+    ):
+        expect(cli([path]), scope, native, "A-003 routing: " + path, [path])
     registry_source = (repo / "tests/PCLLF.Migration.Tests/Program.cs").read_text(encoding="utf-8")
     registry_block = re.search(r'\bgroups\s*=\s*\[(.*?)\];', registry_source, re.DOTALL)
     require(registry_block is not None, "Production migration test group registration is missing.")

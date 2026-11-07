@@ -41,7 +41,9 @@ internal static class Program
         ["mmc-import-contract"] = MmcImportChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
-        ["account-ui"] = AccountUiChecks.Run
+        ["account-ui"] = AccountUiChecks.Run,
+        ["mod-favorites"] = ModFavoriteChecks.Run,
+        ["update-log-prompt"] = UpdateLogPromptChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)

@@ -42,7 +42,8 @@ namespace PCL
         }
         public static void SaveSetting(object sender)
         {
-            LegacySettingsBindingController.SaveSetting(sender, ModAnimation.AniControlEnabled, Control => Control is ISettingControl, KeyProperty, Control => ((ISettingControl)Control).GetCurrentSetting(), (Key, Value) => Settings.Set(Key, Value, Instance: PageInstanceLeft.Instance));
+            LegacySettingsBindingController.SaveSetting(sender, ModAnimation.AniControlEnabled, Control => Control is ISettingControl, KeyProperty, Control => ((ISettingControl)Control).GetCurrentSetting(), (Key, Value) =>
+                Settings.Set(Key, Value, Instance: PageInstanceLeft.Instance));
         }
     }
 

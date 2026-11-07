@@ -26,6 +26,7 @@ public static class LegacySettingsDefinitions {
         Add("HintBuy", false, LegacySettingSource.Registry);
         Add("HintClearRubbish", 0, LegacySettingSource.Registry);
         Add("HintUpdateMod", false, LegacySettingSource.Registry);
+        Add(LegacyUpdateLogPrompt.Key, "");
         Add("HintCustomCommand", false, LegacySettingSource.Registry);
         Add("HintCustomWarn", false, LegacySettingSource.Registry);
         Add("HintMoreAdvancedSetup", false, LegacySettingSource.Registry);
@@ -157,6 +158,7 @@ public static class LegacySettingsDefinitions {
         Add("UiLauncherThemeHide", "0|1|2|3|4", LegacySettingSource.Registry, true);
         Add("UiLauncherThemeHide2", "0|1|2|3|4", LegacySettingSource.Registry, true);
         Add("UiLauncherLogo", false);
+        Add("UiModFavorite", "", LegacySettingSource.Instance);
         Add("UiLauncherEmail", false);
         Add("UiBackgroundMode", 0);
         Add("UiBackgroundColorful", true);
