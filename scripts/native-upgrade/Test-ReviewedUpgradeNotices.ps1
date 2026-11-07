@@ -20,6 +20,9 @@ foreach($name in @('Pending','Check-Log','Assert-LfNormalClose','Test-ClosedLogG
 $assignments=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$ready'},$true))
 if($assignments.Count -ne 1){throw 'Expected one actual Main readiness expression.'}
 $readyExpression=[scriptblock]::Create('param($text,$window,$notice,$nativeProof,$newNotice) '+$assignments[0].Right.Extent.Text)
+$noticeAssignments=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$newNotice'},$true))
+if($noticeAssignments.Count -ne 1){throw 'Expected one actual metadata-bound native notice assignment.'}
+$titleExpression=[scriptblock]::Create('param($nativeProof) '+$noticeAssignments[0].Right.Extent.Text)
 $nl=[string][char]13+[char]10
 $prefix='00:00:00.001 I [MessageDialogController] '
 $script:target='D:\owned-ci\Install with spaces\LivingPCL Actual Target.exe'
@@ -45,8 +48,9 @@ $legacyHighlights='- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Deskto
 $currentHighlights='- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复'+$nl+'- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime'+$nl+'- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度'+$nl+'- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明'+$nl+'- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序'+$nl+'- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿'+$nl+'- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览'
 foreach($version in @('dev_edition','1.4.0-pre-4','1.4.0')){
  $highlights=if($version -ceq '1.4.0-pre-4'){$legacyHighlights}else{$currentHighlights}
- $script:nativeProof=[pscustomobject]@{versionBaseName=$version}
+ $script:nativeProof=[pscustomobject]@{versionBaseName=$version;displayName='PCL Living Fork';buildType=50;startupNoticeStyle='plain';startupNoticeSource='local';startupNoticeTitle=('PCL Living Fork '+$version+' 版本说明')}
  $script:newNotice='PCL Living Fork '+$version+' 版本说明'
+ if((& $titleExpression $nativeProof) -cne $newNotice){throw 'Actual native title assignment ignored plain metadata.'};$count++
  $caption='PCL Living Fork '+$version+$nl+$nl+$highlights
  if((Get-ReviewedUpgradeCaption $version) -cne $caption){throw 'Reviewed caption differs from independent complete expected body.'}
  $count++
@@ -85,6 +89,39 @@ foreach($version in @('dev_edition','1.4.0-pre-4','1.4.0')){
  }
  Assert-Value $false {& $readyExpression ($stageLog+$upgrade) $null $newNotice $nativeProof $newNotice} 'missing actual window'
 }
+foreach($route in @(
+ @{Version='dev_edition';Style='markdown-suppress';Source='local';Local='以下为当前版本的本地简述。'},
+ @{Version='1.4.0';Style='markdown-suppress';Source='published-or-local';Local='以下为当前版本的本地简述。'},
+ @{Version='1.4.0';Style='markdown';Source='published-or-local';Local='暂未读取到当前版本的完整发布说明，以下为本地简述。'}
+)){
+ $script:nativeProof=[pscustomobject]@{versionBaseName=$route.Version;displayName='PCL Living Fork';buildType=50;startupNoticeStyle=$route.Style;startupNoticeSource=$route.Source;startupNoticeTitle=('PCL Living Fork '+$route.Version+' 更新说明')}
+ $script:newNotice=& $titleExpression $nativeProof
+ if($newNotice -cne $nativeProof.startupNoticeTitle){throw 'Actual bridge title assignment ignored rich metadata.'};$count++
+ $caption='基于 PCL 官方开源版的第三方版本。'+$nl+$route.Local
+ $rich=Message-Log $newNotice $caption
+ Assert-Value $true {& $readyExpression ($stageLog+$rich) ([pscustomobject]@{Owned=$true}) $newNotice $nativeProof $newNotice} 'actual rich readiness'
+ Check-Log $rich $newNotice -RequireComplete
+ Assert-LfNormalClose -1 ($rich+$closeLog) $newNotice;$count++
+ $partial=Message-Log $newNotice '基于 PCL 官方开源版的第三方版本。'
+ Assert-Value $false {& $readyExpression ($stageLog+$partial) ([pscustomobject]@{Owned=$true}) $newNotice $nativeProof $newNotice} 'rich caption prefix pending'
+ Assert-Refused {Check-Log $partial $newNotice -RequireComplete} 'rich prefix cannot finalize'
+ Assert-Refused {Assert-LfNormalClose -1 ($partial+$closeLog) $newNotice} 'rich prefix cannot close'
+ Assert-Refused {Check-Log (Message-Log $newNotice ($caption+$nl+'extra')) $newNotice} 'extra rich caption line'
+ Assert-Refused {Check-Log (Message-Log $newNotice ($caption+' changed')) $newNotice} 'changed rich caption'
+ Assert-Refused {Check-Log ($rich+$rich) $newNotice} 'duplicate rich record'
+ Assert-Refused {Check-Log $rich.Replace('[MessageDialogController]','[Unknown]') $newNotice} 'rich caption logger ownership'
+ Assert-Refused {Check-Log (Message-Log ('PCL Living Fork '+$route.Version+' 版本说明') 'old') $newNotice} 'old title cannot stand in for rich metadata'
+ Assert-Refused {Check-Log (Message-Log 'PCL Living Fork 更新说明' 'generic') $newNotice} 'generic title cannot stand in for rich metadata'
+ foreach($kind in @('选择','输入')){Assert-Refused {Check-Log (Message-Log $newNotice $caption $kind) $newNotice} 'unsafe rich same-title kind'}
+ Assert-Refused {Check-Log ($rich+(Message-Log '删除所有版本？' 'unsafe')) $newNotice} 'unknown after rich'
+ Assert-Refused {Check-Log ($rich+(Message-Log '' 'unsafe')) $newNotice} 'empty title after rich'
+ Assert-Refused {Check-Log ($rich+'00:00:01.000 E [Actual] failure'+$nl) $newNotice} 'Error after rich'
+ Assert-Value $false {& $readyExpression ($stageLog+$rich.TrimEnd([char]13,[char]10)) ([pscustomobject]@{Owned=$true}) $newNotice $nativeProof $newNotice} 'rich final-line partial'
+ $published=Message-Log $newNotice ('基于 PCL 官方开源版的第三方版本。'+$nl+'以下为当前版本的完整发布说明。')
+ if($route.Source -ceq 'published-or-local'){
+  Assert-Value $true {& $readyExpression ($stageLog+$published) ([pscustomobject]@{Owned=$true}) $newNotice $nativeProof $newNotice} 'published caption is read-only admission, never click authorization'
+ }else{Assert-Refused {Check-Log $published $newNotice} 'development metadata cannot claim online notes'}
+}
 Assert-Value $true {Test-ReviewedStartupNotice (Message-Log 'PCL Living Fork 1.3.4 版本说明' 'legacy fixture') 'PCL Living Fork 1.3.4 版本说明' ''} 'original old notice retained'
 Assert-Refused {Test-ReviewedStartupNotice (Message-Log 'PCL Living Fork 更新说明' 'wrong') 'PCL Living Fork 1.4.0-pre-5 版本说明' '1.4.0-pre-5' -NativePhase} 'unreviewed future native version'
 Assert-Refused {Test-ReviewedStartupNotice '' 'PCL Living Fork 1.4.0-pre-4 版本说明' 'dev_edition' -NativePhase} 'mismatched metadata binding'
@@ -93,5 +130,5 @@ $script:closedLogGeneration=[pscustomobject]@{ProcessId=70;Bytes=$bytes}
 Assert-Value $true {Test-ClosedLogGeneration $bytes 71} 'prior exact closed log is still not current'
 Assert-Value $false {Test-ClosedLogGeneration $bytes 70} 'same PID cannot bypass current checks'
 Assert-Value $false {Test-ClosedLogGeneration ([Text.Encoding]::UTF8.GetBytes('changed log')) 71} 'changed log cannot bypass current checks'
-Write-Output ('PASS '+$count+' actual PS5 native-upgrade notice/readiness regressions; exact Native caption only, old phase/unknown/kind/body/Error/partial records refused or pending. No Main/profile/process/window/input action.')
+Write-Output ('PASS '+$count+' actual PS5 native-upgrade notice/readiness regressions; metadata-bound plain/Markdown captions, old phase/unknown/kind/body/Error/partial records refused or pending. No Main/profile/process/window/input action.')
 

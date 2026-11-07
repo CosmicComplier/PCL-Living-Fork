@@ -22,7 +22,7 @@ namespace PclLfNativeInteraction;
 internal sealed class Probe
 {
     private readonly string Notice;
-    private readonly string Caption;
+    private readonly ReviewedNotice noticePolicy;
     private readonly Dictionary<string, string> args;
     private readonly Dictionary<string, object?> evidence = new();
     private readonly List<object> steps = new();
@@ -40,7 +40,7 @@ internal sealed class Probe
     {
         args = arguments;
         Notice = args["notice"];
-        Caption = ReviewedInformationNotice.CaptionForTitle(Notice);
+        noticePolicy = ReviewedInformationNotice.ForTitle(Notice, args.GetValueOrDefault("notice-style", "plain"), args.GetValueOrDefault("notice-source", "local"));
         pid = int.Parse(args["pid"], CultureInfo.InvariantCulture);
         hwnd = new IntPtr(long.Parse(args["hwnd"], CultureInfo.InvariantCulture));
         fixture = Path.GetFullPath(args["fixture"]); owner = args["owner"];
@@ -67,7 +67,7 @@ internal sealed class Probe
             }
             if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess || Environment.GetEnvironmentVariable("CI") != "true" || Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" || Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") != "github-hosted") throw new InvalidOperationException("PENDING: isolated GitHub-hosted x64 Windows only.");
             Native.SetThreadDpiAwarenessContext(new IntPtr(-4));
-            if (values.Length != 18) throw new InvalidOperationException("Expected nine named fixture arguments.");
+            if (values.Length is not (18 or 22)) throw new InvalidOperationException("Expected nine fixture arguments and the optional bound notice style/source pair.");
             Dictionary<string, string> arguments = new(StringComparer.Ordinal);
             for (int i = 0; i < values.Length; i += 2) arguments.Add(values[i].TrimStart('-'), values[i + 1]);
             probe = new Probe(arguments); probe.Guard(true); probe.identityProved = true; probe.Run();
@@ -148,8 +148,7 @@ internal sealed class Probe
         {
             string log = reader.ReadToEnd();
             if (Regex.IsMatch(log, @"(?m)^\d{2}:\d{2}:\d{2}\.\d{3} E ")) throw new InvalidOperationException("Actual Main emitted an Error log during interaction.");
-            foreach (Match title in Regex.Matches(log, @"(?:普通|选择|输入)弹窗：([^\r\n]+)"))
-                if (title.Groups[1].Value.Trim() != Notice) throw new InvalidOperationException("PENDING: unexpected actual dialog, never auto-clicked: " + title.Groups[1].Value.Trim());
+            noticePolicy.VerifyLogCaption(log);
         }
         if (Root.Current.ProcessId != pid || Root.Current.NativeWindowHandle != hwnd.ToInt64()) throw new InvalidOperationException("UIA root does not represent actual Main HWND.");
     }
@@ -205,6 +204,48 @@ internal sealed class Probe
             ancestor = TreeWalker.RawViewWalker.GetParent(ancestor);
         }
         throw new InvalidOperationException("PENDING: actual theme ComboBox has no provable selected PanBack ancestor.");
+    }
+    private bool IsDescendant(AutomationElement node, AutomationElement ancestor)
+    {
+        AutomationElement? current = TreeWalker.RawViewWalker.GetParent(node);
+        for (int depth = 0; depth < 45 && current != null; depth++, current = TreeWalker.RawViewWalker.GetParent(current))
+        {
+            if (current.Current.ProcessId != pid) throw new InvalidOperationException("Notice ancestor belongs to another process.");
+            if (current.Equals(ancestor)) return true;
+            if (current.Current.NativeWindowHandle != 0) break;
+        }
+        return false;
+    }
+    private AutomationElement VerifyInformationNotice()
+    {
+        var title = Text(Notice, "LabTitle"); var button = Text("确定", "LabText");
+        if (!noticePolicy.IsMarkdown)
+        {
+            var caption = Text(noticePolicy.LogCaption, "LabCaption");
+            if (caption.Current.BoundingRectangle.Top <= title.Current.BoundingRectangle.Top || button.Current.BoundingRectangle.Top <= caption.Current.BoundingRectangle.Top)
+                throw new InvalidOperationException("Information notice geometry/unique button differs.");
+            return button;
+        }
+        // The caption TextBlock is intentionally replaced by the native content
+        // factory. Inspect the actual UIA Document/TextPattern, not its old peer.
+        var content = Unique(node => node.Current.AutomationId == "PanCaption", "native notice PanCaption");
+        // WPF also exposes the FlowDocument's own nested Document peer. Bind
+        // the fixed viewer viewport, whose TextPattern delegates the full text.
+        var document = Unique(node => node.Current.ControlType == ControlType.Document && node.Current.ClassName == "FlowDocumentScrollViewer" && IsDescendant(node, content) && node.TryGetCurrentPattern(TextPattern.Pattern, out _), "native Markdown viewer Document/TextPattern");
+        if (!document.TryGetCurrentPattern(TextPattern.Pattern, out object pattern)) throw new InvalidOperationException("PENDING: native Markdown TextPattern disappeared.");
+        string text = ((TextPattern)pattern).DocumentRange.GetText(16001);
+        noticePolicy.VerifyDocument(text);
+        var published = Text("查看发布页", "LabText");
+        AutomationElement? suppression = noticePolicy.HasSuppression ? Text(ReviewedInformationNotice.SuppressionLabel, "LabText") : null;
+        if (suppression != null && (!IsDescendant(suppression, content) || IsDescendant(suppression, document)))
+            throw new InvalidOperationException("PENDING: native suppression label is not a separate footer in the owned notice content.");
+        ReviewedInformationNotice.VerifyRichGeometry(Native.Client(hwnd), title.Current.BoundingRectangle, content.Current.BoundingRectangle, document.Current.BoundingRectangle,
+            suppression?.Current.BoundingRectangle, button.Current.BoundingRectangle, published.Current.BoundingRectangle);
+        evidence["ReviewedStartupNotice"] = new { noticePolicy.Title, noticePolicy.Style, noticePolicy.Source, CompleteLocalDocument = true,
+            DocumentCharacters = text.Length, DocumentSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ReviewedInformationNotice.NormalizeDocument(text)))),
+            SuppressionLabel = suppression?.Current.Name, SeparateFooter = suppression != null, CompleteOwnedGeometry = true, LocalLogCaption = true,
+            InputTarget = "确定 only; suppression and release-page controls are observed without input" };
+        return button;
     }
     private void Click(AutomationElement node, string step)
     {
@@ -362,9 +403,8 @@ internal sealed class Probe
     private void Run()
     {
         if (args["notice"] != Notice) throw new InvalidOperationException("PENDING: expected information notice changed after fixture admission.");
-        Stable("known-notice"); var title = Text(Notice, "LabTitle"); var caption = Text(Caption, "LabCaption"); var button = Text("确定", "LabText");
-        if (caption.Current.BoundingRectangle.Top <= title.Current.BoundingRectangle.Top || button.Current.BoundingRectangle.Top <= caption.Current.BoundingRectangle.Top) throw new InvalidOperationException("Information notice geometry/unique button differs.");
-        Capture("notice"); Click(button, "dismiss-exact-information-notice");
+        Stable("known-notice"); VerifyInformationNotice(); Capture("notice");
+        var button = VerifyInformationNotice(); Click(button, "dismiss-exact-information-notice");
         Wait(() => !Nodes().Any(n => Visible(n) && n.Current.Name == Notice), "only reviewed notice dismissed");
         Stable("launch"); Capture("launch");
         Click(Text("设置", "LabText", top: true), "main-settings"); Stable("settings");
