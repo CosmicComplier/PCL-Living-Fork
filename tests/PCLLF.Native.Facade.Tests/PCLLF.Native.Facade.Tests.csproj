@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="*.cs" />
+    <None Include="../../modern/Main/FormMain.xaml" Link="assets/FormMain.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../modern/Main/Images/Branding/DefaultBackground.png" Link="assets/DefaultBackground.png" CopyToOutputDirectory="PreserveNewest" />
 <None Include="../../modern/Main/Images/Branding/DefaultBackgroundNight.png" Link="assets/DefaultBackgroundNight.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

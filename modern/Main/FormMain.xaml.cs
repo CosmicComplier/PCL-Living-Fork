@@ -41,6 +41,7 @@ namespace PCL
             InitializeComponent();
             ConfigureThemeToggle(BtnTitleTheme);
             ConfigureDeferredUpdateButton(BtnTitleUpdate, ModLauncherUpdate.ReopenDeferredUpdate);
+            ConfigureTitleClip(PanTitle);
             var titleStars = new ThemeStarfield(12);
             PanTitle.Children.Insert(1, titleStars);
             RegisterName("TitleStars", titleStars);
@@ -81,6 +82,16 @@ namespace PCL
             button.ToolTip = "有可用更新 " + tag + "，点击查看";
             button.Visibility = string.IsNullOrEmpty(tag) ? Visibility.Collapsed : Visibility.Visible;
         }
+        private static void ConfigureTitleClip(FrameworkElement title)
+        {
+            var clip = new System.Windows.Media.RectangleGeometry { RadiusX = 6, RadiusY = 6 };
+            title.Clip = clip;
+            void Refresh() => clip.Rect = new Rect(new Point(), title.RenderSize);
+            title.SizeChanged += (_, _) => Refresh();
+            title.Loaded += (_, _) => Refresh();
+            Refresh();
+        }
+
 
         private void ShowUpdateLog() => Controller.ShowUpdateLog();
         private void FormMain_Loaded(object sender, RoutedEventArgs e) => Controller.Loaded();
@@ -173,7 +184,15 @@ namespace PCL
         private void PageChangeAnim(FrameworkElement TargetLeft, FrameworkElement TargetRight)
             => Controller.PageChangeAnim(TargetLeft, TargetRight);
         private void PageChangeExit() => Controller.PageChangeExit();
-        private void PanMainLeft_SizeChanged(object sender, SizeChangedEventArgs e) => Controller.LeftSizeChanged(e);
+        private void PanMainLeft_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ReflowSidebarCard(SidebarCard, e);
+            Controller.LeftSizeChanged(e);
+        }
+        private static void ReflowSidebarCard(Border sidebar, SizeChangedEventArgs args)
+        {
+            if (args.WidthChanged) sidebar.InvalidateMeasure();
+        }
         private void PanMainLeft_Resize(double NewWidth) => Controller.ResizeLeft(NewWidth);
         public void DragTick() => Controller.DragTick();
         public void DragDoing() => Controller.DragDoing();

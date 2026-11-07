@@ -13,6 +13,7 @@ internal static class Program
         ["title-theme-toggle"] = TitleThemeToggleChecks.Run,
         ["theme-transition"] = ThemeTransitionChecks.Run,
         ["deferred-update"] = DeferredUpdateButtonChecks.Run,
+        ["window-chrome"] = WindowChromeChecks.Run,
         ["resource-entry"] = MapResourceChecks.ResourceEntries,
         ["world-details"] = WorldChecks.Run,
         ["registry-names"] = RegistryChecks.Run,

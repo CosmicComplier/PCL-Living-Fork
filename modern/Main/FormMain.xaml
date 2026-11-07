@@ -140,13 +140,15 @@
                         <TextBlock SnapsToDevicePixels="False" IsHitTestVisible="False" Name="LabTitleInner" VerticalAlignment="Center" Margin="47,1,144,0" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource ColorBrushTitleForeground}" FontSize="15" />
                     </Grid>
                 </Grid>
-                <Grid x:Name="PanLeft" Grid.Row="1" HorizontalAlignment="Left" SnapsToDevicePixels="True">
+                <Grid x:Name="PanLeft" Grid.Row="1" HorizontalAlignment="Left" Margin="12,12,0,12" SnapsToDevicePixels="True">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="1*"/>
                     </Grid.ColumnDefinitions>
-                    <Rectangle x:Name="RectLeftBackground" Width="0" Fill="{DynamicResource ColorBrushBackgroundTransparentSidebar}" IsHitTestVisible="False" />
-                    <Rectangle x:Name="RectLeftShadow" Width="4" HorizontalAlignment="Left" IsHitTestVisible="False" Grid.Column="1" >
+                    <Rectangle x:Name="RectLeftBackground" Width="0" RadiusX="6" RadiusY="6" Fill="{DynamicResource ColorBrushCard}" IsHitTestVisible="False">
+                        <Rectangle.Effect><DropShadowEffect Color="{DynamicResource ColorObjectShadow}" ShadowDepth="0" BlurRadius="10" Opacity="0.14"/></Rectangle.Effect>
+                    </Rectangle>
+                    <Rectangle x:Name="RectLeftShadow" Width="4" HorizontalAlignment="Left" IsHitTestVisible="False" Grid.Column="1" Visibility="Collapsed">
                         <Rectangle.Fill>
                             <LinearGradientBrush EndPoint="1,0" StartPoint="0,0" Opacity="0.04">
                                 <GradientStop Color="#000000" Offset="0"/>
@@ -164,7 +166,7 @@
                         <Border x:Name="PanMainRight" RenderOptions.BitmapScalingMode="NearestNeighbor" UseLayoutRounding="False" SnapsToDevicePixels="False">
                         </Border>
                     </Border>
-                    <Border Grid.IsSharedSizeScope="True" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                    <Border x:Name="SidebarCard" CornerRadius="6" Margin="12,12,0,12" Grid.IsSharedSizeScope="True" UseLayoutRounding="True" SnapsToDevicePixels="True">
                         <Border x:Name="PanMainLeft" RenderOptions.BitmapScalingMode="NearestNeighbor" UseLayoutRounding="False" SnapsToDevicePixels="False">
                         </Border>
                     </Border>
