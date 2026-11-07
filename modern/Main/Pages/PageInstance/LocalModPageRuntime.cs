@@ -121,6 +121,7 @@ namespace PCL
                 FormatSize = global::MeloongCore.StringUtils.FormatByteSize
             };
         }
+
         private static LegacyModDependencyIndexResult RebuildIndex(ModMinecraft.McInstance Target, Action<int,int> Progress) {
             var report = ModDependencyOnline.RebuildWithOnline(System.IO.Path.Combine(Target.PathIndie,"mods"),ModDependencyInspector.ContextForInstance(Target),Options:new ModDependencyOnline.LookupOptions {Progress=Progress});
             return new LegacyModDependencyIndexResult {IndexReadFailed=()=>report.IndexReadFailed,IndexPersisted=()=>report.IndexPersisted,OnlineIncomplete=()=>report.OnlineIncomplete};

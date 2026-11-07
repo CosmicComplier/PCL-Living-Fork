@@ -13,6 +13,8 @@ internal static class LegacyFoundationTests {
         yield return ("foundation preserves actual UUID Task timeout exceptions and process parameters", () => InFixture(Tasks));
         yield return ("foundation search retains in-place partial failure tie order and lazy random enumeration", () => InFixture(Search));
         yield return ("foundation reads real legacy INI encodings and preserves resource bytes without global providers", () => InFixture(Files));
+        yield return ("INI preserves Shared file addresses for native paths and Unix literal Windows names", () => InFixture(IniFileAddresses));
+        yield return ("INI verified writes preserve bytes and cache on failure and merge concurrent ordinary writes", () => InFixture(IniTransactions));
     }
     private static void StartupActivation() {
         List<string> order = new(); int pauses = 0, searches = 0;
@@ -73,6 +75,74 @@ internal static class LegacyFoundationTests {
         string previous = Directory.GetCurrentDirectory();
         try { Directory.SetCurrentDirectory(root); sample(root); }
         finally { Directory.SetCurrentDirectory(previous); Directory.Delete(root, true); }
+    }
+    private static void IniFileAddresses(string root) {
+        List<string> addresses = new() { Path.Combine(root, "native", "address.ini") };
+        // No real Windows drive is involved: on Unix these are relative filenames
+        // inside the GUID fixture, transformed only by the unchanged Shared helper.
+        if (!OperatingSystem.IsWindows()) {
+            addresses.Add(@"C:\literal-fixture\address.ini");
+            addresses.Add(@"\\?\C:\literal-fixture\extended.ini");
+        }
+        foreach (string address in addresses) {
+            string physical = Path.GetFullPath(PathUtils.ForApi(address));
+            if (OperatingSystem.IsWindows()) physical = PathUtils.RemoveExtendedPrefix(physical);
+            Assert(physical.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal), "INI address stays inside GUID fixture");
+            FileUtils.Write(address, "A:first\r\nA:second\r\nB:one:two\r\n");
+            Assert(File.Exists(physical), "Shared wrote the expected physical file");
+            var cache = new ConcurrentDictionary<string, ConcurrentDictionary<string, string>>();
+            Assert(LegacyBaseOperations.ReadIni(address, "A", "missing", cache) == "second" &&
+                LegacyBaseOperations.ReadIni(address, "B", "missing", cache) == "one:two", "INI reads the same Shared address without changing duplicate/first-colon rules");
+            LegacyBaseOperations.UpdateIniValue(address, "Saved", _ => "verified", cache);
+            Assert(FileUtils.ReadAsString(address).Contains("Saved:verified", StringComparison.Ordinal) &&
+                LegacyBaseOperations.ReadIni(address, "A", "missing", cache) == "second", "verified write uses the same physical address and preserves old keys");
+            FileUtils.Write(address, "A:external\r\n");
+            Assert(LegacyBaseOperations.ReadIni(address, "A", "missing", cache) == "second", "INI cache remains stable until clear");
+            LegacyBaseOperations.IniClearCache(address, cache);
+            Assert(LegacyBaseOperations.ReadIni(address, "A", "missing", cache) == "external", "cache clear reloads the same Shared address");
+        }
+    }
+    private static void IniTransactions(string root) {
+        string ini = Path.Combine(root, "transaction", "Setup.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        var cache = new ConcurrentDictionary<string, ConcurrentDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        if (OperatingSystem.IsWindows()) {
+            const string unc = @"\\fixture.invalid\share\Setup.ini";
+            cache[unc] = new();
+            LegacyBaseOperations.IniClearCache(@"\\?\UNC\fixture.invalid\share\Setup.ini", cache);
+            Assert(!cache.ContainsKey(unc), "canonical UNC cache identity (no network IO)");
+        }
+        foreach (string key in new[] { "UiModFavorite", LegacyUpdateLogPrompt.Key }) {
+            File.WriteAllText(ini, "Keep:原设置\r\n\r\n;保留注释\r\n" + key + ":old\r\n");
+            cache.Clear();
+            byte[] original = File.ReadAllBytes(ini);
+            Assert(LegacyBaseOperations.ReadIni(ini, key, "missing", cache) == "old", "prime old cache");
+            if (OperatingSystem.IsWindows()) {
+                using (FileStream held = new(ini, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    Throws<IOException>(() => LegacyBaseOperations.UpdateIniValue(ini, key, _ => "rejected", cache));
+                Assert(File.ReadAllBytes(ini).SequenceEqual(original) && LegacyBaseOperations.ReadIni(ini, key, "missing", cache) == "old", "failed save preserves exact file bytes and cache");
+            }
+            using ManualResetEventSlim entered = new(), release = new(), otherStarted = new();
+            Task transaction = Task.Run(() => LegacyBaseOperations.UpdateIniValue(ini, key, old => {
+                Assert(old == "old", "transaction reads actual old value");
+                entered.Set();
+                if (!release.Wait(5000)) throw new TimeoutException("INI fixture lock timeout");
+                return "saved";
+            }, cache));
+            Assert(entered.Wait(5000), "transaction reached its read/modify/write boundary");
+            string alias = OperatingSystem.IsWindows() ? ini.ToUpperInvariant() : Path.Combine(root, "transaction", "..", "transaction", "Setup.ini");
+            Task ordinary = Task.Run(() => { otherStarted.Set(); LegacyBaseOperations.WriteIni(alias, "Other", "parallel", cache); });
+            try {
+                Assert(otherStarted.Wait(5000), "ordinary writer started");
+                Assert(!ordinary.Wait(50), "ordinary writer shares the canonical path lock");
+            } finally { release.Set(); }
+            Assert(Task.WaitAll(new[] { transaction, ordinary }, 5000), "both INI writers completed");
+            LegacyBaseOperations.IniClearCache(ini, cache);
+            Assert(LegacyBaseOperations.ReadIni(ini, key, "", cache) == "saved" && LegacyBaseOperations.ReadIni(ini, "Other", "", cache) == "parallel", "transaction and ordinary keys both survived");
+            string actual = File.ReadAllText(ini);
+            Assert(actual.Contains("Keep:原设置\r\n\r\n;保留注释\r\n", StringComparison.Ordinal), "unrelated keys blank lines and comments survived");
+            Assert(!Directory.EnumerateFiles(Path.GetDirectoryName(ini)!, "*.tmp").Any(), "atomic writer cleaned owned temporary files");
+        }
     }
     private static void Tasks(string root) {
     int uuid = 1; object? gate = null;

@@ -62,7 +62,7 @@ public sealed class LegacySetupPageHost {
 public enum LegacySetupShellElement {
     TitlePanel, TitleDownload, TitleLink, TitleSetup, TitleOther,
     ModifyInstance, SetupLaunch, SetupUI, SetupLink, SetupSystem, SetupNavigation,
-    OtherHelp, OtherAbout, OtherTest, OtherNavigation
+    OtherHelp, OtherAbout, OtherTest, OtherNavigation, TitleFavorites
 }
 public enum LegacySetupShellPart { InstanceLeft, SetupLeft, OtherLeft }
 public enum LegacySetupShellPage { Launch, InstanceSelect, InstanceSetup }

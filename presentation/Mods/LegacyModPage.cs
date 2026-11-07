@@ -27,9 +27,14 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     private LegacyModFilter filter;
     private LocalResourceSortOrder sortOrder;
     private List<TMod>? searchResult;
+    private const string EmptyTitleDefault = "尚未安装 Mod";
+    private const string EmptyHintDefault = "你可以下载新的 Mod，或者从已经下载好的文件安装 Mod。\r\n如果你已经安装了 Mod，可能是版本隔离设置有误，请在设置中调整版本隔离选项。";
+    // Test-visible rebuild counter: only a successful ReloadModList or a complete
+    // LoadUI rebuild increments it; favorite toggles must leave it unchanged.
+    public int ListRebuildSerial {get;private set;}
     public LegacyModPage(LegacyModPageView view,LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){this.view=view;this.host=host;}
     public void Loaded(){host.ApplyMode();if(!host.LastWasDetails())view.ScrollHome();host.ChangeAnimationControl(1);host.Selected().Clear();ReloadModList();ApplyLoaderWarnings();ChangeAllSelected(false);host.ChangeAnimationControl(-1);if(loaded)return;loaded=true;host.BindMainKey();host.AdjustFilterMargins();}
-    public void ReloadModList(bool ForceReload=false){if(!host.LoaderRun(ForceReload?1:0))return;Logger.Info("已刷新 Mod 列表");Filter=LegacyModFilter.All;view.ScrollHome();view.SetSearch("");}
+    public void ReloadModList(bool ForceReload=false){if(!host.LoaderRun(ForceReload?1:0))return;ListRebuildSerial++;Logger.Info("已刷新 Mod 列表");Filter=LegacyModFilter.All;view.ScrollHome();view.SetSearch("");}
     public static void Refresh(LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDownload,TButton,TImpact> host){
         try{host.ClearProjectCache();host.ClearVersionCache();FileUtils.Delete(host.TempPath()+@"Cache\LocalMod.json");Logger.Info("由于点击刷新按钮，清理本地 Mod 信息缓存");}catch(Exception error){Logger.Warn(error,"强制刷新时清理本地 Mod 信息缓存失败");}
         host.ReloadCurrent(true);host.SelectModPage();host.Hint("正在刷新……",0,false);
@@ -39,9 +44,9 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void LoadUI(){
         try{
             if(host.Output()!.Any()){view.Back().Visibility=Visibility.Visible;view.Empty().Visibility=Visibility.Collapsed;}
-            else{view.Empty().Visibility=Visibility.Visible;view.Back().Visibility=Visibility.Collapsed;return;}
+            else{view.Empty().Visibility=Visibility.Visible;view.Back().Visibility=Visibility.Collapsed;view.SetEmptyTitle(EmptyTitleDefault);view.SetEmptyHint(EmptyHintDefault);return;}
             host.Items().Clear();foreach(TMod entry in host.Output()!)host.Items()[entry.EnabledName]=MakeItem(entry);
-            Filter=LegacyModFilter.All;view.SetSearch("");RefreshUI();
+            Filter=LegacyModFilter.All;view.SetSearch("");RefreshUI();ListRebuildSerial++;
         }catch(Exception error){Logger.Error(error,"加载 Mod 列表 UI 失败");}
     }
     private TItem MakeItem(TMod entry){host.ChangeAnimationControl(1);TItem item=host.NewItem(entry,host.Selected().Contains(entry.EnabledName));host.BindUpdate(entry,item);TInstance? target=host.Instance();if(target is not null)host.RefreshLoaderWarning(item,target);host.ChangeAnimationControl(-1);return item;}
@@ -113,9 +118,9 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     }
     public void SortChanged(int value){if(value>=0)SortOrder=(LocalResourceSortOrder)value;}
     public void RefreshUI(){
-        if(view.List() is null)return;IReadOnlyList<TMod> showing=LocalResourceSort.Order(Current.Where(CanPassFilter),sortOrder,mod=>mod.File);host.ChangeAnimationControl(1);
-        if(showing.Any()){view.List()!.Visibility=Visibility.Visible;view.List()!.Children.Clear();foreach(TMod mod in showing){if(!host.Items().TryGetValue(mod.EnabledName,out TItem? item))continue;host.SetChecked(item,host.Selected().Contains(mod.EnabledName));view.List()!.Children.Add(item);}}
-        else view.List()!.Visibility=Visibility.Collapsed;
+        if(view.List() is null)return;IReadOnlyList<TMod> showing=LocalResourceSort.Order(Current.Where(mod=>CanPassFilter(mod)),sortOrder,mod=>mod.File);host.ChangeAnimationControl(1);
+        if(showing.Any()){view.List()!.Visibility=Visibility.Visible;view.List()!.Children.Clear();foreach(TMod mod in showing){if(!host.Items().TryGetValue(mod.EnabledName,out TItem? item))continue;host.SetChecked(item,host.Selected().Contains(mod.EnabledName));view.List()!.Children.Add(item);}view.Empty().Visibility=Visibility.Collapsed;}
+        else{view.List()!.Visibility=Visibility.Collapsed;if(!(host.Output()?.Any()??false)){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(EmptyTitleDefault);view.SetEmptyHint(EmptyHintDefault);}else view.Empty().Visibility=Visibility.Collapsed;}
         host.ChangeAnimationControl(-1);host.SetSelected(host.Selected().Where(name=>showing.Any(mod=>Same(mod.EnabledName,name))).ToList());RefreshBars();
     }
     public void RefreshBars(){
@@ -151,9 +156,9 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void UnselectAnimated(){int old=host.AnimationControl();host.SetAnimationControl(0);ChangeAllSelected(false);host.ChangeAnimationControl(old);}
     public void MainKey(KeyEventArgs e){if(!host.IsCurrentPage())return;if(host.CtrlDown()&&e.Key==Key.A)ChangeAllSelected(true);}
     public void SearchKey(KeyEventArgs e){if(view.Search().Any())return;if(host.CtrlDown()&&e.Key==Key.A)view.FocusBack();}
-    public LegacyModFilter Filter {get=>filter;set{if(filter==value)return;filter=value;view.Filters()[value==LegacyModFilter.All?0:value==LegacyModFilter.Enabled?1:value==LegacyModFilter.Disabled?2:3].Checked=true;RefreshUI();}}
+    public LegacyModFilter Filter {get=>filter;set{if(filter==value)return;if(!Enum.IsDefined(typeof(LegacyModFilter),value))return;filter=value;view.Filters()[(int)value].Checked=true;RefreshUI();}}
     private bool CanPassFilter(TMod mod)=>Filter switch{LegacyModFilter.All=>true,LegacyModFilter.Enabled=>mod.IsEnabled,LegacyModFilter.Disabled=>!mod.IsEnabled,LegacyModFilter.CanUpdate=>mod.HasUpdate,_=>false};
-    public void FilterChanged(int value){Filter=(LegacyModFilter)value;RefreshUI();}
+    public void FilterChanged(int value){Filter=Enum.IsDefined(typeof(LegacyModFilter),value)?(LegacyModFilter)value:LegacyModFilter.All;}
     public void SelectED(bool enable){EDMods(host.Output()!.Where(mod=>host.Selected().Contains(mod.EnabledName)),enable);ChangeAllSelected(false);}
     private void EDMods(IEnumerable<TMod> mods,bool enable){List<TMod> frozen=mods.ToList();if(enable)ApplyModState(frozen,true);else BeginDependencyMutation(frozen.Where(mod=>mod.IsEnabled).Select(mod=>mod.File.FullName!),"禁用",()=>ApplyModState(frozen,false));}
     private void ApplyModState(IEnumerable<TMod> mods,bool enable){

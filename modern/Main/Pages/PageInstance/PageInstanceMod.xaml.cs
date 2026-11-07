@@ -56,6 +56,7 @@ namespace PCL
                 EnableEnable = new Action<bool>(Value => this.BtnSelectEnable.IsEnabled = Value),
                 EnableUpdate = new Action<bool>(Value => this.BtnSelectUpdate.IsEnabled = Value),
                 EnableIndex = Value => this.BtnManageIndex.IsEnabled = Value, IndexText = Value => this.BtnManageIndex.Text = Value,
+                SetEmptyTitle = Value => this.LabEmptyTitle.Text = Value, SetEmptyHint = Value => this.LabEmptyHint.Text = Value,
                 SelectionBar = RefreshNativeSelectionBar
             };
         }
@@ -120,6 +121,8 @@ namespace PCL
         public void PageOther_Loaded()
         {
             Native.Loaded();
+            foreach (MyLocalModItem item in ModItems.Values) item.Controller.RefreshFavorite();
+            Native.RefreshUI();
         }
 
         public void ReloadModList(bool ForceReload = false)
@@ -238,6 +241,7 @@ namespace PCL
             Disabled = 2,
             CanUpdate = 3
         }
+
 
         private void ChangeFilter(MyRadioButton sender, bool raiseByMouse)
         {

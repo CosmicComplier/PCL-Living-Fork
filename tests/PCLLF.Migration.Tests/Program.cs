@@ -40,7 +40,8 @@ internal static class Program {
                 .Concat(PackDependencyOriginTests.Cases()).Concat(PackDependencyGraphTests.Cases()).Concat(PackUpdateGraphTests.Cases()).Concat(PackUpdateSupplementPolicyTests.Cases()).Concat(PackUpdateAssociationTests.Cases())),
             ("mod-dependencies", () => ModDependencyInspectorPipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.LocalCases()).Concat(PackDependencyPolicyTests.Cases())),
             ("mod-dependency-online", () => ModDependencyOnlinePipelineTests.Cases().Concat(ModDependencyIndexCompatibilityTests.OnlineCases())),
-            ("settings", () => LegacySettingsTests.Cases().Concat(SettingsMicrosoftIsolationTests.Cases())),
+            ("settings", () => LegacySettingsTests.Cases().Concat(SettingsMicrosoftIsolationTests.Cases()).Concat(UpdateLogPromptTests.Cases())),
+            ("mod-favorites", ResourceFavoriteTests.Cases),
             ("validation-loaders", LegacyValidationLoaderTests.Cases),
             ("legacy-java", LegacyJavaTests.Cases),
             ("foundation", LegacyFoundationTests.Cases)

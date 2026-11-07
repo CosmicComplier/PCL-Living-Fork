@@ -27,6 +27,7 @@
 <Compile Include="Controls/ModDependencyIcon.cs" />
 <Compile Include="Controls/ModDependencyImpactView.cs" />
 <Compile Include="Controls/ReleaseNotesView.cs" />
+<Compile Include="Controls/ReleaseNotesPromptView.cs" />
 <Compile Include="Controls/ModDependencyCheckView.cs" />
 <Compile Include="Controls/ModpackUpdateViews.cs" />
 <Compile Include="Controls/MyPageRight.cs" />
@@ -36,6 +37,8 @@
 <Compile Include="Modules/Base/PclLogger.cs" />
 <Compile Include="Modules/Resource/LocalResourceFile.cs" />
 <Compile Include="Modules/Resource/ResourceProject.cs" />
+<Compile Include="Modules/Resource/ResourceFavorites.cs" />
+<Compile Include="Pages/PageFavorites.xaml.cs" />
 <Compile Include="Modules/Resource/ResourceVersion.cs" />
 <Compile Include="Modules/Resource/ResourceSearcher.cs" />
 <Compile Include="Modules/Minecraft/ModJava.cs" />
@@ -111,6 +114,7 @@
 <Compile Include="Pages/PageSetup/Settings.Accounts.cs" />
 <Compile Include="Pages/PageSetup/Settings.Compatibility.cs" />
 <Compile Include="Pages/PageDownload/Resource/PageResource.xaml.cs" />
+<Compile Include="Pages/PageDownload/Resource/PageResource.Favorites.cs" />
 <Compile Include="Pages/PageDownload/Resource/PageDownloadDataPack.xaml.cs" />
 <Compile Include="Pages/PageDownload/Resource/PageDownloadPack.xaml.cs" />
 <Compile Include="Pages/PageDownload/Resource/PageDownloadShader.xaml.cs" />
@@ -199,6 +203,7 @@
 <Page Include="Controls/MyMsg/MyMsgText.xaml" />
 <Page Include="Controls/MySearchBox.xaml" />
 <Page Include="FormMain.xaml" />
+<Page Include="Pages/PageFavorites.xaml" />
 <Page Include="Pages/PageInstance/MyLocalModItem.xaml" />
 <Page Include="Pages/PageDownload/Resource/MyResourceItem.xaml" />
 <Page Include="Pages/PageDownload/Resource/PageResource.xaml" />
@@ -254,6 +259,7 @@
 <Page Include="Pages/PageInstance/PageInstanceSetup.xaml" />
 <Resource Include="Images/icon.ico" />
 <Resource Include="Resources/Font.ttf" />
+<Resource Include="Resources/Tabler-Icons-LICENSE.txt" />
 <Resource Include="Images/Heads/LTCat.jpg" />
 <Resource Include="Images/Blocks/Anvil.png" />
 <Resource Include="Images/Blocks/CobbleStone.png" />

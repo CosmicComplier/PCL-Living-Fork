@@ -25,7 +25,17 @@ internal static class LegacySettingsTests {
     private static void Definitions() {
         var fixture = new Fixture();
         // LF main50 adds source/channel/color-mode/panel-opacity; no baseline key is removed.
-        Equal(209, fixture.Entries.Count);
+        // Notes use a version dismissal. Project favorites own their global JSON store;
+        // the obsolete per-file favorite key is deliberately absent from active settings.
+        Equal(211, fixture.Entries.Count);
+        Equal("", fixture.Entries[LegacyUpdateLogPrompt.Key].DefaultValue);
+        Equal(typeof(string), fixture.Entries[LegacyUpdateLogPrompt.Key].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries[LegacyUpdateLogPrompt.Key].Source);
+        Equal(false, fixture.Entries.ContainsKey("SystemUpdateLogPrompt"));
+        Equal(false, fixture.Entries.ContainsKey("UiModFavorite"));
+        Equal(false, fixture.Entries["UiHiddenPageFavorites"].DefaultValue);
+        Equal(typeof(bool), fixture.Entries["UiHiddenPageFavorites"].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries["UiHiddenPageFavorites"].Source);
         foreach (string key in new[] { "ToolLauncherUpdateSource", "ToolLauncherUpdateChannel", "UiLauncherColorMode" }) {
             Equal(0, fixture.Entries[key].DefaultValue);
             Equal(typeof(int), fixture.Entries[key].Type);

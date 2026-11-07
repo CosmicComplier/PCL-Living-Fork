@@ -20,6 +20,7 @@ public sealed class LegacyModPageView {
     public Action<bool> EnableIndex = null!;
     public Action<string> IndexText = null!;
     public Func<ResourcePageFilter[]> Filters = null!;
+    public Action<string> SetEmptyTitle = null!, SetEmptyHint = null!;
     public Action<bool> EnableDisable = null!, EnableEnable = null!, EnableUpdate = null!;
     public LegacyModSelectionBar SelectionBar = null!;
 }
@@ -65,6 +66,8 @@ public sealed class LegacyModPageHost<TMod,TProject,TVersion,TItem,TInstance,TDo
     public Action<string,int,bool> Hint = null!;
     public Func<string,bool> ConfirmMode = null!, ReadBoolean = null!;
     public Action<string,object> WriteSetting = null!;
+    // Cached OrdinalIgnoreCase snapshot for the current instance. Rows and counts
+    // only perform set lookups; a toggle returns the state that actually persisted.
     public Func<IEnumerable<string>> SelectInstallFiles = null!;
     public Action<string> Explorer = null!, Website = null!;
     public Func<string,string,string,string,bool,int> Message = null!;

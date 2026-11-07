@@ -1,10 +1,51 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Windows;
 
 namespace PclLfNativeInteraction;
 
 // Exact reviewed informational dialogs only; no regex or unknown-dialog fallback.
 internal static class ReviewedInformationNotice
 {
+    internal const string SuppressionLabel = "下次更新前不再弹出";
+
+    internal static ReviewedNotice ForTitle(string title, string style = "plain", string source = "local")
+    {
+        if (style == "plain" && source == "local") return new(title, style, source, CaptionForTitle(title), "");
+        string version = title switch
+        {
+            "PCL Living Fork dev_edition 更新说明" => "dev_edition",
+            "PCL Living Fork 1.4.0 更新说明" => "1.4.0",
+            _ => throw new InvalidOperationException("PENDING: only exact reviewed Markdown notice titles may be dismissed.")
+        };
+        if (style is not ("markdown-suppress" or "markdown") || source is not ("local" or "published-or-local") ||
+            (source == "published-or-local" && version != "1.4.0") || (style == "markdown" && (version != "1.4.0" || source != "published-or-local")))
+            throw new InvalidOperationException("PENDING: reviewed Markdown notice metadata binding differs.");
+        string caption = "基于 PCL 官方开源版的第三方版本。\r\n" + (style == "markdown" ? "暂未读取到当前版本的完整发布说明，以下为本地简述。" : "以下为当前版本的本地简述。");
+        string plain = CaptionForTitle("PCL Living Fork " + version + " 版本说明");
+        return new(title, style, source, caption, plain[(plain.IndexOf("\r\n\r\n", StringComparison.Ordinal) + 4)..]);
+    }
+
+    internal static string NormalizeDocument(string text)
+    {
+        // UIA may omit list markers or return a bullet and extra paragraph
+        // whitespace. Keep every word, punctuation mark and its order intact.
+        string withoutMarkers = Regex.Replace(text, @"(?m)^[\t ]*[-*+\u2022\u25cf\u25aa][\t ]*", "");
+        return Regex.Replace(withoutMarkers, @"\s+", " ").Trim();
+    }
+
+    internal static void VerifyRichGeometry(Rect client, Rect title, Rect content, Rect document, Rect? suppression, Rect confirm, Rect published)
+    {
+        var all = new List<Rect> { title, content, document, confirm, published };
+        if (suppression is Rect check) all.Add(check);
+        if (all.Any(rect => rect.IsEmpty || rect.Width <= 0 || rect.Height <= 0 || !client.Contains(rect)) ||
+            title.Bottom > content.Top || !content.Contains(document) || content.Bottom > confirm.Top || content.Bottom > published.Top ||
+            confirm.IntersectsWith(published) || (suppression is Rect footer && (!content.Contains(footer) || document.Bottom > footer.Top || footer.IntersectsWith(confirm) || footer.IntersectsWith(published))))
+            throw new InvalidOperationException("PENDING: reviewed Markdown notice/document/footer/button geometry differs or is clipped.");
+    }
+
     internal static string CaptionForTitle(string title)
     {
         string version = title switch
@@ -40,6 +81,80 @@ internal static class ReviewedInformationNotice
             catch (InvalidOperationException) { refused = true; }
             if (!refused) throw new InvalidOperationException("Unknown information notice was accepted.");
         }
-        Console.WriteLine("PASS exact reviewed notice policy: release/development bodies and five unknown/unsafe titles; no UI, product, profile or input action.");
+        void Refuse(Action action)
+        {
+            bool refused = false; try { action(); } catch (InvalidOperationException) { refused = true; }
+            if (!refused) throw new InvalidOperationException("Unsafe rich information notice was accepted.");
+        }
+        foreach (string version in new[] { "dev_edition", "1.4.0" })
+        {
+            string title = "PCL Living Fork " + version + " 更新说明", source = version == "dev_edition" ? "local" : "published-or-local";
+            var notice = ForTitle(title, "markdown-suppress", source);
+            string log = "00:00:00.001 I [MessageDialogController] 普通弹窗：" + title + "\r\n" + string.Join("\r\n", notice.LogCaption.Split("\r\n").Select(line => "00:00:00.001 I [MessageDialogController] " + line)) + "\r\n";
+            notice.VerifyLogCaption(log);
+            notice.VerifyDocument(notice.DocumentText);
+            notice.VerifyDocument(notice.DocumentText.Replace("- ", "• ").Replace("\r\n", "\r\n\r\n"));
+            notice.VerifyDocument(notice.DocumentText.Replace("- ", ""));
+            Refuse(() => notice.VerifyDocument(notice.DocumentText + "\r\n额外内容"));
+            Refuse(() => notice.VerifyDocument(notice.DocumentText.Replace("修复", "删除")));
+            Refuse(() => notice.VerifyDocument(notice.DocumentText[..40]));
+            Refuse(() => notice.VerifyLogCaption(log.Replace("本地简述", "完整发布说明")));
+            Refuse(() => notice.VerifyLogCaption(log.TrimEnd('\r', '\n')));
+            Refuse(() => notice.VerifyLogCaption(log + "00:00:00.002 I [MessageDialogController] extra\r\n"));
+            Refuse(() => notice.VerifyLogCaption(log + log));
+            Refuse(() => notice.VerifyLogCaption(log.Replace("普通弹窗：", "选择弹窗：")));
+            Refuse(() => notice.VerifyLogCaption(log + "00:00:00.002 I [MessageDialogController] 普通弹窗：\r\n"));
+            Refuse(() => notice.VerifyLogCaption(log + "00:00:00.002 I [MessageDialogController] 普通弹窗：删除所有版本？\r\n"));
+            Refuse(() => ForTitle(title, "plain", source));
+        }
+        Refuse(() => ForTitle("PCL Living Fork 1.4.1 更新说明", "markdown-suppress", "local"));
+        Refuse(() => ForTitle("PCL Living Fork dev_edition 更新说明", "markdown-suppress", "published-or-local"));
+        Refuse(() => ForTitle("PCL Living Fork dev_edition 更新说明 suffix", "markdown-suppress", "local"));
+        var earlier = ForTitle("PCL Living Fork 1.4.0 更新说明", "markdown", "published-or-local");
+        earlier.VerifyDocument(earlier.DocumentText);
+        earlier.VerifyLogCaption("00:00:00.001 I [MessageDialogController] 普通弹窗：PCL Living Fork 1.4.0 更新说明\r\n00:00:00.001 I [MessageDialogController] 基于 PCL 官方开源版的第三方版本。\r\n00:00:00.001 I [MessageDialogController] 暂未读取到当前版本的完整发布说明，以下为本地简述。\r\n");
+        Refuse(() => ForTitle("PCL Living Fork 1.4.0 更新说明", "markdown", "local"));
+        var client = new Rect(0, 0, 1000, 800); var titleRect = new Rect(100, 50, 400, 30);
+        var content = new Rect(100, 100, 700, 450); var document = new Rect(100, 100, 700, 390); var checkRect = new Rect(100, 510, 240, 20);
+        var confirm = new Rect(550, 580, 60, 20); var published = new Rect(650, 580, 100, 20);
+        VerifyRichGeometry(client, titleRect, content, document, checkRect, confirm, published);
+        Refuse(() => VerifyRichGeometry(client, titleRect, content, document, new Rect(100, 480, 240, 20), confirm, published));
+        Refuse(() => VerifyRichGeometry(client, titleRect, content, document, checkRect, new Rect(550, 540, 60, 20), published));
+        Refuse(() => VerifyRichGeometry(client, titleRect, content, document, checkRect, confirm, confirm));
+        Refuse(() => VerifyRichGeometry(new Rect(0, 0, 600, 800), titleRect, content, document, checkRect, confirm, published));
+        Console.WriteLine("PASS exact reviewed plain/Markdown notice policy: complete local body, metadata/log caption, marker/whitespace variants and footer geometry; unknown, changed, clipped, duplicate and online notices refused. No UI, product, profile or input action.");
+    }
+}
+
+internal sealed record ReviewedNotice(string Title, string Style, string Source, string LogCaption, string DocumentText)
+{
+    internal bool IsMarkdown => Style != "plain";
+    internal bool HasSuppression => Style == "markdown-suppress";
+
+    internal void VerifyDocument(string text)
+    {
+        if (!IsMarkdown || text.Length > 16000 || ReviewedInformationNotice.NormalizeDocument(text) != ReviewedInformationNotice.NormalizeDocument(DocumentText))
+            throw new InvalidOperationException("PENDING: actual FlowDocument is not the complete reviewed local Markdown body.");
+    }
+
+    internal void VerifyLogCaption(string log)
+    {
+        foreach (Match dialog in Regex.Matches(log, @"(?<Kind>普通|选择|输入)弹窗：(?<Title>[^\r\n]*)"))
+            if (dialog.Groups["Kind"].Value != "普通" || dialog.Groups["Title"].Value != Title)
+                throw new InvalidOperationException("PENDING: unexpected actual dialog, never auto-clicked: " + dialog.Groups["Title"].Value);
+        if (!IsMarkdown) return;
+        var body = new List<string>(); bool current = false; int count = 0;
+        foreach (Match line in Regex.Matches(log, @"(?m)^\d{2}:\d{2}:\d{2}\.\d{3} I (?:<[^>\r\n]*> )?\[MessageDialogController\] (?<Content>[^\r\n]*)\r?\n"))
+        {
+            string content = line.Groups["Content"].Value;
+            if (Regex.IsMatch(content, @"^(?:普通|选择|输入)弹窗："))
+            {
+                current = content == "普通弹窗：" + Title;
+                if (current) count++;
+            }
+            else if (current && content.Length > 0) body.Add(content);
+        }
+        if (!log.EndsWith('\n') || count != 1 || string.Join("\r\n", body) != LogCaption)
+            throw new InvalidOperationException("PENDING: only the complete reviewed local notice log caption authorizes Markdown dismissal.");
     }
 }

@@ -18,6 +18,9 @@ namespace PCL
     {
         public int Uuid;
         internal InstanceResourceEntry ResourceEntry;
+        private InstanceResourceOnlineInfo ResourceInfo;
+        private ResourceProject FavoriteProject => RestorePoint is not null ? null : ResourceEntry is null ? Entry?.Project : ResourceInfo?.Project;
+        private ResourceVersion FavoriteVersion => ResourceEntry is null ? Entry?.ProjectVersion : ResourceInfo?.CurrentVersion;
         internal JObject RestorePoint;
         private EnvironmentHistoryPagePointView RestorePointDisplay;
         internal Action ResourceUpdateRequested;
@@ -33,6 +36,7 @@ namespace PCL
             PresentationRuntime.EnsureConfigured();
             Controller = new NativeItem(CreateView(), CreateHost(), ControlServices.Current.Animations);
             this.InitializeComponent();
+            ResourceFavorites.Observe(this, (_, _) => Controller.RefreshFavorite());
             LazyLoadBehavior.OnFirstEnterScrollViewerViewport(this, this.FirstEnterScrollViewerViewport);
         }
 
@@ -46,6 +50,13 @@ namespace PCL
                 Description = new Func<TextBlock>(() => this.LabInfo),
                 Tags = new Func<System.Windows.Controls.Panel>(() => this.PanTags),
                 UpdateButton = new Func<FrameworkElement>(() => this.BtnUpdate),
+                FavoriteButton = new Func<FrameworkElement>(() => this.BtnFavorite),
+                SetFavorite = new Action<bool>(Value => {
+                    this.BtnFavorite.Logo = Value ? ModBase.Logo.IconButtonLikeFill : ModBase.Logo.IconButtonLikeLine;
+                    this.BtnFavorite.ToolTip = Value ? "已收藏，点击取消收藏" : ResourceEntry is null ? "收藏此模组" : "收藏此资源";
+                    System.Windows.Automation.AutomationProperties.SetName(this.BtnFavorite, this.BtnFavorite.ToolTip.ToString());
+                    this.BtnFavorite.IsEnabled = !ResourceFavorites.IsBusy(FavoriteProject);
+                }),
                 ResourceLogoElement = new Func<FrameworkElement>(() => this.ResourceLogo),
                 PathLogoElement = new Func<FrameworkElement>(() => this.PathLogo),
                 ResourceLogo = new Func<Image>(() => this.ResourceLogo),
@@ -61,7 +72,7 @@ namespace PCL
         private NativeHost CreateHost()
         {
             NativeHost @init = new NativeHost();
-            return (@init.Uuid = new Func<int>(() => Uuid), @init.NameStyle = new Func<int>(() => Settings.Get<int>("ToolModLocalNameStyle")), @init.Entry = new Func<LocalResourceFile>(() => Entry), @init.SetEntry = new Action<LocalResourceFile>(Value => Entry = Value), @init.Resource = new Func<InstanceResourceEntry>(() => ResourceEntry), @init.SetResource = new Action<InstanceResourceEntry>(Value => ResourceEntry = Value), @init.Point = new Func<JObject>(() => RestorePoint), @init.SetPoint = new Action<JObject>(Value => RestorePoint = Value), @init.PointView = RestorePointView, @init.Icon = new Func<InstanceResourceEntry, ImageSource>(Value => Value.Icon), @init.ImagePath = new Func<string>(() => ModBase.PathImage), @init.Bitmap = new Func<string, ImageSource>(Address => (ImageSource)new MyBitmap(Address)), @init.WpfSize = new Func<double, double>(Value => ModBase.GetWPFSize(Value)), @init.VisibleInForm = new Func<bool>(() => this.IsVisibleInForm()), @init.IsLocalItemDirectlyOver = new Func<bool>(() => Mouse.DirectlyOver is MyLocalModItem), @init.TitleTrimmed = new Func<bool>(() => this.LabTitle.IsTextTrimmed()), @init.SubtitleTrimmed = new Func<bool>(() => this.LabSubtitle.IsTextTrimmed()), @init.RaiseChanged = RaiseChanged, @init.RaiseCheck = RaiseCheck, @init.RaiseClick = RaiseClick, @init.ButtonStack = new Func<FrameworkElement>(() => ButtonStack), @init.SetButtonStack = new Action<FrameworkElement>(Value => ButtonStack = Value), @init.SelectionBar = new Func<FrameworkElement>(() => SelectionBar), @init.DefaultSelectionBar = new Func<FrameworkElement>(() => ModMain.FrmInstanceMod?.CardSelect), @init.HasButtonHandler = new Func<bool>(() => ButtonHandler is not null), @init.InvokeButtonHandler = new Action<object, EventArgs>((Sender, Args) => ButtonHandler((MyLocalModItem)Sender, Args)), @init.ClearButtonHandler = new Action(() => ButtonHandler = null), @init.ResourceDetails = new Action(() => ResourceDetailsRequested?.Invoke()), @init.ResourceUpdate = new Action(() => ResourceUpdateRequested?.Invoke()), @init.Controller = new Func<UIElement, NativeItem>(Element => ((MyLocalModItem)Element).Controller), @init.UpdateMods = new Action<IEnumerable<LocalResourceFile>>(Values => ModMain.FrmInstanceMod.UpdateMods(Values)), @init.Website = ModBase.OpenWebsite, @init.Message = new Func<string, string, string, string, string, int>((Text, Caption, Button1, Button2, Button3) => ModMain.MyMsgBox(Text, Caption, Button1, Button2, Button3)), @init.FormatTime = StringUtils.FormatTimeSpan, @init).@init;
+            return (@init.Uuid = new Func<int>(() => Uuid), @init.NameStyle = new Func<int>(() => Settings.Get<int>("ToolModLocalNameStyle")), @init.Entry = new Func<LocalResourceFile>(() => Entry), @init.SetEntry = new Action<LocalResourceFile>(Value => Entry = Value), @init.Resource = new Func<InstanceResourceEntry>(() => ResourceEntry), @init.SetResource = new Action<InstanceResourceEntry>(Value => ResourceEntry = Value), @init.Point = new Func<JObject>(() => RestorePoint), @init.SetPoint = new Action<JObject>(Value => RestorePoint = Value), @init.PointView = RestorePointView, @init.Icon = new Func<InstanceResourceEntry, ImageSource>(Value => Value.Icon), @init.ImagePath = new Func<string>(() => ModBase.PathImage), @init.Bitmap = new Func<string, ImageSource>(Address => (ImageSource)new MyBitmap(Address)), @init.WpfSize = new Func<double, double>(Value => ModBase.GetWPFSize(Value)), @init.VisibleInForm = new Func<bool>(() => this.IsVisibleInForm()), @init.IsLocalItemDirectlyOver = new Func<bool>(() => Mouse.DirectlyOver is MyLocalModItem), @init.TitleTrimmed = new Func<bool>(() => this.LabTitle.IsTextTrimmed()), @init.SubtitleTrimmed = new Func<bool>(() => this.LabSubtitle.IsTextTrimmed()), @init.RaiseChanged = RaiseChanged, @init.RaiseCheck = RaiseCheck, @init.RaiseClick = RaiseClick, @init.ButtonStack = new Func<FrameworkElement>(() => ButtonStack), @init.SetButtonStack = new Action<FrameworkElement>(Value => ButtonStack = Value), @init.SelectionBar = new Func<FrameworkElement>(() => SelectionBar), @init.DefaultSelectionBar = new Func<FrameworkElement>(() => ModMain.FrmInstanceMod?.CardSelect), @init.HasButtonHandler = new Func<bool>(() => ButtonHandler is not null), @init.InvokeButtonHandler = new Action<object, EventArgs>((Sender, Args) => ButtonHandler((MyLocalModItem)Sender, Args)), @init.ClearButtonHandler = new Action(() => ButtonHandler = null), @init.ResourceDetails = new Action(() => ResourceDetailsRequested?.Invoke()), @init.ResourceUpdate = new Action(() => ResourceUpdateRequested?.Invoke()), @init.Controller = new Func<UIElement, NativeItem>(Element => ((MyLocalModItem)Element).Controller), @init.UpdateMods = new Action<IEnumerable<LocalResourceFile>>(Values => ModMain.FrmInstanceMod.UpdateMods(Values)), @init.Favorite = new Func<bool>(() => ResourceFavorites.IsFavorite(FavoriteProject)), @init.FavoriteProject = new Func<ResourceProject>(() => FavoriteProject), @init.ToggleFavorite = new Action<ResourceProject>(Project => ResourceFavorites.Toggle(Project, FavoriteVersion)), @init.Website = ModBase.OpenWebsite, @init.Message = new Func<string, string, string, string, string, int>((Text, Caption, Button1, Button2, Button3) => ModMain.MyMsgBox(Text, Caption, Button1, Button2, Button3)), @init.FormatTime = StringUtils.FormatTimeSpan, @init).@init;
         }
 
         private EnvironmentHistoryPagePointView RestorePointView()
@@ -95,11 +106,13 @@ namespace PCL
         private void SetLoaderWarning(string Message) => Controller.SetLoaderWarning(Message);
         internal void BindRestorePoint(JObject Value)
         {
+            ResourceInfo = null;
             Controller.BindRestorePoint(Value);
         }
 
         internal void BindResource(InstanceResourceEntry Value, InstanceResourceOnlineInfo Info)
         {
+            ResourceInfo = Info;
             Controller.BindResource(Value, Info);
         }
 
@@ -284,6 +297,11 @@ namespace PCL
         {
             e.Handled = true;
             Controller.ShowUpdateLog();
+        }
+
+        private void BtnFavorite_Click(object sender, EventArgs e)
+        {
+            Controller.FavoriteClick();
         }
 
         private void ShowUpdateLog()

@@ -140,9 +140,9 @@ internal static class VisualAssetChecks
         internal readonly string Root;
         private readonly Stack<Action> restore = new();
         private readonly HashSet<MeloongCore.JsonConfigProvider> originalProviders = new();
-        internal Scope(FixtureEnvironment environment)
+        internal Scope(FixtureEnvironment environment, string dataDirectory = "visual-assets")
         {
-            Environment = environment; Root = Path.Combine(environment.Data, "visual-assets");
+            Environment = environment; Root = Path.Combine(environment.Data, dataDirectory);
             Native.Check(!Directory.Exists(Root), "Refusing to adopt existing visual data."); Directory.CreateDirectory(Root);
             try
             {

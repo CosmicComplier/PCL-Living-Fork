@@ -32,7 +32,7 @@ public sealed class ModpackModeController<TPage, TFolder, TInstance>
         return CompactSettings ??= host.CreateCompactPage();
     }
     public int NormalizeSetupPage(int page) => Enabled && page != host.Routes.SetupLaunch && page != host.Routes.SetupSystem ? host.Routes.SetupSystem : page;
-    public bool BlocksPage(int page) => Enabled && (page == host.Routes.Download || page == host.Routes.Other || page == host.Routes.Link);
+    public bool BlocksPage(int page) => Enabled && (page == host.Routes.Download || page == host.Routes.Other || page == host.Routes.Link || page == host.Routes.Favorites);
     public static bool ConfirmChange(bool current, bool desired, Func<bool, bool> confirm) => current == desired ? current : confirm(desired) ? desired : current;
     private int Message(string text, string title, string button1 = "确定", string button2 = "", bool warn = false) =>
         host.Message(new ModpackMessage { Text = text, Title = title, Button1 = button1, Button2 = button2, IsWarn = warn });
@@ -119,10 +119,11 @@ public sealed class ModpackModeController<TPage, TFolder, TInstance>
     }
     public void ApplyHeader(ModpackModeHeaderView view) {
         bool active = Enabled, force = host.ForceShow();
-        view.Panel.Visibility = active || force || !(host.Setting("UiHiddenPageDownload") && host.Setting("UiHiddenPageLink") && host.Setting("UiHiddenPageSetup") && host.Setting("UiHiddenPageOther")) ? Visibility.Visible : Visibility.Collapsed;
+        view.Panel.Visibility = active || force || !(host.Setting("UiHiddenPageDownload") && host.Setting("UiHiddenPageLink") && host.Setting("UiHiddenPageSetup") && host.Setting("UiHiddenPageOther") && host.Setting("UiHiddenPageFavorites")) ? Visibility.Visible : Visibility.Collapsed;
         view.Download.Visibility = active || (!force && host.Setting("UiHiddenPageDownload")) ? Visibility.Collapsed : Visibility.Visible;
         view.Link.Visibility = Visibility.Collapsed;
         view.Other.Visibility = active || (!force && host.Setting("UiHiddenPageOther")) ? Visibility.Collapsed : Visibility.Visible;
+        if (view.Favorites is not null) view.Favorites.Visibility = active || (!force && host.Setting("UiHiddenPageFavorites")) ? Visibility.Collapsed : Visibility.Visible;
         view.Setup.Visibility = active || force || !host.Setting("UiHiddenPageSetup") ? Visibility.Visible : Visibility.Collapsed;
         view.SetupText("设置");
     }

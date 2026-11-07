@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Text;
 using MeloongCore;
 using MeloongCore.Extensions;
@@ -9,20 +10,30 @@ using Microsoft.VisualBasic.CompilerServices;
 namespace PCLCS;
 
 public static partial class LegacyBaseOperations {
-    private static string[] ReadIniLines(string fileName) {
-#if NETFRAMEWORK
-        return FileUtils.ReadAsLines(fileName, true);
-#else
-        return ReadLegacyText(fileName).SplitLines(true);
-#endif
+    // Ordinary settings and verified transactions must use the same file lock.
+    // Atomic replacement alone cannot merge two concurrent read/modify/writes.
+    private static readonly ConcurrentDictionary<string, object> iniFileLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static string IniPath(string fileName) {
+        // On Unix, Shared's ForApi maps Windows-shaped addresses to literal names
+        // below the current directory. Adding a Unix prefix changes that mapping.
+        if (Path.DirectorySeparatorChar != '\\' && (fileName.Contains(@":\") || fileName.StartsWith(@"\\", StringComparison.Ordinal))) return fileName;
+        fileName = PathUtils.RemoveExtendedPrefix(fileName);
+        return Path.GetFullPath(Path.IsPathRooted(fileName) || fileName.Contains(@":\") ? fileName : $@"{Paths.Base}PCL\{fileName}.ini");
     }
+    private static object IniLock(string fileName) => iniFileLocks.GetOrAdd(fileName, _ => new object());
     private static string ReadLegacyText(string fileName) {
 #if NETFRAMEWORK
         return FileUtils.ReadAsString(fileName);
 #else
         // Reuse Shared's BOM/strict-UTF8 detection with the same single IO read. Its only named
         // encoding lookup is GB18030; modern .NET requires the existing code-page provider there.
-        byte[] bytes = FileUtils.ReadAsBytes(fileName);
+        return DecodeLegacyText(FileUtils.ReadAsBytes(fileName));
+#endif
+    }
+    private static string DecodeLegacyText(byte[] bytes) {
+#if NETFRAMEWORK
+        return bytes.GetString();
+#else
         try { return bytes.GetString(); }
         catch (ArgumentException ex) when (ex.ParamName == "name") {
             Encoding encoding = CodePagesEncodingProvider.Instance.GetEncoding("GB18030") ?? Encoding.GetEncoding("GB18030");
@@ -31,20 +42,19 @@ public static partial class LegacyBaseOperations {
 #endif
     }
     public static void IniClearCache(string fileName, ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
-        if (!fileName.Contains(@":\")) fileName = $@"{Paths.Base}PCL\{fileName}.ini";
-        cache.Remove(fileName);
+        fileName = IniPath(fileName);
+        lock (IniLock(fileName)) cache.Remove(fileName);
     }
     public static ConcurrentDictionary<string, string>? IniGetContent(string fileName, ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
         try {
-            if (!fileName.Contains(@":\")) fileName = $@"{Paths.Base}PCL\{fileName}.ini";
-            if (cache.TryGetValue(fileName, out ConcurrentDictionary<string, string>? content)) return content;
-            if (!FileUtils.Exists(fileName)) return null;
-            ConcurrentDictionary<string, string> ini = new();
-            foreach (string line in ReadIniLines(fileName)) {
-                int index = line.IndexOfF(":");
-                if (index > 0) ini[line.Substring(0, index)] = line.Substring(checked(index + 1));
+            fileName = IniPath(fileName);
+            lock (IniLock(fileName)) {
+                if (cache.TryGetValue(fileName, out ConcurrentDictionary<string, string>? content)) return content;
+                if (!FileUtils.Exists(fileName)) return null;
+                ConcurrentDictionary<string, string> ini = ParseIni(ReadLegacyText(fileName));
+                cache[fileName] = ini;
+                return ini;
             }
-            cache[fileName] = ini; return ini;
         } catch (Exception ex) { Logger.Error(ex, $"生成 ini 文件缓存失败（{fileName}）", LogBehavior.Toast); return null; }
     }
     public static string? ReadIni(string fileName, string key, string? defaultValue, ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
@@ -58,20 +68,78 @@ public static partial class LegacyBaseOperations {
     }
     public static void WriteIni(string fileName, string key, string? value, ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
         try {
-            if (key.Contains(":")) throw new Exception($"尝试写入 ini 文件 {fileName} 的键名中包含了冒号：{key}");
-            key = key.ReplaceLineEndings(""); value = value?.ReplaceLineEndings("");
-            ConcurrentDictionary<string, string> content = IniGetContent(fileName, cache) ?? new ConcurrentDictionary<string, string>();
-            if (value is null) { if (!content.Remove(key)) return; }
-            else {
-                if (content.TryGetValue(key, out string? existing) && Operators.CompareString(existing, value, false) == 0) return;
-                content[key] = value;
-            }
-            StringBuilder fileContent = new();
-            foreach (var pair in content) fileContent.Append(pair.Key).Append(":").Append(pair.Value).Append("\r\n");
-            if (!fileName.Contains(@":\")) fileName = $@"{Paths.Base}PCL\{fileName}.ini";
-            fileName = fileName.Contains(@":\") ? fileName : Paths.Base + fileName;
-            FileUtils.Write(fileName, fileContent.ToString());
+            UpdateIniValue(fileName, key, _ => value, cache);
         } catch (Exception ex) { Logger.Error(ex, $"写入文件失败（{fileName} → {key}:{value}）", LogBehavior.Toast); }
+    }
+
+    /// <summary>
+    /// Updates one key from the latest disk snapshot and publishes cache state only
+    /// after an atomic, read-back verified save. Throws so callers can retain their UI
+    /// state on failure. The updater must not display UI while this file lock is held.
+    /// </summary>
+    public static string? UpdateIniValue(string fileName, string key, Func<string?, string?> update,
+        ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
+        if (key.Contains(":")) throw new ArgumentException("ini 键名中不能包含冒号", nameof(key));
+        key = key.ReplaceLineEndings("");
+        fileName = IniPath(fileName);
+        lock (IniLock(fileName)) {
+            byte[]? before = FileUtils.Exists(fileName) ? FileUtils.ReadAsBytes(fileName) : null;
+            string text = before is null ? "" : DecodeLegacyText(before);
+            ConcurrentDictionary<string, string> content = ParseIni(text);
+            content.TryGetValue(key, out string? previous);
+            string? value = update(previous)?.ReplaceLineEndings("");
+            if (string.Equals(previous, value, StringComparison.Ordinal)) {
+                cache[fileName] = content;
+                return value;
+            }
+            string replacement = ReplaceIniValue(text, key, value);
+            byte[] expected = new UTF8Encoding(false).GetBytes(replacement);
+            bool replaced = false;
+            try {
+                // Keep the ordinary INI writer's existing IOException retry policy,
+                // including transient sharing failures at the atomic replacement.
+                ThrottleDebounce.Retrier.Attempt(delay: _ => TimeSpan.FromMilliseconds(200),
+                    isRetryAllowed: error => error is IOException, action: _ => FileUtils.WriteAtomic(fileName, expected));
+                replaced = true;
+                if (!FileUtils.ReadAsBytes(fileName).SequenceEqual(expected)) throw new IOException("ini 写入后读回不一致");
+                cache[fileName] = ParseIni(replacement);
+                return value;
+            } catch {
+                try {
+                    // WriteAtomic preserves the old target on failure. If replacement
+                    // finished, restore its exact bytes before reporting a failed save.
+                    if (replaced || (FileUtils.Exists(fileName) && FileUtils.ReadAsBytes(fileName).SequenceEqual(expected))) {
+                        if (before is null) FileUtils.Delete(fileName);
+                        else FileUtils.WriteAtomic(fileName, before);
+                    }
+                } finally { cache.Remove(fileName); }
+                throw;
+            }
+        }
+    }
+    private static ConcurrentDictionary<string, string> ParseIni(string text) {
+        ConcurrentDictionary<string, string> content = new();
+        foreach (string line in text.SplitLines(true)) {
+            int index = line.IndexOf(':');
+            if (index > 0) content[line.Substring(0, index)] = line.Substring(index + 1);
+        }
+        return content;
+    }
+    private static string ReplaceIniValue(string text, string key, string? value) {
+        string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        StringBuilder result = new();
+        bool written = false;
+        for (int i = 0; i < lines.Length; i++) {
+            string line = lines[i];
+            if (i == lines.Length - 1 && line.Length == 0) break;
+            int index = line.IndexOf(':');
+            if (index > 0 && string.Equals(line.Substring(0, index), key, StringComparison.Ordinal)) {
+                if (!written && value is not null) result.Append(key).Append(':').Append(value).Append("\r\n");
+                written = true;
+            } else result.Append(line).Append("\r\n");
+        }
+        if (!written && value is not null) result.Append(key).Append(':').Append(value).Append("\r\n");
+        return result.ToString();
     }
     public static bool CheckPermission(string? folder, Func<int> newUuid) {
         try {

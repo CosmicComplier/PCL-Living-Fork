@@ -26,6 +26,7 @@ public static class LegacySettingsDefinitions {
         Add("HintBuy", false, LegacySettingSource.Registry);
         Add("HintClearRubbish", 0, LegacySettingSource.Registry);
         Add("HintUpdateMod", false, LegacySettingSource.Registry);
+        Add(LegacyUpdateLogPrompt.Key, "");
         Add("HintCustomCommand", false, LegacySettingSource.Registry);
         Add("HintCustomWarn", false, LegacySettingSource.Registry);
         Add("HintMoreAdvancedSetup", false, LegacySettingSource.Registry);
@@ -175,6 +176,7 @@ public static class LegacySettingsDefinitions {
         Add("UiMusicRandom", true);
         Add("UiMusicAuto", true);
         Add("UiHiddenPageDownload", false);
+        Add("UiHiddenPageFavorites", false);
         Add("UiHiddenPageLink", false);
         Add("UiHiddenPageSetup", false);
         Add("UiHiddenPageOther", false);

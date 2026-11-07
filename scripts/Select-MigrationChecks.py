@@ -17,7 +17,7 @@ import sys
 MAIN_BRANCH = "main"
 MIGRATION_BRANCH = "migration/csharp-modern-dotnet"
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "validation-loaders", "legacy-java", "foundation")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -276,8 +276,10 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mod-dependencies",), (), build=False)
             elif stem == "ModDependencyOnlinePipeline":
                 include(("mod-dependency-online",), (), build=False)
-            elif stem in {"LegacySettings", "SettingsMicrosoftIsolation"}:
+            elif stem in {"LegacySettings", "SettingsMicrosoftIsolation", "UpdateLogPrompt"}:
                 include(("settings",), (), build=False)
+            elif stem in {"LegacyModFavorites", "ResourceFavorite"}:
+                include(("mod-favorites",), (), build=False)
             elif stem == "LegacyValidationLoader":
                 include(("validation-loaders",), (), build=False)
             elif stem in {"LegacyFoundation", "LegacyMainTermination"}:
@@ -304,6 +306,10 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 unknown.append(name)
         elif name.startswith("scripts/Test-") and leaf.removesuffix(".ps1") in SCRIPTS:
             include((), (leaf.removesuffix(".ps1"),))
+        elif name in {"PCLCS/Resources/LegacyModFavorites.cs", "PCLCS/Resources/ResourceFavorites.cs", "PCLCS/Resources/ResourceProjectKey.cs"}:
+            include(("mod-favorites",), (), build=False)
+        elif name == "PCLCS/Settings/LegacyUpdateLogPrompt.cs":
+            include(("settings",), (), build=False)
         elif name in WORLD_BACKUP_PATHS:
             include(("world-backups",), WORLD_BACKUP_CHECKS)
         elif name in ENVIRONMENT_HISTORY_PATHS:
