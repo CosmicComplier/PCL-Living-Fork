@@ -17,6 +17,9 @@ public sealed class ModpackDialogHost<TButton, TScroll> where TButton : Framewor
     public Func<TScroll> CreateScroll = null!;
     public Func<string, bool, Action, FrameworkElement> CreateRadio = null!;
     public Func<string, bool, Action<bool>, FrameworkElement> CreateCheck = null!;
+    public Func<string, UIElement, FrameworkElement>? CreateSection;
+    public Func<string, int, FrameworkElement>? CreateHint;
+    public Action<FrameworkElement, string, int>? UpdateHint;
     public Func<int> AnimationControl = null!;
     public Action<string> StopAnimation = null!;
     public Action<UIElement, double, int, string> AnimateOpacity = null!;
@@ -48,6 +51,19 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
     }
     public FrameworkElement RadioOption(string text, bool selected, Action select) => host.CreateRadio(text, selected, select);
     public FrameworkElement CheckOption(string text, bool selected, Action<bool> change) => host.CreateCheck(text, selected, change);
+    public FrameworkElement Section(string title, UIElement content) {
+        if (host.CreateSection is not null) return host.CreateSection(title, content);
+        StackPanel body = new(); body.Children.Add(Label(title, 14, true)); body.Children.Add(content); return Frame(body);
+    }
+    public FrameworkElement StatusHint(string text, int tone) => host.CreateHint?.Invoke(text, tone) ?? Label(text, 12);
+    public void UpdateStatus(FrameworkElement element, string text, int tone) {
+        if (host.UpdateHint is not null) host.UpdateHint(element, text, tone);
+        else if (element is TextBlock label) label.Text = text;
+    }
+    public void MoveFiltersIntoContent() {
+        Children.Remove(Filters); RowDefinitions[1].Height = new GridLength(0);
+        Filters.Margin = new Thickness(-3, 0, -3, 6);
+    }
     public void SetCanConfirm(bool value) {
         if (CanConfirm == value) return;
         CanConfirm = value; ConfirmationChanged?.Invoke(this, EventArgs.Empty);

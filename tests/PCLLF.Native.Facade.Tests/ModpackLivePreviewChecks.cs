@@ -77,15 +77,18 @@ internal static class ModpackLivePreviewChecks
             preview.UpdateLayout();
             return Walk(preview).OfType<Border>().Single(border => border.ToolTip is string tip && tip.StartsWith("mods/replaceable.jar\r\n", StringComparison.Ordinal));
         }
-        bool Checking() => ((StackPanel)Get(preview, "Header")!).Children.OfType<TextBlock>().Any(text => text.Text.Contains("正在检查", StringComparison.Ordinal));
+        bool Checking() => ((StackPanel)Get(preview, "Header")!).Children.OfType<MyHint>().Any(hint => hint.Text.Contains("正在检查", StringComparison.Ordinal));
         int cancelInvocations = 0;
         var converter = new ModMain.MyMsgBoxConverter { Title = "整合包更新预览", Text = "Live compatibility checks", Button1 = "按以上选择更新", Button2 = "取消", IsWarn = false, ContentFactory = () => preview, Button2Action = () => cancelInvocations++ };
         var modal = new MyMsgText(converter);
+        var messagePanel = new Grid(); messagePanel.Children.Add(modal);
+        object dialogController = Native.Get(modal, "Native")!;
+        ((PCLLF.Presentation.Dialogs.MessageDialogHost)Native.Get(dialogController, "Host")!).MessagePanel = () => messagePanel;
         ((RotateTransform)modal.FindName("TransformRotate")).Angle = 0; ((TranslateTransform)modal.FindName("TransformPos")).Y = 0;
         var confirm = (MyButton)modal.FindName("Btn1");
         var app = System.Windows.Application.Current; Window? previousMain = app.MainWindow; ShutdownMode previousMode = app.ShutdownMode;
         int previousAnimation = ModAnimation.AniControlEnabled;
-        var window = new Window { Content = modal, Width = 850, Height = 650, Left = -30000, Top = -30000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+        var window = new Window { Content = messagePanel, Width = 850, Height = 650, Left = -30000, Top = -30000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
         try {
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown; ModAnimation.AniControlEnabled++;
             window.Show(); window.UpdateLayout(); modal.Opacity = 1;
@@ -99,11 +102,27 @@ internal static class ModpackLivePreviewChecks
             Native.Check(!Option("EnableRequired", "mods/provider-new.jar").Checked && !Option("DisableIncompatible", "mods/legacy-adapter.jar").Checked,
                 "Required-provider/unchanged-author decisions were missing or silently applied.");
             MyCheckBox personalRequired = Option("EnableRequired", "mods/personal-provider.jar");
-            Native.Check(!personalRequired.Checked && personalRequired.Text?.StartsWith("启用本地的必需前置：", StringComparison.Ordinal) == true,
+            Native.Check(!personalRequired.Checked && personalRequired.Text == "启用本地的必需前置",
                 "A disabled personal provider was presented as an author package option or silently enabled.");
-            Native.Check(Option("EnableRequired", "mods/provider-new.jar").Text?.StartsWith("启用整包版本的必需前置：", StringComparison.Ordinal) == true,
+            Native.Check(Option("EnableRequired", "mods/provider-new.jar").Text == "启用整包版本的必需前置",
                 "The packaged provider lost its distinct author-version label.");
             Save(modal, "live-preview-needs-decisions.png");
+            var sections = Walk(preview).OfType<MyCard>().ToArray();
+            Native.Check(sections.Count(card => card.Title is "兼容性处理" or "文件变更") == 2, "Preview did not separate compatibility and file changes into native PCL cards.");
+            Native.Check(Walk(preview).OfType<Expander>().All(details => !details.IsExpanded), "Action details were repeated as expanded error walls.");
+            // The original dialog controller follows the owned message panel's
+            // real size changes, just as it follows FormMain.PanMsg in production.
+            window.Width = 560; window.UpdateLayout();
+            var scroll = Walk(preview).OfType<MyScrollViewer>().Single();
+            Native.Check(scroll.ViewportHeight >= 80 && scroll.ScrollableHeight > 0, "Narrow preview lost its scrolling viewport.");
+            foreach (var details in Walk(preview).OfType<Expander>().ToArray()) details.IsExpanded = true;
+            window.UpdateLayout(); scroll.ScrollToBottom(); window.UpdateLayout();
+            Native.Check(scroll.VerticalOffset > 0 && cancel.IsVisible, "Expanded narrow preview lost scrolling or cancel access.");
+            Rect bounds = modal.TransformToAncestor(window).TransformBounds(new Rect(modal.RenderSize));
+            Native.Check(bounds.Left >= 0 && bounds.Right <= window.ActualWidth + 1, "Narrow preview escaped the available dialog width.");
+            Save(modal, "live-preview-narrow.png");
+            foreach (var details in Walk(preview).OfType<Expander>().ToArray()) details.IsExpanded = false;
+            window.Width = 850; scroll.ScrollToTop(); window.UpdateLayout();
             Option("DisableIncompatible", "mods/legacy-adapter.jar").SetChecked(true, true);
             VisualAssetChecks.Pump(() => !Checking(), "Disable decision check did not finish.", 12000);
             Native.Check(!CanConfirm() && !confirm.IsEnabled, "Disabling one mod hid the remaining missing provider.");
@@ -122,7 +141,7 @@ internal static class ModpackLivePreviewChecks
             VisualAssetChecks.Pump(() => !Checking(), "Personal modification recheck did not finish.", 12000);
             Native.Check(!CanConfirm() && !confirm.IsEnabled, "An incompatible preserved personal modification was accepted.");
             MyCheckBox restore = Option("UseAuthorVersion", "mods/replaceable.jar");
-            Native.Check(!restore.Checked && restore.Text?.StartsWith("使用整包新版：", StringComparison.Ordinal) == true, "The author restore decision was not explicit.");
+            Native.Check(!restore.Checked && restore.Text == "使用整包新版", "The author restore decision was not explicit.");
             Native.Check(!Walk(preview).OfType<MyCheckBox>().Any(box => Equals(box.Tag, "preview-repair:DisableIncompatible:mods/replaceable.jar")),
                 "A healthy author replacement was offered for disabling to accommodate the personal modification.");
             restore.SetChecked(true, true);
@@ -136,6 +155,7 @@ internal static class ModpackLivePreviewChecks
             Native.Check(!CanConfirm() && !confirm.IsEnabled, "Reverting to the personal modification bypassed compatibility checks.");
             Option("UseAuthorVersion", "mods/replaceable.jar").SetChecked(true, true);
             VisualAssetChecks.Pump(CanConfirm, "Restoring the author version a second time did not recover confirmation.", 12000);
+            scroll.ScrollToTop(); window.UpdateLayout();
             Save(modal, "live-preview-valid.png");
             var rapid = Option("DisableIncompatible", "mods/legacy-adapter.jar");
             rapid.SetChecked(false, true); rapid.SetChecked(true, true); rapid.SetChecked(false, true);

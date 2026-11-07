@@ -23,7 +23,9 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     private readonly Func<TPlan, TPlan>? snapshot;
     private readonly Func<TPlan, CancellationToken, PackUpdatePreviewReview>? review;
     private readonly StackPanel compatibility = new();
-    private readonly TextBlock? selectionStatus;
+    private readonly FrameworkElement? selectionStatus;
+    private readonly FrameworkElement? compatibilitySection, fileSection;
+    private readonly StackPanel? fileRows;
     private CancellationTokenSource? checking;
     private int revision, activeKind;
     private volatile bool closed;
@@ -51,19 +53,31 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         }
         noticeDetails = new Expander { Header = "来源与兼容性详情", Content = notices, FontSize = 12, Margin = new Thickness(4, 0, 7, 9) };
         noticeDetails.SetResourceReference(Control.ForegroundProperty, "ColorBrush1");
+        if (review is not null && snapshot is not null) {
+            view.MoveFiltersIntoContent();
+            fileRows = new StackPanel();
+            StackPanel files = new(); files.Children.Add(view.Filters); files.Children.Add(fileRows);
+            compatibilitySection = view.Section("兼容性处理", compatibility);
+            fileSection = view.Section("文件变更", files);
+            selectionStatus = view.StatusHint("正在检查所选组合…", 0);
+            selectionStatus.Tag = "preview-status";
+            view.Header.Children.Add(selectionStatus);
+        }
         foreach (int value in new[] { 0, 1, 2, 3 }) {
             counts[Kind(value)] = Changes.Count(item => Classify(item) == value);
-            view.AddFilter((value == 3 ? "保留/冲突" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
+            view.AddFilter((value == 3 ? "保留 / 自定义" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
         }
         ShowKind(new[] { 3, 1, 0, 2 }.FirstOrDefault(value => counts[Kind(value)] > 0));
         if (review is not null && snapshot is not null) {
-            selectionStatus = ModpackDialogController<TButton, TScroll>.Label("正在检查所选组合…", 12, margin: new Thickness(0, 7, 0, 0));
-            view.Header.Children.Add(selectionStatus);
             view.Unloaded += (_, _) => { _ = CloseAndDrainAsync(); view.SetCanConfirm(false); };
             RecheckSelection();
         }
     }
     public static int Classify(TChange change) => change.PersonalCompatible || change.Operation == PackUpdateOperation.DisablePersonal || change.DisplayOnly || change.Conflict ? 3 : change.Incoming is null ? 2 : change.Before is null ? 0 : 1;
+    public static string PackageTitle(TPackage package) {
+        string name = package.Name?.Trim() ?? "", version = package.Version?.Trim() ?? "";
+        return name.Length == 0 || Same(name, version) ? "整合包版本 " + version : version.Length == 0 ? name : name + " · " + version;
+    }
     public static string KindName(int value) => value switch { 0 => "新增", 1 => "更新", 2 => "移除", _ => "个人文件与冲突" };
     public static string OwnershipName(PackUpdateOwnership ownership) => ownership switch {
         PackUpdateOwnership.AuthorUnchanged => "作者文件",
@@ -91,14 +105,17 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     public void ShowKind(int value) {
         activeKind = value;
         setKind(value); view.BeginFilter(value);
-        if (review is not null) view.Rows.Children.Add(compatibility);
+        if (compatibilitySection is not null) view.Rows.Children.Add(compatibilitySection);
+        if (fileSection is not null) view.Rows.Children.Add(fileSection);
+        StackPanel rows = fileRows ?? view.Rows;
+        fileRows?.Children.Clear();
         // Notices share the finite file-list viewport; the fixed title/filter rows must stay compact.
         if (noticeSummary is not null) view.Rows.Children.Add(noticeSummary);
         if (notices.Children.Count > 0) view.Rows.Children.Add(noticeDetails);
         string description = value == 3 ? "保留可用的个人模组；不兼容项按卡片说明处理，均先备份。" : value == 2 ? "作者新版的移除项；更新前会备份。" : value == 0 ? "新版新增文件与个人模组所需前置。" : "作者新版的更新项；可选操作以卡片选项为准。";
-        view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(description, 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 10)));
+        rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(description, 12, color: "ColorBrushGray2", margin: new Thickness(4, 0, 7, 10)));
         foreach (var group in Changes.Where(item => Classify(item) == value).GroupBy(item => FolderName(item.Relative!)).OrderBy(item => item.Key)) {
-            view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(group.Key + "（" + group.Count() + "）", 13, true, margin: new Thickness(4, 3, 7, 9)));
+            rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label(group.Key + "（" + group.Count() + "）", 13, true, margin: new Thickness(4, 3, 7, 9)));
             List<Border> cards = new();
             foreach (TChange change in group.OrderBy(item => item.Relative, StringComparer.OrdinalIgnoreCase)) {
                 StackPanel text = new(); TextBlock name = ModpackDialogController<TButton, TScroll>.Label(Path.GetFileName(change.Relative), 13, true);
@@ -118,10 +135,10 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                     AddDisabledState(text, change, paths);
                 Border box = ModpackDialogController<TButton, TScroll>.Frame(text); box.ToolTip = change.Relative + "\r\n" + change.LocalRelative + "\r\n" + change.Reason; cards.Add(box);
             }
-            if (value == 3 && group.All(item => item.Relative!.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))) view.Rows.Children.Add(ConflictGrid(cards));
-            else foreach (Border card in cards) view.Rows.Children.Add(card);
+            if (value == 3 && group.All(item => item.Relative!.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))) rows.Children.Add(ConflictGrid(cards));
+            else foreach (Border card in cards) rows.Children.Add(card);
         }
-        if (counts[Kind(value)] == 0) view.Rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label("此分类没有文件。", 13, margin: new Thickness(8)));
+        if (counts[Kind(value)] == 0) rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label("此分类没有文件。", 13, margin: new Thickness(8)));
     }
     private static Grid ConflictGrid(List<Border> cards) {
         Grid grid = new();
@@ -194,8 +211,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         try {
             view.SetCanConfirm(false);
             if (selectionStatus is not null) {
-                selectionStatus.Text = "正在检查所选组合…";
-                selectionStatus.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush1");
+                view.UpdateStatus(selectionStatus, "正在检查所选组合…", 0);
             }
             TPlan selected = snapshot(plan);
             Task<PackUpdatePreviewReview> read;
@@ -208,14 +224,27 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
             await ApplyLatestAsync(generation, () => {
                 plan.DependencyCheck = result.Dependencies;
                 compatibility.Children.Clear();
-                if (result.Actions.Count > 0) compatibility.Children.Add(ModpackDialogController<TButton, TScroll>.Label("兼容性处理（选择后重新检查）", 13, true, margin: new Thickness(4, 3, 7, 8)));
-                foreach (var action in result.Actions.OrderBy(action => action.Kind).ThenBy(action => action.Relative, StringComparer.OrdinalIgnoreCase)) {
+                compatibility.Children.Add(ModpackDialogController<TButton, TScroll>.Label(result.Actions.Count > 0
+                    ? "以整合包新版为准，保留兼容的个人修改。选择后会自动重新检查。"
+                    : result.Dependencies.HasErrors ? "请展开检查结果，核对需要调整的模组。" : "没有需要额外处理的模组，可继续核对下方文件变更。", 12, color: "ColorBrushGray2", margin: new Thickness(0, 0, 0, 12)));
+                foreach (var action in result.Actions.OrderBy(action => action.Selected).ThenBy(action => action.Kind).ThenBy(action => action.Relative, StringComparer.OrdinalIgnoreCase)) {
                     TChange change = plan.Changes.Concat(plan.PreviewChanges).Single(item => item.Relative == action.Relative);
                     StackPanel body = new();
-                    string label = action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion ? "使用整包新版："
-                        : action.Kind == PackUpdatePreviewActionKind.EnableRequired ? change.Operation == PackUpdateOperation.EnablePersonal ? "启用本地的必需前置：" : "启用整包版本的必需前置："
-                        : "禁用不兼容模组（保留文件）：";
-                    FrameworkElement option = view.CheckOption(label + Path.GetFileName(action.Relative), action.Selected, enabled => {
+                    DockPanel heading = new();
+                    TextBlock state = ModpackDialogController<TButton, TScroll>.Label(action.Selected ? "已选择" : "待确认", 12, color: action.Selected ? "ColorBrush3" : "ColorBrushGray2", margin: new Thickness(12, 0, 0, 0));
+                    DockPanel.SetDock(state, Dock.Right); heading.Children.Add(state);
+                    TextBlock filename = ModpackDialogController<TButton, TScroll>.Label(Path.GetFileName(action.Relative), 14, true);
+                    filename.TextWrapping = TextWrapping.NoWrap; filename.TextTrimming = TextTrimming.CharacterEllipsis; filename.ToolTip = action.Relative;
+                    heading.Children.Add(filename); body.Children.Add(heading);
+                    string explanation = action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion ? "个人版本不适用于新版整合包，建议恢复整包版本。"
+                        : action.Kind == PackUpdatePreviewActionKind.EnableRequired ? "其他模组需要此前置，请确认更新后启用。"
+                        : change.Operation == PackUpdateOperation.DisablePersonal ? "个人模组与新版组合不兼容，建议禁用并保留文件。"
+                        : "整包自带的模组与目标组合不兼容，需要调整启用状态。";
+                    body.Children.Add(ModpackDialogController<TButton, TScroll>.Label(explanation, 12, color: "ColorBrushGray2", margin: new Thickness(0, 5, 0, 10)));
+                    string label = action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion ? "使用整包新版"
+                        : action.Kind == PackUpdatePreviewActionKind.EnableRequired ? change.Operation == PackUpdateOperation.EnablePersonal ? "启用本地的必需前置" : "启用整包版本的必需前置"
+                        : "禁用此模组，保留文件";
+                    FrameworkElement option = view.CheckOption(label, action.Selected, enabled => {
                         if (action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion) {
                             change.Choice = enabled ? PackUpdateChoice.UseAuthor : PackUpdateChoice.PreservePersonal;
                             change.PreviewAuthorRepair = enabled;
@@ -229,23 +258,26 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                     });
                     option.Tag = "preview-repair:" + action.Kind + ":" + action.Relative;
                     body.Children.Add(option);
-                    body.Children.Add(ModpackDialogController<TButton, TScroll>.Label(action.Details, 12, color: "ColorBrushGray2", margin: new Thickness(0, 6, 0, 0)));
-                    compatibility.Children.Add(ModpackDialogController<TButton, TScroll>.Frame(body));
+                    body.Children.Add(Details("查看原因与版本要求", new[] { action.Details }));
+                    Border card = ModpackDialogController<TButton, TScroll>.Frame(body);
+                    card.Margin = new Thickness(0, 0, 0, 10); card.Padding = new Thickness(14, 12, 14, 12);
+                    compatibility.Children.Add(card);
                 }
                 if (result.Dependencies.HasErrors) {
-                    StackPanel errors = new();
-                    foreach (string error in result.Dependencies.Errors) errors.Children.Add(ModpackDialogController<TButton, TScroll>.Label(error, 12, color: "ColorBrushRedLight", margin: new Thickness(4, 3, 7, 3)));
-                    compatibility.Children.Add(new Expander { Header = "仍需处理的问题（" + result.Dependencies.Errors.Count + "）", Content = errors, IsExpanded = result.Actions.Count == 0, Margin = new Thickness(4, 0, 7, 8) });
+                    // Keep uncovered errors visible, without repeating the same
+                    // requirement under both its actionable card and a second list.
+                    string[] remaining = result.Dependencies.Errors.Where(error => !result.Actions.Any(action => action.Details.Contains(error, StringComparison.Ordinal))).ToArray();
+                    if (remaining.Length > 0) compatibility.Children.Add(Details("其他需要处理的问题（" + remaining.Length + "）", remaining, true));
                 }
                 string[] warnings = result.Dependencies.Warnings.Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray();
                 if (warnings.Length > 0) {
-                    StackPanel details = new();
-                    foreach (string warning in warnings) details.Children.Add(ModpackDialogController<TButton, TScroll>.Label(warning, 12, color: "ColorBrushGray2", margin: new Thickness(4, 3, 7, 3)));
-                    compatibility.Children.Add(new Expander { Header = "待确认声明（" + warnings.Length + "）", Content = details, IsExpanded = false, Margin = new Thickness(4, 0, 7, 8) });
+                    compatibility.Children.Add(Details("待确认声明（" + warnings.Length + "）", warnings));
                 }
                 if (selectionStatus is not null) {
-                    selectionStatus.Text = result.Dependencies.HasErrors ? "所选组合仍有依赖／兼容问题，请在预览中处理后更新。" : result.Dependencies.HasUnknown ? "未发现确定冲突；部分声明仍需确认。" : "所选组合检查通过，可以更新。";
-                    selectionStatus.SetResourceReference(TextBlock.ForegroundProperty, result.Dependencies.HasErrors ? "ColorBrushRedLight" : "ColorBrush1");
+                    int pending = result.Actions.Count(action => !action.Selected);
+                    string status = result.Dependencies.HasErrors ? pending > 0 ? "有 " + pending + " 项兼容性处理需要确认，请查看下方选项。" : "仍有兼容性问题，请查看下方检查结果。"
+                        : result.Dependencies.HasUnknown ? "未发现确定冲突；部分声明仍需核对，详见下方。" : "所选组合检查通过，可以更新。";
+                    view.UpdateStatus(selectionStatus, status, result.Dependencies.HasErrors || result.Dependencies.HasUnknown ? 2 : 0);
                 }
                 double offset = view.Scroller.VerticalOffset;
                 ShowKind(activeKind); view.Scroller.ScrollToVerticalOffset(offset);
@@ -259,8 +291,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                 await ApplyLatestAsync(generation, () => {
                     view.SetCanConfirm(false);
                     if (selectionStatus is not null) {
-                        selectionStatus.Text = "组合检查未完成，请调整选择后重试：" + error.Message;
-                        selectionStatus.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushRedLight");
+                        view.UpdateStatus(selectionStatus, "组合检查未完成，请调整选择后重试：" + error.Message, 1);
                     }
                 });
             } catch (Exception) { /* A closing/unavailable UI must not reopen confirmation. */ }
@@ -271,6 +302,14 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                 cancellation.Dispose();
             }
         }
+    }
+    private static Expander Details(string title, IEnumerable<string> lines, bool expanded = false) {
+        StackPanel content = new();
+        foreach (string line in lines.Where(line => !string.IsNullOrWhiteSpace(line)).Distinct())
+            content.Children.Add(ModpackDialogController<TButton, TScroll>.Label(line, 12, color: "ColorBrushGray2", margin: new Thickness(0, 4, 0, 4)));
+        Expander details = new() { Header = title, Content = content, IsExpanded = expanded, FontSize = 12, Margin = new Thickness(0, 9, 0, 0) };
+        details.SetResourceReference(Control.ForegroundProperty, "ColorBrushGray2");
+        return details;
     }
     // May be called by the non-UI preview owner. Drain only file-reading tasks:
     // their UI continuations can be queued behind the modal's closing animation.
