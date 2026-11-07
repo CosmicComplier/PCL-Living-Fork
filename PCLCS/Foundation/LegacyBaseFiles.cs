@@ -14,6 +14,9 @@ public static partial class LegacyBaseOperations {
     // Atomic replacement alone cannot merge two concurrent read/modify/writes.
     private static readonly ConcurrentDictionary<string, object> iniFileLocks = new(StringComparer.OrdinalIgnoreCase);
     private static string IniPath(string fileName) {
+        // On Unix, Shared's ForApi maps Windows-shaped addresses to literal names
+        // below the current directory. Adding a Unix prefix changes that mapping.
+        if (Path.DirectorySeparatorChar != '\\' && (fileName.Contains(@":\") || fileName.StartsWith(@"\\", StringComparison.Ordinal))) return fileName;
         fileName = PathUtils.RemoveExtendedPrefix(fileName);
         return Path.GetFullPath(Path.IsPathRooted(fileName) || fileName.Contains(@":\") ? fileName : $@"{Paths.Base}PCL\{fileName}.ini");
     }
