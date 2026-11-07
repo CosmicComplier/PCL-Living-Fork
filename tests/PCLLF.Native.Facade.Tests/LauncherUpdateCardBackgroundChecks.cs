@@ -46,6 +46,13 @@ internal static class LauncherUpdateCardBackgroundChecks {
                 Native.Check(Contrast(LegacyThemePalette.Brush("ColorBrush1").Color, baseBrush.GradientStops[0].Color) >= 4.5,
                     "Native identity text lost readable contrast over the themed card background.");
                 ModpackStageLayoutChecks.Save(page, Path.Combine(root, dark ? "launcher-update-card-dark.png" : "launcher-update-card-light.png"), (int)page.ActualWidth, (int)page.ActualHeight);
+                foreach (var clock in clocks) clock.Controller.SeekAlignedToLastTick(TimeSpan.Zero, TimeSeekOrigin.BeginTime);
+                var start = Pixels(background);
+                foreach (var clock in clocks) clock.Controller.SeekAlignedToLastTick(TimeSpan.FromSeconds(4), TimeSeekOrigin.BeginTime);
+                var middle = Pixels(background);
+                double change = start.Zip(middle, (a, b) => Math.Abs(a - b)).Average();
+                Native.Check(change > 4, "Gradient motion remains imperceptible across four seconds: " + change);
+                ModpackStageLayoutChecks.Save(page, Path.Combine(root, dark ? "launcher-update-card-dark-moving.png" : "launcher-update-card-light-moving.png"), (int)page.ActualWidth, (int)page.ActualHeight);
             }
             Native.Cache("SystemDebugAnim", 30);
             VisualAssetChecks.Pump(() => !Moving() && clocks.All(clock => clock.IsPaused), "Disabling animations while visible did not pause background clocks.");
@@ -84,6 +91,10 @@ internal static class LauncherUpdateCardBackgroundChecks {
             cache.Clear(); foreach (DictionaryEntry entry in savedSetting) cache.Add(entry.Key, entry.Value);
             ModAnimation.AniControlEnabled = suppression;
         }
+    }
+    private static byte[] Pixels(FrameworkElement element) {
+        var image = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth), (int)Math.Ceiling(element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        image.Render(element); byte[] bytes = new byte[image.PixelWidth * image.PixelHeight * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0); return bytes;
     }
     private static bool Blue(Color color) => color.B >= color.G && color.G >= color.R;
     private static double Contrast(Color foreground, Color background) {

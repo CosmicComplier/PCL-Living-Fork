@@ -39,7 +39,29 @@ namespace PCL
             MouseMove += FormMain_MouseMove;
             Controller.ConstructBeforeXaml();
             InitializeComponent();
+            ConfigureThemeToggle(BtnTitleTheme);
             Controller.ConstructAfterXaml();
+        }
+        private static void ConfigureThemeToggle(MyIconButton button)
+        {
+            void RefreshIcon()
+            {
+                button.Logo = ModTheme.IsDarkTheme
+                    ? "M16,8 A8,8 0 1 1 15.99,8 Z M15,0 H17 V5 H15 Z M15,27 H17 V32 H15 Z M0,15 H5 V17 H0 Z M27,15 H32 V17 H27 Z M3,4 L4,3 8,7 7,8 Z M24,25 L25,24 29,28 28,29 Z M3,28 L7,24 8,25 4,29 Z M24,7 L28,3 29,4 25,8 Z"
+                    : "M26,21 A13,13 0 1 1 11,2 A10,10 0 0 0 26,21 Z";
+                button.ToolTip = ModTheme.IsDarkTheme ? "切换到浅色主题" : "切换到深色主题";
+            }
+            button.Click += (_, _) => {
+                Settings.Set("UiLauncherColorMode", ModTheme.IsDarkTheme ? 0 : 1);
+                if (ModMain.FrmSetupUI is not null) {
+                    ModAnimation.AniControlEnabled++;
+                    try { SettingService.RefreshSettings(ModMain.FrmSetupUI.ComboLauncherColorMode); }
+                    finally { ModAnimation.AniControlEnabled--; }
+                }
+                RefreshIcon();
+            };
+            ModTheme.WatchTheme(button, RefreshIcon);
+            RefreshIcon();
         }
 
         private void ShowUpdateLog() => Controller.ShowUpdateLog();

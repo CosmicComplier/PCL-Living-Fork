@@ -22,10 +22,10 @@ internal sealed class LauncherUpdateCardBackground : Grid {
     internal LauncherUpdateCardBackground() {
         IsHitTestVisible = false;
         Children.Add(first); Children.Add(second);
-        Animate(firstFlow, TranslateTransform.XProperty, -0.12, 0.12, 24);
-        Animate(firstFlow, TranslateTransform.YProperty, -0.08, 0.08, 32);
-        Animate(secondFlow, TranslateTransform.XProperty, 0.1, -0.1, 32);
-        Animate(secondFlow, TranslateTransform.YProperty, 0.08, -0.08, 24);
+        Animate(firstFlow, TranslateTransform.XProperty, -0.32, 0.32, 8);
+        Animate(firstFlow, TranslateTransform.YProperty, 0.24, -0.24, 8);
+        Animate(secondFlow, TranslateTransform.XProperty, 0.3, -0.3, 11);
+        Animate(secondFlow, TranslateTransform.YProperty, -0.2, 0.2, 11);
         settingsWatcher = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(300) };
         settingsWatcher.Tick += (_, _) => RefreshMotion();
         SizeChanged += (_, args) => Clip = new RectangleGeometry(new Rect(new Point(), args.NewSize), 5, 5);
@@ -40,7 +40,7 @@ internal sealed class LauncherUpdateCardBackground : Grid {
             Duration = TimeSpan.FromSeconds(seconds), AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever
         };
         animation.KeyFrames.Add(new LinearDoubleKeyFrame(from, KeyTime.FromPercent(0)));
-        animation.KeyFrames.Add(new SplineDoubleKeyFrame(to, KeyTime.FromPercent(1), new KeySpline(0.77, 0, 0.175, 1)));
+        animation.KeyFrames.Add(new SplineDoubleKeyFrame(to, KeyTime.FromPercent(1), new KeySpline(0.42, 0, 0.58, 1)));
         var clock = (AnimationClock)animation.CreateClock(true);
         clock.Controller.Pause(); target.ApplyAnimationClock(property, clock); clocks.Add(clock);
     }
@@ -66,13 +66,24 @@ internal sealed class LauncherUpdateCardBackground : Grid {
     }
     private void RefreshPalette() {
         bool dark = ModTheme.IsDarkTheme;
-        Background = new LinearGradientBrush(dark ? Color.FromRgb(20, 32, 49) : Color.FromRgb(247, 252, 255),
-            dark ? Color.FromRgb(28, 48, 74) : Color.FromRgb(226, 240, 255), 20);
-        first.Fill = Glow(dark ? Color.FromArgb(100, 47, 94, 153) : Color.FromArgb(120, 142, 194, 250), new Point(0.18, 0.25), firstFlow);
-        second.Fill = Glow(dark ? Color.FromArgb(80, 40, 77, 124) : Color.FromArgb(180, 255, 255, 255), new Point(0.78, 0.75), secondFlow);
+        Background = new LinearGradientBrush {
+            StartPoint = new Point(0, 0), EndPoint = new Point(1, 1),
+            GradientStops = new GradientStopCollection {
+                new(dark ? Color.FromRgb(11, 23, 45) : Color.FromRgb(183, 222, 255), 0),
+                new(dark ? Color.FromRgb(18, 43, 79) : Color.FromRgb(248, 252, 255), .48),
+                new(dark ? Color.FromRgb(36, 77, 123) : Color.FromRgb(145, 196, 255), 1)
+            }
+        };
+        Color blue = dark ? Color.FromArgb(110, 45, 117, 199) : Color.FromArgb(150, 70, 145, 245);
+        Color clear = Color.FromArgb(0, blue.R, blue.G, blue.B);
+        first.Fill = new LinearGradientBrush {
+            StartPoint = new Point(0, 1), EndPoint = new Point(1, 0), RelativeTransform = firstFlow,
+            GradientStops = new GradientStopCollection { new(clear, 0), new(blue, .45), new(clear, 1) }
+        };
+        second.Fill = Glow(dark ? Color.FromArgb(80, 64, 108, 164) : Color.FromArgb(225, 255, 255, 255), new Point(.7, .5), secondFlow);
     }
     private static Brush Glow(Color color, Point center, Transform flow) {
-        var brush = new RadialGradientBrush { Center = center, GradientOrigin = center, RadiusX = 0.7, RadiusY = 1.0, RelativeTransform = flow };
+        var brush = new RadialGradientBrush { Center = center, GradientOrigin = center, RadiusX = 0.55, RadiusY = 1.0, RelativeTransform = flow };
         brush.GradientStops.Add(new GradientStop(color, 0));
         brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1));
         return brush;

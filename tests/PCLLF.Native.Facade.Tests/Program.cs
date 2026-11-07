@@ -10,6 +10,7 @@ internal static class Program
         ["map-details"] = MapResourceChecks.MapDetails,
         ["instance-delete"] = InstanceDeletionChecks.Run,
         ["launcher-update-page"] = LauncherUpdatePageChecks.Run,
+        ["title-theme-toggle"] = TitleThemeToggleChecks.Run,
         ["resource-entry"] = MapResourceChecks.ResourceEntries,
         ["world-details"] = WorldChecks.Run,
         ["registry-names"] = RegistryChecks.Run,
