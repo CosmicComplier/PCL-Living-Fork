@@ -87,6 +87,6 @@ foreach($route in @(
     $proof.startupNoticeTitle+=' changed'
     Assert-Refused {& $titleExpression $proof} 'changed artifact title'
 }
-Assert-Refused {Get-ReviewedNativeStartupNotice ([pscustomobject]@{displayName='PCL Living Fork';versionBaseName='1.4.1';startupNoticeStyle='markdown-suppress';startupNoticeTitle='PCL Living Fork 1.4.1 更新说明';startupNoticeSource='local';buildType=50})} 'unreviewed future artifact'
+Assert-Refused {Get-ReviewedNativeStartupNotice ([pscustomobject]@{displayName='PCL Living Fork';versionBaseName='1.4.2';startupNoticeStyle='markdown-suppress';startupNoticeTitle='PCL Living Fork 1.4.2 更新说明';startupNoticeSource='local';buildType=50})} 'unreviewed future artifact'
 Write-Output ('PASS '+$count+' actual PS5 smoke source/readiness/close regressions: metadata-bound plain and Markdown routes; unknown/kind/body/Error/partial records refused or pending. No product/profile/process/window/input action.')
 

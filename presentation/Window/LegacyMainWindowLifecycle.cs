@@ -19,7 +19,7 @@ namespace PCLLF.Presentation.Windowing;
 
 public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnimation>
     where TStack : class, ILegacyMainPageStack, new() where TInstance : class where TAnimation : struct {
-    private const string ForkReleaseHighlights = "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览";
+    private const string ForkReleaseHighlights = "- 全局项目收藏：下载、版本资源管理与收藏页同步，跨文件和版本去重\r\n- 整合包更新独立侧栏，预览中处理缺失前置与不兼容模组\r\n- 更新任务分项显示原生进度，增加文件读取和写入速度\r\n- 顶栏快捷切换深浅色，圆角侧栏、渐变光圈与夜间星光\r\n- 更新公告可选择下次更新前不再弹出，暂缓更新后可从顶栏重开\r\n- 改善部分 Windows 10 启动兼容性，更新 README 与项目日历\r\n- 精简版适用于 Windows x64，运行前需 .NET 10 Desktop Runtime";
     // Session scope: at most one automatic version/update note per launcher start.
     private int updateLogPromptIssued;
     public bool ShouldAutoShowUpdateLog() => LegacyUpdateLogPrompt.ShouldShow(host.ReadString, host.UpdateLogIdentity());
