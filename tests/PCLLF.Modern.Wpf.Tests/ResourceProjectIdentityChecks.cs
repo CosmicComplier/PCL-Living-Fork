@@ -48,6 +48,14 @@ internal static class ResourceProjectIdentityChecks {
         versions["123"] = new(); ResourceProjectKey.Invalidate(versions, "123"); Check(versions.Count == 0, "Invalidation left a raw or provider-specific stale version list");
         Check(pipeline.VersionsFromProjectId("123", ResourcePlatforms.Modrinth).Single().Id == "MrV12345" && pipeline.VersionsFromProjectId("123", ResourcePlatforms.CurseForge).Single().Id == "9001", "Invalidated providers did not re-fetch their own versions");
         Check(ResourceProjectKey.Get(ResourcePlatforms.Modrinth, "AbCd1234") != ResourceProjectKey.Get(ResourcePlatforms.Modrinth, "abcd1234"), "Cache key lowercased Modrinth IDs");
+        var rawMr = new JObject { ["id"] = "Exact123", ["slug"] = "fixture", ["title"] = "Compatibility fixture", ["description"] = "fixture", ["updated"] = new DateTime(2024, 1, 1),
+            ["downloads"] = 0, ["project_type"] = "mod", ["categories"] = new JArray("fabric"), ["versions"] = new JArray("AbCd1234") };
+        Check(Create(rawMr).KnownGameVersions.Count == 0, "Modrinth /project version IDs became game compatibility");
+        rawMr["versions"] = new JArray("1.20.1", "AbCd1234");
+        Check(Create(rawMr).KnownGameVersions.SequenceEqual(new[] { "1.20.1" }), "Validated game labels in search-hit versions were discarded or mixed with version IDs");
+        rawMr["game_versions"] = new JArray("1.21.1", "1.21.11");
+        var known = Create(rawMr); var restored = Create(known.ToJson());
+        Check(restored.KnownGameVersions.SequenceEqual(new[] { "1.21.1", "1.21.11" }) && McVersion.VersionToDrop("1.21.1") == McVersion.VersionToDrop("1.21.11"), "Exact compatibility was lost to a coarse Drop during cache serialization");
         Console.WriteLine("PASS resource catalog identity: real project/batch/version pipeline with synthetic CF/MR responses for the same ID, platform-aware equality/hash, correct cached re-query, mismatched-hit rejection and all-provider invalidation.");
     }
     private static JObject Metadata(ResourcePlatforms platform) => new() {

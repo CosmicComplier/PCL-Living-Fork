@@ -4,6 +4,7 @@ internal static class ResourceFavoriteTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("resource favorites use platform project identities and preserve Modrinth case", Identity);
         yield return ("resource favorites retain every supported resource category and offline metadata", Metadata);
+        yield return ("resource favorites combine source tag exact cached version and loader filters without guessing Drops", Filters);
         yield return ("resource favorites persist one project across versions and never rewrite legacy settings", Persistence);
         yield return ("resource favorites reject damaged stores and preserve the last good snapshot", Corruption);
         yield return ("resource favorites publish only after successful atomic persistence", SaveFailure);
@@ -55,6 +56,19 @@ internal static class ResourceFavoriteTests {
         Check(store.Reload() && store.Snapshot.Count == 0, "Reload missed external changes");
         Check(File.ReadAllBytes(legacy).SequenceEqual(previous), "Legacy filename favorites/settings were rewritten");
         Check(!Directory.EnumerateFiles(scope.Root, "*.tmp").Any(), "Atomic temporary file leaked");
+    }
+    private static void Filters() {
+        JObject json = Project().ProjectJson;
+        json["Drops"] = new JArray(210); json["KnownGameVersions"] = new JArray("1.21.1", "25w10a"); json["ModLoaders"] = (int)(ModLoaders.Fabric | ModLoaders.Forge);
+        ResourceFavorite entry = ResourceFavorite.FromMetadata(json, DateTime.UtcNow);
+        Check(new ResourceFavoriteFilter { Category = ResourceTypes.Mod, Name = "fixture", Source = ResourcePlatforms.Modrinth, Tag = "fixture", GameVersion = "1.21.1", Loader = ModLoaders.Fabric }.Matches(entry), "Combined cached metadata filter missed a project");
+        Check(!new ResourceFavoriteFilter { GameVersion = "1.21.11" }.Matches(entry) && !new ResourceFavoriteFilter { GameVersion = "1.21" }.Matches(entry), "A coarse Drop was treated as exact patch compatibility");
+        Check(!new ResourceFavoriteFilter { Source = ResourcePlatforms.CurseForge }.Matches(entry) && !new ResourceFavoriteFilter { Tag = "other" }.Matches(entry), "Source/tag filters were ignored");
+        Check(new ResourceFavoriteFilter { GameVersion = "25w10a" }.Matches(entry), "Known snapshots were discarded");
+        json.Remove("KnownGameVersions"); json.Remove("ModLoaders");
+        var unknown = ResourceFavorite.FromMetadata(json, DateTime.UtcNow);
+        Check(new ResourceFavoriteFilter().Matches(unknown) && !new ResourceFavoriteFilter { GameVersion = "1.21.1" }.Matches(unknown) && !new ResourceFavoriteFilter { Loader = ModLoaders.Fabric }.Matches(unknown), "Unknown compatibility was guessed or excluded from unfiltered browsing");
+        Check(!ResourceFavoriteFilter.IsGameVersionLabel("AbCd1234") && !ResourceFavoriteFilter.IsGameVersionLabel("12345678") && !ResourceFavoriteFilter.IsGameVersionLabel("1.21 预览版") && ResourceFavoriteFilter.IsGameVersionLabel("26.1"), "Version IDs or a coarse preview label were accepted as exact game versions");
     }
     private static void Corruption() {
         using Scope scope = new(); ResourceFavoriteStore store = new(scope.File); var project = Project();

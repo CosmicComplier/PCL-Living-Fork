@@ -160,82 +160,102 @@ namespace PCL
         {
             get
             {
+                if (FavoriteStore is not null) return FavoriteCategory ?? ResourceTypes.Any;
                 return this.Service.PageType;
             }
 
             set
             {
+                if (FavoriteStore is not null) { ChooseFavoriteCategory(value == ResourceTypes.Any ? null : value); return; }
                 this.Service.PageType = value;
             }
         }
 
         private void PageResource_Loaded(global::System.Object sender, global::System.EventArgs e)
         {
+            if (FavoriteStore is not null) { FavoritesChanged(); return; }
             this.Service.Loaded();
         }
 
         private global::PCL.ResourceSearcher.SearchRequest LoaderInput()
         {
+            if (FavoriteStore is not null) throw new InvalidOperationException("本地收藏不使用在线搜索加载器。");
             return this.Service.LoaderInput();
         }
 
         private void Load_OnFinish()
         {
+            if (FavoriteStore is not null) { FavoritesChanged(); return; }
             this.Service.LoadOnFinish();
         }
 
         private void Load_State(global::System.Object sender, global::PCL.MyLoading.MyLoadingState state, global::PCL.MyLoading.MyLoadingState oldState)
         {
+            if (FavoriteStore is not null) return;
             this.Service.LoadState();
         }
 
         private void BtnPageFirst_Click(global::System.Object sender, global::System.Windows.RoutedEventArgs e)
         {
+            if (FavoriteStore is not null) { ChangeFavoritePage(0); return; }
             this.Service.FirstPage();
         }
 
         private void BtnPageLeft_Click(global::System.Object sender, global::System.Windows.RoutedEventArgs e)
         {
+            if (FavoriteStore is not null) { ChangeFavoritePage(Page - 1); return; }
             this.Service.PreviousPage();
         }
 
         private void BtnPageRight_Click(global::System.Object sender, global::System.Windows.RoutedEventArgs e)
         {
+            if (FavoriteStore is not null) { ChangeFavoritePage(Page + 1); return; }
             this.Service.NextPage();
         }
 
         private void ChangePage(global::System.Int32 NewPage)
         {
+            if (FavoriteStore is not null) { ChangeFavoritePage(NewPage); return; }
             this.Service.ChangePage(NewPage);
         }
 
         private void StartNewSearch()
         {
+            if (FavoriteStore is not null) {
+                ApplyFavoriteSearch();
+                if (FavoriteStore.LoadError is not null || FavoriteStore.LastOperationError is not null) FavoriteReload();
+                return;
+            }
             this.Service.StartNewSearch();
         }
 
         private void EnterTrigger(global::System.Object sender, global::System.Windows.Input.KeyEventArgs e)
         {
+            if (FavoriteStore is not null) { if (e.Key == Key.Enter) { StartNewSearch(); e.Handled = true; } return; }
             this.Service.KeyDown(e.Key);
         }
 
         private void ResetFilter()
         {
+            if (FavoriteStore is not null) { ResetFavoriteFilter(); return; }
             this.Service.ResetFilter();
         }
 
         private void TextSearchVersion_TextChanged()
         {
+            if (FavoriteStore is not null) { if (!TextSearchVersion.IsDropDownOpen) FavoriteLoaderVisibility(); return; }
             this.Service.VersionTextChanged();
         }
 
         private void UpdateSearchLoaderVisibility()
         {
+            if (FavoriteStore is not null) { FavoriteLoaderVisibility(); return; }
             this.Service.UpdateSearchLoaderVisibility();
         }
 
         private void BtnSearchInstallModPack_Click(global::System.Object sender, global::System.EventArgs e)
         {
+            if (FavoriteStore is not null) return;
             this.Service.InstallExistingPack();
         }
     }

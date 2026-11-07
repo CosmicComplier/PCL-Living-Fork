@@ -1,31 +1,6 @@
 <local:MyPageRight x:Class="PCL.PageFavorites"
                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                   xmlns:local="clr-namespace:PCL" PanScroll="PanBack">
-    <local:MyScrollViewer x:Name="PanBack" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="25,25,25,15">
-            <local:MySearchBox x:Name="SearchBox" HintText="搜索收藏的资源名称、简介或来源" Margin="0,0,0,15" />
-            <TextBlock Text="收藏会保存在启动器中，所有游戏版本共享；点击项目可查看详情和下载。" TextWrapping="Wrap" Foreground="{DynamicResource ColorBrushGray3}" Margin="0,0,0,15" />
-            <local:MyCard x:Name="CardFavorites" Margin="0,0,0,15" UseAnimation="False">
-                <StackPanel Margin="12">
-                    <local:MyHint x:Name="HintError" Theme="Yellow" Visibility="Collapsed" Margin="0,0,0,12" />
-                    <TextBlock x:Name="LabStatus" Foreground="{DynamicResource ColorBrushGray3}" TextWrapping="Wrap" Margin="3,8,3,12" />
-                    <StackPanel x:Name="PanResults" />
-                    <local:MyButton x:Name="BtnRetry" Text="重新读取收藏" HorizontalAlignment="Left" Padding="15,0" Height="30" Margin="0,8,0,0" Visibility="Collapsed" />
-                </StackPanel>
-            </local:MyCard>
-            <!-- The resource download page's native paging card and vector buttons. -->
-            <local:MyCard x:Name="CardPages" HorizontalAlignment="Center" Margin="0,0,0,15" UseAnimation="False" Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" Height="23" Margin="10,7">
-                    <local:MyIconButton x:Name="BtnPageFirst" Margin="0,0.5,5,0.5"
-                        Logo="M496.213333 329.856L315.306667 510.848l180.992 181.077333a42.666667 42.666667 0 1 1-60.330667 60.330667l-211.2-211.2a42.453333 42.453333 0 0 1-11.818667-22.613333l-0.597333-5.034667v-5.034667a42.496 42.496 0 0 1 12.373333-27.648l211.2-211.2a42.666667 42.666667 0 0 1 60.373334 60.330667z m298.666667 0l-180.949333 180.992 180.992 181.077333a42.666667 42.666667 0 1 1-60.330667 60.330667l-211.2-211.2a42.453333 42.453333 0 0 1-11.818667-22.613333l-0.597333-5.034667v-5.034667a42.496 42.496 0 0 1 12.373333-27.648l211.2-211.2a42.666667 42.666667 0 0 1 60.373334 60.330667z" />
-                    <local:MyIconButton x:Name="BtnPageLeft" Margin="0,0,5,0"
-                        Logo="M650.752 278.357333l-241.322667 241.365334 241.322667 241.365333a42.666667 42.666667 0 1 1-60.330667 60.330667l-271.530666-271.530667a42.453333 42.453333 0 0 1-11.818667-22.613333l-0.597333-5.034667v-5.034667a42.496 42.496 0 0 1 12.416-27.648l271.530666-271.530666a42.666667 42.666667 0 0 1 60.330667 60.330666z" />
-                    <TextBlock x:Name="LabPage" Margin="8,0,13,0" FontSize="15" VerticalAlignment="Center" Foreground="{DynamicResource ColorBrush3}" />
-                    <local:MyIconButton x:Name="BtnPageRight" Margin="0,0,5,0"
-                        Logo="M404.309333 278.357333l241.322667 241.365334-241.322667 241.365333a42.666667 42.666667 0 1 0 60.330667 60.330667l271.530667-271.530667a42.453333 42.453333 0 0 0 11.818666-22.613333l0.597334-5.034667v-5.034667a42.496 42.496 0 0 0-12.416-27.648L464.64 218.026667a42.666667 42.666667 0 0 0-60.330667 60.330666z" />
-                </StackPanel>
-            </local:MyCard>
-        </StackPanel>
-    </local:MyScrollViewer>
+                   xmlns:local="clr-namespace:PCL" PanScroll="Content">
+    <local:PageResource x:Name="Content" />
 </local:MyPageRight>

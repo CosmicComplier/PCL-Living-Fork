@@ -45,6 +45,7 @@ namespace PCL
             MouseMove += FormMain_MouseMove;
             Controller.ConstructBeforeXaml();
             InitializeComponent();
+            BtnTitleSelect5.Logo = ModBase.Logo.IconButtonLikeLine;
             ConfigureThemeToggle(BtnTitleTheme);
             ConfigureDeferredUpdateButton(BtnTitleUpdate, ModLauncherUpdate.ReopenDeferredUpdate);
             ConfigureTitleClip(PanTitle);

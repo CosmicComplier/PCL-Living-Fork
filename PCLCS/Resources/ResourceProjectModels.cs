@@ -35,6 +35,8 @@ public partial class ResourceProjectModelData {
     public string? LogoUrl;
     public readonly List<int> Drops;
     public readonly List<string>? UnsafeGameVersions;
+    // Exact cached game-version labels, never the coarse Drops or Modrinth version IDs.
+    public readonly List<string> KnownGameVersions;
     private bool loadedDatabase;
     private WikiEntry? wikiEntry;
 
@@ -66,6 +68,8 @@ public partial class ResourceProjectModelData {
             Tags = ((JArray)data["Tags"]!).Select(value => value.ToString()).ToList();
             if (data.ContainsKey("LogoUrl")) LogoUrl = (string?)data["LogoUrl"];
             Drops = data.ContainsKey("Drops") ? ((JArray)data["Drops"]!).Select(value => value.ToObject<int>()).ToList() : new List<int>();
+            KnownGameVersions = ReadKnownGameVersions(data["KnownGameVersions"] as JArray);
+            if (Platform == ResourcePlatforms.Modrinth) UnsafeGameVersions = KnownGameVersions;
         } else {
             Platform = data.ContainsKey("summary") ? ResourcePlatforms.CurseForge : ResourcePlatforms.Modrinth;
             if (Platform == ResourcePlatforms.CurseForge) {
@@ -98,6 +102,7 @@ public partial class ResourceProjectModelData {
                     files.Add(new KeyValuePair<int, List<string>>((int)file["fileId"]!, new List<string> { file["gameVersion"]!.ToString() }));
                 }
                 CurseForgeFileIds = files.Select(file => file.Key).Distinct().ToList();
+                KnownGameVersions = ReadKnownGameVersions(new JArray(files.SelectMany(file => file.Value)));
                 Drops = files.SelectMany(file => file.Value).Select(McVersion.VersionToDrop).Where(value => value != 209).Distinct().OrderByDescending(value => value).ToList();
                 Tags = new List<string>();
                 foreach (int category in (data["categories"] ?? new JArray()).Select(value => (int)value["id"]!).Distinct().OrderByDescending(value => value))
@@ -107,7 +112,10 @@ public partial class ResourceProjectModelData {
                 LastUpdate = (DateTime)(data["date_modified"] ?? data["updated"])!; DownloadCount = (int)data["downloads"]!;
                 LogoUrl = (string?)data["icon_url"]; if (Same(LogoUrl, "")) LogoUrl = null;
                 Website = $"https://modrinth.com/{data["project_type"]}/{Slug}";
-                UnsafeGameVersions = (((JArray?)(data["game_versions"] ?? data["versions"])) ?? new JArray()).Select(value => value.ToString()).Distinct().ToList();
+                // Search hits can expose game labels in versions; /project can expose
+                // base62 file-version IDs there. Validate labels before retaining either.
+                KnownGameVersions = ReadKnownGameVersions((data["game_versions"] ?? data["versions"]) as JArray);
+                UnsafeGameVersions = KnownGameVersions;
                 Drops = UnsafeGameVersions.Select(McVersion.VersionToDrop).Where(value => value != 209).Distinct().OrderByDescending(value => value).ToList();
                 Types = data["project_type"]!.ToString() switch { "modpack" => ResourceTypes.ModPack, "resourcepack" => ResourceTypes.ResourcePack, "shader" => ResourceTypes.Shader, _ => ResourceTypes.Mod };
                 Tags = new List<string>(); ModLoaders = ModLoaders.None;
@@ -137,9 +145,13 @@ public partial class ResourceProjectModelData {
         json["Tags"] = new JArray(Tags);
         if (LogoUrl is not null) json["LogoUrl"] = LogoUrl;
         if (Drops.Any()) json["Drops"] = new JArray(Drops);
+        if (KnownGameVersions.Count > 0) json["KnownGameVersions"] = new JArray(KnownGameVersions);
         json["CacheTime"] = DateTime.Now;
         return json;
     }
+    private static List<string> ReadKnownGameVersions(JArray? versions) => versions is null ? new List<string>() : versions
+        .Where(value => value.Type == JTokenType.String).Select(value => value.ToString())
+        .Where(ResourceFavoriteFilter.IsGameVersionLabel).Distinct(StringComparer.Ordinal).ToList();
 
     public bool IsLike(ResourceProjectModelData project) {
         if (Same(Id, project.Id)) return Platform == project.Platform;
