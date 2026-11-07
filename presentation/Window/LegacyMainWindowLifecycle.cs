@@ -20,18 +20,12 @@ namespace PCLLF.Presentation.Windowing;
 public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnimation>
     where TStack : class, ILegacyMainPageStack, new() where TInstance : class where TAnimation : struct {
     private const string ForkReleaseHighlights = "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览";
-    // The one place that may read SystemUpdateLogPrompt; true (or a missing key) means show the log.
-    private const bool UpdateLogPromptDefault = true;
     // Session scope: at most one automatic version/update note per launcher start.
-    private volatile bool updateLogPromptIssued;
-    public bool ShouldAutoShowUpdateLog() {
-        try { return host.ReadBoolean(LegacyUpdateLogPrompt.Key); }
-        catch (Exception error) { Logger.Error(error, "读取更新说明弹窗设置失败", LogBehavior.None); return UpdateLogPromptDefault; }
-    }
-    private void DismissUpdateLogPrompt() {
-        try {
-            if (!host.PersistUpdateLogPrompt(false)) Logger.Error("更新说明弹窗设置保存失败，已回滚为原设置", LogBehavior.None);
-        } catch (Exception error) { Logger.Error(error, "更新说明弹窗设置保存失败，已回滚为原设置", LogBehavior.None); }
+    private int updateLogPromptIssued;
+    public bool ShouldAutoShowUpdateLog() => LegacyUpdateLogPrompt.ShouldShow(host.ReadString, host.UpdateLogIdentity());
+    public void ShowAutomaticUpdateLog() {
+        if (!ShouldAutoShowUpdateLog() || Interlocked.CompareExchange(ref updateLogPromptIssued, 1, 0) != 0) return;
+        ShowReleaseLog(true);
     }
     public void ConstructBeforeXaml() {
         host.WriteStartTick(host.Clock()); host.AssignGlobalWindow(); host.CreateLaunchLeft(); host.CreateLaunchRight();
@@ -99,22 +93,20 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
             }
             try { host.JavaInitialize(); System.Threading.Thread.Sleep(100); host.StartClientList(); RunThread(host.ClearTaskTemp, "TryClearTaskTemp", ThreadPriority.BelowNormal); }
             catch (Exception ex) { Logger.Error(ex, "初始化加载池运行失败"); }
-            if (host.VersionBranchMain() == "OpenSource" && !updateLogPromptIssued && ShouldAutoShowUpdateLog()
-                && !host.ShowReleaseNotes(true, ForkReleaseHighlights)
-                && Message($"{host.LauncherName()} {host.VersionBaseName()} 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + ForkReleaseHighlights, $"{host.LauncherName()} {host.VersionBaseName()} 版本说明", "确定", "不再弹出") == 2)
-                DismissUpdateLogPrompt();
-            host.CheckUpdates();
+            CheckStartupUpdates();
         }, "初始化", ThreadPriority.Lowest);
         Logger.Info($"第三阶段加载用时：{checked(host.Clock() - host.StartTick())} ms");
+    }
+    public void CheckStartupUpdates() {
+        if (host.VersionBranchMain() == "OpenSource") ShowAutomaticUpdateLog();
+        host.CheckUpdates();
     }
     public void ShowUpdateLog() => ShowReleaseLog(false);
     private void ShowReleaseLog(bool automatic) => RunThread(() => {
         if (host.ShowReleaseNotes(automatic, ForkReleaseHighlights)) return;
         string content = $"{host.LauncherName()} {host.VersionBaseName()}\r\n\r\n" + ForkReleaseHighlights;
-        // Closing with X yields no integer result, which keeps the 确定 (no write) semantics.
-        switch (Message(content, host.LauncherName() + " 更新说明", "确定", "查看更新日志", "不再弹出")) {
+        switch (Message(content, host.LauncherName() + " 更新说明", "确定", "查看更新日志")) {
             case 2: host.OpenWebsite(host.ReleasesUrl()); break;
-            case 3: DismissUpdateLogPrompt(); break;
         }
     }, "Fork UpdateLog Output");
     public void Upgrade(int lastVersion) {
@@ -141,7 +133,7 @@ public sealed partial class LegacyMainWindowController<TStack, TInstance, TAnima
         if (host.HasSaved("ToolDownloadTranslate") && !host.HasSaved("ToolDownloadTranslateV2")) { host.WriteSetting("ToolDownloadTranslateV2", checked(host.ReadInteger("ToolDownloadTranslate") + 1)); Logger.Info("已从老版本迁移 Mod 命名设置"); }
         if (lastVersion <= 381 && host.HasSaved("LaunchAdvanceJvm") && Operators.ConditionalCompareObjectEqual(host.ReadString("LaunchAdvanceJvm").ToString().Replace("-XX:+UseG1GC ", "").Replace("-XX:-UseAdaptiveSizePolicy ", "").Trim(), host.DefaultValue("LaunchAdvanceJvm"), false)) { host.ResetSetting("LaunchAdvanceJvm"); Logger.Info("已重置 JVM 参数设置"); }
         if (lastVersion <= 0 || highest >= host.VersionCode) return;
-        if (ShouldAutoShowUpdateLog()) { updateLogPromptIssued = true; ShowUpdateLog(); }
+        ShowAutomaticUpdateLog();
     }
     public void Downgrade(int lastVersion) { Logger.Info($"版本号从 {lastVersion} 降低到 {host.VersionCode}"); host.WriteSetting("SystemLastVersionReg", host.VersionCode); }
 }

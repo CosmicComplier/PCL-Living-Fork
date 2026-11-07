@@ -19,7 +19,7 @@ internal static class A003Checks {
     internal static void Run() {
         UpdateLogChecks();
         ModFavoriteChecks();
-        Console.WriteLine("PASS A-003 update-log/favorites controller checks: ShouldAutoShowUpdateLog tri-state, dismiss write-failure rollback, Upgrade gate, single note flag, favorites filter/serial/empty state and search+sort combination.");
+        Console.WriteLine("PASS A-003 controllers: version-scoped automatic notes, automatic/manual routing, once-per-session upgrade/startup gate, independent update checks, cached favorites filtering/counts/empty state and search/sort.");
     }
 
     // ---------- A-003.1 update-log prompt ----------
@@ -29,34 +29,28 @@ internal static class A003Checks {
     }
     private struct FakeAnim { }
     private sealed class UpdateLogHost {
-        public bool Prompt = true;
-        public bool PersistResult = true;
+        public string Dismissed = "";
+        public string Identity = "fixture|1.4.0|stable|415|0";
         public bool ThrowOnRead;
-        public int MessageResult = 1;
-        public LegacyMainMessage? LastMessage;
-        public int PersistCalls;
-        public string? Website;
+        public int UpdateChecks;
         public readonly List<Action> Threads = new();
+        public readonly List<bool> Notices = new();
         public readonly List<string> Writes = new();
-        public int OpenWebsiteCount => Website is null ? 0 : 1;
         internal LegacyMainWindowHost<FakeStack, object, FakeAnim> Build() => new() {
-            ReadBoolean = key => {
+            // Old SystemUpdateLogPrompt=false must never be consulted as a gate.
+            ReadBoolean = key => false,
+            ReadString = key => {
                 if (ThrowOnRead) throw new InvalidOperationException("synthetic read failure");
-                return key == "SystemUpdateLogPrompt" ? Prompt : false;
+                return key == LegacyUpdateLogPrompt.Key ? Dismissed : "0|1|2|3|4";
             },
-            PersistUpdateLogPrompt = value => {
-                PersistCalls++;
-                if (PersistResult) Prompt = value;
-                return PersistResult;
-            },
-            Message = message => { LastMessage = message; return MessageResult; },
+            UpdateLogIdentity = () => Identity,
+            ShowReleaseNotes = (automatic, _) => { Notices.Add(automatic); return true; },
             NewThread = (work, name, priority) => Threads.Add(work),
-            OpenWebsite = url => Website = url,
+            CheckUpdates = () => UpdateChecks++,
             LauncherName = () => "LivingPCL",
             VersionBaseName = () => "synthetic",
             ReleasesUrl = () => "https://example.invalid/releases",
             ReadInteger = key => key == "LaunchArgumentWindowType" ? 1 : 0,
-            ReadString = key => "0|1|2|3|4",
             HasSaved = key => false,
             DefaultValue = key => 0,
             WriteSetting = (key, value) => Writes.Add(key + "=" + value),
@@ -72,55 +66,39 @@ internal static class A003Checks {
         var host = new UpdateLogHost();
         var controller = new LegacyMainWindowController<FakeStack, object, FakeAnim>(new LegacyMainWindowView(), host.Build());
 
-        // Tri-state: true, false, and a throwing reader falls back to the default (show).
-        host.Prompt = true; Check(controller.ShouldAutoShowUpdateLog(), "true must auto-show.");
-        host.Prompt = false; Check(!controller.ShouldAutoShowUpdateLog(), "false must suppress.");
+        Check(controller.ShouldAutoShowUpdateLog(), "Missing dismissal and legacy false must auto-show.");
+        host.Dismissed = host.Identity;
+        Check(!controller.ShouldAutoShowUpdateLog(), "Only the current identity must suppress automatic notes.");
         host.ThrowOnRead = true; Check(controller.ShouldAutoShowUpdateLog(), "read failure must fall back to true.");
         host.ThrowOnRead = false;
 
-        // Upgrade() gate: false suppresses ShowUpdateLog entirely; true schedules it once.
         controller.Upgrade(999);
         Check(host.Threads.Count == 0, "Suppressed prompt must not schedule the update log.");
-        host.Prompt = true;
+        controller.CheckStartupUpdates();
+        Check(host.UpdateChecks == 1 && host.Threads.Count == 0, "Suppressing notes must keep automatic update checking active.");
+        host.Identity = "fixture|1.4.1|stable|416|0";
+        Check(controller.ShouldAutoShowUpdateLog(), "A version change must show notes again.");
         controller.Upgrade(999);
+        controller.CheckStartupUpdates();
+        controller.ShowAutomaticUpdateLog();
         Check(host.Threads.Count == 1, "Enabled prompt must schedule exactly one update log thread.");
+        Check(host.UpdateChecks == 2, "An issued automatic notice must not suppress update checking.");
 
-        // Session flag: a scheduled update log marks the automatic note as issued.
-        object? issued = typeof(LegacyMainWindowController<FakeStack, object, FakeAnim>)
-            .GetField("updateLogPromptIssued", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller);
-        Check(issued is true, "The session flag must record the automatic update note.");
-
-        // Fake threads are captured, never run during Upgrade; run the captured one.
         Action logThread = host.Threads[0];
         host.Threads.Clear();
-        host.MessageResult = 1;
         logThread();
-        Check(host.LastMessage is not null && host.LastMessage.Button3 == "不再弹出"
-            && host.LastMessage.Button1 == "确定" && host.LastMessage.Button2 == "查看更新日志",
-            "Update log dialog must expose 确定/查看更新日志/不再弹出.");
-        Check(host.PersistCalls == 0 && host.OpenWebsiteCount == 0, "确定 must neither write nor open a website.");
+        Check(host.Notices.SequenceEqual(new[] { true }), "Upgrade must reach the same automatic dialog path as startup.");
 
-        // Button 3: writes false through the single persisted path and opens no website.
-        host.Prompt = true; host.PersistResult = true; host.MessageResult = 3;
-        logThread();
-        Check(host.PersistCalls == 1 && host.OpenWebsiteCount == 0 && !host.Prompt, "不再弹出 must persist false without opening a website.");
+        host.Dismissed = host.Identity;
+        controller.ShowUpdateLog();
+        Check(host.Threads.Count == 1, "Manual viewing must remain available while suppressed.");
+        host.Threads[0]();
+        Check(host.Notices.SequenceEqual(new[] { true, false }), "Manual viewing must carry automatic=false.");
 
-        // Write failure: silent, session keeps true (no 置位), still closes.
-        host.Prompt = true; host.PersistResult = false; host.PersistCalls = 0; host.MessageResult = 3;
-        logThread();
-        Check(host.PersistCalls == 1 && host.Prompt && controller.ShouldAutoShowUpdateLog(),
-            "Rejected write must leave the session preference unchanged (still shows).");
-
-        // Button 2 keeps opening the releases page and never writes.
-        host.Prompt = true; host.PersistCalls = 0; host.MessageResult = 2;
-        logThread();
-        Check(host.OpenWebsiteCount == 1 && host.Website == "https://example.invalid/releases" && host.PersistCalls == 0,
-            "查看更新日志 must open releases and never write the preference.");
-
-        // Read failure during Upgrade still shows (default true).
-        host.ThrowOnRead = true; host.Threads.Clear(); controller.Upgrade(999);
-        Check(host.Threads.Count == 1, "Read failure must fall back to showing the update log.");
-        host.ThrowOnRead = false;
+        var failedReadHost = new UpdateLogHost { ThrowOnRead = true };
+        var failedRead = new LegacyMainWindowController<FakeStack, object, FakeAnim>(new LegacyMainWindowView(), failedReadHost.Build());
+        failedRead.ShowAutomaticUpdateLog();
+        Check(failedReadHost.Threads.Count == 1, "A failed preference read must still schedule a notice.");
     }
 
     // ---------- A-003.2 mod favorites ----------
@@ -149,13 +127,14 @@ internal static class A003Checks {
                 mods.Add(mod);
             }
 
-            List<string> favorites = new() { "alpha.jar" };
+            HashSet<string> favorites = new(StringComparer.OrdinalIgnoreCase) { "alpha.jar" };
+            int favoriteReads = 0;
             int loaderCalls = 0;
             ConcurrentDictionary<string, Border> items = new();
             List<string> selected = new();
             bool[] checkedState = new bool[5];
             string[] texts = new string[5];
-            string? emptyTitle = null, emptyHint = null;
+            string emptyTitle = null, emptyHint = null;
             string search = "";
             Panel list = new StackPanel();
             Border empty = new();
@@ -176,11 +155,11 @@ internal static class A003Checks {
                 LoaderRun = type => { loaderCalls++; return true; },
                 NewItem = (entry, isSelected) => new Border { Tag = entry },
                 BindUpdate = (_, _) => { }, SetChecked = (_, _) => { },
-                FavoriteKeys = () => favorites,
+                FavoriteKeys = () => { favoriteReads++; return favorites; },
                 ToggleFavorite = key => {
                     // Same normalization the product runtime applies before Settings.Set.
                     string normalized = LegacyModFavorites.Normalize(key);
-                    if (favorites.RemoveAll(item => string.Equals(item, normalized, StringComparison.OrdinalIgnoreCase)) > 0) return false;
+                    if (favorites.Remove(normalized)) return false;
                     favorites.Add(normalized); return true;
                 }
             };
@@ -191,6 +170,9 @@ internal static class A003Checks {
             Check(VisibleRows(list).Count == 3 && items.Count == 3, "Initial render must show all three mods.");
             int serial = page.ListRebuildSerial;
             Check(loaderCalls == 0, "LoadUI must not run the loader.");
+            int reads = favoriteReads;
+            page.RefreshBars();
+            Check(favoriteReads == reads + 1, "Counting favorites must take one set snapshot for the entire list.");
 
             // Toggling a favorite must not rebuild the list or reload it.
             bool nowFavorite = page.ToggleFavorite("beta.jar");
@@ -209,6 +191,9 @@ internal static class A003Checks {
             Check(VisibleRows(list).Count == 2, "Favorites filter must show only favorited rows.");
             Check(texts[4] == "收藏 (2)", "Favorites filter must show 收藏 (n) with the current search scope.");
             Check(page.ListRebuildSerial == serial, "Filtering must not rebuild the list.");
+            reads = favoriteReads;
+            page.RefreshUI();
+            Check(favoriteReads == reads + 2, "Favorites filtering/counting must use two snapshots regardless of row count.");
 
             // Search + favorites + sort combine without touching the rebuild counter.
             search = "gamma";
@@ -221,15 +206,15 @@ internal static class A003Checks {
             Check(VisibleRows(list).Count == 2, "Clearing search must restore both favorites.");
             Check(page.ListRebuildSerial == serial, "Search/sort must not rebuild the list.");
 
-            // Enabled/Disabled/CanUpdate combine with favorites.
+            // The other radio filters retain their own independent scopes.
             favorites.Clear(); favorites.Add("alpha.jar"); favorites.Add("beta.jar"); favorites.Add("gamma.jar");
             page.FilterChanged(1);
             Check(VisibleRows(list).Count == 2 && VisibleRows(list).All(item => ((FakeMod)item.Tag).IsEnabled),
-                "Favorites+Enabled must intersect correctly.");
+                "Enabled filtering must keep its original scope.");
             page.FilterChanged(2);
-            Check(VisibleRows(list).Count == 1 && !((FakeMod)VisibleRows(list)[0].Tag).IsEnabled, "Favorites+Disabled must intersect correctly.");
+            Check(VisibleRows(list).Count == 1 && !((FakeMod)VisibleRows(list)[0].Tag).IsEnabled, "Disabled filtering must keep its original scope.");
             page.FilterChanged(3);
-            Check(VisibleRows(list).Count == 0, "Favorites+CanUpdate keeps only updated mods (none here).");
+            Check(VisibleRows(list).Count == 0, "Update filtering must keep only updated mods (none here).");
 
             // 0 favorites gives an empty list plus the dedicated empty state.
             favorites.Clear();
@@ -238,6 +223,8 @@ internal static class A003Checks {
             Check(emptyTitle == "暂无收藏的 Mod" && emptyHint is not null && empty.Visibility == System.Windows.Visibility.Visible,
                 "Empty favorites filter must show its own empty state.");
             Check(page.ListRebuildSerial == serial, "Empty favorites must not rebuild the list.");
+            page.FilterChanged(3);
+            Check(empty.Visibility == System.Windows.Visibility.Collapsed, "Leaving empty favorites must not leave a stale favorites empty state.");
 
             // ReloadModList is the only other serial writer and keeps favorites.
             page.ReloadModList();

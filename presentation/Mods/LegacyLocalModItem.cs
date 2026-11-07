@@ -107,7 +107,7 @@ public sealed class LegacyLocalModItem<TMod,TProject,TVersion,TEntry,TInfo,TButt
         }
     }
     public void BindRestorePoint(JObject value) { SetLoaderWarning(""); EnvironmentHistoryPagePointPresenter.Bind(value,()=>host.SetResource(null),()=>host.SetEntry(null),point=>host.SetPoint(point),Refresh); }
-    public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshResource();}
+    public void BindResource(TEntry value,TInfo info) {SetLoaderWarning("");host.SetPoint(null);host.SetResource(value);resourceInfo=info;RefreshFavorite();RefreshResource();}
     public void RefreshFavorite() {
         bool isMod = host.Entry() is not null && host.Point() is null && host.Resource() is null;
         view.FavoriteButton().Visibility = isMod ? Visibility.Visible : Visibility.Collapsed;

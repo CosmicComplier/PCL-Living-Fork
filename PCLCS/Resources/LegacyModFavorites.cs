@@ -23,15 +23,17 @@ public static class LegacyModFavorites {
     public static List<string> Parse(string? value) {
         List<string> keys = new();
         if (string.IsNullOrEmpty(value)) return keys;
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
         foreach (string raw in value!.Split(Separator)) {
             string key = Normalize(raw);
-            if (key.Length == 0 || keys.Contains(key, StringComparer.Ordinal)) continue;
+            if (key.Length == 0 || !seen.Add(key)) continue;
             keys.Add(key);
         }
         return keys;
     }
 
-    public static string Serialize(IEnumerable<string> keys) => string.Join(Separator, keys.Select(Normalize).Where(key => key.Length > 0));
+    public static string Serialize(IEnumerable<string> keys) => string.Join(Separator,
+        keys.Select(Normalize).Where(key => key.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));
 
     public static bool Contains(IEnumerable<string> keys, string? key) {
         string normalized = Normalize(key);
@@ -45,7 +47,7 @@ public static class LegacyModFavorites {
     /// supplied list and serialized form are returned unchanged and false is returned.
     /// </summary>
     public static bool TryAdd(IReadOnlyList<string> existing, string? key, out List<string> result, out string serialized, out int count, out int length) {
-        result = existing.Select(Normalize).ToList();
+        result = existing.Select(Normalize).Where(item => item.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         string normalized = Normalize(key);
         if (normalized.Length == 0 || Contains(result, normalized)) {
             serialized = Serialize(result); count = result.Count; length = ByteLength(serialized);
@@ -65,7 +67,8 @@ public static class LegacyModFavorites {
     /// <summary>Removes one key; removal is always allowed and never hits the write limits.</summary>
     public static List<string> Remove(IReadOnlyList<string> existing, string? key) {
         string normalized = Normalize(key);
-        return existing.Where(item => !string.Equals(Normalize(item), normalized, StringComparison.Ordinal)).Select(Normalize).ToList();
+        return existing.Select(Normalize).Where(item => item.Length > 0 && !string.Equals(item, normalized, StringComparison.Ordinal))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public static string ToggleLogLine(string? key, bool favorited) => "ModFavorite:toggle:" + Normalize(key) + ":" + (favorited ? "true" : "false");

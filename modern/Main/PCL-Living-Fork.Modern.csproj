@@ -27,6 +27,7 @@
 <Compile Include="Controls/ModDependencyIcon.cs" />
 <Compile Include="Controls/ModDependencyImpactView.cs" />
 <Compile Include="Controls/ReleaseNotesView.cs" />
+<Compile Include="Controls/ReleaseNotesPromptView.cs" />
 <Compile Include="Controls/ModDependencyCheckView.cs" />
 <Compile Include="Controls/ModpackUpdateViews.cs" />
 <Compile Include="Controls/MyPageRight.cs" />

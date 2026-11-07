@@ -98,7 +98,7 @@
             <local:MyCard Margin="0,0,0,15" Title="启动器">
                 <Grid Margin="25,40,25,20">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" SharedSizeGroup="Name"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="28"/><RowDefinition Height="9"/><RowDefinition Height="28"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="28"/><RowDefinition Height="9"/><RowDefinition Height="28"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <TextBlock VerticalAlignment="Center" Text="启动器公告" Margin="0,0,25,0"/>
                     <local:MyComboBox x:Name="ComboSystemActivity" local:SettingService.Key="SystemSystemActivity" Grid.Column="1" ToolTip="预留的公告显示偏好，当前版本暂未接入联网公告。">
                         <local:MyComboBoxItem Content="显示所有公告"/><local:MyComboBoxItem Content="仅在有重要通知时显示公告"/><local:MyComboBoxItem Content="关闭所有公告"/>
@@ -113,8 +113,6 @@
                     </StackPanel>
                     <TextBlock x:Name="LabModpackMode" Text="整合包模式" Grid.Row="4" VerticalAlignment="Center" Margin="0,16,25,0" Visibility="Collapsed"/>
                     <local:MyCheckBox x:Name="CheckModpackMode" Text="启用" Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,16,0,0" Visibility="Collapsed"/>
-                    <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="更新说明" Margin="0,16,25,0"/>
-                    <local:MyCheckBox x:Name="CheckUpdateLogPrompt" Text="启动与更新时显示版本说明" Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,16,0,0" local:SettingService.Key="SystemUpdateLogPrompt" ToolTip="取消勾选后，启动时的版本说明与版本更新说明都不再自动弹出；下一次版本变化生效，手动查看不受影响。" />
                 </Grid>
             </local:MyCard>
 

@@ -120,13 +120,14 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     }
     public void SortChanged(int value){if(value>=0)SortOrder=(LocalResourceSortOrder)value;}
     public void RefreshUI(){
-        if(view.List() is null)return;IReadOnlyList<TMod> showing=LocalResourceSort.Order(Current.Where(CanPassFilter),sortOrder,mod=>mod.File);host.ChangeAnimationControl(1);
+        if(view.List() is null)return;ISet<string>? favorites=Filter==LegacyModFilter.Favorites?host.FavoriteKeys?.Invoke():null;IReadOnlyList<TMod> showing=LocalResourceSort.Order(Current.Where(mod=>CanPassFilter(mod,favorites)),sortOrder,mod=>mod.File);host.ChangeAnimationControl(1);
         if(showing.Any()){view.List()!.Visibility=Visibility.Visible;view.List()!.Children.Clear();foreach(TMod mod in showing){if(!host.Items().TryGetValue(mod.EnabledName,out TItem? item))continue;host.SetChecked(item,host.Selected().Contains(mod.EnabledName));view.List()!.Children.Add(item);}view.Empty().Visibility=Visibility.Collapsed;}
-        else{view.List()!.Visibility=Visibility.Collapsed;if(Filter==LegacyModFilter.Favorites){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(FavoriteEmptyTitle);view.SetEmptyHint(FavoriteEmptyHint);}else if(!(host.Output()?.Any()??false)){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(EmptyTitleDefault);view.SetEmptyHint(EmptyHintDefault);}}
+        else{view.List()!.Visibility=Visibility.Collapsed;if(Filter==LegacyModFilter.Favorites){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(FavoriteEmptyTitle);view.SetEmptyHint(FavoriteEmptyHint);}else if(!(host.Output()?.Any()??false)){view.Empty().Visibility=Visibility.Visible;view.SetEmptyTitle(EmptyTitleDefault);view.SetEmptyHint(EmptyHintDefault);}else view.Empty().Visibility=Visibility.Collapsed;}
         host.ChangeAnimationControl(-1);host.SetSelected(host.Selected().Where(name=>showing.Any(mod=>Same(mod.EnabledName,name))).ToList());RefreshBars();
     }
     public void RefreshBars(){
-        int any=0,enabled=0,updates=0,favorites=0;foreach(TMod mod in Current){any++;if(mod.HasUpdate)updates++;if(mod.IsEnabled)enabled++;if(IsFavorite(mod.EnabledName))favorites++;}int disabled=any-enabled;
+        ISet<string>? favoriteKeys=host.FavoriteKeys?.Invoke();
+        int any=0,enabled=0,updates=0,favorites=0;foreach(TMod mod in Current){any++;if(mod.HasUpdate)updates++;if(mod.IsEnabled)enabled++;if(favoriteKeys?.Contains(LegacyModFavorites.Normalize(mod.EnabledName))??false)favorites++;}int disabled=any-enabled;
         ResourcePageFilter[] filters=view.Filters();filters[0].Text=(IsSearching?"搜索结果":"全部")+$" ({any})";filters[3].Text=$"可更新 ({updates})";filters[3].Visibility=Filter==LegacyModFilter.CanUpdate||updates>0?Visibility.Visible:Visibility.Collapsed;
         filters[1].Text=$"启用 ({enabled})";filters[1].Visibility=Filter==LegacyModFilter.Enabled||(enabled>0&&enabled<any)?Visibility.Visible:Visibility.Collapsed;filters[2].Text=$"禁用 ({disabled})";filters[2].Visibility=Filter==LegacyModFilter.Disabled||disabled>0?Visibility.Visible:Visibility.Collapsed;
         // Favorites stays visible and enabled from the first render, even at 0.
@@ -161,10 +162,9 @@ public sealed partial class LegacyModPage<TMod,TProject,TVersion,TItem,TInstance
     public void MainKey(KeyEventArgs e){if(!host.IsCurrentPage())return;if(host.CtrlDown()&&e.Key==Key.A)ChangeAllSelected(true);}
     public void SearchKey(KeyEventArgs e){if(view.Search().Any())return;if(host.CtrlDown()&&e.Key==Key.A)view.FocusBack();}
     public LegacyModFilter Filter {get=>filter;set{if(filter==value)return;if(!Enum.IsDefined(typeof(LegacyModFilter),value))return;filter=value;view.Filters()[(int)value].Checked=true;RefreshUI();}}
-    private bool CanPassFilter(TMod mod)=>Filter switch{LegacyModFilter.All=>true,LegacyModFilter.Enabled=>mod.IsEnabled,LegacyModFilter.Disabled=>!mod.IsEnabled,LegacyModFilter.CanUpdate=>mod.HasUpdate,LegacyModFilter.Favorites=>IsFavorite(mod.EnabledName),_=>false};
+    private bool CanPassFilter(TMod mod,ISet<string>? favorites)=>Filter switch{LegacyModFilter.All=>true,LegacyModFilter.Enabled=>mod.IsEnabled,LegacyModFilter.Disabled=>!mod.IsEnabled,LegacyModFilter.CanUpdate=>mod.HasUpdate,LegacyModFilter.Favorites=>favorites?.Contains(LegacyModFavorites.Normalize(mod.EnabledName))??false,_=>false};
     public void FilterChanged(int value){Filter=Enum.IsDefined(typeof(LegacyModFilter),value)?(LegacyModFilter)value:LegacyModFilter.All;}
-    private List<string> FavoriteKeys()=>host.FavoriteKeys?.Invoke()??new List<string>();
-    public bool IsFavorite(string key)=>LegacyModFavorites.Contains(FavoriteKeys(),key);
+    public bool IsFavorite(string key)=>host.FavoriteKeys?.Invoke().Contains(LegacyModFavorites.Normalize(key))??false;
     public bool ToggleFavorite(string key){
         bool favorited;
         try{favorited=host.ToggleFavorite(key);}catch(Exception error){Logger.Error(error,"切换 Mod 收藏失败",LogBehavior.None);favorited=IsFavorite(key);}

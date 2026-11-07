@@ -1,5 +1,6 @@
 using System.Collections;
 using System.IO.Compression;
+using System.Windows;
 using System.Windows.Controls;
 using MeloongCore;
 using PCL;
@@ -91,6 +92,7 @@ internal static class ModFavoriteChecks
         if (File.Exists(launcherSetup))
             Native.Check(!File.ReadAllText(launcherSetup).Contains(LegacyModFavorites.SettingKey, StringComparison.Ordinal),
                 "The launcher Setup.ini text contains the instance-scoped favorite key.");
+        byte[] alphaBytes = File.ReadAllBytes(alpha.File.FullName), betaBytes = File.ReadAllBytes(beta.File.FullName);
 
         // Second click removes the same normalized key, still without a rebuild.
         CallOnRow(row, "BtnFavorite_Click");
@@ -112,8 +114,95 @@ internal static class ModFavoriteChecks
         Native.Check(!File.Exists(launcherSetup) || !File.ReadAllText(launcherSetup).Contains(LegacyModFavorites.SettingKey, StringComparison.Ordinal),
             "Filtering wrote the favorite key into the launcher Setup.ini.");
 
+        var readKeys = (Func<ISet<string>>)Native.Get(host, "FavoriteKeys")!;
+        MyLocalModItem betaRow = page.ModItems[beta.EnabledName];
+        betaRow.Refresh();
+        MyIconButton betaStar = (MyIconButton)betaRow.FindName("BtnFavorite");
+        string betaFilled = betaStar.Logo;
+        ISet<string> snapshot = readKeys();
+        for (int i = 0; i < 5000; i++) Native.Check(page.IsModFavorite("BETA.JAR") && ReferenceEquals(snapshot, readKeys()), "Unchanged row lookups reparsed/replaced the favorites snapshot.");
+        Native.Set(host, "ApplyMode", new Action(() => { }));
+        Native.Set(host, "LastWasDetails", new Func<bool>(() => true));
+        Native.Set(host, "BindMainKey", new Action(() => { }));
+        Native.Set(host, "AdjustFilterMargins", new Action(() => { }));
+        Native.Set(host, "RefreshLoaderWarning", new Action<MyLocalModItem, ModMinecraft.McInstance>((_, _) => { }));
+        Native.Set(host, "LoaderRun", new Func<int, bool>(_ => false)); // shared mods folder: no rebuild
+        ModMinecraft.McInstance other = new(Path.Combine(root, "second-instance"));
+        PageInstanceLeft.Instance = other;
+        page.PageOther_Loaded();
+        Native.Check(!page.IsModFavorite(beta.EnabledName) && !ReferenceEquals(snapshot, readKeys()), "Changing instances retained the previous favorites snapshot.");
+        Native.Check(betaStar.Logo != betaFilled && rows.Visibility == Visibility.Collapsed, "A reused page retained the other instance's filled star or favorite-filter rows.");
+        PageInstanceLeft.Instance = owner;
+        page.PageOther_Loaded();
+        Native.Check(page.IsModFavorite(beta.EnabledName), "Returning to the first instance lost its favorites.");
+        Native.Check(betaStar.Logo == betaFilled && rows.Visibility == Visibility.Visible && rows.Children.OfType<MyLocalModItem>().Count() == 1,
+            "Returning to a reused page did not restore its stars and favorite-filter rows.");
+
+        // Both adding and removing under a real Windows sharing failure retain the
+        // prior typed cache, star, filtered rows, exact file bytes and other keys.
+        betaRow.Refresh();
+        byte[] beforeFailure = File.ReadAllBytes(instanceSetup);
+        string cachedBeforeFailure = Settings.Get<string>(LegacyModFavorites.SettingKey, Instance: owner);
+        snapshot = readKeys();
+        using (FileStream held = new(instanceSetup, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            CallOnRow(row, "BtnFavorite_Click");
+            Native.Check(!page.IsModFavorite(alpha.EnabledName) && star.Logo == likeLine, "A failed favorite add falsely filled the star/cache.");
+            CallOnRow(betaRow, "BtnFavorite_Click");
+            Native.Check(page.IsModFavorite(beta.EnabledName) && betaStar.Logo == betaFilled, "A failed favorite removal falsely cleared the star/cache.");
+            Native.Check(rows.Children.OfType<MyLocalModItem>().Count() == 1 && ReferenceEquals(rows.Children.OfType<MyLocalModItem>().Single(), betaRow), "A failed save changed the favorites filter result.");
+        }
+        Native.Check(File.ReadAllBytes(instanceSetup).SequenceEqual(beforeFailure) &&
+            Settings.Get<string>(LegacyModFavorites.SettingKey, Instance: owner) == cachedBeforeFailure && ReferenceEquals(snapshot, readKeys()), "A failed favorite save mutated the original bytes or cached snapshot.");
+
+        WriteFavorites("ALPHA.jar|alpha.JAR|BETA.jar");
+        Native.Check(readKeys().Count == 2 && page.IsModFavorite("aLpHa.JaR"), "Runtime snapshot did not deduplicate favorite casing.");
+        string full = string.Join('|', Enumerable.Range(0, LegacyModFavorites.MaxCount - 1).Select(i => "fixture" + i.ToString("D4") + ".jar").Prepend(alpha.EnabledName));
+        WriteFavorites(full);
+        byte[] beforeOverflow = File.ReadAllBytes(instanceSetup);
+        Native.Check(!page.ToggleModFavorite(beta.EnabledName) && File.ReadAllBytes(instanceSetup).SequenceEqual(beforeOverflow) &&
+            Settings.Get<string>(LegacyModFavorites.SettingKey, Instance: owner) == full && readKeys().Count == LegacyModFavorites.MaxCount,
+            "Count overflow changed the old favorites, Setup.ini or typed cache.");
+        Native.Check(!page.ToggleModFavorite("ALPHA.JAR") && readKeys().Count == LegacyModFavorites.MaxCount - 1, "Un-favoriting failed at the count limit.");
+
+        string large = new('x', LegacyModFavorites.MaxLength - 1);
+        WriteFavorites(large);
+        beforeOverflow = File.ReadAllBytes(instanceSetup);
+        Native.Check(!page.ToggleModFavorite(beta.EnabledName) && File.ReadAllBytes(instanceSetup).SequenceEqual(beforeOverflow), "Byte-length overflow changed the original favorites.");
+        WriteFavorites(new string('x', LegacyModFavorites.MaxLength + 10) + "|" + alpha.EnabledName);
+        Native.Check(!page.ToggleModFavorite(alpha.EnabledName) && !page.IsModFavorite(alpha.EnabledName), "An oversized old value prevented un-favoriting.");
+
+        WriteFavorites(alpha.EnabledName);
+        Call("RefreshUI");
+        Native.Check(rows.Children.OfType<MyLocalModItem>().Count() == 1, "Favorites filter did not restore the last favorite row.");
+        CallOnRow(row, "BtnFavorite_Click");
+        Native.Check(rows.Visibility == System.Windows.Visibility.Collapsed && Part<FrameworkElement>("PanEmpty").Visibility == System.Windows.Visibility.Visible &&
+            Part<TextBlock>("LabEmptyTitle").Text == "暂无收藏的 Mod", "Removing the last favorite did not show the dedicated empty state.");
+        Native.Check((int)Native.Property(controller.GetType(), "ListRebuildSerial").GetValue(controller)! == serial &&
+            ModBase.ReadIni(instanceSetup, "Keep", "") == "原实例设置" &&
+            File.ReadAllBytes(alpha.File.FullName).SequenceEqual(alphaBytes) && File.ReadAllBytes(beta.File.FullName).SequenceEqual(betaBytes),
+            "Favorite operations rebuilt the list or changed another setting/mod file.");
+
+        // The same native row class also serves resources. Rebinding an already
+        // visible mod row must hide its star immediately and never mutate favorites.
+        object resource = Activator.CreateInstance(Native.Type("PCL.InstanceResourceEntry"), true)!;
+        ((InstanceResourceEntryData)resource).Name = "fixture-resource.zip";
+        ((InstanceResourceEntryData)resource).FullPath = Path.Combine(root, "fixture-resource.zip");
+        Native.Call(typeof(MyLocalModItem), "BindResource", row, resource, null);
+        byte[] beforeResourceClick = File.ReadAllBytes(instanceSetup);
+        Native.Check(star.Visibility == Visibility.Collapsed, "Rebinding a mod row as a resource retained its star.");
+        CallOnRow(row, "BtnFavorite_Click");
+        Native.Check(File.ReadAllBytes(instanceSetup).SequenceEqual(beforeResourceClick), "A reused resource row wrote mod favorites.");
+
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS native mod favorites: real row star toggles like-line/like-fill in place, instance PCL\\Setup.ini owns UiModFavorite (launcher Setup.ini 0 hits), favorites filter and ListRebuildSerial stay unchanged.");
+        Console.WriteLine("PASS native mod favorites: actual row icons/filter/empty state, 5000 cached case-insensitive lookups, instance switching, locked add/remove rollback, count/byte overflows and unlimited removal; instance-only Setup.ini, unrelated settings/mod bytes and rebuild serial preserved.");
+
+        void WriteFavorites(string value)
+        {
+            File.WriteAllText(instanceSetup, "Keep:原实例设置\r\n" + LegacyModFavorites.SettingKey + ":" + value + "\r\n");
+            ModBase.IniClearCache(instanceSetup);
+            Native.Call(Native.Entries[LegacyModFavorites.SettingKey]!.GetType(), "Set", Native.Entries[LegacyModFavorites.SettingKey], value, owner);
+        }
 
         void CallOnRow(MyLocalModItem item, string method) => Native.Call(typeof(MyLocalModItem), method, item, new object?[] { item, EventArgs.Empty });
 

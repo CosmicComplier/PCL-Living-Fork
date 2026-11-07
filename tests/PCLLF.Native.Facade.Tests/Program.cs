@@ -38,7 +38,8 @@ internal static class Program
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
-        ["mod-favorites"] = ModFavoriteChecks.Run
+        ["mod-favorites"] = ModFavoriteChecks.Run,
+        ["update-log-prompt"] = UpdateLogPromptChecks.Run
     };
     [STAThread]
     private static int Main(string[] args)

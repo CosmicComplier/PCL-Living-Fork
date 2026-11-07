@@ -26,7 +26,7 @@ public static class LegacySettingsDefinitions {
         Add("HintBuy", false, LegacySettingSource.Registry);
         Add("HintClearRubbish", 0, LegacySettingSource.Registry);
         Add("HintUpdateMod", false, LegacySettingSource.Registry);
-        Add("SystemUpdateLogPrompt", true);
+        Add(LegacyUpdateLogPrompt.Key, "");
         Add("HintCustomCommand", false, LegacySettingSource.Registry);
         Add("HintCustomWarn", false, LegacySettingSource.Registry);
         Add("HintMoreAdvancedSetup", false, LegacySettingSource.Registry);

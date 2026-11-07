@@ -13,6 +13,7 @@ internal static class LegacyModFavoritesTests {
         yield return ("mod favorites reject a serialization over 32 KiB and keep the stored value unchanged", LengthLimit);
         yield return ("mod favorites removal is never limited by the add limits", RemovalAlwaysAllowed);
         yield return ("mod favorites log lines use the frozen ModFavorite prefixes", LogLines);
+        yield return ("mod favorites normalize duplicate input before counting or serializing", DuplicateInput);
     }
 
     private static void ParseOrder() {
@@ -84,6 +85,14 @@ internal static class LegacyModFavoritesTests {
         Equal("ModFavorite:toggle:alpha.jar:true", LegacyModFavorites.ToggleLogLine("Alpha.JAR", true));
         Equal("ModFavorite:toggle:alpha.jar:false", LegacyModFavorites.ToggleLogLine("Alpha.JAR", false));
         Equal("ModFavorite:overflow:2001:33000", LegacyModFavorites.OverflowLogLine(2001, 33000));
+    }
+    private static void DuplicateInput() {
+        string[] duplicated = { "ALPHA.jar", "alpha.JAR", "", " beta.jar ", "BETA.JAR" };
+        Equal("alpha.jar|beta.jar", LegacyModFavorites.Serialize(duplicated));
+        Equal(true, LegacyModFavorites.TryAdd(duplicated, "gamma.jar", out List<string> result, out string text, out int count, out _));
+        Equal(3, count);
+        Equal("alpha.jar|beta.jar|gamma.jar", text);
+        Sequence(new[] { "beta.jar" }, LegacyModFavorites.Remove(duplicated, "aLpHa.jar"));
     }
 
     private static List<string> Keys(int count) => Enumerable.Range(0, count).Select(index => "k" + index).ToList();

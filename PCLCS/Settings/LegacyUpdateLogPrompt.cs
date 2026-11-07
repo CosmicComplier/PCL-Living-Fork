@@ -1,46 +1,27 @@
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.Globalization;
 
 namespace PCLCS;
 
-/// <summary>
-/// The update-log prompt preference as plain text in the launcher Setup.ini.
-/// The dialog, Settings engine and platform store stay unchanged; this type only
-/// owns the key/line shape so a failed write can be detected and reverted.
-/// </summary>
+/// <summary>Suppresses automatic version notes only for the build the user dismissed.</summary>
 public static class LegacyUpdateLogPrompt {
-    public const string Key = "SystemUpdateLogPrompt";
-    public const bool Default = true;
-    /// <summary>Reads the persisted preference through the existing typed settings port.</summary>
-    public static bool ShouldShow(Func<string, bool> readBoolean) {
-        if (readBoolean is null) return Default;
-        try { return readBoolean(Key); } catch { return Default; }
+    public const string Key = "SystemUpdateLogDismissedVersion";
+    public const string CheckBoxText = "下次更新前不再弹出";
+
+    // dev_edition shares a dismissal within one baseline/code/build kind. A new
+    // release, baseline, internal version code or build kind starts a new scope;
+    // rebuilding the same development baseline does not repeat the notice.
+    public static string BuildIdentity(string version, string baseline, bool prerelease, int versionCode, int buildType) =>
+        string.Join("|", version, baseline, prerelease ? "preview" : "stable",
+            versionCode.ToString(CultureInfo.InvariantCulture), buildType.ToString(CultureInfo.InvariantCulture));
+
+    public static bool ShouldShow(Func<string, string> readString, string identity) {
+        if (readString is null || string.IsNullOrEmpty(identity)) return true;
+        try { return !string.Equals(readString(Key), identity, StringComparison.Ordinal); }
+        catch { return true; }
     }
-    /// <summary>Replaces (or appends) this key's line while preserving every other Setup.ini line.</summary>
-    public static string WriteIniText(string? iniText, bool value) {
-        string line = Key + ":" + (value ? "True" : "False");
-        List<string> lines = new();
-        bool replaced = false;
-        foreach (string raw in (iniText ?? "").Replace("\r\n", "\n").Split('\n')) {
-            if (raw.Length == 0) continue;
-            int index = raw.IndexOf(':');
-            if (!replaced && index > 0 && string.Equals(raw.Substring(0, index), Key, StringComparison.Ordinal)) {
-                lines.Add(line); replaced = true;
-            } else lines.Add(raw);
-        }
-        if (!replaced) lines.Add(line);
-        StringBuilder text = new();
-        foreach (string item in lines) text.Append(item).Append("\r\n");
-        return text.ToString();
-    }
-    /// <summary>Reads this key back from Setup.ini text; null means the key is absent or unparsable.</summary>
-    public static bool? ReadIniText(string? iniText) {
-        foreach (string raw in (iniText ?? "").Replace("\r\n", "\n").Split('\n')) {
-            int index = raw.IndexOf(':');
-            if (index <= 0 || !string.Equals(raw.Substring(0, index), Key, StringComparison.Ordinal)) continue;
-            return bool.TryParse(raw.Substring(index + 1), out bool value) ? value : null;
-        }
-        return null;
-    }
+
+    // Unchecking a manually opened dialog only clears this build's dismissal.
+    public static string UpdateDismissal(string? stored, string identity, bool suppress) =>
+        suppress ? identity : string.Equals(stored, identity, StringComparison.Ordinal) ? "" : stored ?? "";
 }

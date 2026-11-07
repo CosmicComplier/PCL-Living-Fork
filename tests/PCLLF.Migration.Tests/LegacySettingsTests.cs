@@ -27,11 +27,12 @@ internal static class LegacySettingsTests {
     private static void Definitions() {
         var fixture = new Fixture();
         // LF main50 adds source/channel/color-mode/panel-opacity; no baseline key is removed.
-        // A-003.1 adds SystemUpdateLogPrompt; A-003.2 adds UiModFavorite.
+        // A-003 uses a version dismissal (not a permanent bool) and instance favorites.
         Equal(211, fixture.Entries.Count);
-        Equal(true, fixture.Entries["SystemUpdateLogPrompt"].DefaultValue);
-        Equal(typeof(bool), fixture.Entries["SystemUpdateLogPrompt"].Type);
-        Equal(LegacySettingSource.Normal, fixture.Entries["SystemUpdateLogPrompt"].Source);
+        Equal("", fixture.Entries[LegacyUpdateLogPrompt.Key].DefaultValue);
+        Equal(typeof(string), fixture.Entries[LegacyUpdateLogPrompt.Key].Type);
+        Equal(LegacySettingSource.Normal, fixture.Entries[LegacyUpdateLogPrompt.Key].Source);
+        Equal(false, fixture.Entries.ContainsKey("SystemUpdateLogPrompt"));
         Equal("", fixture.Entries["UiModFavorite"].DefaultValue);
         Equal(typeof(string), fixture.Entries["UiModFavorite"].Type);
         Equal(LegacySettingSource.Instance, fixture.Entries["UiModFavorite"].Source);

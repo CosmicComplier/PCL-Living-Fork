@@ -123,6 +123,10 @@ namespace PCL
         public void PageOther_Loaded()
         {
             Native.Loaded();
+            // Two instances can share the same mods folder, so LoaderRun may reuse
+            // existing rows. Their favorites still belong to the selected instance.
+            foreach (MyLocalModItem item in ModItems.Values) item.Controller.RefreshFavorite();
+            Native.RefreshUI();
         }
 
         public void ReloadModList(bool ForceReload = false)
