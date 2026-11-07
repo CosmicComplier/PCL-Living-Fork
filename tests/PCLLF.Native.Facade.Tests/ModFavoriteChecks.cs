@@ -48,9 +48,11 @@ internal static class ModFavoriteChecks {
         foreach (MyLocalModItem row in page.ModItems.Values) { row.Refresh(); s.Observe(row); }
         s.LocalStar = Part<MyIconButton>(first, "BtnFavorite"); s.OtherStar = Part<MyIconButton>(second, "BtnFavorite");
         Native.Check(s.LocalStar.Visibility == Visibility.Visible && Part<MyIconButton>(unmapped, "BtnFavorite").Visibility == Visibility.Collapsed, "Unmatched local mod exposes favorites");
+        CheckLocalActionLayout(first, unmapped);
         Click(Part<MyIconButton>(unmapped, "BtnFavorite")); Native.Check(!File.Exists(s.File), "Unmatched file became a project favorite");
         int serial = Serial(); s.EmptyIcon = s.LocalStar.Logo; Click(s.LocalStar);
         Native.Check(s.Store.Snapshot.Count == 1 && s.LocalStar.Logo != s.EmptyIcon && s.OtherStar.Logo == s.LocalStar.Logo, "Different local files/versions created separate favorites");
+        SaveLocalActionProof(first, "local-mod-favorite-saved.png");
         var snapshot = s.Store.Snapshot;
         for (int i = 0; i < 5000; i++) Native.Check(s.Store.Contains(snapshot[0].Identity) && ReferenceEquals(snapshot, s.Store.Snapshot), "Read reparsed the store");
         PageInstanceLeft.Instance = new ModMinecraft.McInstance(Path.Combine(s.Root, "instance-b")); second.Refresh();
@@ -58,6 +60,7 @@ internal static class ModFavoriteChecks {
         unknown.Project = RichProject("Other123", ResourcePlatforms.Modrinth, "Local cache fixture", "fixture", Array.Empty<string>(), ModLoaders.None);
         unknown.ProjectVersion = Version("LocalFileVersion"); unknown.ProjectVersion.GameVersions = new List<string> { "1.20.1" };
         Wait(() => Part<MyIconButton>(unmapped, "BtnFavorite").Visibility == Visibility.Visible);
+        Native.Check(Part<ColumnDefinition>(unmapped, "ColumnPaddingRight").Width.Value == 34, "A late platform match failed to reserve its independent favorite action.");
         Click(Part<MyIconButton>(unmapped, "BtnFavorite"));
         var localMetadata = s.Store.Snapshot.Single(entry => entry.Identity.ProjectId == "Other123");
         Native.Check(localMetadata.KnownGameVersions.SequenceEqual(new[] { "1.20.1" }) && localMetadata.ModLoaders == ModLoaders.Fabric, "Trusted local platform version metadata was not retained as project compatibility");
@@ -82,6 +85,42 @@ internal static class ModFavoriteChecks {
         second.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent)); Native.Check(s.OtherStar.Logo == s.EmptyIcon, "A reloaded row missed the shared snapshot");
         Click(s.LocalStar);
         int Serial() => (int)Native.Property(controller.GetType(), "ListRebuildSerial").GetValue(controller)!;
+    }
+    private static void CheckLocalActionLayout(MyLocalModItem row, MyLocalModItem unknown) {
+        MyIconButton favorite = Part<MyIconButton>(row, "BtnFavorite");
+        Native.Call(row.GetType(), "InitLate", row, row, EventArgs.Empty);
+        Native.Check(ReferenceEquals(favorite.Parent, row) && favorite.Theme == MyIconButton.Themes.Color && favorite.Opacity == 1 && favorite.Width == 25,
+            "Local project favorite is still a faint title annotation.");
+        Native.Check(row.Buttons.Any() && row.ButtonStack is StackPanel && row.ButtonStack.Opacity == 0 && row.ButtonStack.Margin.Right == 35 && favorite.Visibility == Visibility.Visible,
+            "Native hover actions replaced or hid the independent favorite action.");
+        Native.Check(Part<ColumnDefinition>(row, "ColumnPaddingRight").Width.Value == 34 && Part<ColumnDefinition>(unknown, "ColumnPaddingRight").Width.Value == 4,
+            "Recognized/unknown rows do not reserve the appropriate favorite slot.");
+        row.Title = "A long recognized mod name that must leave room for its project favorite";
+        row.Measure(new Size(640,44)); row.Arrange(new Rect(0,0,640,44)); row.UpdateLayout();
+        double favoriteLeft = favorite.TranslatePoint(new Point(), row).X;
+        FrameworkElement title = Part<FrameworkElement>(row, "PanTitle");
+        Native.Check(title.TranslatePoint(new Point(title.ActualWidth,0), row).X <= favoriteLeft &&
+            row.ButtonStack.TranslatePoint(new Point(row.ButtonStack.ActualWidth,0), row).X <= favoriteLeft,
+            "The title or native hover toolbar overlaps the favorite action.");
+        SaveLocalActionProof(row, "local-mod-favorite-empty.png");
+    }
+    private static void SaveLocalActionProof(MyLocalModItem row, string name) {
+        string[] args = Environment.GetCommandLineArgs(); int option = Array.IndexOf(args, "--favorites-proof");
+        if (option < 0) return;
+        string directory = Path.GetFullPath(args[option+1]); Directory.CreateDirectory(directory);
+        double oldOpacity = row.ButtonStack.Opacity; GridLength padding = Part<ColumnDefinition>(row, "ColumnPaddingRight").Width;
+        try {
+            // Expose the existing native actions only for this hosted rendering.
+            // No desktop pointer or real mod operation is performed.
+            row.ButtonStack.Opacity = 1;
+            foreach (MyIconButton button in row.Buttons.Append(Part<MyIconButton>(row, "BtnFavorite"))) button.RefreshAnim();
+            Part<ColumnDefinition>(row, "ColumnPaddingRight").Width = new GridLength(row.ButtonStack.Margin.Right+row.Buttons.Sum(button => button.Width));
+            row.Measure(new Size(640,44)); row.Arrange(new Rect(0,0,640,44)); row.UpdateLayout();
+            var background = new DrawingVisual();
+            using (DrawingContext context = background.RenderOpen()) context.DrawRectangle((Brush)Application.Current.Resources["ColorBrushWhite"], null, new Rect(0,0,640,44));
+            var image = new RenderTargetBitmap(640,44,96,96,PixelFormats.Pbgra32); image.Render(background); image.Render(row);
+            VisualAssetChecks.Save(image, Path.Combine(directory,name));
+        } finally { row.ButtonStack.Opacity = oldOpacity; Part<ColumnDefinition>(row, "ColumnPaddingRight").Width = padding; row.UpdateLayout(); }
     }
     private static void WindowRoutes(Scope s) {
         FormMain window = s.Window = CreateMain();
