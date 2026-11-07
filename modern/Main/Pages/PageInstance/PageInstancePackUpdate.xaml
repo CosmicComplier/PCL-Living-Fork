@@ -27,7 +27,14 @@
             </local:MyCard>
             <local:MyCard Title="版本列表" Margin="0,0,0,15">
                 <StackPanel Margin="15,40,15,15">
+                    <WrapPanel x:Name="PanReleaseTypes" Margin="3,0,3,4">
+                        <local:MyRadioButton x:Name="RadioRelease" Text="正式版（0）" Tag="1" ColorType="Highlight" Checked="True" Margin="2,0,2,6" />
+                        <local:MyRadioButton x:Name="RadioBeta" Text="测试版（0）" Tag="2" ColorType="Highlight" Margin="2,0,2,6" />
+                        <local:MyRadioButton x:Name="RadioAlpha" Text="早期测试版（0）" Tag="3" ColorType="Highlight" Margin="2,0,2,6" />
+                        <local:MyRadioButton x:Name="RadioAll" Text="全部（0）" Tag="0" ColorType="Highlight" Margin="2,0,2,6" />
+                    </WrapPanel>
                     <TextBlock x:Name="LabListStatus" Margin="5,0,5,10" Foreground="{DynamicResource ColorBrushGray3}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="LabListEmpty" Margin="5,4,5,10" Foreground="{DynamicResource ColorBrushGray3}" TextWrapping="Wrap" Visibility="Collapsed" />
                     <StackPanel x:Name="PanVersions" />
                 </StackPanel>
             </local:MyCard>

@@ -18,6 +18,7 @@ public partial class PageInstancePackUpdate : IRefreshable {
     private List<ResourceVersion> catalog = new();
     private string catalogError;
     private bool catalogLoading;
+    private int releaseType = 1;
     internal Func<JObject, List<ResourceVersion>> ReadVersions = ModpackUpdateFlow.GetAvailableVersions;
     public PageInstancePackUpdate() {
         InitializeComponent();
@@ -26,6 +27,13 @@ public partial class PageInstancePackUpdate : IRefreshable {
         BtnLocal.Click += (_, _) => UpdatePack(false);
         BtnBackups.Click += (_, _) => { if (Current()) ModpackUpdateFlow.OpenBackups(displayed); };
         TextSearchVersion.TextChanged += (_, _) => RenderVersions();
+        foreach (var button in PanReleaseTypes.Children.OfType<MyRadioButton>()) {
+            button.LabText.Margin = new Thickness(-2, 0, 10, 0);
+            button.Check += (sender, _) => {
+                releaseType = Convert.ToInt32(((MyRadioButton)sender).Tag);
+                RenderVersions();
+            };
+        }
     }
     private bool Current() => displayed is not null && ReferenceEquals(displayed, PageInstanceLeft.Instance);
     private void UpdatePack(bool online) { if (Current()) ModpackUpdateFlow.Start(displayed, online); }
@@ -94,26 +102,38 @@ public partial class PageInstancePackUpdate : IRefreshable {
         PanVersions.Children.Clear();
         string query = TextSearchVersion.Text.Trim();
         bool Match(string text) => string.IsNullOrEmpty(query) || (text ?? "").Contains(query, StringComparison.OrdinalIgnoreCase);
-        foreach (var version in catalog.OrderByDescending(version => version.ReleaseDate)) {
+        var matches = catalog.Where(version => Match((version.Display ?? version.Version ?? version.Id) + " " + version.Version + " " + string.Join("、", version.GameVersions ?? new()))).ToList();
+        bool localRecord = record is not null && !catalog.Any(IsCurrent);
+        bool localMatch = localRecord && Match(record["version"]?.ToString() + " " + record["minecraft"]?.ToString());
+        RadioRelease.Text = "正式版（" + matches.Count(version => version.ReleaseTypeCode == 1) + "）";
+        RadioBeta.Text = "测试版（" + matches.Count(version => version.ReleaseTypeCode == 2) + "）";
+        RadioAlpha.Text = "早期测试版（" + matches.Count(version => version.ReleaseTypeCode == 3) + "）";
+        RadioAll.Text = "全部（" + (matches.Count + (localMatch ? 1 : 0)) + "）";
+        foreach (var version in matches.Where(version => releaseType == 0 || version.ReleaseTypeCode == releaseType).OrderByDescending(version => version.ReleaseDate)) {
             string title = version.Display ?? version.Version ?? version.Id;
             string games = string.Join("、", version.GameVersions ?? new());
-            if (!Match(title + " " + games)) continue;
             bool current = IsCurrent(version);
             var row = VersionRow(title, current ? "当前已安装版本" : version.ReleaseDate.ToString("yyyy-MM-dd") + " · Minecraft " + games, current);
-            Badge(row, version.ReleaseTypeDisplay, false);
+            string type = version.ReleaseTypeCode is 1 or 2 or 3 ? version.ReleaseTypeDisplay : "发布类型未知";
+            Badge(row, type, false);
             if (!current) row.Click += (_, _) => {
                 if (!Current()) return;
-                string info = "版本：" + title + "\r\nMinecraft：" + games + "\r\n发布类型：" + version.ReleaseTypeDisplay;
+                string info = "版本：" + title + "\r\nMinecraft：" + games + "\r\n发布类型：" + type;
                 if (!version.DownloadAvailable) { ModMain.MyMsgBox(info + "\r\n此版本没有可用的下载文件。", "整合包版本信息"); return; }
                 if (ModMain.MyMsgBox(info + "\r\n\r\n下载后会先预览文件变更和检查模组组合。", "更新整合包", "下载并预览", "取消") == 1 && Current())
                     ModpackUpdateFlow.StartSelected(displayed, version.Id);
             };
             PanVersions.Children.Add(row);
         }
-        if (record is not null && !catalog.Any(IsCurrent) && Match(record["version"]?.ToString()))
-            PanVersions.Children.Add(VersionRow(record["version"]?.ToString() ?? "当前版本", "本地整合包记录", true));
+        if (releaseType == 0 && localMatch)
+            PanVersions.Children.Add(VersionRow(record["version"]?.ToString() ?? "当前版本", "本地整合包记录 · 发布类型未记录", true));
+        string channel = releaseType switch { 1 => "正式版", 2 => "测试版", 3 => "早期测试版", _ => "全部版本" };
         LabListStatus.Text = catalogLoading ? "正在读取发布平台的版本列表…" : catalogError is not null ? "读取失败：" + catalogError :
-            record?["source"] is null ? "没有在线来源记录，可从文件更新。" : "已获取 " + catalog.Count + " 个版本，显示 " + PanVersions.Children.Count + " 个；点击版本查看并选择更新。";
+            record?["source"] is null ? "没有在线来源记录，可从文件更新。" : "已获取 " + catalog.Count + " 个版本，" + channel + "显示 " + PanVersions.Children.Count + " 个；点击版本查看并选择更新。";
+        if (!catalogLoading && localRecord && releaseType != 0)
+            LabListStatus.Text += " 当前版本仅有本地记录，发布类型未记录，可在“全部”中查看。";
+        LabListEmpty.Visibility = !catalogLoading && catalogError is null && PanVersions.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        LabListEmpty.Text = query.Length == 0 ? "暂无" + (releaseType == 0 ? "可显示的版本" : channel) + "。" : "没有找到符合搜索条件的" + (releaseType == 0 ? "版本" : channel) + "。";
     }
     private MyListItem VersionRow(string title, string info, bool current) {
         // The optional instance artwork was already resolved and decoded above.
