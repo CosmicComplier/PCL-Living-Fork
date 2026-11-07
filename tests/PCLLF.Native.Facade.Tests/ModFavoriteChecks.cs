@@ -30,7 +30,7 @@ internal static class ModFavoriteChecks {
         LocalRows(scope);
         WindowRoutes(scope);
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS native resource favorites: genuine title mouse events/BAML/controller/cached-page/back route; six resource kinds/search/empty states, online/detail/local native stars, authoritative local callbacks and project deduplication; 5000 cached reads, asynchronous save heartbeat/failure/corruption protection, minimum-window/theme roles and hidden/pack policies. Hosted component, not product cold entry.");
+        Console.WriteLine("PASS native resource favorites: original PageResource search/result/paging BAML, default online-controller host contract, native search/Enter/reset/source/tag/exact-version/loader/category combinations and last-item pagination; zero remote request callbacks and an unstarted favorites search loader; project identity, online/detail/local stars, cache metadata, writer heartbeat/failure/corruption and minimum-window/theme policies. Hosted component, not product cold entry.");
     }
     private static void LocalRows(Scope s) {
         var owner = new ModMinecraft.McInstance(Path.Combine(s.Root, "instance-a")); PageInstanceLeft.Instance = owner;
@@ -55,7 +55,13 @@ internal static class ModFavoriteChecks {
         for (int i = 0; i < 5000; i++) Native.Check(s.Store.Contains(snapshot[0].Identity) && ReferenceEquals(snapshot, s.Store.Snapshot), "Read reparsed the store");
         PageInstanceLeft.Instance = new ModMinecraft.McInstance(Path.Combine(s.Root, "instance-b")); second.Refresh();
         Native.Check(s.OtherStar.Logo == s.LocalStar.Logo, "Favorites were instance-scoped"); PageInstanceLeft.Instance = owner;
-        unknown.Project = Project("Other123"); Wait(() => Part<MyIconButton>(unmapped, "BtnFavorite").Visibility == Visibility.Visible);
+        unknown.Project = RichProject("Other123", ResourcePlatforms.Modrinth, "Local cache fixture", "fixture", Array.Empty<string>(), ModLoaders.None);
+        unknown.ProjectVersion = Version("LocalFileVersion"); unknown.ProjectVersion.GameVersions = new List<string> { "1.20.1" };
+        Wait(() => Part<MyIconButton>(unmapped, "BtnFavorite").Visibility == Visibility.Visible);
+        Click(Part<MyIconButton>(unmapped, "BtnFavorite"));
+        var localMetadata = s.Store.Snapshot.Single(entry => entry.Identity.ProjectId == "Other123");
+        Native.Check(localMetadata.KnownGameVersions.SequenceEqual(new[] { "1.20.1" }) && localMetadata.ModLoaders == ModLoaders.Fabric, "Trusted local platform version metadata was not retained as project compatibility");
+        Click(Part<MyIconButton>(unmapped, "BtnFavorite"));
         Native.Check(Serial() == serial && ReferenceEquals(page.ModItems[a.EnabledName], first), "Favorite/matcher rebuilt local rows");
         s.Online = a.Project.ToResourceItem(true, true).Init(); s.Observe(s.Online);
         Native.Check(Part<MyIconButton>(s.Online, "BtnFavorite").Logo == s.LocalStar.Logo, "Cloud row missed local favorite");
@@ -91,6 +97,8 @@ internal static class ModFavoriteChecks {
         Native.Check(window.PageCurrent.Page == FormMain.PageType.Favorites && window.PageRight is PageFavorites && title.Checked && window.PageStack.Count == 0,
             "Real title click did not open favorites: " + window.PageCurrent.Page + "/" + window.PageRight?.GetType().Name + "/" + title.Checked + "/" + window.PageStack.Count);
         var page = s.Favorites = (PageFavorites)window.PageRight!; WaitPage(page);
+        Native.Check(page.FindName("Content") is PageResource && title.Logo == s.EmptyIcon, "Favorites must reuse the download PageResource and original hollow favorite glyph");
+        OnlineSearchBindings(s, page);
         Native.Check(ReferenceEquals(Part<Border>(window, "PanMainRight").Child, page) && Part<Panel>(page, "PanResults").Children.Count == 1, "Route did not attach/render the cached project");
         ResourceTypes[] kinds = { ResourceTypes.ModPack, ResourceTypes.Map, ResourceTypes.DataPack, ResourceTypes.ResourcePack, ResourceTypes.Shader };
         foreach (var kind in kinds) { var row = Project("Type" + (int)kind, kind).ToResourceItem(false, false).Init(); Click(Part<MyIconButton>(row, "BtnFavorite")); }
@@ -113,32 +121,43 @@ internal static class ModFavoriteChecks {
         foreach (var item in identities) Click(Part<MyIconButton>(item.ToResourceItem(false, false).Init(), "BtnFavorite"));
         foreach (MyListItem button in Part<Panel>(ModMain.FrmFavoritesLeft, "PanItem").Children.OfType<MyListItem>()) { Click(button); Native.Check(Part<Panel>(page, "PanResults").Children.Count == (button.Tag.Equals("0") ? 6 : 1), "Category binding has the wrong scope: " + button.Tag + "/" + button.Checked + "/" + ModMain.FrmFavoritesLeft.PageID + "/" + Part<Panel>(page, "PanResults").Children.Count); }
         Click(Part<Panel>(ModMain.FrmFavoritesLeft, "PanItem").Children.OfType<MyListItem>().First());
+        SharedSearchFilters(s, page);
         var liveRow = Part<Panel>(page, "PanResults").Children.Cast<FrameworkElement>().ToArray().Select(MyVirtualizingElement.TryInit).OfType<MyResourceItem>().First();
         int bubbled = 0; MyResourceItem.ClickEventHandler rowClick = (_, _) => bubbled++; liveRow.Click += rowClick;
         Native.Set(Native.Get(liveRow, "Controller")!, "mouseDown", true); // A preceding row press must not turn a star release into navigation.
         Click(Part<MyIconButton>(liveRow, "BtnFavorite"));
         Native.Check(bubbled == 0 && window.PageCurrent.Page == FormMain.PageType.Favorites && s.Store.Snapshot.Count == 5, "The real online star release bubbled into the row/detail route");
         Click(Part<MyIconButton>(liveRow, "BtnFavorite")); liveRow.Click -= rowClick;
-        Part<MySearchBox>(page, "SearchBox").Text = "Type64"; Native.Check(Part<Panel>(page, "PanResults").Children.Count == 1, "Search binding failed");
-        Part<MySearchBox>(page, "SearchBox").Text = "missing"; Native.Check(Part<Panel>(page, "PanResults").Children.Count == 0 && Part<TextBlock>(page, "LabStatus").Visibility == Visibility.Visible, "Empty search state missing");
-        Part<MySearchBox>(page, "SearchBox").Text = "";
+        Part<MyTextBox>(page, "TextSearchName").Text = "Type64"; Click(Part<MyButton>(page, "BtnSearchRun")); Native.Check(Part<Panel>(page, "PanResults").Children.Count == 1, "Search binding failed");
+        Part<MyTextBox>(page, "TextSearchName").Text = "missing"; Click(Part<MyButton>(page, "BtnSearchRun")); Native.Check(Part<Panel>(page, "PanResults").Children.OfType<TextBlock>().Any() && Part<TextBlock>(page, "LabStatus").Visibility == Visibility.Visible, "Empty search state missing");
+        Part<MyTextBox>(page, "TextSearchName").Text = ""; Click(Part<MyButton>(page, "BtnSearchRun"));
         byte[] small = File.ReadAllBytes(s.File);
         var many = s.Store.Snapshot.Select(entry => new JObject { ["SavedAt"] = entry.SavedAt, ["Project"] = entry.ProjectJson }).ToList();
         many.AddRange(Enumerable.Range(0, 41).Select(i => new JObject { ["SavedAt"] = DateTime.UtcNow, ["Project"] = Project("Page" + i).ToJson() }));
         File.WriteAllText(s.File, new JObject { ["Schema"] = 1, ["Projects"] = new JArray(many) }.ToString()); page.Refresh(); WaitPage(page);
+        Click(Part<MyListItem>(ModMain.FrmFavoritesLeft, "ItemMod"));
+        Part<MyTextBox>(page, "TextSearchName").Text = "Page"; SelectTag(Part<ComboBox>(page, "ComboSearchSource"), "2");
+        SelectTag(Part<ComboBox>(page, "ComboSearchTag"), "fixture"); Part<ComboBox>(page, "TextSearchVersion").Text = "1.21.1";
+        SelectTag(Part<ComboBox>(page, "ComboSearchLoader"), "4"); Click(Part<MyButton>(page, "BtnSearchRun"));
         Native.Check(Part<Panel>(page, "PanResults").Children.Count == 40 && Part<FrameworkElement>(page, "CardPages").Visibility == Visibility.Visible, "Large favorites did not use native paging");
-        Click(Part<MyIconButton>(page, "BtnPageRight")); Native.Check(Part<Panel>(page, "PanResults").Children.Count == 7, "Next page binding failed");
+        Click(Part<MyIconButton>(page, "BtnPageRight")); Native.Check(Part<Panel>(page, "PanResults").Children.Count == 1, "Next page lost combined metadata filters");
+        var last = Part<Panel>(page, "PanResults").Children.Cast<FrameworkElement>().ToArray().Select(MyVirtualizingElement.TryInit).OfType<MyResourceItem>().Single();
+        Click(Part<MyIconButton>(last, "BtnFavorite")); Native.Check(Part<Panel>(page, "PanResults").Children.Count == 40 && !Part<MyIconButton>(page, "BtnPageRight").IsEnabled, "Removing the last item on a filtered page did not clamp pagination");
         Click(Part<MyIconButton>(page, "BtnPageFirst")); Native.Check(Part<Panel>(page, "PanResults").Children.Count == 40, "First page binding failed");
         File.WriteAllBytes(s.File, small); page.Refresh(); WaitPage(page);
+        Click(Part<MyButton>(page, "BtnSearchReset")); Click(Part<MyListItem>(ModMain.FrmFavoritesLeft, "ItemInstall"));
+        LastFavorite(s, page);
+        Part<MyTextBox>(page, "TextSearchName").Text = "missing"; Click(Part<MyButton>(page, "BtnSearchRun"));
         foreach (bool dark in new[] { false, true }) {
             object previous = Application.Current.Resources["ColorBrushGray3"];
             try {
                 var brush = new SolidColorBrush(dark ? Colors.LightGray : Colors.DarkSlateGray); Application.Current.Resources["ColorBrushGray3"] = brush;
                 window.Width = window.MinWidth; window.Height = window.MinHeight; window.UpdateLayout();
-                Native.Check(Part<TextBlock>(page, "LabStatus").Foreground == brush && title.ActualWidth > 30 && Part<MySearchBox>(page, "SearchBox").ActualWidth > 200, "Minimum-window/dynamic-theme layout failed");
+                Native.Check(Part<TextBlock>(page, "LabStatus").Foreground == brush && title.ActualWidth > 30 && Part<MyTextBox>(page, "TextSearchName").ActualWidth > 60, "Minimum-window/dynamic-theme layout failed: " + Part<MyTextBox>(page, "TextSearchName").ActualWidth);
                 Native.Check(ReferenceEquals(window.PageLeft, ModMain.FrmFavoritesLeft) && ModMain.FrmFavoritesLeft.ActualWidth > 100, "Favorites did not retain the native download sidebar");
             } finally { Application.Current.Resources["ColorBrushGray3"] = previous; }
         }
+        Click(Part<MyButton>(page, "BtnSearchReset"));
         SaveProof(window);
         var hybrid = Project("Hybrid12", ResourceTypes.ModOrDataPack);
         Click(Part<MyIconButton>(hybrid.ToResourceItem(false, false).Init(), "BtnFavorite"));
@@ -171,6 +190,7 @@ internal static class ModFavoriteChecks {
         Native.Check(Part<FrameworkElement>(page, "HintError").Visibility == Visibility.Visible && File.ReadAllText(s.File) == "damaged favorites", "Damaged file was hidden/overwritten");
         File.WriteAllBytes(s.File, original); page.Refresh(); WaitPage(page);
         Native.Check(File.ReadAllBytes(s.Legacy).SequenceEqual(s.LegacyBytes), "Legacy filename favorites/other settings changed");
+        Native.Check(((PageResource)page.FindName("Content")).Loader.State == ModBase.LoadState.Waiting, "A local favorite interaction started the online search loader");
         foreach (var pair in s.ModBytes) Native.Check(File.ReadAllBytes(pair.Key).SequenceEqual(pair.Value), "Favorite action changed a mod file");
         void OpenHybrid() {
             var row = Part<Panel>(page, "PanResults").Children.Cast<FrameworkElement>().ToArray().Select(MyVirtualizingElement.TryInit).OfType<MyResourceItem>()
@@ -183,6 +203,96 @@ internal static class ModFavoriteChecks {
         Wait(() => s.DetailLoader.State == ModBase.LoadState.Finished && (s.DetailLoader.LastRunningThread is null || !s.DetailLoader.LastRunningThread.IsAlive));
         return (MyResourceItem)Native.Get(Native.Get(ModMain.FrmDownloadResourceDetail, "Controller")!, "ResourceItem")!;
     }
+    private static void OnlineSearchBindings(Scope s, PageFavorites favorites) {
+        var wrapper = new PageDownloadMod(); var online = (PageResource)wrapper.FindName("Content");
+        object controller = Native.Get(online, "Controller")!, host = Native.Get(controller, "host")!;
+        int initialized = 0, starts = 0; ResourceSearcher.SearchRequest? captured = null;
+        Native.Set(host, "TargetInstance", new Func<ModMinecraft.McInstance?>(() => null));
+        Native.Set(host, "AllDrops", new Func<List<int>?>(() => null));
+        Native.Set(host, "InitializeLoader", new Action(() => initialized++));
+        Native.Set(host, "Start", new Action(() => starts++));
+        Native.Set(host, "ShouldStart", new Func<ResourceSearcher.SearchRequest, bool>(value => { captured = value; return true; }));
+        Native.Set(host, "RunInThread", new Action<Action>(work => work()));
+        Native.Set(host, "RunInUi", new Action<Action>(work => work())); Native.Set(host, "BackToTop", new Action(() => { }));
+        Border body = Part<Border>(s.Window!, "PanMainRight"); var before = body.Child;
+        try {
+            body.Child = wrapper; Drain();
+            Native.Check(initialized == 1 && online.Loader.State == ModBase.LoadState.Waiting && Native.Get(online, "FavoriteStore") is null, "The default download constructor no longer follows the original online initializer");
+            Part<MyTextBox>(online, "TextSearchName").Text = "online fixture"; Part<ComboBox>(online, "TextSearchVersion").Text = "1.21.1";
+            SelectTag(Part<ComboBox>(online, "ComboSearchSource"), "1"); SelectTag(Part<ComboBox>(online, "ComboSearchLoader"), "4");
+            Part<ComboBox>(online, "ComboSearchTag").SelectedIndex = 1;
+            Click(Part<MyButton>(online, "BtnSearchRun"));
+            Native.Check(starts == 1 && captured is not null && captured.Type == ResourceTypes.Mod && captured.GameVersion == "1.21.1" && captured.Sources == ResourcePlatforms.CurseForge && captured.ModLoaders == ModLoaders.Fabric && captured.Tag != "", "Original online search bindings did not produce their native request");
+            Enter(Part<MyTextBox>(online, "TextSearchName")); Native.Check(starts == 2, "Online Enter no longer reaches the original controller");
+            Click(Part<MyIconButton>(online, "BtnPageRight")); Native.Check(starts == 3 && online.Page == 1, "Original online pagination did not use its existing host");
+            Click(Part<MyButton>(online, "BtnSearchReset"));
+            Native.Check(Part<MyTextBox>(online, "TextSearchName").Text == "" && Part<ComboBox>(online, "ComboSearchSource").SelectedIndex == 0 && Part<ComboBox>(online, "ComboSearchTag").SelectedIndex == 0 && Part<ComboBox>(online, "ComboSearchLoader").Visibility == Visibility.Collapsed, "Online reset behavior changed");
+            Console.WriteLine("PASS shared PageResource default online mode: original initializer, native search request/Enter/reset/paging delegates; controlled host starts, no real HTTP.");
+        } finally { body.Child = before; Drain(); WaitPage(favorites); }
+    }
+    private static void SharedSearchFilters(Scope s, PageFavorites page) {
+        var cacheOnly = RichProject("Cache123", ResourcePlatforms.Modrinth, "Cached version fixture", "fixture", Array.Empty<string>(), ModLoaders.None);
+        var knownFile = Version("CachedFileVersion"); knownFile.GameVersions = new List<string> { "1.18.2" }; knownFile.ModLoaders = ModLoaders.Forge;
+        s.VersionCache[ResourceProjectKey.Get(cacheOnly.Platform, cacheOnly.Id!)] = new List<ResourceVersion> { knownFile };
+        var cacheRow = cacheOnly.ToResourceItem(true, true).Init(); Click(Part<MyIconButton>(cacheRow, "BtnFavorite"));
+        var cached = s.Store.Snapshot.Single(entry => entry.Identity.ProjectId == "Cache123");
+        Native.Check(cached.KnownGameVersions.SequenceEqual(new[] { "1.18.2" }) && cached.ModLoaders == ModLoaders.Forge, "Already-cached catalog versions were ignored or treated as favorite file identities");
+        Click(Part<MyIconButton>(cacheRow, "BtnFavorite"));
+        var rich = new[] {
+            RichProject("701", ResourcePlatforms.CurseForge, "Needle Forge", "科技", new[] { "1.21.1" }, ModLoaders.Forge),
+            RichProject("QwEr1234", ResourcePlatforms.Modrinth, "Needle Fabric", "优化", new[] { "1.21.11" }, ModLoaders.Fabric),
+            RichProject("UnKn1234", ResourcePlatforms.Modrinth, "Needle Unknown", "科技", Array.Empty<string>(), ModLoaders.None)
+        };
+        foreach (var project in rich) Click(Part<MyIconButton>(project.ToResourceItem(true, true).Init(), "BtnFavorite"));
+        Click(Part<MyListItem>(ModMain.FrmFavoritesLeft, "ItemMod"));
+        Native.Check(((PageResource)page.FindName("Content")).PageType == ResourceTypes.Mod, "The local resource view lost its selected project category");
+        var name = Part<MyTextBox>(page, "TextSearchName"); var source = Part<ComboBox>(page, "ComboSearchSource");
+        var tag = Part<ComboBox>(page, "ComboSearchTag"); var version = Part<ComboBox>(page, "TextSearchVersion"); var loader = Part<ComboBox>(page, "ComboSearchLoader");
+        Native.Check(tag.Items.Cast<ComboBoxItem>().Any(item => item.Content.Equals("科技")) && version.Items.Cast<ComboBoxItem>().Any(item => item.Content.Equals("1.21.11")), "Shared choices were not built from this category's cached metadata");
+        name.Text = "Needle"; SelectTag(source, "1"); SelectTag(tag, "科技"); version.Text = "1.21.1"; SelectTag(loader, "1");
+        Native.Check(loader.Visibility == Visibility.Visible, "Mod/version did not reveal the original loader control");
+        Click(Part<MyButton>(page, "BtnSearchRun")); ExpectProject(page, "701");
+        name.Text = "not applied"; ExpectProject(page, "701"); Enter(name);
+        Native.Check(Part<Panel>(page, "PanResults").Children.OfType<TextBlock>().Any(), "Enter did not apply the local name filter");
+        Click(Part<MyButton>(page, "BtnSearchReset"));
+        Native.Check(name.Text == "" && source.SelectedIndex == 0 && tag.SelectedIndex == 0 && version.SelectedIndex == 0 && loader.SelectedIndex == 0 && loader.Visibility == Visibility.Collapsed && Part<Panel>(page, "PanResults").Children.Count == 4, "Local reset did not restore defaults and the selected category");
+        name.Text = "Needle"; SelectTag(source, "2"); SelectTag(tag, "优化"); version.Text = "1.21.11"; SelectTag(loader, "4");
+        Click(Part<MyButton>(page, "BtnSearchRun")); ExpectProject(page, "QwEr1234");
+        version.Text = "1.21.1"; Enter(version);
+        Native.Check(Part<Panel>(page, "PanResults").Children.OfType<TextBlock>().Any(), "A different patch in the same Drop family falsely matched");
+        SelectTag(tag, "科技"); SelectTag(loader, "0"); Click(Part<MyButton>(page, "BtnSearchRun"));
+        Native.Check(Part<Panel>(page, "PanResults").Children.OfType<TextBlock>().Any(), "A Drop-only project was treated as exact compatibility");
+        version.SelectedIndex = 0; version.Text = "全部 (也可自行输入)"; Click(Part<MyButton>(page, "BtnSearchRun")); ExpectProject(page, "UnKn1234");
+        Click(Part<MyListItem>(ModMain.FrmFavoritesLeft, "ItemResourcePack"));
+        Native.Check(loader.Visibility == Visibility.Collapsed && Part<Panel>(page, "PanResults").Children.OfType<TextBlock>().Any(), "Category switching discarded the name/source filter or showed Mod loaders for packs");
+        Click(Part<MyButton>(page, "BtnSearchReset")); Native.Check(Part<Panel>(page, "PanResults").Children.Count == 1, "Reset lost resource-pack category browsing");
+        Click(Part<MyListItem>(ModMain.FrmFavoritesLeft, "ItemInstall"));
+        foreach (var project in rich) Click(Part<MyIconButton>(project.ToResourceItem(true, true).Init(), "BtnFavorite"));
+        Native.Check(s.Store.Snapshot.Count == 6, "Metadata filters changed project identity or retained fixture favorites");
+        Console.WriteLine("PASS shared favorites search card: actual buttons and name/version Enter, reset, CF/MR/tag/exact-patch/loader combinations, unknown compatibility exclusion and category changes.");
+    }
+    private static void LastFavorite(Scope s, PageFavorites page) {
+        byte[] original = File.ReadAllBytes(s.File); var entry = s.Store.Snapshot.First();
+        File.WriteAllText(s.File, new JObject { ["Schema"] = 1, ["Projects"] = new JArray(new JObject { ["SavedAt"] = entry.SavedAt, ["Project"] = entry.ProjectJson }) }.ToString());
+        page.Refresh(); WaitPage(page);
+        var row = (MyResourceItem)MyVirtualizingElement.TryInit(Part<Panel>(page, "PanResults").Children.Cast<FrameworkElement>().Single());
+        Click(Part<MyIconButton>(row, "BtnFavorite"));
+        Native.Check(s.Store.Snapshot.Count == 0 && Part<TextBlock>(page, "LabStatus").Text.Contains("还没有收藏") && Part<FrameworkElement>(page, "CardPages").Visibility == Visibility.Collapsed, "Removing the last favorite did not use the shared result-card empty state");
+        File.WriteAllBytes(s.File, original); page.Refresh(); WaitPage(page);
+    }
+    private static ResourceProject RichProject(string id, ResourcePlatforms platform, string name, string tag, string[] versions, ModLoaders loader) {
+        JObject json = Project(id, platform: platform).ToJson(); json["RawName"] = name; json["Tags"] = new JArray(tag);
+        json["KnownGameVersions"] = new JArray(versions); json["ModLoaders"] = (int)loader; return new ResourceProject(json);
+    }
+    private static void SelectTag(ComboBox combo, string tag) => combo.SelectedItem = combo.Items.Cast<ComboBoxItem>().Single(item => Convert.ToString(item.Tag, System.Globalization.CultureInfo.InvariantCulture) == tag);
+    private static void ExpectProject(PageFavorites page, string id) {
+        var rows = Part<Panel>(page, "PanResults").Children.Cast<FrameworkElement>().ToArray().Select(MyVirtualizingElement.TryInit).OfType<MyResourceItem>().ToArray();
+        Native.Check(rows.Length == 1 && ((ResourceProject)rows[0].Tag).Id == id, "Shared search returned the wrong project: " + id);
+    }
+    private static void Enter(UIElement element) {
+        var source = PresentationSource.FromVisual(element) ?? throw new InvalidOperationException("Search input is not in the hosted native window");
+        element.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent }); Drain();
+    }
     private sealed class Scope : IDisposable {
         private readonly Dictionary<string, object?> globals;
         private readonly ModMinecraft.McInstance previousInstance = PageInstanceLeft.Instance;
@@ -194,6 +304,8 @@ internal static class ModFavoriteChecks {
         private readonly Dictionary<string, bool> settings = new[] { "LivingModpackMode", "LivingModpackExported", "UiHiddenPageFavorites" }.ToDictionary(key => key, key => Settings.Get<bool>(key));
         private readonly object networkHost;
         private readonly object? request;
+        private readonly object searchHost;
+        private readonly object? searchRequest;
         private int requests;
         internal readonly IDictionary VersionCache = (IDictionary)Native.Field(typeof(ResourceVersion), "ProjectFilesCache").GetValue(null)!;
         internal readonly string Root, File;
@@ -216,6 +328,9 @@ internal static class ModFavoriteChecks {
             Native.Set(networkHost, "Request", new Func<string, System.Net.Http.HttpMethod, string, string, JToken>((_, _, _, _) => {
                 Interlocked.Increment(ref requests); throw new InvalidOperationException("Favorite fixture must use cached platform data");
             }));
+            object search = Native.Field(typeof(ResourceSearcher), "Engine").GetValue(null)!;
+            searchHost = Native.Get(search, "host")!; searchRequest = Native.Get(searchHost, "Request");
+            Native.Set(searchHost, "Request", new Func<string, JToken>(_ => { Interlocked.Increment(ref requests); throw new InvalidOperationException("Favorites must never request remote search"); }));
             ModAnimation.AniGroups = new(); ModAnimation.AniControlEnabled = 1;
         }
         internal LocalResourceFile Mod(string name) {
@@ -226,7 +341,12 @@ internal static class ModFavoriteChecks {
         internal void Observe(FrameworkElement row) { row.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent)); observed.Add(row); }
         public void Dispose() {
             Wait(() => Pending == 0);
-            if (ModMain.FrmFavorites is { } favoritePage && !ReferenceEquals(favoritePage, globals["FrmFavorites"])) WaitPage(favoritePage);
+            if (ModMain.FrmFavorites is { } favoritePage && !ReferenceEquals(favoritePage, globals["FrmFavorites"])) {
+                WaitPage(favoritePage);
+                var loader = ((PageResource)favoritePage.FindName("Content")).Loader;
+                if (loader.State == ModBase.LoadState.Loading) loader.Cancel();
+                Wait(() => loader.LastRunningThread is null || !loader.LastRunningThread.IsAlive);
+            }
             if (DetailLoader is null && ModMain.FrmDownloadResourceDetail is { } detailPage && !ReferenceEquals(detailPage, globals["FrmDownloadResourceDetail"]))
                 DetailLoader = (ModLoader.LoaderTask<int, List<ResourceVersion>>)Native.Get(detailPage, "ResourceFileLoader")!;
             if (DetailLoader is not null) { if (DetailLoader.State == ModBase.LoadState.Loading) DetailLoader.Cancel(); Wait(() => DetailLoader.LastRunningThread is null || !DetailLoader.LastRunningThread.IsAlive); }
@@ -239,6 +359,7 @@ internal static class ModFavoriteChecks {
             foreach (FrameworkElement row in observed) row.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent)); Drain();
             Native.Check(Window is null || !Window.IsVisible, "Hosted FormMain did not close");
             Native.Check(requests == 0, "Favorites unexpectedly requested a platform endpoint"); Native.Set(networkHost, "Request", request);
+            Native.Set(searchHost, "Request", searchRequest);
             if (System.IO.File.Exists(File)) System.IO.File.Delete(File); Store.Reload();
             VersionCache.Clear(); foreach (DictionaryEntry pair in versions) VersionCache[pair.Key] = pair.Value;
             projectCache.Clear(); foreach (DictionaryEntry pair in projects) projectCache[pair.Key] = pair.Value;
@@ -299,14 +420,21 @@ internal static class ModFavoriteChecks {
     private static ResourceProject Project(string id, ResourceTypes type = ResourceTypes.Mod, ResourcePlatforms platform = ResourcePlatforms.Modrinth) => new(new JObject {
         ["Platform"] = (int)platform, ["Types"] = (int)type, ["Id"] = id, ["Slug"] = "fixture", ["RawName"] = "Fixture " + id,
         ["Description"] = "Offline resource fixture", ["LastUpdate"] = new DateTime(2024, 1, 1), ["DownloadCount"] = 42,
-        ["Tags"] = new JArray("fixture"), ["Drops"] = new JArray(21), ["Website"] = "https://example.invalid/project"
+        ["Tags"] = new JArray("fixture"), ["Drops"] = new JArray(210), ["KnownGameVersions"] = new JArray("1.21.1"), ["ModLoaders"] = (int)((type & ResourceTypes.Mod) != 0 ? ModLoaders.Fabric : ModLoaders.None), ["Website"] = "https://example.invalid/project"
     });
     private static ResourceVersion Version(string id) => new() {
         Id = id, Display = id, FileName = id + ".jar", DownloadUrls = new List<string> { "https://example.invalid/" + id },
         GameVersions = new List<string> { "1.21.1" }, ResourceType = ResourceTypes.Mod, ModLoaders = ModLoaders.Fabric,
         ReleaseType = ResourceVersion.ReleaseTypes.Release, ReleaseDate = new DateTime(2024, 1, 1), Version = "1"
     };
-    private static T Part<T>(FrameworkElement root, string name) where T : class => root.FindName(name) as T ?? throw new InvalidOperationException("Missing native part " + name);
+    private static T Part<T>(FrameworkElement root, string name) where T : class {
+        if (root is PageFavorites favorites) {
+            root = (PageResource)favorites.FindName("Content");
+            if (name == "PanResults") name = "PanProjects";
+            if (name == "LabStatus") return Native.Get(root, "FavoriteStatus") as T ?? throw new InvalidOperationException("Missing local status");
+        }
+        return root.FindName(name) as T ?? throw new InvalidOperationException("Missing native part " + name);
+    }
     private static void SendClick(FrameworkElement element) {
         element.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = element is MyListItem ? UIElement.PreviewMouseLeftButtonDownEvent : UIElement.MouseLeftButtonDownEvent });
         // This window is deliberately offscreen: retain the real native PreviewMouseUp,

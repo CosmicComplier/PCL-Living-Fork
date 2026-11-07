@@ -38,12 +38,19 @@ public sealed class ResourceFavorite {
     public string Name => (string?)project["FavoriteDisplayName"] ?? (string?)project["RawName"] ?? Identity.ProjectId;
     public string Description => (string?)project["Description"] ?? "";
     public DateTime SavedAt { get; }
+    public IReadOnlyList<string> Tags { get; }
+    public IReadOnlyList<string> KnownGameVersions { get; }
+    public ModLoaders ModLoaders { get; }
     public JObject ProjectJson => (JObject)project.DeepClone();
     public const ResourceTypes SupportedTypes = ResourceTypes.Mod | ResourceTypes.ModPack | ResourceTypes.Map | ResourceTypes.DataPack | ResourceTypes.ResourcePack | ResourceTypes.Shader;
 
     private ResourceFavorite(ResourceFavoriteIdentity identity, ResourceTypes types, JObject metadata, DateTime savedAt) {
         Identity = identity; Types = types; project = (JObject)metadata.DeepClone(); SavedAt = savedAt;
         project["Id"] = identity.ProjectId;
+        Tags = Array.AsReadOnly(((JArray)project["Tags"]!).Values<string>().Select(value => value!).ToArray());
+        KnownGameVersions = Array.AsReadOnly(((JArray?)project["KnownGameVersions"] ?? new JArray()).Values<string>()
+            .Where(value => value is not null && ResourceFavoriteFilter.IsGameVersionLabel(value)).Select(value => value!).Distinct(StringComparer.Ordinal).ToArray());
+        ModLoaders = (ModLoaders?)project["ModLoaders"]?.ToObject<int>() ?? PCLCS.ModLoaders.None;
     }
     public static ResourceFavorite FromMetadata(JObject metadata, DateTime savedAt) {
         if (metadata["Platform"]?.Type != JTokenType.Integer || metadata["Types"]?.Type != JTokenType.Integer || metadata["Id"]?.Type != JTokenType.String ||
@@ -54,7 +61,8 @@ public sealed class ResourceFavorite {
             metadata["LastUpdate"] is null || metadata["DownloadCount"]?.Type != JTokenType.Integer || metadata["RawName"]?.Type != JTokenType.String || string.IsNullOrWhiteSpace((string?)metadata["RawName"]) ||
             new[] { "Slug", "Description", "Website", "LogoUrl", "FavoriteDisplayName" }.Any(key => metadata[key] is { Type: not (JTokenType.String or JTokenType.Null) }) ||
             ((JArray)metadata["Tags"]!).Any(value => value.Type != JTokenType.String) ||
-            metadata["ModLoaders"] is { Type: not JTokenType.Integer } || metadata["CurseForgeFileIds"] is not (null or JArray))
+            metadata["ModLoaders"] is { Type: not JTokenType.Integer } || metadata["CurseForgeFileIds"] is not (null or JArray) ||
+            metadata["KnownGameVersions"] is not (null or JArray) || metadata["KnownGameVersions"] is JArray known && known.Any(value => value.Type != JTokenType.String))
             throw new InvalidDataException("收藏项目的资源信息不完整。");
         _ = metadata["LastUpdate"]!.ToObject<DateTime>();
         _ = metadata["DownloadCount"]!.ToObject<int>();
@@ -71,6 +79,24 @@ public sealed class ResourceFavorite {
     public bool Matches(ResourceTypes? type, string? search) => (!type.HasValue || (Types & type.Value) != 0) &&
         (string.IsNullOrWhiteSpace(search) || (Name + "\n" + (string?)project["RawName"] + "\n" + Description + "\n" + (string?)project["Slug"] + "\n" + Identity.Platform)
             .IndexOf(search!.Trim(), StringComparison.OrdinalIgnoreCase) >= 0);
+}
+
+/// <summary>Project metadata filters; unknown compatibility never becomes an exact match.</summary>
+public sealed class ResourceFavoriteFilter {
+    public ResourceTypes? Category { get; init; }
+    public string? Name { get; init; }
+    public ResourcePlatforms Source { get; init; } = ResourcePlatforms.Any;
+    public string? Tag { get; init; }
+    public string? GameVersion { get; init; }
+    public ModLoaders Loader { get; init; }
+    public bool Matches(ResourceFavorite entry, bool ignoreCategory = false) => entry.Matches(ignoreCategory ? null : Category, Name) &&
+        (Source & entry.Identity.Platform) != 0 && (string.IsNullOrEmpty(Tag) || entry.Tags.Contains(Tag!, StringComparer.Ordinal)) &&
+        (string.IsNullOrWhiteSpace(GameVersion) || entry.KnownGameVersions.Contains(GameVersion!.Trim(), StringComparer.Ordinal)) &&
+        (Loader == ModLoaders.None || (entry.Types & ResourceTypes.Mod) != 0 && (entry.ModLoaders & Loader) == Loader);
+    // Dotted release/beta labels and weekly snapshots. Base62 version IDs lack either shape.
+    public static bool IsGameVersionLabel(string value) => !string.IsNullOrWhiteSpace(value) &&
+        (System.Text.RegularExpressions.Regex.IsMatch(value, @"^(?:[a-z]?\d+\.)\d+(?:[.a-z0-9_+\-]*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+         System.Text.RegularExpressions.Regex.IsMatch(value, @"^\d{2}w\d{2}[a-z]$", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
 }
 
 /// <summary>

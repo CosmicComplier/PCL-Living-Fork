@@ -28,12 +28,19 @@ internal static class ResourceFavorites {
         ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out var identity) && Store.Contains(identity);
     internal static bool IsBusy(ResourceProject project) => project is not null &&
         ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out var identity) && pending.ContainsKey(identity);
-    internal static async void Toggle(ResourceProject project) {
+    internal static async void Toggle(ResourceProject project, ResourceVersion knownLocalVersion = null) {
         if (!CanFavorite(project) || !ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out var identity) || !pending.TryAdd(identity, 0)) return;
         Interlocked.Increment(ref activeOperations);
         try {
             events.Notify();
             var metadata = project.ToJson(); metadata["FavoriteDisplayName"] = project.TranslatedName;
+            var cached = ResourceVersion.ProjectFilesCache.TryGetValue(ResourceProjectKey.Get(project.Platform, project.Id), out var values)
+                ? values.ToArray() : Array.Empty<ResourceVersion>();
+            var gameVersions = project.KnownGameVersions.Concat(cached.SelectMany(value => value.GameVersions ?? new List<string>()))
+                .Concat(knownLocalVersion?.GameVersions ?? new List<string>()).Where(ResourceFavoriteFilter.IsGameVersionLabel).Distinct(StringComparer.Ordinal).ToArray();
+            if (gameVersions.Length > 0) metadata["KnownGameVersions"] = new JArray(gameVersions);
+            ModLoaders loaders = cached.Aggregate(project.ModLoaders, (current, value) => current | value.ModLoaders) | (knownLocalVersion?.ModLoaders ?? ModLoaders.None);
+            if (loaders != ModLoaders.None) metadata["ModLoaders"] = (int)loaders;
             ResourceFavorite value = ResourceFavorite.FromMetadata(metadata, DateTime.UtcNow);
             var result = await Task.Run(() => {
                 bool success = Store.TryToggle(value, out _, out Exception error);
