@@ -19,9 +19,9 @@ public sealed class InstanceNavigationController<TInstance, TId, TItem, TButton,
     private static TId Id(int code) => (TId)Enum.ToObject(typeof(TId), code);
     public void Loaded() => host.HiddenRefresh();
     public void InitializeButtons() {
-        host.SetLogo(view.Clone, host.Logo(view.Export)); host.BindBeforeMinecraftChange();
-        host.SetLogo(view.RestorePoints, host.RestoreLogo()); host.SetLogoScale(view.RestorePoints, 0.85);
-        host.SetLogo(view.Keybindings, host.Logo(view.Setup)); host.SetLogoScale(view.Keybindings, host.LogoScale(view.Setup));
+        // Semantic sidebar glyphs belong to the actual page's BAML. Do not
+        // replace its keyboard/history/copy icons with unrelated navigation art.
+        host.BindBeforeMinecraftChange();
         foreach (TItem item in view.Refreshables) {
             TButton button = host.CreateButton(); button.Tag = item.Tag; button.ToolTip = "刷新"; host.SetButtonScale(button, 0.85); host.SetButtonLogo(button, host.ButtonLogo(host.Buttons(view.Modify).First()));
             host.OnClick(button, () => RefreshTag(button.Tag)); host.SetButtons(item, new[] { button });
