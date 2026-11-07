@@ -88,7 +88,8 @@ internal static class LegacySettingsTests {
             Equal(1000, value);
             fixture.Events.Add("changed");
         };
-        Equal(900, fixture.Engine.Get("WindowWidth"));
+        Equal(1005, fixture.Engine.Get("WindowWidth"));
+        Equal(634, fixture.Engine.Get("WindowHeight"));
         fixture.Engine.Set("WindowWidth", "1000");
         Sequence(new[] { "save:WindowWidth", "changed" }, fixture.Events);
         fixture.Ini[("Setup", "WindowWidth")] = "1200";
