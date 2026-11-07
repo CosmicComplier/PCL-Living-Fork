@@ -16,6 +16,7 @@ using PCL;
 // The optional startup-fixture mode loads the actual bundled Core/Shared
 // crypto leaf; it never loads Main/App/WPF, Settings or credential code.
 // The production bounded bundle reader is linked once.
+if(args.Length==1 && args[0]=="--self-test-notice-metadata") { StartupNoticeMetadata.VerifyPolicy(); return 0; }
 bool startupSentinels=args.Length==4 && args[0]=="--startup-sentinels";
 if(args.Length!=1 && !startupSentinels)throw new ArgumentException("Provide the actual published native Main EXE, or --startup-sentinels EXE fixtureId seed.");
 try {
@@ -35,13 +36,19 @@ try {
     FieldDefinition field=metadata.GetFieldDefinition(fieldHandle);if(metadata.GetString(field.Name)!=fieldName)continue;
     ConstantHandle value=field.GetDefaultValue();if(value.IsNil)throw new InvalidDataException("Main field is not a constant: "+fieldName);
     Constant constant=metadata.GetConstant(value);byte[] raw=metadata.GetBlobBytes(constant.Value);
-    return constant.TypeCode switch {ConstantTypeCode.String=>Encoding.Unicode.GetString(raw),ConstantTypeCode.Int32=>BinaryPrimitives.ReadInt32LittleEndian(raw),_=>throw new InvalidDataException("Unexpected Main constant type.")};
+    return constant.TypeCode switch {ConstantTypeCode.String=>Encoding.Unicode.GetString(raw),ConstantTypeCode.Int32=>BinaryPrimitives.ReadInt32LittleEndian(raw),ConstantTypeCode.Boolean when raw.Length==1=>raw[0]!=0,_=>throw new InvalidDataException("Unexpected Main constant type.")};
    }
   }
   throw new InvalidDataException("Actual Main constant is missing: "+typeName+"."+fieldName);
  }
  string version=(string)Constant("ModBase","VersionBaseName"),display=(string)Constant("ModBase","LauncherDisplayName"),registry=(string)Constant("ModSecret","RegFolder"),branch=(string)Constant("ModSecret","VersionBranchMain");
  if(version!=identity.ProductVersion || display!="PCL Living Fork" || registry!="PCLDebug" || branch!="OpenSource")throw new InvalidDataException("Actual Main version/profile/source branch differs from this LF smoke contract.");
+ bool HasType(string typeName)=>metadata.TypeDefinitions.Any(handle=>{TypeDefinition type=metadata.GetTypeDefinition(handle);return metadata.GetString(type.Namespace)=="PCL" && metadata.GetString(type.Name)==typeName;});
+ bool hasNotes=HasType("ReleaseNotesView"),hasPrompt=HasType("ReleaseNotesPromptView");
+ int buildType=(int)Constant("ModBase","BuildType");
+ // Old native payloads without a Markdown renderer retain their original route.
+ bool prerelease=hasNotes && (bool)Constant("ModBase","ReleaseBaselineIsPrerelease");
+ var startupNotice=StartupNoticeMetadata.Describe(display,version,buildType,prerelease,hasPrompt,hasNotes);
  var resources=new Dictionary<string,HashSet<string>>(StringComparer.Ordinal);
  var startupModules=new Dictionary<string,byte[]>(StringComparer.Ordinal);
  foreach(ManifestResourceHandle handle in metadata.ManifestResources) {
@@ -76,7 +83,7 @@ try {
   Console.WriteLine(JsonSerializer.Serialize(StartupSentinels.Create(startupModules,args[2],args[3],hash)));
   return 0;
  }
- Console.WriteLine(JsonSerializer.Serialize(new{nativeIdentity=identity,entryType=name,entryMethod=method,physicalPath=path,sha256=hash,versionBaseName=version,displayName=display,registryFolder=registry,sourceBranch=branch,versionCode=Constant("ModBase","VersionCode"),buildType=Constant("ModBase","BuildType"),verifiedWpfKeys=required}));
+ Console.WriteLine(JsonSerializer.Serialize(new{nativeIdentity=identity,entryType=name,entryMethod=method,physicalPath=path,sha256=hash,versionBaseName=version,displayName=display,registryFolder=registry,sourceBranch=branch,versionCode=Constant("ModBase","VersionCode"),buildType,startupNoticeTitle=startupNotice.Title,startupNoticeStyle=startupNotice.Style,startupNoticeSource=startupNotice.Source,verifiedWpfKeys=required}));
  return 0;
 }catch(Exception error){Console.Error.WriteLine(error.GetType().Name+": "+error.Message);return 1;}
 

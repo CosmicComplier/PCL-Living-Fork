@@ -21,6 +21,7 @@ $ErrorActionPreference='Stop'
 $repoRoot=Split-Path $PSScriptRoot -Parent
 if($env:OS -ne 'Windows_NT' -or $env:CI -ne 'true' -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'PENDING: requires an isolated disposable GitHub-hosted Windows CI machine/profile.'}
 if([IntPtr]::Size -ne 8 -or $PSVersionTable.PSEdition -ne 'Desktop' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA'){throw 'PENDING: invoke 64-bit Windows PowerShell -NoProfile -STA; no product runtime is hosted by PowerShell.'}
+. (Join-Path $PSScriptRoot 'native-upgrade/ReviewedUpgradeNotices.ps1')
 & (Join-Path $PSScriptRoot 'tests/Test-NativeSmokeReadiness.ps1') -SmokeScript $PSCommandPath
 if(-not $WorkspaceRoot){throw 'PENDING: WorkspaceRoot must identify the dedicated CI workspace.'}
 $WorkspaceRoot=[IO.Path]::GetFullPath($WorkspaceRoot).TrimEnd('\')
@@ -46,7 +47,7 @@ $evidence.StartupContracts=[ordered]@{ImportOrdering='pending';V2Preservation='p
 function Pending([string]$reason){$evidence.Result='pending';throw ('PENDING: '+$reason)}
 function Invoke-OwnedInteraction([int]$pass,[object]$window){
  if(-not $InteractionProbePath -or -not [IO.File]::Exists($InteractionProbePath)){Pending 'Opt-in interaction requires its separately built external UIAutomation probe.'}
- $arguments=@([IO.Path]::GetFullPath($InteractionProbePath),'--pid',[string]$nativeProcess.Id,'--hwnd',[string]$window.Handle.ToInt64(),'--fixture',$fixture,'--owner',$id,'--exe',$installed,'--pass',[string]$pass,'--sha256',$proof.sha256,'--workspace',$WorkspaceRoot,'--notice',$expectedNotice)
+ $arguments=@([IO.Path]::GetFullPath($InteractionProbePath),'--pid',[string]$nativeProcess.Id,'--hwnd',[string]$window.Handle.ToInt64(),'--fixture',$fixture,'--owner',$id,'--exe',$installed,'--pass',[string]$pass,'--sha256',$proof.sha256,'--workspace',$WorkspaceRoot,'--notice',$expectedNotice,'--notice-style',$proof.startupNoticeStyle,'--notice-source',$proof.startupNoticeSource)
  $quoted=@($arguments|ForEach-Object {if($_.Contains('"') -or $_.Contains("`r") -or $_.Contains("`n") -or $_.EndsWith('\')){throw 'Unsupported interaction argument quoting.'};'"'+$_+'"'})
  $start=[Diagnostics.ProcessStartInfo]::new($DotNetPath);$start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WorkingDirectory=$fixture;$start.Arguments=$quoted -join ' '
  try{
@@ -101,11 +102,9 @@ function Check-Mutex([string]$name,[bool]$expectHeld){
 }
 function Hash-OwnedFile([string]$fileName){$stream=[IO.File]::Open($fileName,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete));$sha=[Security.Cryptography.SHA256]::Create();try{return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','')}finally{$sha.Dispose();$stream.Dispose()}}
 function Read-OwnedLog {if(-not [IO.File]::Exists($log)){return ''};$reader=[IO.StreamReader]::new([IO.File]::Open($log,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)));try{return $reader.ReadToEnd()}finally{$reader.Dispose()}}
-function Check-Log([string]$text,[string]$expectedNotice){
- if($text -match '(?m)^\d{2}:\d{2}:\d{2}\.\d{3} E '){throw 'Actual Main emitted an Error log; preserve evidence instead of lowering assertions.'}
- $titles=@([regex]::Matches($text,'(?:普通|选择|输入)弹窗：([^\r\n]+)')|ForEach-Object {$_.Groups[1].Value.Trim()})
- foreach($title in $titles){if($title -cne $expectedNotice){Pending ('Unexpected actual product dialog, never auto-clicked: '+$title)}}
- if($text -match '主窗体加载完成前出现意料外的等待弹窗|处理等待中的弹窗失败|弹窗初始化失败|弹窗加载失败'){throw 'Actual product modal/initialization failed.'}
+function Check-Log([string]$text,[string]$expectedNotice,[switch]$RequireComplete){
+ $complete=Test-ReviewedStartupNotice -Text $text -Notice $expectedNotice -NativeVersion $proof.versionBaseName -NativePhase -NativeStyle $proof.startupNoticeStyle -NativeSource $proof.startupNoticeSource
+ if($RequireComplete -and -not $complete){throw 'Actual Main final close has no complete reviewed startup notice.'}
 }
 function Assert-OwnedProcessImage([object]$image,[string]$expectedPath){
  if(-not $image.QuerySucceeded){throw ('QueryFullProcessImageNameW failed for the actual process handle: Win32='+$image.Win32Error+'; '+$image.QueryErrorType+'; '+$image.QueryError)}
@@ -115,7 +114,7 @@ function Assert-LfNormalClose([int]$exitCode,[string]$text,[string]$expectedNoti
  # LF50 EndProgramForce(Success=0) flushes and self-Kill()s. The fixed Windows
  # runtime10.0.14 Process.Kill calls TerminateProcess(handle,-1), not Exit(0).
  if($exitCode -ne -1){throw ('Actual Main did not preserve LF Windows self-Kill exit -1; observed '+$exitCode)}
- Check-Log $text $expectedNotice
+ Check-Log $text $expectedNotice -RequireComplete
  $closing=[regex]::Match($text,'(?m)^\d{2}:\d{2}:\d{2}\.\d{3} I [^\r\n]*\] 收到关闭指令\r?$')
  $success=[regex]::Match($text,'(?m)^\d{2}:\d{2}:\d{2}\.\d{3} I [^\r\n]*\] 程序已退出，返回值：Success\r?$')
  if(-not $closing.Success -or -not $success.Success -or $success.Index -le $closing.Index){throw 'Actual Main lacks ordered real LF closing and Success termination log receipts.'}
@@ -216,11 +215,13 @@ try{
  $tools=Join-Path $fixture 'Tools';$intermediate=Join-Path $fixture 'ToolObj'
  & $DotNetPath build $FixtureProjectPath -c Release --output $tools ('-p:BaseIntermediateOutputPath='+$intermediate+'\') ('-p:MSBuildProjectExtensionsPath='+$intermediate+'\') ('-p:LFNativeUpdaterSource='+[IO.Path]::GetFullPath($NativeUpdaterSource)) -warnaserror -v:q
  if($LASTEXITCODE -ne 0){throw 'Candidate metadata inspector failed to compile.'}
+ & $DotNetPath (Join-Path $tools 'NativeSmokeFixture.dll') --self-test-notice-metadata
+ if($LASTEXITCODE -ne 0){throw 'Metadata-only startup notice route regression failed.'}
  $proofJson=& $DotNetPath (Join-Path $tools 'NativeSmokeFixture.dll') $ExecutablePath
  if($LASTEXITCODE -ne 0){throw 'Not the genuine full native Main entry/BAML/resource/profile contract; no profile was created.'}
  $proof=($proofJson -join "`n")|ConvertFrom-Json;$evidence.MainProof=$proof
  if($proof.buildType -notin @(0,50)){Pending 'Debug/unknown builds may invoke original developer tests; smoke requires actual Release or Snapshot product.'}
- $expectedNotice=$proof.displayName+' '+$proof.versionBaseName+' 版本说明'
+ $expectedNotice=Get-ReviewedNativeStartupNotice $proof
  # Existence only: do not read any pre-existing settings/accounts/game files.
  foreach($keyName in @('Software\PCL','Software\PCLDebug')){if(Existing-Key $keyName){Pending ('Pre-existing user/product store: HKCU\'+$keyName)}}
  $appData=[Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
@@ -305,14 +306,14 @@ try{
    foreach($window in $windows){if($window.Title.Length -gt 0 -and ($window.ClassName -notlike 'HwndWrapper*' -or $window.Title.Trim() -cne 'LivingPCL')){Pending ('Unexpected native product window: '+$window.Title+' / '+$window.ClassName)}}
    $mainWindow=@($windows|Where-Object {$_.Title.Trim() -ceq 'LivingPCL' -and $_.ClassName -like 'HwndWrapper*' -and $_.Right -gt $_.Left -and $_.Bottom -gt $_.Top})|Select-Object -First 1
    $text=Read-OwnedLog;Check-Log $text $expectedNotice
-   $allStages=$text.Contains('第一阶段加载用时：') -and $text.Contains('第二阶段加载用时：') -and $text.Contains('第三阶段加载用时：') -and $text.Contains('PCL 位置：') -and $text.Contains($installed) -and $text.Contains('普通弹窗：'+$expectedNotice)
+   $allStages=$text.Contains('第一阶段加载用时：') -and $text.Contains('第二阶段加载用时：') -and $text.Contains('第三阶段加载用时：') -and $text.Contains('PCL 位置：') -and $text.Contains($installed) -and (Test-ReviewedStartupNotice -Text $text -Notice $expectedNotice -NativeVersion $proof.versionBaseName -NativePhase -NativeStyle $proof.startupNoticeStyle -NativeSource $proof.startupNoticeSource)
    $fresh=$pass -eq 1 -or ([IO.File]::Exists($log) -and (Hash-OwnedFile $log) -cne $previousLogHash)
    if($null -ne $mainWindow -and $allStages -and $fresh){if($readyAt -lt 0){$readyAt=$watch.ElapsedMilliseconds};if($watch.ElapsedMilliseconds-$readyAt -ge 1500){break}}else{$readyAt=-1}
    Start-Sleep -Milliseconds 150
   }
   if($null -eq $mainWindow -or $readyAt -lt 0 -or $watch.ElapsedMilliseconds-$readyAt -lt 1500){Pending 'Actual Main/animation/log stages did not reach a stable visible checkpoint within the bound.'}
   $run.ReadyMilliseconds=$watch.ElapsedMilliseconds;$run.Window=@{Title=$mainWindow.Title;Class=$mainWindow.ClassName;Handle=$mainWindow.Handle.ToInt64();Left=$mainWindow.Left;Top=$mainWindow.Top;Right=$mainWindow.Right;Bottom=$mainWindow.Bottom}
-  $run.ExpectedInformationNoticeVisible=$text.Contains('普通弹窗：'+$expectedNotice)
+  $run.ExpectedInformationNoticeVisible=Test-ReviewedStartupNotice -Text $text -Notice $expectedNotice -NativeVersion $proof.versionBaseName -NativePhase -NativeStyle $proof.startupNoticeStyle -NativeSource $proof.startupNoticeSource
   foreach($name in $mutexNames){Check-Mutex $name $true}
   Assert-SyntheticPreferenceImport $true ('normal-ready-'+$pass)
   Assert-StartupAccounts ('normal-ready-'+$pass);$run.AuthoritativeAccountsPreservedAtReady=$true
