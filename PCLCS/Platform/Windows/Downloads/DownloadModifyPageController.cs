@@ -30,12 +30,12 @@ public sealed partial class DownloadModifyPageController<TInstance, TState, TCar
     private static bool ApiSuits(TResource resource, string? minecraft) => DownloadInstallPageController<TOptiFine, TForgeLike, TForge, TNeo, TLite, TResource, TRequest, TAnimation>.IsFabricApiCompatible(resource, minecraft);
     private static bool OptiFabricSuits(TResource resource, string? minecraft) => DownloadInstallPageController<TOptiFine, TForgeLike, TForge, TNeo, TLite, TResource, TRequest, TAnimation>.IsOptiFabricCompatible(resource, minecraft);
     public void LoaderInit() {
-        host.BaseControlInit(); Panel card = host.Card("整合包更新", new Thickness(0, 0, 0, 15)); StackPanel content = new() { Margin = new Thickness(25, 40, 25, 20) };
+        host.BaseControlInit();
         host.SetPackName(new TextBlock { Text = "正在读取整合包信息", TextWrapping = TextWrapping.Wrap }); host.SetPackInfo(new TextBlock { Margin = new Thickness(0, 5, 0, 0), Opacity = .6, TextWrapping = TextWrapping.Wrap });
         WrapPanel buttons = new() { Visibility = Visibility.Collapsed }; host.SetPackButtons(buttons);
-        FrameworkElement local = host.UpdateButton("从文件更新", () => host.StartPackUpdate(false)); FrameworkElement online = host.UpdateButton("在线更新", () => host.StartPackUpdate(true)); FrameworkElement backups = host.UpdateButton("更新备份", host.OpenPackBackups);
-        buttons.Children.Add(local); buttons.Children.Add(online); buttons.Children.Add(backups); content.Children.Add(host.PackName()!); content.Children.Add(host.PackInfo()!); content.Children.Add(buttons); card.Children.Add(content);
-        DownloadModifyPageView view = host.View(); view.Select.Children.Insert(view.Select.Children.IndexOf(view.SelectNameCard) + 1, card); host.InitializeLoader();
+        // Update actions now live on the instance sidebar's dedicated update page.
+        // Keep the metadata adapters alive for the installed-component loader.
+        host.InitializeLoader();
     }
     public void Init() { host.View().ScrollHome(); if (isLoad) host.Restart(); isLoad = true; }
     public void Unloaded() => host.Cancel();

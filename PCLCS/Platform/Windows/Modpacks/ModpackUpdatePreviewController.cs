@@ -9,7 +9,7 @@ using System.Windows.Controls;
 
 namespace PCLCS;
 
-public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPlan, TKind, TButton, TScroll>
+public sealed partial class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPlan, TKind, TButton, TScroll>
     where TFile : PackUpdateFileData where TPackage : PackUpdatePackageData<TFile> where TChange : PackUpdateChangeData<TFile> where TPlan : PackUpdatePlanData<TPackage, TChange>
     where TKind : struct, Enum where TButton : FrameworkElement where TScroll : ScrollViewer {
     public readonly List<TChange> Changes;
@@ -28,6 +28,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
     private readonly StackPanel? fileRows;
     private CancellationTokenSource? checking;
     private int revision, activeKind;
+    private bool initialPagePending = true;
     private volatile bool closed;
     private readonly object checkGate = new();
     private readonly Dictionary<CancellationTokenSource, Task> readChecks = new();
@@ -63,10 +64,10 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
         }
         foreach (int value in new[] { 0, 1, 2, 3 }) {
             counts[Kind(value)] = Changes.Count(item => Classify(item) == value);
-            view.AddFilter((value == 3 ? "保留 / 自定义" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, counts[Kind(value)] > 0, ShowKind);
+            view.AddFilter((value == 3 ? "保留 / 自定义" : KindName(value)) + "（" + counts[Kind(value)] + "）", value, value == 3 || counts[Kind(value)] > 0, selected => { initialPagePending = false; ShowKind(selected); });
         }
-        if (compatibilitySection is not null) view.AddFilter("更新检查", 4, true, ShowKind);
-        ShowKind(new[] { 3, 1, 0, 2 }.FirstOrDefault(value => counts[Kind(value)] > 0));
+        if (compatibilitySection is not null) view.AddFilter("更新检查", 4, true, selected => { initialPagePending = false; ShowKind(selected); });
+        ShowKind(compatibilitySection is not null ? 4 : 3);
         if (review is not null && snapshot is not null) {
             view.Unloaded += (_, _) => { _ = CloseAndDrainAsync(); view.SetCanConfirm(false); };
             RecheckSelection();
@@ -136,9 +137,9 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                     AddChoice(text, change);
                 if (change.Incoming is not null && change.Ownership == PackUpdateOwnership.Disabled)
                     AddDisabledState(text, change, paths);
-                Border box = ModpackDialogController<TButton, TScroll>.Frame(text); box.ToolTip = change.Relative + "\r\n" + change.LocalRelative + "\r\n" + change.Reason; cards.Add(box);
+                Border box = ModpackDialogController<TButton, TScroll>.Frame(WithIcon(text, change)); box.ToolTip = change.Relative + "\r\n" + change.LocalRelative + "\r\n" + change.Reason; cards.Add(box);
             }
-            if (value == 3 && group.All(item => item.Relative!.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))) rows.Children.Add(ConflictGrid(cards));
+            if (review is not null || value == 3 && group.All(item => item.Relative!.StartsWith("mods/", StringComparison.OrdinalIgnoreCase))) rows.Children.Add(ConflictGrid(cards));
             else foreach (Border card in cards) rows.Children.Add(card);
         }
         if (counts[Kind(value)] == 0) rows.Children.Add(ModpackDialogController<TButton, TScroll>.Label("此分类没有文件。", 13, margin: new Thickness(8)));
@@ -262,7 +263,7 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                     option.Tag = "preview-repair:" + action.Kind + ":" + action.Relative;
                     body.Children.Add(option);
                     body.Children.Add(Details("查看原因与版本要求", new[] { action.Details }));
-                    Border card = ModpackDialogController<TButton, TScroll>.Frame(body);
+                    Border card = ModpackDialogController<TButton, TScroll>.Frame(WithIcon(body, change));
                     card.Margin = new Thickness(0, 0, 0, 10); card.Padding = new Thickness(14, 12, 14, 12);
                     compatibility.Children.Add(card);
                 }
@@ -284,6 +285,11 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
                     view.UpdateStatus(selectionStatus, status, result.Dependencies.HasErrors || result.Dependencies.HasUnknown ? 2 : 0);
                 }
                 double offset = view.Scroller.VerticalOffset;
+                if (initialPagePending) {
+                    initialPagePending = false;
+                    activeKind = result.Actions.Count > 0 || result.Dependencies.HasErrors || result.Dependencies.HasUnknown || result.Dependencies.Warnings.Count > 0 || plan.Warnings.Count > 0 ? 4 : 3;
+                    offset = 0;
+                }
                 ShowKind(activeKind); view.Scroller.ScrollToVerticalOffset(offset);
                 view.SetCanConfirm(!result.Dependencies.HasErrors);
             });
@@ -323,7 +329,8 @@ public sealed class ModpackUpdatePreviewController<TFile, TPackage, TChange, TPl
             closed = true;
             Interlocked.Increment(ref revision);
             foreach (CancellationTokenSource source in readChecks.Keys) source.Cancel();
-            reads = readChecks.Values.ToArray();
+            iconCancellation.Cancel();
+            reads = readChecks.Values.Concat(iconCache.Values).ToArray();
         }
         return DrainReadsAsync(reads);
     }

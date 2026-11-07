@@ -612,6 +612,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                         Interlocked.Add(ref DownloadDone, RealDataCount);
                         Th.DownloadDone += RealDataCount;
                         ResultStream.Write(ResponseBytes, 0, RealDataCount);
+                        if (ResultStream is System.IO.FileStream) FileTaskProgress.RecordWrite(RealDataCount);
                         // 已完成
                         if (Th.DownloadUndone == 0L && !IsUnknownSize)
                             break;

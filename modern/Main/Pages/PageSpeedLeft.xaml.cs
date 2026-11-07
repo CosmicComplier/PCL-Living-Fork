@@ -18,6 +18,7 @@ namespace PCL
         private const int WatcherInterval = 300;
         // 初始化
         private bool IsLoad;
+        private readonly PCLCS.FileTaskProgress.IoRateSampler FileRates = new();
         public PageSpeedLeft()
         {
             __LfAttachOwnHandles();
@@ -28,6 +29,7 @@ namespace PCL
 
         private void Page_Loaded(object sender, RoutedEventArgs e)
         {
+            FileRates.Reset();
             // 进入时就刷新一次显示
             Watcher();
             // 如果在页面切换动画的 “上一页消失” 部分已经完成了下载，就直接尝试返回
@@ -66,6 +68,7 @@ namespace PCL
                     // 无任务
                     this.LabProgress.Text = "100 %";
                     this.LabSpeed.Text = "0 B/s";
+                    FileRates.Reset(); this.LabReadSpeed.Text = this.LabWriteSpeed.Text = "0 B/s";
                     this.LabFile.Text = "0";
                     this.LabThread.Text = "0 / " + ModNet.NetTaskThreadLimit;
                 }
@@ -77,6 +80,9 @@ namespace PCL
                     string PredictText = Math.Floor(RawPercent * 100d) + "." + Math.Floor((RawPercent * 100d - Math.Floor(RawPercent * 100d)) * 100d).ToString().EnsureLength('0', 2) + " %";
                     this.LabProgress.Text = RawPercent > 0.999999d ? "100 %" : PredictText;
                     this.LabSpeed.Text = StringUtils.FormatByteSize(ModNet.NetManager.Speed) + "/s";
+                    FileRates.Sample();
+                    this.LabReadSpeed.Text = StringUtils.FormatByteSize((long)FileRates.ReadPerSecond) + "/s";
+                    this.LabWriteSpeed.Text = StringUtils.FormatByteSize((long)FileRates.WritePerSecond) + "/s";
                     this.LabFile.Text = Conversions.ToString(ModNet.NetManager.FileRemain < 0 ? "0*" : global::PCL.ModNet.NetManager.FileRemain);
                     this.LabThread.Text = ModNet.NetTaskThreadCount + " / " + ModNet.NetTaskThreadLimit;
                 }
@@ -112,6 +118,11 @@ namespace PCL
                 {
                     // 已有此卡片
                     Grid Card = RightCards[Loader.Name];
+                    // Stage text can change during hashing or while waiting for the
+                    // preview, even when the aggregate percentage stays the same.
+                    if (Loader.State == ModBase.LoadState.Loading && Card.Children.Count > 3 && Card.Children[3] is Grid StageRows)
+                        for (int i = 0; i < LoaderList.Count && i * 2 + 1 < StageRows.Children.Count; i++)
+                            if (StageRows.Children[i * 2 + 1] is TextBlock StageLabel) StageLabel.Text = LoaderList[i].Name;
                     double NewValue = Loader.Progress + (double)Loader.State;
                     if (ModBase.Val(Card.Tag) == NewValue)
                         return;

@@ -91,6 +91,7 @@
 <Compile Include="Pages/PageInstance/PageInstanceResources.Backups.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceResources.Recycle.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceClone.xaml.cs" />
+<Compile Include="Pages/PageInstance/PageInstancePackUpdate.xaml.cs" />
 <Compile Include="Pages/PageDownload/Resource/PageDownloadMap.xaml.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceRestorePoints.xaml.cs" />
 <Compile Include="Pages/PageInstance/MyScreenshotItem.xaml.cs" />
@@ -246,6 +247,7 @@
 <Page Include="Pages/PageInstance/WorldBackupGroup.xaml" />
 <Page Include="Pages/PageInstance/WorldBackupSettings.xaml" />
 <Page Include="Pages/PageInstance/PageInstanceClone.xaml" />
+<Page Include="Pages/PageInstance/PageInstancePackUpdate.xaml" />
 <Page Include="Pages/PageInstance/MyScreenshotItem.xaml" />
 <Page Include="Pages/PageDownload/Resource/PageDownloadMap.xaml" />
 <Page Include="Pages/PageInstance/PageInstanceResources.xaml" />

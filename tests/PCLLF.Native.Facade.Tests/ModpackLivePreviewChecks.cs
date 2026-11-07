@@ -31,9 +31,14 @@ internal static class ModpackLivePreviewChecks
         object Jar(object package, string relative, string id, string version, JObject? requirements = null)
         {
             string file = Path.Combine(stage, "input-" + (++next) + ".jar");
-            using (ZipArchive zip = ZipFile.Open(file, ZipArchiveMode.Create))
+            using (ZipArchive zip = ZipFile.Open(file, ZipArchiveMode.Create)) {
                 ZipText(zip, "fabric.mod.json", new JObject { ["schemaVersion"] = 1, ["id"] = id, ["version"] = version,
-                    ["depends"] = requirements ?? new JObject { ["minecraft"] = "*", ["fabricloader"] = ">=0.16.0" } }.ToString());
+                    ["icon"] = "icon.png", ["depends"] = requirements ?? new JObject { ["minecraft"] = "*", ["fabricloader"] = ">=0.16.0" } }.ToString());
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(2, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 255, 160, 64, 255, 255, 160, 64, 255 }, 8)));
+                using var bytes = new MemoryStream(); encoder.Save(bytes); bytes.Position = 0;
+                using var icon = zip.CreateEntry("icon.png").Open(); bytes.CopyTo(icon);
+            }
             object data = New("PackUpdateFile"); Set(data, "Relative", relative); Set(data, "Hash", Digest(file)); Set(data, "Payload", file); Set(data, "Identity", "modrinth:" + id);
             ((IDictionary)Get(package, "Files")!).Add(relative, data); return data;
         }
@@ -103,6 +108,11 @@ internal static class ModpackLivePreviewChecks
             modal.Btn2_Click();
             Native.Check(cancelInvocations == 1, "The native cancel action was blocked by compatibility errors.");
             modal.Btn1_Click(); Native.Check(converter.Result is null, "A disabled confirmation was accepted through the message controller.");
+            Native.Check(Convert.ToInt32(Native.Property(preview.GetType(), "ActiveKind").GetValue(preview)) == 4, "An actionable update did not default to update checks.");
+            Native.Call(preview.GetType(), "ShowKind", preview, Enum.Parse(Native.Type("PCL.ModpackUpdatePreviewView+ChangeKind"), "Preserved"));
+            preview.UpdateLayout();
+            VisualAssetChecks.Pump(() => Walk(preview).OfType<Image>().Any(img => Equals(img.Tag, "preview-file-icon") && img.Source is not null), "Embedded mod artwork did not load.", 8000);
+            Native.Check(Walk(preview).OfType<Image>().Where(img => Equals(img.Tag, "preview-file-icon")).All(img => img.Stretch == Stretch.Uniform), "Artwork was stretched out of proportion.");
             Save(modal, "live-preview-files.png");
             Native.Check(Walk(preview).OfType<MyCard>().Any(card => card.Title == "文件变更") && !Walk(preview).OfType<MyCard>().Any(card => card.Title == "更新检查"), "File page mixed in compatibility decisions.");
             Native.Check(!Option("EnableRequired", "mods/provider-new.jar").Checked && !Option("DisableIncompatible", "mods/legacy-adapter.jar").Checked,
@@ -218,6 +228,15 @@ internal static class ModpackLivePreviewChecks
             using var released = File.Open(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             Native.Check(!view.CanConfirm, "A closed preview enabled confirmation after its read completed.");
         } finally { release.Set(); controller.CloseAndDrainAsync().GetAwaiter().GetResult(); }
+        int selectedPage = -1;
+        var cleanView = new ModpackDialogController<MyButton, MyScrollViewer>("No decisions", "", 4, new() {
+            AnimationName = () => "clean-preview", CreateButton = () => new(), SetButtonText = (button, text) => button.Text = text,
+            HighlightButton = (_, _) => { }, OnClick = (_, _) => { }, CreateScroll = () => new(), AnimationControl = () => 1, StopAnimation = _ => { }, AnimateOpacity = (_, _, _, _) => { }
+        });
+        var cleanController = new ModpackUpdatePreviewController<PackUpdateFileData, PreviewPackage, PreviewChange, PreviewPlan, DayOfWeek, MyButton, MyScrollViewer>(cleanView, plan, "1.21.1", new(), new(), value => selectedPage = value, text => new TextBlock { Text = text }, value => value, (_, _) => new());
+        VisualAssetChecks.Pump(() => cleanView.CanConfirm, "Empty review did not finish.", 5000);
+        Native.Check(selectedPage == 3, "Empty update checks did not default to preserve/custom, including an empty file category.");
+        cleanController.CloseAndDrainAsync().GetAwaiter().GetResult();
     }
 
     private static void Save(FrameworkElement element, string name)

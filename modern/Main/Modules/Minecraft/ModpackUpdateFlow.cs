@@ -80,6 +80,7 @@ namespace PCL
                 TempFolder = new Func<global::System.String>(() => global::PCL.ModMain.RequestTaskTempFolder()),
                 Cancellation = new Func<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Threading.CancellationToken>(Task => Task.CreateCancellationToken()),
                 SetProgress = new Action<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Double>((Task, Value) => Task.Progress = Value),
+                SetStage = (Task, Text) => Task.Name = Text,
                 Progress = new Func<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Double, global::System.Double, global::MeloongCore.ProgressProvider>((Task, Start, Finish) => Task.CreateSyncProgressProvider(Start, Finish)),
                 SetOutput = new Action<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.String>((Task, Value) => Task.Output = Value),
                 CreateRuntime = global::PCL.ModpackUpdateFlow.CreateRuntime,
@@ -90,7 +91,7 @@ namespace PCL
                 ResetSettings = new Action<global::PCL.ModMinecraft.McInstance>(Instance => Instance.ResetSettingsCache()),
                 LoadInstance = new Func<global::System.String, global::PCL.ModMinecraft.McInstance>(Folder => new global::PCL.ModMinecraft.McInstance(Folder).Load()),
                 PageInstance = new Func<global::PCL.ModMinecraft.McInstance>(() => global::PCL.PageInstanceLeft.Instance),
-                SetPageInstance = new Action<global::PCL.ModMinecraft.McInstance>(Value => global::PCL.PageInstanceLeft.Instance = Value),
+                SetPageInstance = new Action<global::PCL.ModMinecraft.McInstance>(Value => { global::PCL.PageInstanceLeft.Instance = Value; ModMain.FrmInstanceLeft?.RefreshPackUpdatePage(); }),
                 SelectedInstance = new Func<global::PCL.ModMinecraft.McInstance>(() => global::PCL.ModMinecraft.McInstanceSelected),
                 SetSelectedInstance = new Action<global::PCL.ModMinecraft.McInstance>(Value => global::PCL.ModMinecraft.McInstanceSelected = Value),
                 Explorer = global::PCL.ModBase.OpenExplorer,
@@ -112,6 +113,8 @@ namespace PCL
         {
             global::PCL.ModpackUpdateFlow.Engine.OpenBackups(Instance);
         }
+        internal static List<ResourceVersion> GetAvailableVersions(JObject record) => Engine.GetAvailableVersions(record);
+        internal static void StartSelected(ModMinecraft.McInstance instance, string version) => Engine.Start(instance, true, version);
         private static global::System.String SelectArchive(global::System.String Title)
         {
             return global::PCL.ModpackUpdateFlow.Engine.SelectArchive(Title);

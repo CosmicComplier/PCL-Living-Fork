@@ -271,8 +271,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             if (!current.SetEquals(plan.ObservedModFiles)) throw new IOException("模组目录在预览或下载后发生变化，请重新检查更新。");
         }
     }
-    public void DownloadChanges(TPlan plan, string stage, CancellationToken token, Action<List<TNetFile>, CancellationToken>? download = null) {
+    public void DownloadChanges(TPlan plan, string stage, CancellationToken token, Action<List<TNetFile>, CancellationToken>? download = null, Action<string>? status = null) {
         List<TNetFile> files = new();
+        status?.Invoke("准备更新文件");
         // Stage selectable conflicts too; choosing in the preview never starts unpreviewed downloads.
         foreach (TFile value in plan.Changes.Where(change => !change.DisplayOnly && change.AllowAuthor && change.Incoming is not null).Select(change => change.Incoming!).Distinct()) {
             token.ThrowIfCancellationRequested();
@@ -281,18 +282,30 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             Directory.CreateDirectory(Path.GetDirectoryName(value.Payload)!);
             files.Add(host.CreateDownload(value.Urls, value.Payload, value.Hash!.Split(':')[1]));
         }
-        if (files.Count > 0) (download ?? host.Download)(files, token);
-        foreach (TFile value in plan.Package!.Files.Values.Where(file => file.Payload is not null)) {
+        if (files.Count > 0) { status?.Invoke("下载更新文件（" + files.Count + " 个）"); (download ?? host.Download)(files, token); }
+        var stagedFiles = plan.Package!.Files.Values.Where(file => file.Payload is not null).ToArray();
+        int verified = 0;
+        foreach (TFile value in stagedFiles) {
             token.ThrowIfCancellationRequested();
+            status?.Invoke("校验更新文件（" + verified + "/" + stagedFiles.Length + "）");
             if (!Matches(value.Payload!, value.Hash, token)) throw new IOException("整合包更新文件校验失败：" + value.Relative);
+            verified++;
         }
+        status?.Invoke("核对本地修改与文件归属");
         ValidateSnapshot(plan, token);
         TPlan staged = Plan(plan.Root!, plan.Baseline, plan.Package, token);
         plan.Changes = staged.Changes;
         foreach (var pair in staged.Snapshot) if (!plan.Snapshot.ContainsKey(pair.Key)) plan.Snapshot.Add(pair.Key, pair.Value);
         LinkPersonalAuthorUpdates(plan, token);
+        status?.Invoke("准备预览与原有禁用状态");
         PreparePreviewChanges(plan, stage, token);
-        ResolvePersonalChanges(plan, stage, token, download ?? host.Download);
+        status?.Invoke("检查个人模组与补全前置");
+        ResolvePersonalChanges(plan, stage, token, (dependencies, cancel) => {
+            status?.Invoke("下载所需前置（" + dependencies.Count + " 个）");
+            (download ?? host.Download)(dependencies, cancel);
+            status?.Invoke("复查个人模组与前置依赖");
+        });
+        status?.Invoke("检查重复模组与完整依赖组合");
         PreserveModCollisions(plan, token);
         plan.DependencyCheck = CheckDependencies(plan, token);
         if (plan.DependencyCheck.HasErrors) {

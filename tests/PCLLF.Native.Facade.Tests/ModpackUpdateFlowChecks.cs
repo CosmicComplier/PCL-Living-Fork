@@ -108,6 +108,7 @@ internal static class ModpackUpdateFlowChecks
         TraceStage("preview-refusal-start"); flow.Start(declined); flow.WaitStopped(); TraceStage("preview-refusal-stopped");
         Check(shown is not null && shown.GetType().Assembly == Native.Main && Changes(shown).Any(Conflict), "FLOW-03-plan", "preview did not receive actual personal-preserving plan");
         Check(flow.Step!.State == ModBase.LoadState.Canceled && !flow.Worker!.LastSucceeded && flow.Messages.SequenceEqual(new[] { "补全整合包记录" }), "FLOW-03", "preview rejection did not cancel after establishing the correct origin");
+        Check(flow.Step.Name == "等待确认更新预览", "FLOW-stage-preview", "The real task did not expose the preview waiting phase.");
         Check(File.ReadAllText(Path.Combine(declined.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(declined.PathIndie, "config/personal.txt")) == "my-edit" && Update("ReadManifest", declined.PathVersion) is null, "FLOW-03-bytes", "refused preview committed files or persisted origin");
 
         // Cancel the REAL taskbar combo while the existing confirmation primitive

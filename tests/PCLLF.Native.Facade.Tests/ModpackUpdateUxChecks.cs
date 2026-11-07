@@ -45,6 +45,7 @@ internal static class ModpackUpdateUxChecks
         LargeNoticesScroll(Path.Combine(root, "large-preview"));
         AuthorActionsAndDisabledState(Path.Combine(root, "policy-preview"));
         ModpackLivePreviewChecks.Run(Path.Combine(root, "live-preview"));
+        ModpackSidebarChecks.Run(Path.Combine(root, "pack-sidebar"));
         Console.WriteLine("PASS native modpack-update UX: UX-P1..P4 and UX-01..UX-13 (actual loopback, selection/modal and read-only preview).");
     }
 

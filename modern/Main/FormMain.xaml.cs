@@ -94,7 +94,7 @@ namespace PCL
             InstanceSetup = 1, InstanceModify = 2, InstanceMod = 3, InstanceModDisabled = 4,
             InstanceExport = 5, InstanceSaves = 6, InstanceScreenshots = 7,
             InstanceResourcePacks = 8, InstanceShaderPacks = 9, InstanceSchematics = 10,
-            InstanceKeybindings = 11, InstanceRestorePoints = 12, InstanceBackups = 13, InstanceClone = 14
+            InstanceKeybindings = 11, InstanceRestorePoints = 12, InstanceBackups = 13, InstanceClone = 14, InstancePackUpdate = 15
         }
         private string PageNameGet(PageStackData Stack) => Controller.PageNameGet(Stack);
         public void PageNameRefresh(PageStackData Type) => Controller.PageNameRefresh(Type);

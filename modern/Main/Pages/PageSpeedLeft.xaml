@@ -35,7 +35,7 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
-        <RowDefinition Height="0.6*" />
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
@@ -51,10 +51,18 @@
     <TextBlock Text="下载速度" Grid.Row="5" HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource ColorBrush3}" />
     <TextBlock Grid.Row="6" Style="{DynamicResource Split}" />
     <TextBlock Text="0 B/s" Grid.Row="7" Name="LabSpeed" HorizontalAlignment="Center" FontSize="20" />
+    <StackPanel Grid.Row="8" Margin="0,18,0,18" ToolTip="启动器文件任务的实际读写字节统计，包含系统缓存。">
+        <TextBlock Text="读取速度" HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource ColorBrush3}" />
+        <TextBlock Style="{DynamicResource Split}" />
+        <TextBlock Text="0 B/s" Name="LabReadSpeed" HorizontalAlignment="Center" FontSize="20" />
+        <TextBlock Text="写入速度" Margin="0,16,0,0" HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource ColorBrush3}" />
+        <TextBlock Style="{DynamicResource Split}" />
+        <TextBlock Text="0 B/s" Name="LabWriteSpeed" HorizontalAlignment="Center" FontSize="20" />
+    </StackPanel>
     <TextBlock Text="剩余文件" Grid.Row="9" HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource ColorBrush3}" />
     <TextBlock Grid.Row="10" Style="{DynamicResource Split}" />
-    <TextBlock Text="123456789" Grid.Row="11" Name="LabFile" HorizontalAlignment="Center" FontSize="20" />
+    <TextBlock Text="0" Grid.Row="11" Name="LabFile" HorizontalAlignment="Center" FontSize="20" />
     <TextBlock Text="剩余线程" Grid.Row="13" HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource ColorBrush3}" />
     <TextBlock Grid.Row="14" Style="{DynamicResource Split}" />
-    <TextBlock Text="123456789" Grid.Row="15" Name="LabThread" HorizontalAlignment="Center" FontSize="20" />
+    <TextBlock Text="0 / 0" Grid.Row="15" Name="LabThread" HorizontalAlignment="Center" FontSize="20" />
 </local:MyPageLeft>

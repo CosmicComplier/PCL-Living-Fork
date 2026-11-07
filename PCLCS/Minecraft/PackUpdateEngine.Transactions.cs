@@ -89,7 +89,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
 
     // The complete original transaction boundary: persist backups/log before writing,
     // keep the current before/after guards and reverse rollback under the caller's real workload lock.
-    public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null) {
+    public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null, Action<double>? progress = null) {
         token.ThrowIfCancellationRequested();
         ValidateChoices(plan, token);
         var operations = BuildFileOperations(plan, token);
@@ -102,7 +102,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         File.WriteAllText(statePayload, nextManifest.ToString());
         string statePath = Target(versionFolder, ManifestName);
         operations.Add(Tuple.Create(statePath, (string?)statePayload, Digest(statePath)));
-        return ApplyTransaction(plan.Root!, versionFolder, operations, token, beforeApply, box);
+        return ApplyTransactionWithProgress(plan.Root!, versionFolder, operations, token, progress, beforeApply, box);
     }
     public string ApplyTransaction(string gameRoot, string versionFolder, List<Tuple<string, string?, string?>> operations, CancellationToken token, Action<int>? beforeApply = null, string? box = null) =>
         ApplyTransactionWithProgress(gameRoot, versionFolder, operations, token, null, beforeApply, box);
