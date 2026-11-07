@@ -13,6 +13,7 @@ namespace PCL
 
     internal class InstanceResourceOnlineInfo : InstanceResourceOnlineInfoData<InstanceResourceEntry, ResourceVersion>
     {
+        internal ResourceProject Project;
     }
 
     // 原 ResourceVersion / NetFile / LoaderDownload 与注入式网络入口继续由 LF 宿主提供。
@@ -61,7 +62,23 @@ namespace PCL
         }
         internal static List<InstanceResourceOnlineInfo> Check(string Root, IEnumerable<InstanceResourceEntry> Items, InstanceResourceKind Kind, string GameVersion, CancellationToken Token, Func<string, HttpMethod, string, JToken> Request = null, Func<string, uint> Fingerprint = null)
         {
-            return Files.Check(Root, Items, (int)Kind, GameVersion, Token, Request, Fingerprint);
+            var result = Files.Check(Root, Items, (int)Kind, GameVersion, Token, Request, Fingerprint);
+            foreach (var info in result) {
+                Token.ThrowIfCancellationRequested();
+                if (info.ProjectMetadata is null || info.CurrentVersion is null ||
+                    !ResourceFavoriteIdentity.TryCreate(info.ProjectPlatform, info.ProjectId, out var expected)) continue;
+                try {
+                    var project = new ResourceProject(info.ProjectMetadata);
+                    if (ResourceFavorites.CanFavorite(project) && !string.IsNullOrWhiteSpace(project.RawName) &&
+                        ResourceFavoriteIdentity.TryCreate(project.Platform, project.Id, out var actual) && actual == expected)
+                        info.Project = project;
+                } catch (Exception error) {
+                    // Partial project responses may still be useful to the updater.
+                    // They must not become an unrelated or incomplete favorite.
+                    Logger.Warn(error, "读取已匹配资源的项目信息失败", LogBehavior.None);
+                }
+            }
+            return result;
         }
         internal static void Install(string Root, IEnumerable<InstanceResourceOnlineInfo> Infos, string Recycle, InstanceResourceKind Kind, string GameVersion, CancellationToken Token, Action<List<ModNet.NetFile>, CancellationToken> Download = null)
         {

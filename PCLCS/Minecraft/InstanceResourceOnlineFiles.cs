@@ -19,6 +19,11 @@ public class InstanceResourceOnlineInfoData<TEntry, TVersion>
     public string? ProjectName;
     public string? Website;
     public string? IconUrl;
+    // Authoritative project response from the exact hash/fingerprint match.
+    // Keep a private snapshot so consumers do not have to search by filename.
+    public JObject? ProjectMetadata;
+    public ResourcePlatforms ProjectPlatform;
+    public string? ProjectId;
     public List<string> Tags = new();
     public TVersion? CurrentVersion;
     public TVersion? UpdateVersion;
@@ -172,6 +177,9 @@ public sealed class InstanceResourceOnlineFiles<TEntry, TVersion, TDownload, TIn
             TVersion? current = ModrinthFile(version, kind, info.Sha1);
             if (current is null) continue;
             info.CurrentVersion = current;
+            info.ProjectPlatform = ResourcePlatforms.Modrinth;
+            info.ProjectId = version["project_id"]!.ToString();
+            info.ProjectMetadata = (JObject)project.DeepClone();
             info.ProjectName = project["title"]?.ToString();
             info.IconUrl = project["icon_url"]?.ToString();
             info.Website = "https://modrinth.com/" + (kind == 2 ? "resourcepack/" : "shader/") + Uri.EscapeDataString(project["id"]!.ToString());
@@ -229,6 +237,9 @@ public sealed class InstanceResourceOnlineFiles<TEntry, TVersion, TDownload, TIn
             foreach (TInfo info in matchedInfos) {
                 if (info.CurrentVersion is null) {
                     info.CurrentVersion = current;
+                    info.ProjectPlatform = ResourcePlatforms.CurseForge;
+                    info.ProjectId = rawCurrent["modId"]?.ToString();
+                    info.ProjectMetadata = (JObject)project.DeepClone();
                     info.ProjectName = project["name"]?.ToString();
                     JObject? logo = project["logo"] as JObject;
                     info.IconUrl = logo?["thumbnailUrl"]?.ToString();
