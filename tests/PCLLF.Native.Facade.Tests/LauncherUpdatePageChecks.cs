@@ -1,12 +1,15 @@
 using Expression = System.Linq.Expressions.Expression;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Newtonsoft.Json.Linq;
 using PCL;
+using PCLLF.Presentation.Windowing;
 using Application = System.Windows.Application;
 
 namespace PCLLF.Native.Facade.Tests;
@@ -127,6 +130,7 @@ internal static class LauncherUpdatePageChecks
             Native.Check(frame.BorderBrush is SolidColorBrush green && green.Color.G > green.Color.R && frame.BorderThickness.Left >= 1 &&
                 ((TextBlock)installedBadge.Child).Text == "当前版本" && rows.Children.Cast<MyListItem>().Count(row => row.Children.OfType<Border>().Any(border => Equals(border.Tag, "current-version-frame"))) == 1,
                 "Current version does not have its unique green frame and current-version label.");
+            CurrentVersionNotesClick(CurrentRow());
             var currentIcon = (Canvas)CurrentRow().PathLogo!;
             Native.Check(Math.Abs(currentIcon.ActualWidth - currentIcon.ActualHeight) < 1 && currentIcon.ActualWidth >= 47 &&
                 currentIcon.Background is ImageBrush { Stretch: Stretch.Uniform, ImageSource: BitmapSource { PixelWidth: >= 256 } }, "Current-version icon was squeezed or lost its HD source.");
@@ -189,6 +193,14 @@ internal static class LauncherUpdatePageChecks
                 "Failed update check did not finish.");
             Native.Check(rows.Visibility == Visibility.Visible && rows.Children.Count == 1 && hint.Visibility == Visibility.Visible && count.Visibility == Visibility.Visible,
                 "Failed update check did not restore the current version and its error hint.");
+            CurrentVersionNotesClick(CurrentRow());
+            if (!string.Equals(ModBase.VersionBaseName, "dev_edition", StringComparison.Ordinal))
+            {
+                Native.Call(typeof(PageSetupUpdate), "RenderReleases", page, new List<JObject> { Release("v" + ModBase.VersionBaseName) }, null);
+                Native.Check(rows.Children.Count == 1 && CurrentRow().Children.OfType<Border>().Any(border => Equals(border.Tag, "current-version-frame")),
+                    "The installed release duplicated or replaced the green current-version row.");
+                CurrentVersionNotesClick(CurrentRow());
+            }
             window.Close(); window = null;
             bool drained = false;
             Application.Current.Dispatcher.BeginInvoke((Action)(() => drained = true), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
@@ -206,6 +218,38 @@ internal static class LauncherUpdatePageChecks
         }
     }
 
+    private static void CurrentVersionNotesClick(MyListItem row)
+    {
+        Native.Check(row.Type == MyListItem.CheckType.Clickable, "The green current-version row has no native click entry for manually reopening update notes.");
+        FormMain? previous = ModMain.FrmMain;
+        List<Action> scheduled = new();
+        List<bool> automatic = new();
+        int preferenceReads = 0;
+        var host = new LegacyMainWindowHost<FormMain.PageStackData, ModMinecraft.McInstance, ModAnimation.AniData>
+        {
+            NewThread = (work, _, _) => scheduled.Add(work),
+            ReadString = _ => { preferenceReads++; return "dismissed"; },
+            UpdateLogIdentity = () => "dismissed",
+            ShowReleaseNotes = (isAutomatic, _) => { automatic.Add(isAutomatic); return true; }
+        };
+        var controller = new LegacyMainWindowController<FormMain.PageStackData, ModMinecraft.McInstance, ModAnimation.AniData>(new LegacyMainWindowView(), host);
+        // Install only the real facade/controller field; never invoke FormMain's
+        // startup constructor or send a release lookup/modal over the platform.
+        FormMain shell = (FormMain)RuntimeHelpers.GetUninitializedObject(typeof(FormMain));
+        Native.Field(typeof(FormMain), "Controller").SetValue(shell, controller);
+        Native.Property(typeof(FormMain), "BtnExtraBack").SetValue(shell, new MyExtraButton());
+        try
+        {
+            ModMain.FrmMain = shell;
+            Native.Call(typeof(MyListItem), "OnClick", row, row, new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left));
+            Native.Check(scheduled.Count == 1 && automatic.Count == 0, "Current-version row did not reach the existing asynchronous Main update-note entry.");
+            scheduled[0]();
+            Native.Check(automatic.SequenceEqual(new[] { false }) && preferenceReads == 0,
+                "Current-version row did not reopen the manual notice independently of the saved dismissal.");
+        }
+        finally { ModMain.FrmMain = previous; }
+        Console.WriteLine("PASS current-version row: native clickable green row -> genuine FormMain facade -> controller background/manual notice, saved dismissal bypassed; no HTTP or modal wait.");
+    }
     private static JObject Release(string tag)
     {
         string file = "PCL-Living-Fork-" + tag.TrimStart('v') + ".exe";

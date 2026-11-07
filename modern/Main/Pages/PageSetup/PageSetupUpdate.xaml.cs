@@ -24,6 +24,7 @@ public partial class PageSetupUpdate : MyPageRight
     private string catalogError;
     internal Func<ModLauncherUpdate.UpdateSource, ModLauncherUpdate.UpdateChannel, List<JObject>> ReadReleases =
         (source, channel) => ModLauncherUpdate.GetPageReleases(source, channel);
+    internal Action ShowCurrentUpdateLog = () => ModMain.FrmMain?.ShowUpdateLog();
 
     public PageSetupUpdate()
     {
@@ -144,7 +145,8 @@ public partial class PageSetupUpdate : MyPageRight
         if (MatchesSearch(ModBase.VersionBaseName, "PCL Living Fork"))
         {
             var current = new MyListItem { Height = 58, Title = ModBase.VersionBaseName,
-                Info = development ? "当前构建 · 本机开发版" : "当前已安装版本", Type = MyListItem.CheckType.None };
+                Info = development ? "当前构建 · 本机开发版" : "当前已安装版本", Type = MyListItem.CheckType.Clickable };
+            current.Click += (_, _) => ShowCurrentUpdateLog();
             PrepareVersionRow(current, currentType);
             MarkCurrentVersion(current);
             visibleRows.Add(current);

@@ -93,7 +93,7 @@ namespace PCL
         }
 
 
-        private void ShowUpdateLog() => Controller.ShowUpdateLog();
+        internal void ShowUpdateLog() => Controller.ShowUpdateLog();
         private void FormMain_Loaded(object sender, RoutedEventArgs e) => Controller.Loaded();
         private void UpgradeSub(int LastVersionCode) => Controller.Upgrade(LastVersionCode);
         private void DowngradeSub(int LastVersionCode) => Controller.Downgrade(LastVersionCode);

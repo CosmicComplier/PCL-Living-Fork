@@ -14,11 +14,13 @@ internal sealed class ReleaseNotesPromptView : Grid
 
     internal ReleaseNotesPromptView(string markdown, bool suppressed, Func<bool, bool> persist, Action<string> openLink = null)
     {
-        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Notes = new ReleaseNotesView(markdown, openLink)
         {
-            Height = Math.Clamp((ModMain.FrmMain?.ActualHeight ?? 640) - 270, 120, 390)
+            // The native dialog supplies the finite body budget. Reserve the
+            // footer first, then let only the Markdown viewport consume the rest.
+            Height = double.NaN
         };
         Children.Add(Notes);
         Suppress = new MyCheckBox
