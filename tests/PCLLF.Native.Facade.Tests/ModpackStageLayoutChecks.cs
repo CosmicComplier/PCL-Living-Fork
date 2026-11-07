@@ -9,6 +9,7 @@ namespace PCLLF.Native.Facade.Tests;
 
 internal static class ModpackStageLayoutChecks {
     internal static void Run(string root) {
+        RepeatedTaskbarAdds(root);
         var progress = new PackUpdateStageProgress();
         progress.Set(PackUpdateStage.ReadRecord, PackUpdateStageState.Running);
         var before = progress.Snapshot();
@@ -21,6 +22,13 @@ internal static class ModpackStageLayoutChecks {
             "Stopping presentation progress changed phases which never started.");
         progress.Reset();
         Native.Check(progress.Snapshot().All(item => item.State == PackUpdateStageState.Waiting), "A real retry cannot reset presentation stages.");
+        progress.Set(PackUpdateStage.PrepareFiles, PackUpdateStageState.Running, "下载文件");
+        var report = progress.CreateProgressReporter(); report(.12);
+        Native.Check(progress.Snapshot()[3].Progress == .12, "Native byte progress was lost.");
+        progress.Set(PackUpdateStage.PrepareFiles, PackUpdateStageState.Running, "检查模组"); report(.9);
+        Native.Check(progress.Snapshot()[3].Progress is null, "Late download progress marked a later CPU check as complete.");
+        progress.Reset(); report(.8);
+        Native.Check(progress.Snapshot().All(item => item.Progress is null), "Old progress survived retry reset.");
         foreach (bool debug in new[] { false, true })
         foreach (int windowHeight in new[] { 634, 540 }) {
             var speed = new PageSpeedLeft();
@@ -40,6 +48,44 @@ internal static class ModpackStageLayoutChecks {
                 "A metric title, separator or value was clipped.");
         }
         Console.WriteLine("PASS native task metrics: five/six independent equal-spacing blocks at default 1005x634 and compact 1005x540 body heights; immutable, explicit presentation stages.");
+    }
+    private static void RepeatedTaskbarAdds(string folder) {
+        var previousLeft = ModMain.FrmSpeedLeft; var previousRight = ModMain.FrmSpeedRight;
+        var roots = new List<ModLoader.LoaderCombo<string>>();
+        try {
+            var right = new PageSpeedRight(); ModMain.FrmSpeedRight = right; ModMain.FrmSpeedLeft = null;
+            PageSpeedLeft? left = null;
+            for (int attempt = 0; attempt < 3; attempt++) {
+                var step = (ModLoader.LoaderTask<string, string>)Native.Static("PCL.ModpackUpdateFlow", "CreateStep", "比较并更新整合包文件", new Action<ModLoader.LoaderTask<string, string>>(_ => throw new Exception("No fixture work should start.")))!;
+                var combo = new ModLoader.LoaderCombo<string>("更新整合包：repeat fixture", new[] { step }); roots.Add(combo);
+                ModLoader.LoaderTaskbarAdd(combo); // Production Add calls TaskRemove with this NEW root.
+                left ??= new PageSpeedLeft(); ModMain.FrmSpeedLeft = left;
+                var snapshots = (PackUpdateStageSnapshot[]?)Native.Static("PCL.ModpackUpdateFlow", "GetStageSnapshot", combo.GetLoaderList());
+                Native.Check(snapshots?.Length == 12 && snapshots.All(stage => stage.State == PackUpdateStageState.Waiting), "A same-name taskbar addition lost its new stage list.");
+                object engine = Native.Field(Native.Type("PCL.ModpackUpdateFlow"), "Engine").GetValue(null)!;
+                object host = Native.Get(engine, "host")!;
+                var stage = (Action<ModLoader.LoaderTask<string, string>, PackUpdateStage, PackUpdateStageState, string?>)Native.Get(host, "SetStage")!;
+                var createProgress = (Func<ModLoader.LoaderTask<string, string>, double, double, MeloongCore.ProgressProvider>)Native.Get(host, "Progress")!;
+                stage(step, PackUpdateStage.PrepareFiles, PackUpdateStageState.Running, "下载文件");
+                var bytes = createProgress(step, .15, .65); bytes.Set(.12);
+                left.TaskRefresh(combo);
+                var card = ((StackPanel)right.FindName("PanMain")).Children.OfType<MyCard>().Single();
+                var rows = (Grid)card.Children[3];
+                Native.Check(rows.Children.OfType<StackPanel>().Count(panel => panel.Tag is PackUpdateStage) == 12 && rows.Children.OfType<TextBlock>().Any(text => text.Text == "12%"), "Retry did not render all stages and native percentage.");
+                Native.Check(rows.Children.OfType<StackPanel>().Where(panel => panel.Tag is PackUpdateStage).All(panel => panel.Children.Count == 1), "Gray detail subtitles remained visible.");
+                if (attempt == 1) { _ = card.MainTextBlock; Save(right, Path.Combine(folder, "retry-native-percent.png"), 780, 450); }
+                bytes.Set(.22); left.TaskRefresh(combo);
+                Native.Check(rows.Children.OfType<TextBlock>().Any(text => text.Text == "22%"), "Stage percentage stopped updating at unchanged aggregate state.");
+                stage(step, PackUpdateStage.PrepareFiles, PackUpdateStageState.Running, "检查模组");
+                bytes.Set(.9); left.TaskRefresh(combo);
+                Native.Check(!rows.Children.OfType<TextBlock>().Any(text => text.Text.EndsWith("%", StringComparison.Ordinal)), "An unmeasured CPU phase displayed stale download percentage.");
+                left.TaskRemove(combo); ModLoader.LoaderTaskbar.Remove(combo);
+            }
+        } finally {
+            foreach (var root in roots) { ModMain.FrmSpeedLeft?.TaskRemove(root); ModLoader.LoaderTaskbar.Remove(root); }
+            ModMain.FrmSpeedLeft = previousLeft; ModMain.FrmSpeedRight = previousRight;
+        }
+        Console.WriteLine("PASS repeated native taskbar additions: first/second/third same-name tasks retain 12 stages, native percentages refresh and subtitles stay hidden.");
     }
     internal static void CaptureTask(ModLoader.LoaderCombo<string> task, string path) {
         var dispatcher = System.Windows.Application.Current.Dispatcher;

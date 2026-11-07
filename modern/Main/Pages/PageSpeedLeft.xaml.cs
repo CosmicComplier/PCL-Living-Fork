@@ -331,7 +331,6 @@ namespace PCL
                             });
                             RightCards.Remove(Loader.Name);
                             ModLoader.LoaderTaskbar.Remove(Loader);
-                            ModpackUpdateFlow.ReleaseStages(LoaderList);
                             Logger.Info($"关闭任务管理卡片：{Loader.Name}，且移出任务列表");
                             ModBase.RunInThread(() => Loader.Cancel());
                         };
@@ -359,7 +358,6 @@ namespace PCL
 
         public void TaskRemove(object Loader)
         {
-            if (Loader is ModLoader.LoaderCombo<string> Combo) ModpackUpdateFlow.ReleaseStages(Combo.GetLoaderList());
             if (RightCards.ContainsKey(Conversions.ToString(Conversions.ToString(NewLateBinding.LateGet(Loader, null, "Name", Array.Empty<object>(), null, null, null)))))
             {
                 ModBase.RunInUiWait(() =>

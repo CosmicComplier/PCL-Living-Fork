@@ -63,10 +63,9 @@ namespace PCL
                 }
             return null;
         }
-        internal static void ReleaseStages(IEnumerable<ModLoader.LoaderBase> tasks)
-        {
-            foreach (var task in tasks) TaskStages.Remove(task);
-        }
+        // Stage data belongs to the loader, not its current task-manager card.
+        // Taskbar.Add removes a same-name card using the NEW loader before adding
+        // it. ConditionalWeakTable already releases data when the loader dies.
         private static global::System.Int32 Active;
         private static readonly global::PCLCS.PackUpdateFlowEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile, global::PCL.ResourceVersion, global::PCL.ModMinecraft.McInstance, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>, global::MeloongCore.RedoableWorker, global::MeloongCore.ProgressProvider> Engine = new global::PCLCS.PackUpdateFlowEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile, global::PCL.ResourceVersion, global::PCL.ModMinecraft.McInstance, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>, global::MeloongCore.RedoableWorker, global::MeloongCore.ProgressProvider>(global::PCL.ModpackUpdate.Engine, global::PCL.ModpackUpdateFlow.CreateHost());
         private static global::PCLCS.PackUpdateFlowHost<global::PCL.PackUpdatePackage, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile, global::PCL.ResourceVersion, global::PCL.ModMinecraft.McInstance, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>, global::MeloongCore.RedoableWorker, global::MeloongCore.ProgressProvider> CreateHost()
@@ -117,7 +116,15 @@ namespace PCL
                     if (Task.State == ModBase.LoadState.Canceled) stages.Stop(PackUpdateStageState.Canceled);
                     else stages.Set(Stage, State, Detail);
                 },
-                Progress = new Func<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Double, global::System.Double, global::MeloongCore.ProgressProvider>((Task, Start, Finish) => Task.CreateSyncProgressProvider(Start, Finish)),
+                SetStageProgress = (task, stage, value) => { if (TaskStages.TryGetValue(task, out var stages)) stages.SetProgress(stage, value); },
+                Progress = (task, start, finish) => {
+                    var provider = task.CreateSyncProgressProvider(start, finish);
+                    if (TaskStages.TryGetValue(task, out var stages)) {
+                        var report = stages.CreateProgressReporter();
+                        provider.ProgressChanged += _ => { var raw = provider.GetRaw(); report(raw.actual + raw.skiped); };
+                    }
+                    return provider;
+                },
                 SetOutput = new Action<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.String>((Task, Value) => Task.Output = Value),
                 CreateRuntime = global::PCL.ModpackUpdateFlow.CreateRuntime,
                 RuntimeWorkload = new Func<global::PCL.ModLoader.LoaderCombo<global::System.String>, global::System.String, global::MeloongCore.ProgressProvider, global::System.Action>((Build, Folder, Progress) => global::PCL.LoaderFileOperation.CreateWorkloadWithProgress(Build, Folder, Progress)),

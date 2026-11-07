@@ -271,7 +271,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             if (!current.SetEquals(plan.ObservedModFiles)) throw new IOException("模组目录在预览或下载后发生变化，请重新检查更新。");
         }
     }
-    public void DownloadChanges(TPlan plan, string stage, CancellationToken token, Action<List<TNetFile>, CancellationToken>? download = null, Action<string>? status = null) {
+    public void DownloadChanges(TPlan plan, string stage, CancellationToken token, Action<List<TNetFile>, CancellationToken>? download = null, Action<string>? status = null, Action<double>? verificationProgress = null) {
         List<TNetFile> files = new();
         status?.Invoke("准备更新文件");
         // Stage selectable conflicts too; choosing in the preview never starts unpreviewed downloads.
@@ -290,6 +290,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             status?.Invoke("校验更新文件（" + verified + "/" + stagedFiles.Length + "）");
             if (!Matches(value.Payload!, value.Hash, token)) throw new IOException("整合包更新文件校验失败：" + value.Relative);
             verified++;
+            verificationProgress?.Invoke(verified / (double)stagedFiles.Length);
         }
         status?.Invoke("核对本地修改与文件归属");
         ValidateSnapshot(plan, token);

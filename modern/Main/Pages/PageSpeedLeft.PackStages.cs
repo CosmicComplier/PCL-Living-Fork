@@ -11,7 +11,7 @@ namespace PCL;
 public partial class PageSpeedLeft {
     private static void RefreshPackStages(Grid rows, PackUpdateStageSnapshot[] stages, Exception error) {
         string detail = error?.GetDisplay(true);
-        string signature = string.Join("\n", stages.Select(stage => stage.State + ":" + stage.Detail)) + "\n" + detail;
+        string signature = string.Join("\n", stages.Select(stage => stage.State + ":" + stage.Detail + ":" + stage.Progress)) + "\n" + detail;
         if (Equals(rows.Tag, signature)) return;
         rows.Tag = signature;
         rows.Children.Clear(); rows.RowDefinitions.Clear();
@@ -19,7 +19,7 @@ public partial class PageSpeedLeft {
             int index = rows.RowDefinitions.Count;
             rows.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, MinHeight = 26 });
             string state = stage.State switch {
-                PackUpdateStageState.Running => "进行中", PackUpdateStageState.AwaitingConfirmation => "待确认",
+                PackUpdateStageState.Running when stage.Progress.HasValue => Math.Floor(stage.Progress.Value * 100) + "%", PackUpdateStageState.AwaitingConfirmation => "待确认",
                 PackUpdateStageState.Skipped => "跳过", PackUpdateStageState.Canceled => "已取消", _ => null
             };
             FrameworkElement marker;
@@ -45,11 +45,10 @@ public partial class PageSpeedLeft {
             };
             Grid.SetRow(marker, index); rows.Children.Add(marker);
             var label = new StackPanel { Margin = new Thickness(0, 0, 0, 5), Tag = stage.Stage };
-            label.Children.Add(new TextBlock { Text = stage.Name + (stage.State == PackUpdateStageState.Skipped ? "（无需更新）" : ""), TextWrapping = TextWrapping.Wrap });
-            if (!string.IsNullOrEmpty(stage.Detail) && stage.State is PackUpdateStageState.Running or PackUpdateStageState.AwaitingConfirmation or PackUpdateStageState.Failed or PackUpdateStageState.Canceled) {
-                var subtitle = new TextBlock { Text = stage.Detail, FontSize = 12, TextWrapping = TextWrapping.Wrap };
-                subtitle.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrushGray3"); label.Children.Add(subtitle);
-            }
+            var title = new TextBlock { Text = stage.Name + (stage.State == PackUpdateStageState.Skipped ? "（无需更新）" : ""), TextWrapping = TextWrapping.Wrap };
+            title.SetResourceReference(TextBlock.ForegroundProperty, stage.State == PackUpdateStageState.Running ? "ColorBrush3" : "ColorBrush1");
+            label.Children.Add(title);
+            label.ToolTip = stage.Detail;
             Grid.SetColumn(label, 1); Grid.SetRow(label, index); rows.Children.Add(label);
         }
         if (detail is not null) {

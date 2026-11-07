@@ -67,7 +67,8 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         host.SetProgress(task, 0.15);
         Done(PackUpdateStage.CompareFiles);
         Stage(PackUpdateStage.PrepareFiles);
-        update.DownloadChanges(plan, stage, token, (files, cancel) => host.Download(files, cancel, host.Progress(task, 0.15, 0.65)), text => Stage(PackUpdateStage.PrepareFiles, text));
+        update.DownloadChanges(plan, stage, token, (files, cancel) => host.Download(files, cancel, host.Progress(task, 0.15, 0.65)),
+            text => Stage(PackUpdateStage.PrepareFiles, text), value => host.SetStageProgress(task, PackUpdateStage.PrepareFiles, value));
         host.SetProgress(task, 0.65);
         bool runtimeChanged = !Same(host.Version(instance).VanillaName, package.Minecraft) || host.Version(instance).ModLoaderVersions.Count != package.Loaders.Count ||
             package.Loaders.Any(pair => !host.Version(instance).ModLoaderVersions.ContainsKey(pair.Key) || !Same(host.Version(instance).ModLoaderVersions[pair.Key], pair.Value));
@@ -131,14 +132,20 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         EnsureOriginUnchanged();
         update.ValidateChoices(plan, token);
         int operationCount = update.PlannedOperationCount(plan, token) + extras.Count + 1;
+        bool applying = false;
         string backup = update.Commit(plan, host.VersionFolder(instance), token, extras,
             index => {
                 // The first callback runs only after all original files and the
                 // transaction journal have been durably staged by Commit.
                 if (index == 0) Done(PackUpdateStage.BackupFiles);
+                applying = true;
                 Stage(PackUpdateStage.ApplyFiles, "文件 " + (index + 1) + "/" + operationCount);
             },
-            value => host.SetProgress(task, 0.9 + 0.08 * Math.Min(1, Math.Max(0, value))));
+            value => {
+                host.SetProgress(task, 0.9 + 0.08 * Math.Min(1, Math.Max(0, value)));
+                host.SetStageProgress(task, applying ? PackUpdateStage.ApplyFiles : PackUpdateStage.BackupFiles,
+                    applying ? (value - 0.45) / 0.55 : value / 0.45);
+            });
         Done(PackUpdateStage.ApplyFiles);
         host.SetProgress(task, 0.98); host.SetOutput(task, backup);
         Stage(PackUpdateStage.RefreshInstance);

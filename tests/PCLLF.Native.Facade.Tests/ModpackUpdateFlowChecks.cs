@@ -66,6 +66,8 @@ internal static class ModpackUpdateFlowChecks
         string root = Path.Combine(fixtureRoot, "flow"); Directory.CreateDirectory(root);
         string minecraft = Path.Combine(root, "minecraft"); scope.SelectMinecraft(minecraft);
         _ = FileTaskShell.Install();
+        // Match the second real update: TaskManager already exists before Add.
+        ModMain.FrmSpeedLeft = new PageSpeedLeft(); ModMain.FrmSpeedRight = new PageSpeedRight();
         using LiveFlow flow = new(root);
         TraceStage("fixtures-installed");
         ModMinecraft.McInstance blocked = Instance(minecraft, "guard-1.20.1");
@@ -121,6 +123,12 @@ internal static class ModpackUpdateFlowChecks
         Check(Stages(flow.Step).Single(item => item.Stage == PackUpdateStage.ConfirmPreview).State == PackUpdateStageState.Canceled &&
             Stages(flow.Step).Where(item => item.Stage > PackUpdateStage.ConfirmPreview).All(item => item.State == PackUpdateStageState.Waiting), "FLOW-stage-preview", "Preview cancellation marked unexecuted stages complete or lost the canceled stage.");
         Check(File.ReadAllText(Path.Combine(declined.PathIndie, "config/author.txt")) == "old-author" && File.ReadAllText(Path.Combine(declined.PathIndie, "config/personal.txt")) == "my-edit" && Update("ReadManifest", declined.PathVersion) is null, "FLOW-03-bytes", "refused preview committed files or persisted origin");
+        var canceledStep = flow.Step;
+        flow.Archives.Enqueue(next); flow.Archives.Enqueue(old);
+        flow.Start(declined); flow.WaitStopped();
+        Check(!ReferenceEquals(canceledStep, flow.Step) && Stages(flow.Step!).Length == 12 &&
+            Stages(flow.Step!).Single(stage => stage.Stage == PackUpdateStage.ConfirmPreview).State == PackUpdateStageState.Canceled,
+            "FLOW-retry-canceled", "A second update of the same instance lost stage data after preview cancellation.");
 
         // Cancel the REAL taskbar combo while the existing confirmation primitive
         // is held. Its file-workload guard must wait for the real step finally;
@@ -233,6 +241,11 @@ internal static class ModpackUpdateFlowChecks
             "FLOW-11-origin", "correct schema-1 repair did not commit a complete schema-2 author origin");
         Check(committedOrigin["files"]?["config/personal.txt"]?["state"]?.ToString() == "retained" && committedOrigin["files"]?["config/personal.txt"]?["local"]?["hash"]?.ToString() == Digest(Path.Combine(accepted.PathIndie, "config/personal.txt")),
             "FLOW-11-retained", "new author expectation and retained personal observation were not recorded separately");
+        var finishedStep = flow.Step;
+        flow.Preview = _ => { Check(Stages(flow.Step!).Length == 12, "FLOW-retry-completed-preview", "Stages disappeared when updating a previously completed instance."); return 2; };
+        flow.Archives.Enqueue(next); flow.Start(PageInstanceLeft.Instance!); flow.WaitStopped();
+        Check(!ReferenceEquals(finishedStep, flow.Step) && Stages(flow.Step!).Single(stage => stage.Stage == PackUpdateStage.ConfirmPreview).State == PackUpdateStageState.Canceled,
+            "FLOW-retry-completed", "Retry after success failed to retain its independent presentation stages.");
         AutomaticOrigins(flow, minecraft, root, old, next);
         TraceStage("common-barrier-enter");
         using (DeadlineGuard deadlineGuard = new(DateTime.UtcNow.AddSeconds(10), "common actual-task completion barrier")) scope.FinishActualTasks();
