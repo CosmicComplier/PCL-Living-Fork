@@ -20,6 +20,7 @@ internal static class UpdateLogPromptChecks
 {
     internal static void Run(FixtureEnvironment environment)
     {
+        UpdateLogPromptLayoutChecks.Run(environment);
         string file = Path.Combine(Paths.Base, "PCL", "Setup.ini");
         Native.Check(Native.Full(file).StartsWith(Native.Full(environment.Root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "Notice setting escaped its GUID fixture.");
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
@@ -166,8 +167,12 @@ internal static class UpdateLogPromptChecks
             notes.VerticalScrollBarVisibility == ScrollBarVisibility.Auto, "The Markdown body lost its independent scrolling area.");
         Native.Check(((MyButton)dialog.FindName("Btn3")).Visibility == Visibility.Collapsed, "The obsolete third opt-out button is still visible.");
         dialog.Measure(new Size(760, 650)); dialog.Arrange(new Rect(0, 0, 760, 650)); dialog.UpdateLayout();
-        Native.Check(box.DesiredSize.Height > 0 && body.ActualHeight >= box.DesiredSize.Height + notes.ActualHeight,
-            "The fixed native checkbox footer is clipped by the Markdown body.");
+        var caption = (ScrollViewer)dialog.FindName("PanCaption");
+        caption.ApplyTemplate();
+        var viewport = (FrameworkElement)caption.Template.FindName("PART_ScrollContentPresenter", caption);
+        Rect bounds = box.TransformToAncestor(viewport).TransformBounds(new Rect(box.RenderSize));
+        Native.Check(box.ActualHeight > 0 && bounds.Top >= -0.5 && bounds.Bottom <= viewport.ActualHeight + 0.5,
+            "The native checkbox's complete bounds do not fit the real content viewport.");
     }
 
     private static void Preview(MyMsgText dialog)
