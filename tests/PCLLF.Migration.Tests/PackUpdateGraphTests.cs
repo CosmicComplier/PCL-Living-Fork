@@ -1,10 +1,11 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text;
 using Newtonsoft.Json.Linq;
 using PCLCS;
 
 internal static class PackUpdateGraphTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
+        yield return ("pack mod checks ignore Java declarations without suppressing Minecraft errors", IgnoreJava);
         yield return ("pack update final graph reuses an author dependency for a personal mod", AuthorUpgradeSatisfiesPersonal);
         yield return ("pack update replaces an incompatible personal author override before judging its consumer", AuthorReplacementBeforeDisabling);
         yield return ("pack update pairs a unique personal mod with its new author version and preserves later upgrade choices", PersonalAuthorComponentUpdate);
@@ -21,6 +22,357 @@ internal static class PackUpdateGraphTests {
         yield return ("pack update final graph detects missing dependencies and explicit conflicts among new author files", AuthorCombinationErrors);
         yield return ("pack update final graph includes legacy Forge version-folder constraints and snapshots", LegacyVersionFolderConstraints);
         yield return ("pack update final graph loads only the target legacy version folder and marks unsupported scopes unknown", LegacyIncomingScope);
+        yield return ("pack preview exposes unchanged incompatible author mods and commits explicit disabling", PreviewUnchangedIncompatible);
+        yield return ("pack preview asks to enable updated and unchanged disabled required providers", PreviewDisabledRequired);
+        yield return ("pack preview snapshots isolate choices and occupied disable targets remain protected", PreviewSnapshotsAndCollisions);
+        yield return ("pack preview rechecks a personal mod explicitly kept enabled", PreviewPersonalChoice);
+        yield return ("pack preview rejects disabled providers with incompatible required versions", PreviewWrongProvider);
+        yield return ("pack preview state switches cannot authorize unknown or forbidden changes", PreviewSwitchAuthorization);
+        yield return ("pack preview author disable and enable choices survive repeated updates", PreviewStateRoundTrip);
+        yield return ("pack preview leaves multiple local state candidates outside switch authorization", PreviewMultipleStateCandidates);
+        yield return ("pack preview preserves explicit author selection for unknown ordinary configuration ownership", PreviewUnknownConfigurationChoice);
+        yield return ("pack preview exposes alternative valid providers despite unrelated errors and rejects duplicate selection", PreviewAlternativeProviders);
+        yield return ("pack preview explicitly enables personal disabled providers for author and personal consumers", PreviewPersonalRequiredProvider);
+        yield return ("pack preview rejects unsafe personal disabled provider candidates", PreviewUnsafePersonalProviders);
+        yield return ("pack preview personal enabling rolls back original disabled bytes after cancellation", PreviewPersonalEnableRollback);
+        yield return ("pack preview rejects duplicate state-switch operation targets before confirmation", PreviewDuplicateOperationTargets);
+        yield return ("pack preview resolves author and personal declared conflicts against the author baseline", PreviewPackFirstConflicts);
+        yield return ("pack preview restores author providers hidden by personal overrides without blaming author consumers", PreviewHiddenAuthorProvider);
+        yield return ("pack preview independent author runtime errors remain actionable with absent optional files", PreviewOptionalAuthorRuntime);
+        yield return ("pack preview restores a modified duplicate and an explicitly retained author version against the new baseline", PreviewPackFirstReplacementChoices);
+    }
+    private static void IgnoreJava() {
+        using Fixture f = new();
+        FileSpec java = f.Spec("mods/java.jar", "java_fixture", "1.0", new() { ["java"] = ">=25" });
+        f.Install(java);
+        foreach (string? selected in new string?[] { null, "17" }) {
+            var result = PackDependencyGraph.Check(new[] { f.Target(java.Relative) }, "1.21.1", new() { [ModLoaders.Fabric] = "0.16.0" }, javaVersion: selected);
+            Require(!result.HasErrors && !result.HasUnknown && !result.Warnings.Any(text => text.Contains("java", StringComparison.OrdinalIgnoreCase)), "Java requirement remained a mod compatibility prompt.");
+        }
+        FileSpec minecraft = f.Spec("mods/minecraft.jar", "minecraft_fixture", "1.0", new() { ["minecraft"] = "0.1" });
+        f.Install(minecraft);
+        Require(PackDependencyGraph.Check(new[] { f.Target(minecraft.Relative) }, "1.21.1", new() { [ModLoaders.Fabric] = "0.16.0" }).HasErrors, "Ignoring Java suppressed Minecraft checking.");
+    }
+
+    private static void PreviewPackFirstReplacementChoices() {
+        foreach (bool personalDuplicate in new[] { false, true }) {
+            using Fixture f = new();
+            FileSpec original = f.Spec("mods/provider.jar", "provider", "1.0", project: "provider");
+            FileSpec next = f.Spec(original.Relative, "provider", "2.0", project: "provider");
+            FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=2" });
+            FileSpec broken = f.Spec("mods/broken.jar", "broken", "1.0", new() { ["minecraft"] = "0.1" });
+            f.Install(personalDuplicate ? f.Spec(original.Relative, "consumer", "9.0") : original);
+            Plan plan = f.Plan([original], [next, consumer, broken]); f.Stage(plan);
+            Change choice = plan.Changes.Single(change => change.Relative == next.Relative);
+            Require(choice.AllowPreserveAuthor, "The explicit retained-version choice was unavailable in the conflicted preview.");
+            choice.Choice = PackUpdateChoice.PreservePersonal;
+            var review = f.Engine.ReviewPreview(plan);
+            Require(review.Dependencies.HasErrors && review.Actions.Any(action => action.Relative == next.Relative && action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion && !action.Selected) &&
+                !review.Actions.Any(action => action.Relative == consumer.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+                "A personal duplicate or retained old author version blamed a healthy new author consumer.");
+            choice.Choice = PackUpdateChoice.UseAuthor; choice.PreviewAuthorRepair = true;
+            plan.Changes.Single(change => change.Relative == broken.Relative).DisableAfterUpdate = true;
+            var repaired = f.Engine.ReviewPreview(plan);
+            Require(!repaired.Dependencies.HasErrors && repaired.Actions.Any(action => action.Relative == next.Relative && action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion && action.Selected),
+                "Restoring the author baseline failed or lost the explicit repair undo action.");
+        }
+    }
+
+    private static void PreviewOptionalAuthorRuntime() {
+        using Fixture f = new();
+        FileSpec broken = f.Spec("mods/broken-author.jar", "broken_author", "1.0", new() { ["minecraft"] = "0.1" });
+        FileSpec optional = f.Spec("mods/optional.jar", "optional_author", "1.0");
+        Package package = f.Package([broken, optional]);
+        package.Files[optional.Relative].Payload = null; package.Files[optional.Relative].OptionalFile = true;
+        Plan plan = f.Engine.Plan(f.Game, PackUpdateEngine<PackFile, Package, Change, Plan, object>.Manifest(f.Package([])), package);
+        f.Stage(plan);
+        var review = f.Engine.ReviewPreview(plan);
+        Require(review.Dependencies.HasErrors && review.Actions.Any(action => action.Relative == broken.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible && action.Details.Contains("作者新版整合包自身")),
+            "An unrelated absent optional file hid an author's independently proven runtime mismatch.");
+    }
+
+    private static void PreviewPersonalRequiredProvider() {
+        foreach (bool personalConsumer in new[] { false, true }) foreach (string suffix in new[] { ".disabled", ".old" }) {
+            using Fixture f = new();
+            FileSpec provider = f.Spec("mods/personal-provider.jar", "provider", "2.0");
+            FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=2" });
+            f.Install(provider with { Relative = provider.Relative + suffix });
+            if (personalConsumer) f.Install(consumer);
+            Plan plan = f.Plan([], personalConsumer ? [] : [consumer]); f.Stage(plan);
+            Change candidate = plan.PreviewChanges.Single(change => change.Operation == PackUpdateOperation.EnablePersonal);
+            var review = f.Engine.ReviewPreview(plan);
+            Require(f.Requests == 0 && candidate.KeepDisabled && !candidate.ApplyAuthor && review.Dependencies.HasErrors &&
+                review.Actions.Any(action => action.Relative == provider.Relative && action.Kind == PackUpdatePreviewActionKind.EnableRequired && !action.Selected),
+                "An existing compatible personal disabled provider was bypassed or silently enabled.");
+            Require(!plan.Changes.Any(change => change.Operation == PackUpdateOperation.DisablePersonal && change.LocalRelative == consumer.Relative),
+                "A personal consumer was disabled before the player could enable its available local provider.");
+            Require(!File.Exists(f.Target(provider.Relative)) && File.ReadAllBytes(f.Target(provider.Relative + suffix)).SequenceEqual(provider.Bytes), "Preparing a personal provider changed local bytes.");
+            candidate.KeepDisabled = false;
+            Require(!f.Engine.ReviewPreview(plan).Dependencies.HasErrors, "Enabling the personal provider did not repair the proposed graph.");
+            Require(f.Engine.PlannedOperationCount(plan) == (personalConsumer ? 2 : 3), "Preview-only personal operations were omitted from the actual operation count.");
+            f.Engine.Commit(plan, f.Game, CancellationToken.None);
+            JObject manifest = f.Engine.ReadManifest(f.Game)!;
+            Require(!File.Exists(f.Target(provider.Relative + suffix)) && File.ReadAllBytes(f.Target(provider.Relative)).SequenceEqual(provider.Bytes) &&
+                manifest["files"]![provider.Relative] is null && manifest["retained"]![provider.Relative] is null &&
+                (personalConsumer || manifest["files"]![consumer.Relative]!["hash"]!.ToString() == consumer.Hash),
+                "Personal enabling lost original bytes or incorrectly promoted personal content into an author declaration or retained-author record.");
+            Plan subsequent = f.Engine.Plan(f.Game, manifest, f.Package(personalConsumer ? [] : [consumer]));
+            Change personalProvider = subsequent.Changes.Single(change => change.LocalRelative == provider.Relative);
+            Require(personalProvider.Ownership == PackUpdateOwnership.PersonalAdded && personalProvider.DisplayOnly && !personalProvider.AllowAuthor,
+                "The next update failed to recognize the enabled provider as a protected personal addition.");
+        }
+    }
+    private static void PreviewUnsafePersonalProviders() {
+        foreach (string reason in new[] { "version", "conflict", "occupied", "multiple", "unknown" }) {
+            using Fixture f = new();
+            FileSpec provider = reason == "unknown" ? f.Raw("mods/provider.jar", Jar("readme.txt", "unknown")) :
+                f.Spec("mods/provider.jar", "provider", reason == "version" ? "1.0" : "2.0", breaks: reason == "conflict" ? new() { ["healthy_author"] = "*" } : null);
+            FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=2" });
+            FileSpec author = f.Spec("mods/healthy.jar", "healthy_author", "1.0");
+            f.Install(provider with { Relative = provider.Relative + ".disabled" });
+            if (reason == "occupied") f.Install(f.Spec(provider.Relative, "unrelated", "9.0"));
+            if (reason == "multiple") f.Install(f.Spec("mods/another-provider.jar.disabled", "provider", "3.0"));
+            Plan plan = f.Plan([], [consumer, author]); f.Stage(plan);
+            var review = f.Engine.ReviewPreview(plan);
+            Require(review.Dependencies.HasErrors && !review.Actions.Any(action => action.Kind == PackUpdatePreviewActionKind.EnableRequired),
+                "An unsafe personal provider was offered for enabling: " + reason);
+            Require(File.ReadAllBytes(f.Target(provider.Relative + ".disabled")).SequenceEqual(provider.Bytes), "Rejecting an unsafe provider changed its bytes: " + reason);
+            Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+        }
+    }
+    private static void PreviewPersonalEnableRollback() {
+        foreach (int cancelAt in new[] { 2, 3 }) {
+            using Fixture f = new();
+            FileSpec provider = f.Spec("mods/provider.jar", "provider", "2.0");
+            FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=2" });
+            f.Install(provider with { Relative = provider.Relative + ".disabled" });
+            Plan plan = f.Plan([], [consumer]); f.Stage(plan);
+            plan.PreviewChanges.Single(change => change.Operation == PackUpdateOperation.EnablePersonal).KeepDisabled = false;
+            using CancellationTokenSource cancellation = new();
+            Throws<OperationCanceledException>(() => f.Engine.Commit(plan, f.Game, cancellation.Token, beforeApply: index => { if (index == cancelAt) cancellation.Cancel(); }));
+            Require(!File.Exists(f.Target(provider.Relative)) && File.ReadAllBytes(f.Target(provider.Relative + ".disabled")).SequenceEqual(provider.Bytes) &&
+                !File.Exists(f.Target(consumer.Relative)) && !File.Exists(f.ManifestPath), "Cancelling a personal enable failed to restore the original disabled files and author manifest.");
+        }
+    }
+    private static void PreviewDuplicateOperationTargets() {
+        using Fixture f = new();
+        FileSpec active = f.Spec("mods/adapter.jar", "adapter", "1.0", new() { ["minecraft"] = "0.1" });
+        FileSpec disabled = f.Spec(active.Relative + ".disabled", "reserve", "1.0");
+        Plan plan = f.Plan([], [active, disabled]); f.Stage(plan);
+        plan.Changes.Single(change => change.Relative == active.Relative).DisableAfterUpdate = true;
+        Require(f.Engine.ReviewPreview(plan).Dependencies.HasErrors, "Two writes to the same disabled target passed the preview.");
+        Throws<IOException>(() => f.Engine.ValidateChoices(plan));
+        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+        Require(!File.Exists(f.Target(active.Relative)) && !File.Exists(f.Target(disabled.Relative)), "A duplicate-operation preview changed local bytes.");
+    }
+    private static void PreviewPackFirstConflicts() {
+        foreach (bool authorDeclares in new[] { false, true }) {
+            using Fixture f = new();
+            FileSpec author = f.Spec("mods/author.jar", "author", "1.0", breaks: authorDeclares ? new() { ["personal"] = "*" } : null);
+            FileSpec personal = f.Spec("mods/personal.jar", "personal", "1.0", breaks: authorDeclares ? null : new() { ["author"] = "*" });
+            f.Install(personal);
+            Plan plan = f.Plan([], [author]); f.Stage(plan);
+            Change choice = plan.Changes.Single(change => change.LocalRelative == personal.Relative);
+            Require(choice.Operation == PackUpdateOperation.DisablePersonal && plan.Changes.Single(change => change.Relative == author.Relative).ApplyAuthor,
+                "Personal conflict resolution did not preserve the new author baseline.");
+            choice.Choice = PackUpdateChoice.PreservePersonal;
+            var review = f.Engine.ReviewPreview(plan);
+            Require(review.Dependencies.HasErrors && review.Actions.Any(action => action.Relative == personal.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible) &&
+                !review.Actions.Any(action => action.Relative == author.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+                "A personal conflict was presented as a reason to disable the healthy author file.");
+            Require(f.Engine.PlannedOperationCount(plan) == 1, "Preserving a personal file unexpectedly scheduled a write.");
+            choice.Choice = PackUpdateChoice.UseAuthor;
+            Require(f.Engine.PlannedOperationCount(plan) == 3, "Disabling personal content was not counted as write plus delete.");
+        }
+    }
+    private static void PreviewHiddenAuthorProvider() {
+        using Fixture f = new();
+        FileSpec original = f.Spec("mods/provider.jar", "provider", "1.0", project: "provider");
+        FileSpec modified = f.Spec(original.Relative, "different_personal_id", "9.0");
+        FileSpec next = f.Spec(original.Relative, "provider", "2.0", project: "provider");
+        FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=2" });
+        f.Install(modified);
+        Plan plan = f.Plan([original], [next, consumer]); f.Stage(plan);
+        Change choice = plan.Changes.Single(change => change.Relative == next.Relative);
+        choice.Choice = PackUpdateChoice.PreservePersonal;
+        var review = f.Engine.ReviewPreview(plan);
+        Require(review.Dependencies.HasErrors && review.Actions.Any(action => action.Relative == next.Relative && action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion && !action.Selected) &&
+            !review.Actions.Any(action => action.Relative == consumer.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+            "A personal override hiding an author ID blamed the author consumer instead of restoring the author provider.");
+        choice.Choice = PackUpdateChoice.UseAuthor;
+        Require(!f.Engine.ReviewPreview(plan).Dependencies.HasErrors, "Restoring the declared author provider failed to repair its consumer.");
+    }
+
+    private static void PreviewAlternativeProviders() {
+        using Fixture f = new();
+        FileSpec first = f.Spec("mods/provider-a.jar", "provider", "1.0");
+        FileSpec second = f.Spec("mods/provider-b.jar", "provider", "2.0");
+        FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=1" });
+        FileSpec broken = f.Spec("mods/unrelated.jar", "unrelated", "1.0", new() { ["minecraft"] = "0.1" });
+        f.Install(first with { Relative = first.Relative + ".disabled" });
+        f.Install(second with { Relative = second.Relative + ".disabled" });
+        Plan plan = f.Plan([first, second], [first, second, consumer, broken]); f.Stage(plan);
+        var review = f.Engine.ReviewPreview(plan);
+        Require(review.Dependencies.HasErrors && review.Actions.Count(action => action.Kind == PackUpdatePreviewActionKind.EnableRequired) == 2 &&
+            !review.Actions.Any(action => action.Relative == consumer.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+            "Valid alternative providers were hidden by ambiguity or an unrelated existing error.");
+        foreach (Change change in plan.PreviewChanges) change.KeepDisabled = false;
+        plan.Changes.Single(change => change.Relative == broken.Relative).DisableAfterUpdate = true;
+        var duplicateReview = f.Engine.ReviewPreview(plan);
+        Require(duplicateReview.Actions.Any(action => action.Relative == first.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible) &&
+            duplicateReview.Actions.Any(action => action.Relative == second.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+            "Duplicate provider identities lost their explicit disabling alternatives.");
+        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+        Require(!File.Exists(f.Target(first.Relative)) && !File.Exists(f.Target(second.Relative)), "Duplicate provider selection committed despite the final graph guard.");
+    }
+
+    private static void PreviewUnknownConfigurationChoice() {
+        using Fixture f = new();
+        FileSpec original = f.Raw("config/author.json", Encoding.UTF8.GetBytes("original"));
+        FileSpec incoming = f.Raw(original.Relative, Encoding.UTF8.GetBytes("updated")); f.Install(original);
+        JObject baseline = PackUpdateEngine<PackFile, Package, Change, Plan, object>.Manifest(f.Package([original]));
+        baseline["files"]![original.Relative]!["local"] = new JObject(new JProperty("relative", original.Relative), new JProperty("ownership", "unknown"));
+        Plan plan = f.Engine.Plan(f.Game, baseline, f.Package([incoming])); f.Stage(plan);
+        Change choice = plan.Changes.Single();
+        Require(choice.Ownership == PackUpdateOwnership.Unknown && choice.CanChoose, "Unknown same-path configuration evidence no longer exposes its explicit author choice.");
+        choice.Choice = PackUpdateChoice.UseAuthor;
+        Require(choice.ApplyAuthor, "An explicit author configuration choice silently became a no-op.");
+        f.Engine.Commit(plan, f.Game, CancellationToken.None);
+        Require(File.ReadAllBytes(f.Target(incoming.Relative)).SequenceEqual(incoming.Bytes), "The explicitly selected author configuration was not written.");
+    }
+
+    private static void PreviewMultipleStateCandidates() {
+        using Fixture f = new();
+        FileSpec author = f.Spec("mods/author.jar", "author", "1.0");
+        f.Install(author);
+        FileSpec other = f.Spec(author.Relative + ".old", "other", "9.0"); f.Install(other);
+        Plan plan = f.Plan([author], [author]); f.Stage(plan);
+        Require(!plan.PreviewChanges.Any() && !f.Engine.ReviewPreview(plan).Actions.Any(), "An exact author file bypassed ambiguous local enabled/disabled siblings.");
+        Require(File.ReadAllBytes(f.Target(author.Relative)).SequenceEqual(author.Bytes) && File.ReadAllBytes(f.Target(other.Relative)).SequenceEqual(other.Bytes), "Preparing an ambiguous preview modified local files.");
+    }
+
+    private static void PreviewWrongProvider() {
+        using Fixture f = new();
+        FileSpec provider = f.Spec("mods/provider.jar", "provider", "1.0");
+        FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=2" });
+        f.Install(provider with { Relative = provider.Relative + ".disabled" });
+        Plan plan = f.Plan([provider], [provider, consumer]); f.Stage(plan);
+        var review = f.Engine.ReviewPreview(plan);
+        Require(review.Dependencies.HasErrors && !review.Actions.Any(action => action.Relative == provider.Relative && action.Kind == PackUpdatePreviewActionKind.EnableRequired) &&
+            review.Actions.Any(action => action.Relative == consumer.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+            "A matching ID with an incompatible version was presented as a repair and hid the consumer decision.");
+        plan.PreviewChanges.Single().KeepDisabled = false;
+        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+        Require(File.Exists(f.Target(provider.Relative + ".disabled")) && !File.Exists(f.Target(provider.Relative)), "A failed graph committed a provider switch.");
+    }
+    private static void PreviewSwitchAuthorization() {
+        foreach (bool forbidden in new[] { false, true }) {
+            using Fixture f = new();
+            FileSpec file = f.Spec("mods/author.jar", "author", "1.0"); f.Install(file);
+            Plan plan = f.Plan([file], [file]); f.Stage(plan);
+            Change change = plan.PreviewChanges.Single();
+            if (forbidden) change.AllowAuthor = false; else change.Ownership = PackUpdateOwnership.Unknown;
+            change.DisableAfterUpdate = true;
+            Require(!change.ApplyAuthor && !f.Engine.ReviewPreview(plan).Actions.Any(), "An unauthorized switch became a writable author operation.");
+            Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+            Require(File.ReadAllBytes(f.Target(file.Relative)).SequenceEqual(file.Bytes) && !File.Exists(f.Target(file.Relative + ".disabled")), "An unauthorized switch changed author bytes.");
+        }
+    }
+    private static void PreviewStateRoundTrip() {
+        using Fixture f = new();
+        FileSpec provider = f.Spec("mods/provider.jar", "provider", "1.0"); f.Install(provider);
+        Plan first = f.Plan([provider], [provider]); f.Stage(first);
+        Change disable = first.PreviewChanges.Single();
+        disable.DisableAfterUpdate = true; disable.DisableAfterUpdate = false;
+        Require(!disable.ApplyAuthor, "Undoing an unchanged author disabling left a write operation.");
+        disable.DisableAfterUpdate = true;
+        f.Engine.Commit(first, f.Game, CancellationToken.None);
+        FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = ">=1" });
+        Plan second = f.Engine.Plan(f.Game, f.Engine.ReadManifest(f.Game), f.Package([provider, consumer])); f.Stage(second);
+        Change enable = second.PreviewChanges.Single();
+        Require(enable.Ownership == PackUpdateOwnership.Disabled && enable.KeepDisabled, "The next update forgot the explicit disabled state.");
+        enable.KeepDisabled = false; enable.KeepDisabled = true;
+        Require(f.Engine.ReviewPreview(second).Dependencies.HasErrors && !enable.ApplyAuthor, "Undoing enable did not restore the missing dependency.");
+        enable.KeepDisabled = false;
+        f.Engine.Commit(second, f.Game, CancellationToken.None);
+        JObject saved = f.Engine.ReadManifest(f.Game)!;
+        Require(File.ReadAllBytes(f.Target(provider.Relative)).SequenceEqual(provider.Bytes) && !File.Exists(f.Target(provider.Relative + ".disabled")) &&
+            saved["files"]![provider.Relative]!["hash"]!.ToString() == provider.Hash && saved["files"]![provider.Relative]!["state"]!.ToString() == "installed",
+            "Repeated updates lost author bytes, expected hash, or the final enabled state.");
+    }
+
+    private static void PreviewUnchangedIncompatible() {
+        using Fixture f = new();
+        FileSpec oldRenderer = f.Spec("mods/render-old.jar", "renderer", "0.5.11", project: "renderer");
+        FileSpec nextRenderer = f.Spec("mods/render-new.jar", "renderer", "0.8.10", project: "renderer");
+        FileSpec legacy = f.Spec("mods/legacy-adapter.jar", "legacy_adapter", "1.0", new() { ["minecraft"] = "~1.21.0", ["renderer"] = "0.5.11" }, project: "legacy");
+        f.Install(oldRenderer); f.Install(legacy);
+        var baseline = PackUpdateEngine<PackFile, Package, Change, Plan, object>.Manifest(f.Package([oldRenderer, legacy]));
+        Plan plan = f.Engine.Plan(f.Game, baseline, f.Package([nextRenderer, legacy], minecraft: "26.2")); f.Stage(plan);
+        Require(!plan.Changes.Any(change => change.Relative == legacy.Relative), "An unchanged author file became an ordinary update.");
+        Change decision = plan.PreviewChanges.Single(change => change.Relative == legacy.Relative);
+        var before = f.Engine.ReviewPreview(plan);
+        Require(before.Dependencies.HasErrors && before.Actions.Any(action => action.Relative == legacy.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible && !action.Selected) && !decision.ApplyAuthor,
+            "The unchanged incompatible author file was invisible or silently disabled before consent.");
+        Require(!before.Actions.Any(action => action.Relative == nextRenderer.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible) &&
+            before.Actions.Count(action => action.Kind == PackUpdatePreviewActionKind.DisableIncompatible) == 1,
+            "A consumer's required-version mismatch incorrectly proposed disabling its healthy author provider.");
+        decision.DisableAfterUpdate = true;
+        Require(!f.Engine.ReviewPreview(plan).Dependencies.HasErrors, "Explicitly disabling the author adapter did not repair the proposed graph.");
+        f.Engine.Commit(plan, f.Game, CancellationToken.None);
+        JObject saved = f.Engine.ReadManifest(f.Game)!;
+        Require(!File.Exists(f.Target(legacy.Relative)) && File.ReadAllBytes(f.Target(legacy.Relative + ".disabled")).SequenceEqual(legacy.Bytes) &&
+            saved["files"]![legacy.Relative]!["hash"]!.ToString() == legacy.Hash && saved["files"]![legacy.Relative]!["state"]!.ToString() == "disabled",
+            "The confirmed author disabling lost its bytes or declared provenance.");
+    }
+    private static void PreviewDisabledRequired() {
+        foreach (bool updated in new[] { false, true }) {
+            using Fixture f = new();
+            FileSpec original = f.Spec("mods/provider-old.jar", "provider", "1.0", project: "provider");
+            FileSpec incoming = updated ? f.Spec("mods/provider-new.jar", "provider", "2.0", project: "provider") : original;
+            FileSpec consumer = f.Spec("mods/consumer.jar", "consumer", "1.0", new() { ["provider"] = updated ? ">=2" : ">=1" });
+            f.Install(original with { Relative = original.Relative + ".disabled" });
+            Plan plan = f.Plan([original], [incoming, consumer]); f.Stage(plan);
+            var before = f.Engine.ReviewPreview(plan);
+            Change decision = plan.Changes.Concat(plan.PreviewChanges).Single(change => change.Incoming?.Relative == incoming.Relative);
+            Require(before.Dependencies.HasErrors && decision.KeepDisabled && before.Actions.Any(action => action.Relative == incoming.Relative && action.Kind == PackUpdatePreviewActionKind.EnableRequired && !action.Selected),
+                "A disabled required provider was not offered as an explicit preview decision.");
+            Require(!before.Actions.Any(action => action.Relative == consumer.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+                "A consumer was offered for disabling when its missing requirement can be enabled instead.");
+            decision.KeepDisabled = false; decision.Choice = PackUpdateChoice.UseAuthor;
+            var after = f.Engine.ReviewPreview(plan);
+            Require(!after.Dependencies.HasErrors && after.Actions.Any(action => action.Relative == incoming.Relative && action.Kind == PackUpdatePreviewActionKind.EnableRequired && action.Selected),
+                "Enabling the required author provider did not repair the selected combination or lost the undo control.");
+            f.Engine.Commit(plan, f.Game, CancellationToken.None);
+            Require(!File.Exists(f.Target(original.Relative + ".disabled")) && File.ReadAllBytes(f.Target(incoming.Relative)).SequenceEqual(incoming.Bytes) &&
+                f.Engine.ReadManifest(f.Game)!["files"]![incoming.Relative]!["state"]!.ToString() == "installed", "The required provider was not enabled transactionally.");
+        }
+    }
+    private static void PreviewSnapshotsAndCollisions() {
+        using Fixture f = new();
+        FileSpec legacy = f.Spec("mods/adapter.jar", "adapter", "1.0", new() { ["minecraft"] = "1.21.1" }, project: "adapter");
+        f.Install(legacy);
+        var baseline = PackUpdateEngine<PackFile, Package, Change, Plan, object>.Manifest(f.Package([legacy]));
+        Plan plan = f.Engine.Plan(f.Game, baseline, f.Package([legacy], minecraft: "26.2")); f.Stage(plan);
+        Plan snapshot = f.Engine.SnapshotForPreview(plan);
+        Change decision = plan.PreviewChanges.Single(); decision.DisableAfterUpdate = true;
+        Require(f.Engine.ReviewPreview(snapshot).Dependencies.HasErrors && !f.Engine.ReviewPreview(plan).Dependencies.HasErrors,
+            "An in-flight check observed a later UI choice instead of its own snapshot.");
+        FileSpec occupied = f.Spec(legacy.Relative + ".disabled", "unrelated", "9"); f.Install(occupied);
+        Throws<IOException>(() => f.Engine.ReviewPreview(plan));
+        Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
+        Require(File.ReadAllBytes(f.Target(legacy.Relative)).SequenceEqual(legacy.Bytes) && File.ReadAllBytes(f.Target(occupied.Relative)).SequenceEqual(occupied.Bytes), "A disable choice overwrote a newly occupied target.");
+    }
+    private static void PreviewPersonalChoice() {
+        using Fixture f = new();
+        FileSpec local = f.Spec("mods/personal.jar", "personal", "1", new() { ["minecraft"] = "1.21.1" }); f.Install(local);
+        Plan plan = f.Engine.Plan(f.Game, PackUpdateEngine<PackFile, Package, Change, Plan, object>.Manifest(f.Package([])), f.Package([], minecraft: "26.2")); f.Stage(plan);
+        Change choice = plan.Changes.Single();
+        Require(!f.Engine.ReviewPreview(plan).Dependencies.HasErrors, "The prepared personal disabling was not valid.");
+        choice.Choice = PackUpdateChoice.PreservePersonal;
+        var review = f.Engine.ReviewPreview(plan);
+        Require(review.Dependencies.HasErrors && review.Actions.Any(action => action.Relative == local.Relative && !action.Selected && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+            "Keeping an incompatible personal file did not immediately reintroduce its preview decision.");
     }
 
     private static void PersonalAuthorComponentUpdate() {
@@ -31,6 +383,8 @@ internal static class PackUpdateGraphTests {
             f.Install(local);
             Plan plan = f.Plan([], [incoming]); f.Stage(plan);
             Change update = plan.Changes.Single();
+            Require(!f.Engine.ReviewPreview(plan).Actions.Any(action => action.Kind == PackUpdatePreviewActionKind.UseAuthorVersion),
+                "An ordinary default author upgrade was mislabeled as an incompatible personal replacement.");
             Require(update.PersonalComponentMatched && update.Before == local.Hash && update.LocalRelative == local.Relative && update.BaselineRelative is null &&
                 update.Incoming?.Relative == incoming.Relative && update.CanChoose && update.ApplyAuthor && !update.Conflict && update.Operation == PackUpdateOperation.AuthorChange,
                 "Unique local/author components were not one previewed upgrade with explicit choices and separate provenance.");
@@ -273,6 +627,12 @@ internal static class PackUpdateGraphTests {
                 breaks: explicitConflict ? new() { ["author_library"] = ">=2" } : null);
             Plan plan = f.Plan([], [library, broken]); f.Stage(plan);
             Require(f.Engine.CheckDependencies(plan).HasErrors, "New author entries were assumed compatible without checking their actual declarations.");
+            if (explicitConflict) {
+                var review = f.Engine.ReviewPreview(plan);
+                Require(review.Actions.Any(action => action.Relative == broken.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible) &&
+                    review.Actions.Any(action => action.Relative == library.Relative && action.Kind == PackUpdatePreviewActionKind.DisableIncompatible),
+                    "A declared incompatibility lost either affected file's disabling alternative.");
+            }
             plan.AllowUnverifiedDependencies = true;
             Throws<IOException>(() => f.Engine.Commit(plan, f.Game, CancellationToken.None));
             Require(!File.Exists(f.Target(library.Relative)) && !File.Exists(f.Target(broken.Relative)), "Acknowledging uncertainty bypassed a known dependency/conflict error.");
@@ -361,6 +721,7 @@ internal static class PackUpdateGraphTests {
         private readonly string root = Path.Combine(Path.GetTempPath(), "PclPackGraph-" + Guid.NewGuid().ToString("N"));
         private int index;
         internal readonly string Game;
+        internal int Requests;
         internal readonly PackUpdateEngine<PackFile, Package, Change, Plan, object> Engine;
         internal string ManifestPath => Target("PCL/ModpackOrigin.json");
         internal Fixture() {
@@ -370,6 +731,7 @@ internal static class PackUpdateGraphTests {
                 EnsureWithin = (parent, path) => { if (!Path.GetFullPath(path).StartsWith(Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new IOException("Escaped fixture root."); },
                 AtomicWrite = (path, bytes) => { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllBytes(path, bytes); },
                 Download = (_, _) => throw new Exception("The graph fixture must never use network transport."),
+                Request = (_, _, _) => { Requests++; throw new IOException("The graph fixture is offline."); },
                 TempFolder = Stage, InstanceGameRoot = _ => Game
             });
         }

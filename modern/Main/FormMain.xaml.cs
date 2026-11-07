@@ -46,8 +46,71 @@ namespace PCL
             Controller.ConstructBeforeXaml();
             InitializeComponent();
             BtnTitleSelect5.Logo = ModBase.Logo.IconButtonLikeLine;
+            ConfigureThemeToggle(BtnTitleTheme);
+            ConfigureDeferredUpdateButton(BtnTitleUpdate, ModLauncherUpdate.ReopenDeferredUpdate);
+            ConfigureTitleClip(PanTitle);
+            ConfigureSidebarCard(SidebarCard, PanMainLeft);
+            var titleStars = new ThemeStarfield(12);
+            PanTitle.Children.Insert(1, titleStars);
+            RegisterName("TitleStars", titleStars);
             Controller.ConstructAfterXaml();
         }
+        private static void ConfigureThemeToggle(MyIconButton button)
+        {
+            button.Logo = ModBase.Logo.IconButtonTheme;
+            void RefreshIcon()
+            {
+                button.ToolTip = ModTheme.IsDarkTheme ? "切换到浅色主题" : "切换到深色主题";
+                System.Windows.Automation.AutomationProperties.SetName(button, button.ToolTip.ToString());
+            }
+            button.Click += (_, _) => {
+                Settings.Set("UiLauncherColorMode", ModTheme.IsDarkTheme ? 0 : 1);
+                if (ModMain.FrmSetupUI is not null) {
+                    ModAnimation.AniControlEnabled++;
+                    try { SettingService.RefreshSettings(ModMain.FrmSetupUI.ComboLauncherColorMode); }
+                    finally { ModAnimation.AniControlEnabled--; }
+                }
+                RefreshIcon();
+            };
+            ModTheme.WatchTheme(button, RefreshIcon);
+            RefreshIcon();
+        }
+
+        private static void ConfigureDeferredUpdateButton(MyIconButton button, Action open)
+        {
+            button.Logo = ModBase.Logo.IconButtonRefresh;
+            button.Click += (_, _) => open();
+            button.Loaded += (_, _) => RefreshDeferredUpdateButton(button);
+            RefreshDeferredUpdateButton(button);
+        }
+        internal static void RefreshDeferredUpdateButton(MyIconButton button)
+        {
+            string tag = ModLauncherUpdate.DeferredUpdateTag();
+            button.ToolTip = "有可用更新 " + tag + "，点击查看";
+            button.Visibility = string.IsNullOrEmpty(tag) ? Visibility.Collapsed : Visibility.Visible;
+        }
+        private static void ConfigureTitleClip(FrameworkElement title)
+        {
+            var clip = new System.Windows.Media.RectangleGeometry { RadiusX = 6, RadiusY = 6 };
+            title.Clip = clip;
+            void Refresh() => clip.Rect = new Rect(new Point(), title.RenderSize);
+            title.SizeChanged += (_, _) => Refresh();
+            title.Loaded += (_, _) => Refresh();
+            Refresh();
+        }
+        private static void ConfigureSidebarCard(Border sidebar, Border content)
+        {
+            void RefreshInset()
+            {
+                var inset = content.Child is FrameworkElement { Width: 0 } ? new Thickness(0) : new Thickness(8, 8, 0, 8);
+                if (sidebar.Margin != inset) sidebar.Margin = inset;
+            }
+            EventHandler refresh = (_, _) => RefreshInset();
+            sidebar.Loaded += (_, _) => { content.LayoutUpdated += refresh; RefreshInset(); };
+            sidebar.Unloaded += (_, _) => content.LayoutUpdated -= refresh;
+            RefreshInset();
+        }
+
 
         internal void ShowUpdateLog() => Controller.ShowUpdateLog();
         private void FormMain_Loaded(object sender, RoutedEventArgs e) => Controller.Loaded();
@@ -101,7 +164,7 @@ namespace PCL
             InstanceSetup = 1, InstanceModify = 2, InstanceMod = 3, InstanceModDisabled = 4,
             InstanceExport = 5, InstanceSaves = 6, InstanceScreenshots = 7,
             InstanceResourcePacks = 8, InstanceShaderPacks = 9, InstanceSchematics = 10,
-            InstanceKeybindings = 11, InstanceRestorePoints = 12, InstanceBackups = 13, InstanceClone = 14
+            InstanceKeybindings = 11, InstanceRestorePoints = 12, InstanceBackups = 13, InstanceClone = 14, InstancePackUpdate = 15
         }
         private string PageNameGet(PageStackData Stack) => Controller.PageNameGet(Stack);
         public void PageNameRefresh(PageStackData Type) => Controller.PageNameRefresh(Type);
@@ -140,7 +203,15 @@ namespace PCL
         private void PageChangeAnim(FrameworkElement TargetLeft, FrameworkElement TargetRight)
             => Controller.PageChangeAnim(TargetLeft, TargetRight);
         private void PageChangeExit() => Controller.PageChangeExit();
-        private void PanMainLeft_SizeChanged(object sender, SizeChangedEventArgs e) => Controller.LeftSizeChanged(e);
+        private void PanMainLeft_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ReflowSidebarCard(SidebarCard, e);
+            Controller.LeftSizeChanged(e);
+        }
+        private static void ReflowSidebarCard(Border sidebar, SizeChangedEventArgs args)
+        {
+            if (args.WidthChanged) sidebar.InvalidateMeasure();
+        }
         private void PanMainLeft_Resize(double NewWidth) => Controller.ResizeLeft(NewWidth);
         public void DragTick() => Controller.DragTick();
         public void DragDoing() => Controller.DragDoing();

@@ -18,16 +18,26 @@ namespace PCL
         private const int WatcherInterval = 300;
         // 初始化
         private bool IsLoad;
+        private readonly PCLCS.FileTaskProgress.IoRateSampler FileRates = new();
         public PageSpeedLeft()
         {
             __LfAttachOwnHandles();
             this.IsLoad = false;
             this.RightCards = new Dictionary<string, MyCard>();
             this.InitializeComponent();
+            UpdateMetricLayout(ModBase.ModeDebug);
+        }
+
+        private void UpdateMetricLayout(bool debug)
+        {
+            PanThread.Visibility = debug ? Visibility.Visible : Visibility.Collapsed;
+            PanMetrics.RowDefinitions[5].Height = debug ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         }
 
         private void Page_Loaded(object sender, RoutedEventArgs e)
         {
+            UpdateMetricLayout(ModBase.ModeDebug);
+            FileRates.Reset();
             // 进入时就刷新一次显示
             Watcher();
             // 如果在页面切换动画的 “上一页消失” 部分已经完成了下载，就直接尝试返回
@@ -42,14 +52,6 @@ namespace PCL
             };
             timer.Tick += (_, __) => Watcher();
             timer.Start();
-            // 非调试模式隐藏线程数
-            if (!ModBase.ModeDebug)
-            {
-                this.RowDefinitions[12].Height = new GridLength(0d);
-                this.RowDefinitions[13].Height = new GridLength(0d);
-                this.RowDefinitions[14].Height = new GridLength(0d);
-                this.RowDefinitions[15].Height = new GridLength(0d);
-            }
         }
 
         // 定时器任务
@@ -66,6 +68,7 @@ namespace PCL
                     // 无任务
                     this.LabProgress.Text = "100 %";
                     this.LabSpeed.Text = "0 B/s";
+                    FileRates.Reset(); this.LabReadSpeed.Text = this.LabWriteSpeed.Text = "0 B/s";
                     this.LabFile.Text = "0";
                     this.LabThread.Text = "0 / " + ModNet.NetTaskThreadLimit;
                 }
@@ -77,6 +80,9 @@ namespace PCL
                     string PredictText = Math.Floor(RawPercent * 100d) + "." + Math.Floor((RawPercent * 100d - Math.Floor(RawPercent * 100d)) * 100d).ToString().EnsureLength('0', 2) + " %";
                     this.LabProgress.Text = RawPercent > 0.999999d ? "100 %" : PredictText;
                     this.LabSpeed.Text = StringUtils.FormatByteSize(ModNet.NetManager.Speed) + "/s";
+                    FileRates.Sample();
+                    this.LabReadSpeed.Text = StringUtils.FormatByteSize((long)FileRates.ReadPerSecond) + "/s";
+                    this.LabWriteSpeed.Text = StringUtils.FormatByteSize((long)FileRates.WritePerSecond) + "/s";
                     this.LabFile.Text = Conversions.ToString(ModNet.NetManager.FileRemain < 0 ? "0*" : global::PCL.ModNet.NetManager.FileRemain);
                     this.LabThread.Text = ModNet.NetTaskThreadCount + " / " + ModNet.NetTaskThreadLimit;
                 }
@@ -108,10 +114,23 @@ namespace PCL
             {
                 // 获取实际加载器列表
                 List<ModLoader.LoaderBase> LoaderList = (List<ModLoader.LoaderBase>)NewLateBinding.LateGet(Loader, null, "GetLoaderList", Array.Empty<object>(), null, null, null);
+                var PackStages = ModpackUpdateFlow.GetStageSnapshot(LoaderList);
                 if (RightCards.ContainsKey(Loader.Name))
                 {
                     // 已有此卡片
                     Grid Card = RightCards[Loader.Name];
+                    if (PackStages is not null && Loader.State is ModBase.LoadState.Loading or ModBase.LoadState.Waiting or ModBase.LoadState.Failed &&
+                        Card.Children.Count > 3 && Card.Children[3] is Grid PackStageRows)
+                    {
+                        RefreshPackStages(PackStageRows, PackStages, Loader.State == ModBase.LoadState.Failed ? Loader.Error : null);
+                        Card.Tag = Loader.Progress + (double)Loader.State;
+                        return;
+                    }
+                    // Stage text can change during hashing or while waiting for the
+                    // preview, even when the aggregate percentage stays the same.
+                    if (Loader.State == ModBase.LoadState.Loading && Card.Children.Count > 3 && Card.Children[3] is Grid StageRows)
+                        for (int i = 0; i < LoaderList.Count && i * 2 + 1 < StageRows.Children.Count; i++)
+                            if (StageRows.Children[i * 2 + 1] is TextBlock StageLabel) StageLabel.Text = LoaderList[i].Name;
                     double NewValue = Loader.Progress + (double)Loader.State;
                     if (ModBase.Val(Card.Tag) == NewValue)
                         return;
@@ -315,6 +334,8 @@ namespace PCL
                             Logger.Info($"关闭任务管理卡片：{Loader.Name}，且移出任务列表");
                             ModBase.RunInThread(() => Loader.Cancel());
                         };
+                        if (PackStages is not null && Card.Children.Count > 3 && Card.Children[3] is Grid PackStageRows)
+                            RefreshPackStages(PackStageRows, PackStages, Loader.State == ModBase.LoadState.Failed ? Loader.Error : null);
                         // 如果已经失败，再刷新一次，修改成失败的控件
                         if (Loader.State == ModBase.LoadState.Failed)
                         {

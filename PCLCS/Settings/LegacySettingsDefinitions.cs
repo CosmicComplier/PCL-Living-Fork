@@ -14,8 +14,8 @@ public static class LegacySettingsDefinitions {
             result.Add(key, create(key, value, source, encrypted, changed));
         }
         Add("Identify", "", LegacySettingSource.Registry);
-        Add("WindowHeight", 550);
-        Add("WindowWidth", 900);
+        Add("WindowHeight", 634);
+        Add("WindowWidth", 1005);
         Add("AprilYear", 0, LegacySettingSource.Registry, true);
         Add("Potatoes", "", LegacySettingSource.Registry, true);
         Add("HintDownloadThread", false, LegacySettingSource.Registry);

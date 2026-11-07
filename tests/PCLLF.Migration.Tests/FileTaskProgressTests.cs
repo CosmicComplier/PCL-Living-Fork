@@ -41,12 +41,19 @@ internal static class FileTaskProgressTests {
         using Fixture f = new(); string source = f.Bytes("source.bin", Payload), copied = f.Path("copy.bin");
         Require(FileTaskProgress.Size([source, f.Text("empty", ""), f.Path("missing")]) == Payload.LongLength + 2, "empty/missing weight changed");
         List<double> values = []; bool partial = false, finalClosed = false;
+        long readBefore = FileTaskProgress.ReadBytes, writeBefore = FileTaskProgress.WrittenBytes;
+        var rates = new FileTaskProgress.IoRateSampler();
         FileTaskProgress.Copy(source, copied, CancellationToken.None, value => {
             values.Add(value);
             if (value > 0 && value < 1) { long length = new FileInfo(copied).Length; partial |= length > 0 && length < Payload.LongLength; }
             if (value == 1) { try { using FileStream probe = new(copied, FileMode.Open, FileAccess.ReadWrite, FileShare.None); finalClosed = true; } catch (IOException) { } }
         });
         Progress(values, "copy"); Require(partial && finalClosed, "copy did not report real partial bytes / final disposed handles");
+        Require(FileTaskProgress.ReadBytes - readBefore == Payload.Length && FileTaskProgress.WrittenBytes - writeBefore == Payload.Length, "File I/O counters did not track actual copied bytes.");
+        Thread.Sleep(300); rates.Sample();
+        Require(rates.ReadPerSecond > 0 && rates.WritePerSecond > 0, "Active copy had no read/write rate.");
+        Thread.Sleep(300); rates.Sample();
+        Require(rates.ReadPerSecond == 0 && rates.WritePerSecond == 0, "Idle tasks retained stale file speeds.");
         Require(Digest(copied) == "sha1:" + Convert.ToHexString(SHA1.HashData(Payload)).ToLowerInvariant(), "actual copied bytes changed");
         values.Clear(); FileTaskProgress.Digest(source, CancellationToken.None, values.Add); Progress(values, "digest");
         using CancellationTokenSource cancel = new(); string partialPath = f.Path("canceled.bin");

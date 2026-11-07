@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -8,6 +8,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,6 +36,36 @@ namespace PCL
 
     internal sealed class ModpackUpdateFlow
     {
+        private static readonly ConditionalWeakTable<ModLoader.LoaderBase, PackUpdateStageProgress> TaskStages = new();
+        private static ModLoader.LoaderTask<string, string> CreateStep(string name, Action<ModLoader.LoaderTask<string, string>> work)
+        {
+            var stages = new PackUpdateStageProgress();
+            var task = new ModLoader.LoaderTask<string, string>(name, current => {
+                stages.Reset();
+                try { work(current); }
+                catch (OperationCanceledException) { stages.Stop(PackUpdateStageState.Canceled); throw; }
+                catch { stages.Stop(PackUpdateStageState.Failed); throw; }
+            });
+            TaskStages.Add(task, stages);
+            task.OnStateChangedThread += (_, state, _) => {
+                if (state == ModBase.LoadState.Failed) stages.Stop(PackUpdateStageState.Failed);
+                else if (state == ModBase.LoadState.Canceled) stages.Stop(PackUpdateStageState.Canceled);
+            };
+            return task;
+        }
+        internal static PackUpdateStageSnapshot[] GetStageSnapshot(IEnumerable<ModLoader.LoaderBase> tasks)
+        {
+            foreach (var task in tasks)
+                if (TaskStages.TryGetValue(task, out var stages)) {
+                    if (task.State == ModBase.LoadState.Canceled) stages.Stop(PackUpdateStageState.Canceled);
+                    else if (task.State == ModBase.LoadState.Failed) stages.Stop(PackUpdateStageState.Failed);
+                    return stages.Snapshot();
+                }
+            return null;
+        }
+        // Stage data belongs to the loader, not its current task-manager card.
+        // Taskbar.Add removes a same-name card using the NEW loader before adding
+        // it. ConditionalWeakTable already releases data when the loader dies.
         private static global::System.Int32 Active;
         private static readonly global::PCLCS.PackUpdateFlowEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile, global::PCL.ResourceVersion, global::PCL.ModMinecraft.McInstance, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>, global::MeloongCore.RedoableWorker, global::MeloongCore.ProgressProvider> Engine = new global::PCLCS.PackUpdateFlowEngine<global::PCL.PackUpdateFile, global::PCL.PackUpdatePackage, global::PCL.PackUpdateChange, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile, global::PCL.ResourceVersion, global::PCL.ModMinecraft.McInstance, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>, global::MeloongCore.RedoableWorker, global::MeloongCore.ProgressProvider>(global::PCL.ModpackUpdate.Engine, global::PCL.ModpackUpdateFlow.CreateHost());
         private static global::PCLCS.PackUpdateFlowHost<global::PCL.PackUpdatePackage, global::PCL.PackUpdatePlan, global::PCL.ModNet.NetFile, global::PCL.ResourceVersion, global::PCL.ModMinecraft.McInstance, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>, global::MeloongCore.RedoableWorker, global::MeloongCore.ProgressProvider> CreateHost()
@@ -52,7 +83,7 @@ namespace PCL
                 Hint = new Action<global::System.String>(Message => global::PCL.ModMain.Hint(Message)),
                 HintRed = new Action<global::System.String>(Message => global::PCL.ModMain.Hint(Message, global::PCL.ModMain.HintType.Red)),
                 SelectFile = new Func<global::System.String, global::System.String>(Title => global::MeloongCore.Wpf.Dialogs.SelectFile(Title, false, filter: new[] { (new[] { "zip", "mrpack" }, "整合包文件") }).FirstOrDefault()),
-                CreateStep = new Func<global::System.String, global::System.Action<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>>, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>>((Name, Work) => new global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>(Name, Work)),
+                CreateStep = CreateStep,
                 CreateCombo = new Func<global::System.String, global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::PCL.ModLoader.LoaderCombo<global::System.String>>((Name, StepLoader) => new global::PCL.ModLoader.LoaderCombo<global::System.String>(Name, new[] { StepLoader }) { OnStateChanged = global::PCL.ModDownloadLib.LoaderStateChangedHintOnly }),
                 CreateWorker = new Func<global::PCL.ModLoader.LoaderCombo<global::System.String>, global::System.String, global::MeloongCore.RedoableWorker>((Loader, Folder) => new global::MeloongCore.RedoableWorker(global::PCL.LoaderFileOperation.CreateWorkload(Loader, Folder))),
                 TryAcquire = new Func<global::MeloongCore.RedoableWorker, global::System.String, global::System.Boolean>((Worker, Folder) => global::PCL.ModMinecraft.McInstanceLock.TryAcquire(Worker, Folder)),
@@ -80,7 +111,20 @@ namespace PCL
                 TempFolder = new Func<global::System.String>(() => global::PCL.ModMain.RequestTaskTempFolder()),
                 Cancellation = new Func<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Threading.CancellationToken>(Task => Task.CreateCancellationToken()),
                 SetProgress = new Action<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Double>((Task, Value) => Task.Progress = Value),
-                Progress = new Func<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.Double, global::System.Double, global::MeloongCore.ProgressProvider>((Task, Start, Finish) => Task.CreateSyncProgressProvider(Start, Finish)),
+                SetStage = (Task, Stage, State, Detail) => {
+                    if (!TaskStages.TryGetValue(Task, out var stages)) return;
+                    if (Task.State == ModBase.LoadState.Canceled) stages.Stop(PackUpdateStageState.Canceled);
+                    else stages.Set(Stage, State, Detail);
+                },
+                SetStageProgress = (task, stage, value) => { if (TaskStages.TryGetValue(task, out var stages)) stages.SetProgress(stage, value); },
+                Progress = (task, start, finish) => {
+                    var provider = task.CreateSyncProgressProvider(start, finish);
+                    if (TaskStages.TryGetValue(task, out var stages)) {
+                        var report = stages.CreateProgressReporter();
+                        provider.ProgressChanged += _ => { var raw = provider.GetRaw(); report(raw.actual + raw.skiped); };
+                    }
+                    return provider;
+                },
                 SetOutput = new Action<global::PCL.ModLoader.LoaderTask<global::System.String, global::System.String>, global::System.String>((Task, Value) => Task.Output = Value),
                 CreateRuntime = global::PCL.ModpackUpdateFlow.CreateRuntime,
                 RuntimeWorkload = new Func<global::PCL.ModLoader.LoaderCombo<global::System.String>, global::System.String, global::MeloongCore.ProgressProvider, global::System.Action>((Build, Folder, Progress) => global::PCL.LoaderFileOperation.CreateWorkloadWithProgress(Build, Folder, Progress)),
@@ -90,7 +134,7 @@ namespace PCL
                 ResetSettings = new Action<global::PCL.ModMinecraft.McInstance>(Instance => Instance.ResetSettingsCache()),
                 LoadInstance = new Func<global::System.String, global::PCL.ModMinecraft.McInstance>(Folder => new global::PCL.ModMinecraft.McInstance(Folder).Load()),
                 PageInstance = new Func<global::PCL.ModMinecraft.McInstance>(() => global::PCL.PageInstanceLeft.Instance),
-                SetPageInstance = new Action<global::PCL.ModMinecraft.McInstance>(Value => global::PCL.PageInstanceLeft.Instance = Value),
+                SetPageInstance = new Action<global::PCL.ModMinecraft.McInstance>(Value => { global::PCL.PageInstanceLeft.Instance = Value; ModMain.FrmInstanceLeft?.RefreshPackUpdatePage(); }),
                 SelectedInstance = new Func<global::PCL.ModMinecraft.McInstance>(() => global::PCL.ModMinecraft.McInstanceSelected),
                 SetSelectedInstance = new Action<global::PCL.ModMinecraft.McInstance>(Value => global::PCL.ModMinecraft.McInstanceSelected = Value),
                 Explorer = global::PCL.ModBase.OpenExplorer,
@@ -112,6 +156,8 @@ namespace PCL
         {
             global::PCL.ModpackUpdateFlow.Engine.OpenBackups(Instance);
         }
+        internal static List<ResourceVersion> GetAvailableVersions(JObject record) => Engine.GetAvailableVersions(record);
+        internal static void StartSelected(ModMinecraft.McInstance instance, string version) => Engine.Start(instance, true, version);
         private static global::System.String SelectArchive(global::System.String Title)
         {
             return global::PCL.ModpackUpdateFlow.Engine.SelectArchive(Title);
@@ -135,7 +181,14 @@ namespace PCL
         // 实际模态控件及运行时 Loader 构造，流程决策与取消/等待编排由 C# 持有。
         private static global::System.Int32 Preview(global::System.String Summary, global::PCL.PackUpdatePlan Plan, global::System.Func<global::PCLCS.McVersion> Version)
         {
-            return global::PCL.ModMain.MyMsgBoxConfirmContent(Summary, "整合包更新预览", "按以上选择更新", () => new global::PCL.ModpackUpdatePreviewView(Plan, Version().VanillaName, Version().ModLoaderVersions), IsWarn: false);
+            global::PCL.ModpackUpdatePreviewView preview = null;
+            try {
+                return global::PCL.ModMain.MyMsgBoxConfirmContent(Summary, "整合包更新预览", "按以上选择更新", () => preview = new global::PCL.ModpackUpdatePreviewView(Plan, Version().VanillaName, Version().ModLoaderVersions, true), IsWarn: false);
+            } finally {
+                // Preview runs on the update worker. Wait for readers before its staging
+                // directory or instance lock can be released; this never waits for UI callbacks.
+                preview?.CloseAndDrainAsync().GetAwaiter().GetResult();
+            }
         }
         private static global::PCL.ResourceVersion SelectOnlineVersion(global::System.Collections.Generic.List<global::PCL.ResourceVersion> Versions, global::System.String Name, global::System.String CurrentVersion)
         {

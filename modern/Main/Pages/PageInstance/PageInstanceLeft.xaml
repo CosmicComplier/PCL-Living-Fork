@@ -38,12 +38,14 @@
         <TextBlock x:Name="LabVersionTools" Text="版本工具" FontSize="12" Foreground="{DynamicResource ColorBrush1}" Opacity="0.6" Margin="16,17,0,5">
             <TextBlock.Visibility>
                 <MultiBinding Converter="{StaticResource SidebarGroupVisibility}">
+                    <Binding ElementName="ItemPackUpdate" Path="Visibility" />
                     <Binding ElementName="ItemExport" Path="Visibility" />
                     <Binding ElementName="ItemRestorePoints" Path="Visibility" />
                     <Binding ElementName="ItemClone" Path="Visibility" />
                 </MultiBinding>
             </TextBlock.Visibility>
         </TextBlock>
+        <local:MyListItem x:Name="ItemPackUpdate" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="15" Height="36" Title="整合包更新" MinPaddingRight="35" LogoScale="0.95" />
         <local:MyListItem x:Name="ItemExport" IsScaleAnimationEnabled="False" Type="RadioBox" Tag="5" MinPaddingRight="35" Height="36" VerticalAlignment="Top" Title="导出"
                           Logo="{x:Static local:InstanceSidebarIcons.Export}">
             <local:MyListItem.Buttons>

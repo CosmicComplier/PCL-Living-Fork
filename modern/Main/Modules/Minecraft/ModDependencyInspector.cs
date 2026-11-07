@@ -146,7 +146,9 @@ namespace PCL
 
         internal static InspectionContext ContextForInstance(PCL.ModMinecraft.McInstance Instance, string JavaVersion = null)
         {
-            return InspectionCore.ContextForInstance(Instance, InstanceHost, JavaVersion);
+            var context = InspectionCore.ContextForInstance(Instance, InstanceHost, JavaVersion);
+            context.IgnoreJavaRequirements = true;
+            return context;
         }
         internal static string FilePathKey(string FullPath)
         {

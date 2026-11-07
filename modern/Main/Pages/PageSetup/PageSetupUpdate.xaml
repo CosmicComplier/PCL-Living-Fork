@@ -3,7 +3,7 @@
     x:Class="PCL.PageSetupUpdate" PanScroll="PanBack">
     <local:MyScrollViewer x:Name="PanBack" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="25,25,25,10">
-            <local:MyCard Title="启动器更新" Margin="0,0,0,15">
+            <local:MyCard x:Name="CardLauncherUpdate" Title="启动器更新" Margin="0,0,0,15">
                 <StackPanel Margin="25,40,25,20">
                     <Grid x:Name="HeaderGrid">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -13,7 +13,7 @@
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="PCL Living Fork" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,2"/>
                                 <TextBlock x:Name="LabCurrentVersion" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,3"/>
-                                <TextBlock x:Name="LabBuildStatus" FontSize="13" Foreground="{DynamicResource ColorBrushGray3}"/>
+                                <TextBlock x:Name="LabBuildStatus" FontSize="13" Foreground="{DynamicResource ColorBrushTextSecondary}"/>
                             </StackPanel>
                         </StackPanel>
                         <Grid x:Name="PanUpdateOptions" Grid.Column="2" Width="320" VerticalAlignment="Center">

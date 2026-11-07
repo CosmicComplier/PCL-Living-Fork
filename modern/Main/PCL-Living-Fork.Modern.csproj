@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
-<TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting>
+<TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><EnableWindowsTargeting>true</EnableWindowsTargeting><CETCompat>false</CETCompat>
 <OutputType>WinExe</OutputType><AssemblyName>LivingPCL</AssemblyName><RootNamespace>PCL</RootNamespace><StartupObject>PCL.Application</StartupObject>
 <EnableDefaultCompileItems>false</EnableDefaultCompileItems><EnableDefaultPageItems>false</EnableDefaultPageItems><EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition><EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
 <GenerateAssemblyInfo>false</GenerateAssemblyInfo><Nullable>disable</Nullable><LangVersion>14.0</LangVersion><ImplicitUsings>enable</ImplicitUsings><Configurations>Debug;Release;Snapshot</Configurations><EnableLegacyLink>false</EnableLegacyLink><DefineConstants Condition="'$(EnableLegacyLink)' == 'true'">$(DefineConstants);LEGACY_LINK</DefineConstants><AllowUnsafeBlocks>true</AllowUnsafeBlocks><CheckForOverflowUnderflow>true</CheckForOverflowUnderflow><ApplicationManifest>app.manifest</ApplicationManifest><ApplicationIcon>Images/Branding/LivingPCL.ico</ApplicationIcon>
@@ -94,6 +94,7 @@
 <Compile Include="Pages/PageInstance/PageInstanceResources.Backups.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceResources.Recycle.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceClone.xaml.cs" />
+<Compile Include="Pages/PageInstance/PageInstancePackUpdate.xaml.cs" />
 <Compile Include="Pages/PageDownload/Resource/PageDownloadMap.xaml.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceRestorePoints.xaml.cs" />
 <Compile Include="Pages/PageInstance/MyScreenshotItem.xaml.cs" />
@@ -174,6 +175,7 @@
 <Compile Include="Pages/PageSetup/PageSetupUI.xaml.cs" />
 <Compile Include="Pages/PageSetup/SettingService.cs" />
 <Compile Include="Pages/PageSpeedLeft.xaml.cs" />
+<Compile Include="Pages/PageSpeedLeft.PackStages.cs" />
 <Compile Include="Pages/PageSpeedRight.xaml.cs" />
 <Compile Include="Application.xaml.cs" />
 <Compile Include="Controls/MyListItem.xaml.cs" />
@@ -251,6 +253,7 @@
 <Page Include="Pages/PageInstance/WorldBackupGroup.xaml" />
 <Page Include="Pages/PageInstance/WorldBackupSettings.xaml" />
 <Page Include="Pages/PageInstance/PageInstanceClone.xaml" />
+<Page Include="Pages/PageInstance/PageInstancePackUpdate.xaml" />
 <Page Include="Pages/PageInstance/MyScreenshotItem.xaml" />
 <Page Include="Pages/PageDownload/Resource/PageDownloadMap.xaml" />
 <Page Include="Pages/PageInstance/PageInstanceResources.xaml" />
@@ -327,6 +330,10 @@
   <Compile Include="Modules/Base/FileTaskProgress.cs" />
   <Compile Include="Modules/ModTheme.cs" />
   <Compile Include="Controls/ModernTooltipTheme.cs" />
+<Compile Include="Controls/LauncherUpdateCardBackground.cs" />
+<Compile Include="Controls/ThemeStarfield.cs" />
+<Compile Include="Controls/ThemeTransition.cs" />
+<Compile Include="Modules/ModLauncherUpdate.Deferred.cs" />
   <Resource Include="Images/Branding/DefaultBackgroundNight.png" />
   <Compile Include="Modules/Minecraft/ModDependencyIndex.cs" />
 </ItemGroup>

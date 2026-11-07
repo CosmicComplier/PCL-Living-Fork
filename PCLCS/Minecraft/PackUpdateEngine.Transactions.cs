@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,11 +13,21 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     where TFile : PackUpdateFileData where TPackage : PackUpdatePackageData<TFile>
     where TChange : PackUpdateChangeData<TFile> where TPlan : PackUpdatePlanData<TPackage, TChange> {
     private static void ValidateAssociationBindings(TPlan plan) {
-        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor)) {
+        foreach (TChange change in PlanChanges(plan).Where(change => change.ApplyAuthor)) {
             string destination = RelativePath(change.DestinationRelative);
             string? local = change.LocalRelative is null ? null : RelativePath(change.LocalRelative);
             if (IsPrivate(destination) || IsRuntimeData(destination) || local is not null && (IsPrivate(local) || IsRuntimeData(local)))
                 throw new IOException("更新操作涉及受保护的启动器记录或玩家运行数据，未提交：" + change.Relative);
+            if (change.Operation == PackUpdateOperation.EnablePersonal) {
+                if (local is null || !DisabledFile(local) || !LoadedModPath(plan.Package!, destination) ||
+                    !string.Equals(local[..local.LastIndexOf('.')], destination, StringComparison.OrdinalIgnoreCase) ||
+                    change.Incoming is null || !Same(change.Before, change.Incoming.Hash) || change.BaselineRelative is not null ||
+                    change.Ownership != PackUpdateOwnership.Disabled || !change.PreviewOnly ||
+                    !plan.Snapshot.TryGetValue(local, out string? observedSource) || !Same(observedSource, change.Before) ||
+                    !plan.Snapshot.TryGetValue(destination, out string? observedTarget) || observedTarget is not null ||
+                    plan.Package!.Files.ContainsKey(destination) || plan.Package.Files.ContainsKey(local))
+                    throw new IOException("个人前置缺少唯一的原禁用文件和空闲目标，未启用：" + change.Relative);
+            }
             if (local is null) continue;
             if (ModFile(local)) {
                 if (!ModFile(change.Relative!)) throw new IOException("模组来源不能用于其他类别的文件：" + change.Relative);
@@ -32,15 +42,12 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 throw new IOException("普通内容不支持按相同字节跨路径替换：" + original + " / " + change.Relative);
         }
     }
-    // The complete original transaction boundary: persist backups/log before writing,
-    // keep the current before/after guards and reverse rollback under the caller's real workload lock.
-    public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null) {
-        token.ThrowIfCancellationRequested();
-        ValidateChoices(plan, token);
+    private List<Tuple<string, string?, string?>> BuildFileOperations(TPlan plan, CancellationToken token) {
         List<Tuple<string, string?, string?>> operations = new();
-        foreach (TChange change in plan.Changes.Where(item => item.ApplyAuthor)) {
+        foreach (TChange change in PlanChanges(plan).Where(item => item.ApplyAuthor)) {
+            token.ThrowIfCancellationRequested();
             string? local = change.LocalRelative;
-            if (local is not null && !Same(Digest(Target(plan.Root!, local)), change.Before)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + local);
+            if (local is not null && !Same(Digest(Target(plan.Root!, local), token: token), change.Before)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + local);
             if (change.Operation == PackUpdateOperation.DisablePersonal) {
                 string disabled = Target(plan.Root!, change.DestinationRelative);
                 if (!plan.Snapshot.TryGetValue(change.DestinationRelative, out string? disabledBefore) || disabledBefore is not null || File.Exists(disabled))
@@ -53,13 +60,39 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                 if (local is not null) operations.Add(Tuple.Create(Target(plan.Root!, local), (string?)null, change.Before));
                 continue;
             }
+            if ((change.DisableAfterUpdate || change.Ownership == PackUpdateOwnership.Disabled && !change.KeepDisabled) &&
+                (!plan.Snapshot.TryGetValue(change.DestinationRelative, out string? switchBefore) ||
+                    switchBefore is not null && !string.Equals(local, change.DestinationRelative, StringComparison.OrdinalIgnoreCase)))
+                throw new IOException("启用／禁用目标已经存在或未经预览，未覆盖：" + change.DestinationRelative);
             string fileName = Target(plan.Root!, change.DestinationRelative);
             string? targetBefore = plan.Snapshot.TryGetValue(change.DestinationRelative, out string? observed) ? observed : change.TargetBefore;
-            if (!Same(Digest(fileName), targetBefore)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + change.DestinationRelative);
+            if (!Same(Digest(fileName, token: token), targetBefore)) throw new IOException("文件已被其他程序修改，请重新检查更新：" + change.DestinationRelative);
             operations.Add(Tuple.Create(fileName, change.Incoming.Payload, targetBefore));
             if (local is not null && !local.Equals(change.DestinationRelative, StringComparison.OrdinalIgnoreCase))
                 operations.Add(Tuple.Create(Target(plan.Root!, local), (string?)null, change.Before));
         }
+        return operations;
+    }
+    public int PlannedOperationCount(TPlan plan, CancellationToken token = default) => BuildFileOperations(plan, token).Count;
+
+    private void ValidatePlannedOperations(TPlan plan, CancellationToken token) {
+        ValidateAssociationBindings(plan);
+        foreach (TChange change in PlanChanges(plan).Where(change => change.DisableAfterUpdate || change.Ownership == PackUpdateOwnership.Disabled && !change.KeepDisabled))
+            if (!change.AllowAuthor || change.DisplayOnly || change.Ownership is PackUpdateOwnership.Ambiguous or PackUpdateOwnership.Unknown)
+                throw new IOException("此项归属尚未确认，不能切换启用状态：" + change.Relative);
+        foreach (TChange change in PlanChanges(plan)) if (change.Choice == PackUpdateChoice.UseAuthor && (!change.AllowAuthor || change.DisplayOnly))
+            throw new IOException("此项归属或重复冲突尚未确认，不能自动替换：" + change.Relative);
+        var operations = BuildFileOperations(plan, token);
+        if (operations.GroupBy(operation => Path.GetFullPath(operation.Item1), StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+            throw new IOException("更新存在重复的目标操作，请先确认启用／禁用目标，未修改当前实例。");
+    }
+
+    // The complete original transaction boundary: persist backups/log before writing,
+    // keep the current before/after guards and reverse rollback under the caller's real workload lock.
+    public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null, Action<double>? progress = null) {
+        token.ThrowIfCancellationRequested();
+        ValidateChoices(plan, token);
+        var operations = BuildFileOperations(plan, token);
         if (extraFiles is not null) foreach (var pair in extraFiles)
             operations.Add(Tuple.Create(Target(versionFolder, pair.Key), (string?)pair.Value, Digest(Target(versionFolder, pair.Key))));
         string box = Target(versionFolder, "PCL/PackUpdateBackups/" + Guid.NewGuid().ToString("N") + "/transaction.json");
@@ -69,7 +102,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         File.WriteAllText(statePayload, nextManifest.ToString());
         string statePath = Target(versionFolder, ManifestName);
         operations.Add(Tuple.Create(statePath, (string?)statePayload, Digest(statePath)));
-        return ApplyTransaction(plan.Root!, versionFolder, operations, token, beforeApply, box);
+        return ApplyTransactionWithProgress(plan.Root!, versionFolder, operations, token, progress, beforeApply, box);
     }
     public string ApplyTransaction(string gameRoot, string versionFolder, List<Tuple<string, string?, string?>> operations, CancellationToken token, Action<int>? beforeApply = null, string? box = null) =>
         ApplyTransactionWithProgress(gameRoot, versionFolder, operations, token, null, beforeApply, box);

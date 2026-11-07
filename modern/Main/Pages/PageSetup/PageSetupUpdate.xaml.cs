@@ -29,6 +29,7 @@ public partial class PageSetupUpdate : MyPageRight
     public PageSetupUpdate()
     {
         InitializeComponent();
+        CardLauncherUpdate.BorderChild = new LauncherUpdateCardBackground();
         using (Stream icon = System.Windows.Application.GetResourceStream(new Uri(ModBase.PathImage + "Branding/LivingPCL.ico")).Stream)
         {
             var decoder = new IconBitmapDecoder(icon, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);

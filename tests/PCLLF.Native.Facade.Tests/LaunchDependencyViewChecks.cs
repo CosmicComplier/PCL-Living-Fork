@@ -37,6 +37,20 @@ internal static partial class DependencyCases<TContext, TMod, TDependency, TEdge
         object plan = f.Plan();
         for (int i = 0; i < 7; i++) LaunchFabric(Path.Combine(f.Mods, "example" + i + ".jar"), "example" + i, new JObject { ["minecraft"] = "<1.21" });
         TReport report = f.Scan(); for (int i = 0; i < 79; i++) report.Notices.Add("Synthetic metadata reading note " + i);
+        TReport comparison = new() { Context = report.Context, OnlineAttempted = true };
+        TOnlineDependency required = new() { Platform = "Modrinth", ProjectId = "missing-platform", VersionId = "v1", Kind = "required" };
+        TOnlineProject exact = new() { Platform = "Modrinth", ProjectId = "owner", VersionId = "owner-version", IsExact = true };
+        exact.Dependencies.Add(required);
+        TOnlineFile online = new() { FullPath = Path.Combine(f.Mods, "platform-owner.jar"), Enabled = true, IsSupplementTarget = true };
+        online.Matches.Add(exact); comparison.OnlineFiles.Add(online);
+        var port = (PCLCS.LegacyLaunchDependencyReport)Native.Static("PCL.ModLaunch", "DependencyReport", f.Mods, comparison)!;
+        Native.Check(port.NeedsAttention && !comparison.HasErrors, "Platform-only review was lost or became a loader error.");
+        Native.Call(LaunchSession, "Accept", null, f.Mods, comparison);
+        Native.Check(LaunchAccepted(f.Mods, comparison), "Platform review acknowledgement was not remembered.");
+        required.VersionId = "v2";
+        Native.Check(!LaunchAccepted(f.Mods, comparison), "An earlier acknowledgement hid a changed platform version requirement.");
+        var platformView = LaunchCheckView(comparison, null);
+        Native.Check(LaunchGroups(platformView).Children.OfType<MyCard>().Any(card => card.Title.StartsWith("平台声明与本地状态", StringComparison.Ordinal)), "The native view omitted platform-only review details.");
         FrameworkElement view = LaunchCheckView(report, plan);
         LD(179, ((MyCard)Native.Get(view, "Details")!).IsSwapped);
         // This original optional-preview assertion is now unconditional: inspect

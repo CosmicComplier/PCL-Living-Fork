@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -15,20 +15,21 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         internal bool Personal;
     }
     private List<FinalModFile> FinalModFiles(TPlan plan, CancellationToken token, bool verify = true) {
-        var removed = new HashSet<string>(plan.Changes.Where(change => change.ApplyAuthor && change.LocalRelative is not null)
+        var removed = new HashSet<string>(PlanChanges(plan).Where(change => change.ApplyAuthor && change.LocalRelative is not null)
             .Select(change => change.LocalRelative!), StringComparer.OrdinalIgnoreCase);
         List<FinalModFile> files = new();
         foreach (string path in LocalContent(plan.Root!, token, LegacyVersionFolder(plan.Package!)).Where(path => LoadedModPath(plan.Package!, path) && !removed.Contains(path))) {
-            TChange? change = plan.Changes.FirstOrDefault(item => string.Equals(item.LocalRelative, path, StringComparison.OrdinalIgnoreCase));
+            TChange? change = PlanChanges(plan).FirstOrDefault(item => string.Equals(item.LocalRelative, path, StringComparison.OrdinalIgnoreCase));
             files.Add(new() { Relative = path, Path = Target(plan.Root!, path), Change = change,
-                Personal = change?.Ownership is PackUpdateOwnership.PersonalAdded or PackUpdateOwnership.PersonalModified });
+                Personal = change?.Ownership is PackUpdateOwnership.PersonalAdded or PackUpdateOwnership.PersonalModified ||
+                    change is not null && !change.ApplyAuthor && !change.PreviewOnly && (change.Incoming is not null || change.AllowPreserveAuthor) });
         }
-        foreach (TChange change in plan.Changes.Where(change => change.ApplyAuthor && change.Incoming is not null && LoadedModPath(plan.Package!, change.DestinationRelative))) {
+        foreach (TChange change in PlanChanges(plan).Where(change => change.ApplyAuthor && change.Incoming is not null && LoadedModPath(plan.Package!, change.DestinationRelative))) {
             token.ThrowIfCancellationRequested();
             if (change.Incoming!.Payload is null || verify && !Matches(change.Incoming.Payload, change.Incoming.Hash, token))
                 throw new IOException("所选模组尚未完整暂存或已变化：" + change.Relative);
             files.Add(new() { Relative = change.DestinationRelative, Path = change.Incoming.Payload, Change = change,
-                Personal = change.Operation == PackUpdateOperation.PersonalDependency });
+                Personal = change.Operation is PackUpdateOperation.PersonalDependency or PackUpdateOperation.EnablePersonal });
         }
         return files;
     }
@@ -79,7 +80,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         for (int supplementRound = 0; supplementRound < 4; supplementRound++) {
             var graph = PreparedGraph(plan, token);
             var files = FinalModFiles(plan, token, false);
-            var missing = graph.Problems.Where(issue => issue.IsError && issue.Kind == ModDependencyIssueKind.MissingRequired && !RuntimeDependency(issue.RequirementId))
+            var repairs = PreviewRepairs(plan, graph.Problems.Where(issue => issue.IsError).ToArray(), token);
+            var missing = graph.Problems.Where(issue => issue.IsError && issue.Kind == ModDependencyIssueKind.MissingRequired && !RuntimeDependency(issue.RequirementId) &&
+                !repairs.Values.Any(problems => problems.Contains(issue)))
                 .Select(issue => issue.OwnerPath).Where(path => files.Any(file => file.Personal && SameFile(file.Path, path))).Distinct().ToArray();
             if (missing.Length == 0) break;
             int before = plan.Changes.Count(change => change.Operation == PackUpdateOperation.PersonalDependency);
@@ -90,7 +93,9 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             token.ThrowIfCancellationRequested();
             var files = FinalModFiles(plan, token, false);
             var graph = PreparedGraph(plan, token);
-            var errors = graph.Problems.Where(issue => issue.IsError).ToArray();
+            var allErrors = graph.Problems.Where(issue => issue.IsError).ToArray();
+            var repairs = PreviewRepairs(plan, allErrors, token);
+            var errors = allErrors.Where(issue => !repairs.Values.Any(problems => problems.Contains(issue))).ToArray();
             if (errors.Length == 0) break;
             var affected = files.Where(file => file.Personal && file.Change is not null && errors.Any(issue =>
                 SameFile(file.Path, issue.OwnerPath) || issue.RelatedPaths.Any(path => SameFile(path, file.Path)))).ToArray();
@@ -107,7 +112,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                     (change.BaselineRelative is not null || change.PersonalComponentMatched) &&
                     (change.Ownership != PackUpdateOwnership.PersonalAdded || change.PersonalComponentMatched)) {
                     change.Choice = PackUpdateChoice.UseAuthor;
-                    change.Conflict = false; change.AllowPreserveAuthor = true; change.PersonalCompatible = false;
+                    change.Conflict = false; change.AllowPreserveAuthor = true; change.PersonalCompatible = false; change.PreviewAuthorRepair = true;
                     change.Reason = "本地版本与新版整包的声明不兼容，默认使用作者新版；保留旧版仍须通过完整组合检查。" + (detail.Length > 0 ? "\r\n" + detail : "");
                 } else {
                     if (change.Incoming is not null) continue; // An ambiguous occupied author target requires an explicit decision.

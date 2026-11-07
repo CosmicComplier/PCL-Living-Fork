@@ -34,8 +34,9 @@ public sealed partial class ModDependencyAutoFillEngine<TContext, TMod, TDepende
         using SHA256 hash = SHA256.Create();
         return Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", values))));
     }
-    public bool WasAccepted(string folder, TReport report) => accepted.TryGetValue(FilePathKey(folder), out string? previous) && SameText(previous, Fingerprint(report));
-    public void Accept(string folder, TReport report) => accepted[FilePathKey(folder)] = Fingerprint(report);
+    private string AcceptanceFingerprint(TReport report) => Fingerprint(report) + "\nplatform-review:\n" + string.Join("\n", report.PlatformReviewNotes().OrderBy(note => note, StringComparer.Ordinal));
+    public bool WasAccepted(string folder, TReport report) => accepted.TryGetValue(FilePathKey(folder), out string? previous) && SameText(previous, AcceptanceFingerprint(report));
+    public void Accept(string folder, TReport report) => accepted[FilePathKey(folder)] = AcceptanceFingerprint(report);
     public string IssueKey(TIssue issue) => (issue.Owner?.Key ?? "") + "|" + issue.KindValue + "|" + (issue.Requirement?.Display ?? issue.Message);
     private static string FilePathKey(string path) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.FilePathKey(path);
     private static bool SameFilePath(string first, string second) => ModDependencyInspection<TContext, TMod, TDependency, TEdge, TIssue, TImpact, TReport, TOnlineProject, TOnlineDependency, TOnlineFile>.SameFilePath(first, second);

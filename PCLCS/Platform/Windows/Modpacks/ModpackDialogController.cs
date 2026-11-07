@@ -17,6 +17,9 @@ public sealed class ModpackDialogHost<TButton, TScroll> where TButton : Framewor
     public Func<TScroll> CreateScroll = null!;
     public Func<string, bool, Action, FrameworkElement> CreateRadio = null!;
     public Func<string, bool, Action<bool>, FrameworkElement> CreateCheck = null!;
+    public Func<string, UIElement, FrameworkElement>? CreateSection;
+    public Func<string, int, FrameworkElement>? CreateHint;
+    public Action<FrameworkElement, string, int>? UpdateHint;
     public Func<int> AnimationControl = null!;
     public Action<string> StopAnimation = null!;
     public Action<UIElement, double, int, string> AnimateOpacity = null!;
@@ -28,6 +31,8 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
     public readonly StackPanel Rows = new();
     public readonly TScroll Scroller;
     public readonly string AnimationKey;
+    public bool CanConfirm { get; private set; } = true;
+    public event EventHandler? ConfirmationChanged;
     private readonly ModpackDialogHost<TButton, TScroll> host;
     public ModpackDialogController(string title, string subtitle, int filterCount, ModpackDialogHost<TButton, TScroll> host) {
         this.host = host; AnimationKey = host.AnimationName();
@@ -35,7 +40,10 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); Header.Margin = new Thickness(3, 0, 7, 0);
         Header.Children.Add(Label(title, 15, true)); Header.Children.Add(Label(subtitle, 12, false, "ColorBrushGray2", new Thickness(0, 5, 0, 0))); Children.Add(Header);
         Filters.Columns = filterCount; Filters.Margin = new Thickness(0, 13, 4, 7);
-        Filters.SizeChanged += (_, _) => Filters.Columns = filterCount == 4 && Filters.ActualWidth < 420 ? 2 : filterCount == 3 && Filters.ActualWidth < 430 ? 1 : filterCount;
+        Filters.SizeChanged += (_, _) => {
+            int count = Filters.Children.Count;
+            Filters.Columns = count == 5 ? Filters.ActualWidth < 600 ? 3 : 5 : count == 4 && Filters.ActualWidth < 420 ? 2 : count == 3 && Filters.ActualWidth < 430 ? 1 : Math.Max(1, count);
+        };
         SetRow(Filters, 1); Children.Add(Filters);
         Scroller = host.CreateScroll(); Scroller.Content = Rows; Scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Auto; Scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         SetRow(Scroller, 2); Children.Add(Scroller); Unloaded += (_, _) => host.StopAnimation(AnimationKey);
@@ -46,6 +54,22 @@ public class ModpackDialogController<TButton, TScroll> : Grid where TButton : Fr
     }
     public FrameworkElement RadioOption(string text, bool selected, Action select) => host.CreateRadio(text, selected, select);
     public FrameworkElement CheckOption(string text, bool selected, Action<bool> change) => host.CreateCheck(text, selected, change);
+    public FrameworkElement Section(string title, UIElement content) {
+        if (host.CreateSection is not null) return host.CreateSection(title, content);
+        StackPanel body = new(); body.Children.Add(Label(title, 14, true)); body.Children.Add(content); return Frame(body);
+    }
+    public FrameworkElement StatusHint(string text, int tone) => host.CreateHint?.Invoke(text, tone) ?? Label(text, 12);
+    public void UpdateStatus(FrameworkElement element, string text, int tone) {
+        if (host.UpdateHint is not null) host.UpdateHint(element, text, tone);
+        else if (element is TextBlock label) label.Text = text;
+    }
+    public void SetFilterText(int key, string text) {
+        foreach (TButton button in Filters.Children) if ((int)button.Tag == key) host.SetButtonText(button, text);
+    }
+    public void SetCanConfirm(bool value) {
+        if (CanConfirm == value) return;
+        CanConfirm = value; ConfirmationChanged?.Invoke(this, EventArgs.Empty);
+    }
     public void BeginFilter(int key) {
         foreach (TButton button in Filters.Children) host.HighlightButton(button, (int)button.Tag == key);
         Rows.Children.Clear(); Scroller.ScrollToTop(); host.StopAnimation(AnimationKey);

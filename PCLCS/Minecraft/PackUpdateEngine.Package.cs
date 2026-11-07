@@ -45,6 +45,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
             while (true) {
                 token.ThrowIfCancellationRequested();
                 int read = input.Read(buffer, 0, buffer.Length);
+                FileTaskProgress.RecordRead(read);
                 token.ThrowIfCancellationRequested();
                 if (read == 0) break;
                 hasher.TransformBlock(buffer, 0, read, buffer, 0);
@@ -193,7 +194,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
                     if (total > 20L * 1024 * 1024 * 1024 || item.Length > 2L * 1024 * 1024 * 1024) throw new IOException("整合包覆写文件过大。");
                     string payload = Target(stage, "payload/" + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(Path.GetDirectoryName(payload)!);
-                    using (Stream input = item.Open()) using (Stream output = File.Create(payload)) input.CopyTo(output);
+                    using (Stream input = item.Open()) using (Stream output = File.Create(payload)) FileTaskProgress.CopyStream(input, output, token);
                     TFile value = host.CreateFile(); value.Relative = relative; value.Payload = payload; value.Hash = Digest(payload, token: token);
                     result.Files[relative] = value;
                 }

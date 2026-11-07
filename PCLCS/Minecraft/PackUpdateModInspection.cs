@@ -9,6 +9,7 @@ namespace PCLCS;
 /// <summary>Loader declarations describe load identity, never platform ownership or author provenance.</summary>
 public sealed class PackModInspection {
     public bool Confirmed, Enabled = true;
+    public string? IconPath;
     public HashSet<string> OwnIds = new(StringComparer.Ordinal);
     public HashSet<string> ProvidedIds = new(StringComparer.Ordinal);
     public HashSet<string> NestedIds = new(StringComparer.Ordinal);
@@ -38,12 +39,13 @@ public static class PackUpdateModInspection {
         PackModInspection result = new() {
             Enabled = !path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".old", StringComparison.OrdinalIgnoreCase)
         };
-        InspectionContext context = new() { MinecraftVersion = minecraft, LoaderKnown = loaders.Count > 0 };
+        InspectionContext context = new() { MinecraftVersion = minecraft, LoaderKnown = loaders.Count > 0, IgnoreJavaRequirements = true };
         foreach (var pair in loaders) context.LoaderVersions[pair.Key] = pair.Value;
         if (loaders.ContainsKey("quilt_loader") && !context.LoaderVersions.ContainsKey("fabricloader")) context.LoaderVersions["fabricloader"] = null;
         if (loaders.ContainsKey("neoforge") && minecraft == "1.20.1") context.LoaderVersions["forge"] = loaders["neoforge"];
         Report report = Inspection.ReadSingleArchive(path, context, token);
         var own = report.Mods.Where(item => !item.IsNested && !item.IsMetadataOnly && !item.IsGeneratedLibrary).ToArray();
+        result.IconPath = own.Select(item => item.IconPath).FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
         foreach (var item in own) {
             result.OwnIds.Add(item.Id);
             result.ProvidedIds.UnionWith(item.Provides.Keys);

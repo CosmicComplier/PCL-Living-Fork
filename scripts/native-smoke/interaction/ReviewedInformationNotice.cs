@@ -18,10 +18,11 @@ internal static class ReviewedInformationNotice
         {
             "PCL Living Fork dev_edition 更新说明" => "dev_edition",
             "PCL Living Fork 1.4.0 更新说明" => "1.4.0",
+            "PCL Living Fork 1.4.1 更新说明" => "1.4.1",
             _ => throw new InvalidOperationException("PENDING: only exact reviewed Markdown notice titles may be dismissed.")
         };
         if (style is not ("markdown-suppress" or "markdown") || source is not ("local" or "published-or-local") ||
-            (source == "published-or-local" && version != "1.4.0") || (style == "markdown" && (version != "1.4.0" || source != "published-or-local")))
+            (source == "published-or-local" && version is not ("1.4.0" or "1.4.1")) || (style == "markdown" && (version is not ("1.4.0" or "1.4.1") || source != "published-or-local")))
             throw new InvalidOperationException("PENDING: reviewed Markdown notice metadata binding differs.");
         string caption = "基于 PCL 官方开源版的第三方版本。\r\n" + (style == "markdown" ? "暂未读取到当前版本的完整发布说明，以下为本地简述。" : "以下为当前版本的本地简述。");
         string plain = CaptionForTitle("PCL Living Fork " + version + " 版本说明");
@@ -53,24 +54,25 @@ internal static class ReviewedInformationNotice
             "PCL Living Fork 1.3.5-pre-3 版本说明" => "1.3.5-pre-3",
             "PCL Living Fork 1.4.0-pre-4 版本说明" => "1.4.0-pre-4",
             "PCL Living Fork 1.4.0 版本说明" => "1.4.0",
+            "PCL Living Fork 1.4.1 版本说明" => "1.4.1",
             "PCL Living Fork dev_edition 版本说明" => "dev_edition",
             _ => throw new InvalidOperationException("PENDING: only exact reviewed information notices may be dismissed.")
         };
         string highlights = version == "1.3.5-pre-3"
             ? "- 首页可开关模组依赖检查与自动补全\r\n- 整合包更新按分类预览，下载显示实际进度\r\n- 还原点可选设置自动清理上限，手动记录单独保留"
-            : (version == "1.4.0-pre-4" ? "- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime\r\n- 更新页新增版本搜索、当前版本标记与 Markdown 说明\r\n- 修复图片、中文搜索、资源详情异常及删除版本卡顿" : "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览");
+            : (version == "1.4.0-pre-4" ? "- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime\r\n- 更新页新增版本搜索、当前版本标记与 Markdown 说明\r\n- 修复图片、中文搜索、资源详情异常及删除版本卡顿" : (version is "1.4.1" or "dev_edition" ? "- 全局项目收藏：下载、版本资源管理与收藏页同步，跨文件和版本去重\r\n- 整合包更新独立侧栏，预览中处理缺失前置与不兼容模组\r\n- 更新任务分项显示原生进度，增加文件读取和写入速度\r\n- 顶栏快捷切换深浅色，圆角侧栏、渐变光圈与夜间星光\r\n- 更新公告可选择下次更新前不再弹出，暂缓更新后可从顶栏重开\r\n- 改善部分 Windows 10 启动兼容性，更新 README 与项目日历\r\n- 精简版适用于 Windows x64，运行前需 .NET 10 Desktop Runtime" : "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览"));
         return "PCL Living Fork " + version + " 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" + highlights;
     }
 
     internal static void VerifyPolicy()
     {
-        foreach (string version in new[] { "1.3.5-pre-3", "1.4.0-pre-4", "1.4.0", "dev_edition" })
+        foreach (string version in new[] { "1.3.5-pre-3", "1.4.0-pre-4", "1.4.0", "1.4.1", "dev_edition" })
         {
             string caption = CaptionForTitle("PCL Living Fork " + version + " 版本说明");
             string expected = "PCL Living Fork " + version + " 是基于 PCL 官方开源版的第三方版本。\r\n\r\n" +
                 (version == "1.3.5-pre-3"
                     ? "- 首页可开关模组依赖检查与自动补全\r\n- 整合包更新按分类预览，下载显示实际进度\r\n- 还原点可选设置自动清理上限，手动记录单独保留"
-                    : (version == "1.4.0-pre-4" ? "- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime\r\n- 更新页新增版本搜索、当前版本标记与 Markdown 说明\r\n- 修复图片、中文搜索、资源详情异常及删除版本卡顿" : "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览"));
+                    : (version == "1.4.0-pre-4" ? "- 主产品迁移至 C#/.NET 10，精简版需 .NET 10 Desktop Runtime\r\n- 更新页新增版本搜索、当前版本标记与 Markdown 说明\r\n- 修复图片、中文搜索、资源详情异常及删除版本卡顿" : (version is "1.4.1" or "dev_edition" ? "- 全局项目收藏：下载、版本资源管理与收藏页同步，跨文件和版本去重\r\n- 整合包更新独立侧栏，预览中处理缺失前置与不兼容模组\r\n- 更新任务分项显示原生进度，增加文件读取和写入速度\r\n- 顶栏快捷切换深浅色，圆角侧栏、渐变光圈与夜间星光\r\n- 更新公告可选择下次更新前不再弹出，暂缓更新后可从顶栏重开\r\n- 改善部分 Windows 10 启动兼容性，更新 README 与项目日历\r\n- 精简版适用于 Windows x64，运行前需 .NET 10 Desktop Runtime" : "- 汇总四个预发布版本，包含依赖、主题、登录隔离与本次实机修复\r\n- C#/.NET 10 与 Windows x64；运行前需 .NET 10 Desktop Runtime\r\n- 完善依赖索引、内嵌前置识别与补全、深浅色主题和面板不透明度\r\n- 原生更新页支持版本搜索、通道选择与 Markdown 更新说明\r\n- 备份、克隆、恢复显示实际进度；存档与资源支持正倒序\r\n- 微软登录缓存使用 _LF 隔离；修复图标、中文搜索与删除卡顿\r\n- 整包更新保护个人修改和世界数据，修复配置误关联与冲突预览")));
             if (!string.Equals(caption, expected, StringComparison.Ordinal))
                 throw new InvalidOperationException("Reviewed information notice body changed.");
         }
@@ -86,7 +88,7 @@ internal static class ReviewedInformationNotice
             bool refused = false; try { action(); } catch (InvalidOperationException) { refused = true; }
             if (!refused) throw new InvalidOperationException("Unsafe rich information notice was accepted.");
         }
-        foreach (string version in new[] { "dev_edition", "1.4.0" })
+        foreach (string version in new[] { "dev_edition", "1.4.0", "1.4.1" })
         {
             string title = "PCL Living Fork " + version + " 更新说明", source = version == "dev_edition" ? "local" : "published-or-local";
             var notice = ForTitle(title, "markdown-suppress", source);
@@ -96,7 +98,7 @@ internal static class ReviewedInformationNotice
             notice.VerifyDocument(notice.DocumentText.Replace("- ", "• ").Replace("\r\n", "\r\n\r\n"));
             notice.VerifyDocument(notice.DocumentText.Replace("- ", ""));
             Refuse(() => notice.VerifyDocument(notice.DocumentText + "\r\n额外内容"));
-            Refuse(() => notice.VerifyDocument(notice.DocumentText.Replace("修复", "删除")));
+            Refuse(() => notice.VerifyDocument(notice.DocumentText.Replace("更新", "删除")));
             Refuse(() => notice.VerifyDocument(notice.DocumentText[..40]));
             Refuse(() => notice.VerifyLogCaption(log.Replace("本地简述", "完整发布说明")));
             Refuse(() => notice.VerifyLogCaption(log.TrimEnd('\r', '\n')));
@@ -107,7 +109,7 @@ internal static class ReviewedInformationNotice
             Refuse(() => notice.VerifyLogCaption(log + "00:00:00.002 I [MessageDialogController] 普通弹窗：删除所有版本？\r\n"));
             Refuse(() => ForTitle(title, "plain", source));
         }
-        Refuse(() => ForTitle("PCL Living Fork 1.4.1 更新说明", "markdown-suppress", "local"));
+        Refuse(() => ForTitle("PCL Living Fork 1.4.2 更新说明", "markdown-suppress", "local"));
         Refuse(() => ForTitle("PCL Living Fork dev_edition 更新说明", "markdown-suppress", "published-or-local"));
         Refuse(() => ForTitle("PCL Living Fork dev_edition 更新说明 suffix", "markdown-suppress", "local"));
         var earlier = ForTitle("PCL Living Fork 1.4.0 更新说明", "markdown", "published-or-local");

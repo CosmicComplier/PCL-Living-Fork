@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -39,6 +39,13 @@ namespace PCL
                 control.Change += (_, _) => change(control.Checked);
                 return control;
             },
+            CreateSection = (title, content) => {
+                var card = new MyCard { Title = title, Margin = new Thickness(3, 3, 8, 14) };
+                card.Children.Add(new Border { Child = content, Padding = new Thickness(16, 40, 16, 14) });
+                return card;
+            },
+            CreateHint = (text, tone) => new MyHint { Text = text, Theme = (MyHint.Themes)tone, Margin = new Thickness(0, 10, 0, 12) },
+            UpdateHint = (element, text, tone) => { var hint = (MyHint)element; hint.Text = text; hint.Theme = (MyHint.Themes)tone; },
             AnimationControl = new Func<int>(() => ModAnimation.AniControlEnabled),
             StopAnimation = new Action<string>(Name => ModAnimation.AniStop(Name)),
             AnimateOpacity = new Action<UIElement, double, int, string>((Element, Value, Duration, Name) => ModAnimation.AniStart(ModAnimation.AaOpacity(Element, Value, Duration), Name))
@@ -144,11 +151,15 @@ namespace PCL
                 Kind = value;
             }
         }
-        internal ModpackUpdatePreviewView(PackUpdatePlan Plan, string CurrentMinecraft, Dictionary<ModLoaders, string> CurrentLoaders) : base(Plan.Package.Name + " " + Plan.Package.Version, RuntimeSummary(Plan.Package, CurrentMinecraft, CurrentLoaders), 4)
+        internal ModpackUpdatePreviewView(PackUpdatePlan Plan, string CurrentMinecraft, Dictionary<ModLoaders, string> CurrentLoaders) : this(Plan, CurrentMinecraft, CurrentLoaders, false) { }
+        internal ModpackUpdatePreviewView(PackUpdatePlan Plan, string CurrentMinecraft, Dictionary<ModLoaders, string> CurrentLoaders, bool ValidateSelection) : base(PreviewController.PackageTitle(Plan.Package), RuntimeSummary(Plan.Package, CurrentMinecraft, CurrentLoaders), 4)
         {
-            Controller = new PreviewController(this, Plan, CurrentMinecraft, CurrentLoaders, Counts, Value => Kind = (ChangeKind)Value, Text => new MyHint() { Text = Text, Theme = MyHint.Themes.Yellow, Margin = new Thickness(0d, 10d, 0d, 0d) });
+            Controller = new PreviewController(this, Plan, CurrentMinecraft, CurrentLoaders, Counts, Value => Kind = (ChangeKind)Value, Text => new MyHint() { Text = Text, Theme = MyHint.Themes.Yellow, Margin = new Thickness(0d, 10d, 0d, 0d) },
+                ValidateSelection ? ModpackUpdate.Engine.SnapshotForPreview : null, ValidateSelection ? ModpackUpdate.Engine.ReviewPreview : null);
             Changes = Controller.Changes;
         }
+        internal System.Threading.Tasks.Task CloseAndDrainAsync() => Controller.CloseAndDrainAsync();
+        internal void ShowCompatibility() => Controller.ShowKind(4);
         internal static ChangeKind Classify(PackUpdateChange Change)
         {
             return (ChangeKind)PreviewController.Classify(Change);

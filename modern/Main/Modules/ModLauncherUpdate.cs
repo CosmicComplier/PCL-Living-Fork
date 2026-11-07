@@ -42,6 +42,7 @@ namespace PCL
             if (Value == (int)PreferredUpdateChannel()) return true;
             if (Value == 1 && (Confirm is null || !Confirm())) return false;
             Settings.Set("ToolLauncherUpdateChannel", Value);
+            ResetDeferredUpdateIndicator();
             return true;
         }
         internal static UpdateSource PreferredUpdateSource()
@@ -258,6 +259,8 @@ namespace PCL
                     if (ModMain.MyMsgBoxConfirmContent("请选择本次更新的下载源。", "更新 PCL Living Fork", "下载并更新", () => { view = new UpdatePromptView(selected["tag_name"]!.ToString(), source); return view; }, "取消", IsWarn: false) != 1) return;
                     UpdateSource downloadSource = source;
                     ModBase.RunInUiWait(() => downloadSource = view.SelectedSource);
+                    Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(Settings.Get<string>("ToolLauncherUpdateIgnoredTag"), selected["tag_name"]!.ToString(), 1));
+                    ClearDeferredUpdate();
                     DownloadAndUpdate(selected, downloadSource);
                 }
                 catch (Exception error) { UpdateFailure(PclLogger.ModernizeRuntimeMessage(error.GetDisplay(false))); }
@@ -400,20 +403,26 @@ namespace PCL
                     string Tag = Info["tag_name"]?.ToString();
                     if (!NewerReleaseForChannel(Tag, ModBase.VersionBaseName, PreferredUpdateChannel()))
                     {
+                        ClearDeferredUpdate();
                         if (!Startup) ModMain.MyMsgBox($"当前版本：{ModBase.VersionBaseName}{Constants.vbCrLf}当前通道最新版本：{Tag}{Constants.vbCrLf}{Constants.vbCrLf}当前没有更新的版本。", "PCL Living Fork 更新");
                         return;
                     }
                     string IgnoredTag = Settings.Get<string>("ToolLauncherUpdateIgnoredTag");
-                    if (Startup && !ShouldPromptForUpdate(Tag, ModBase.VersionBaseName, IgnoredTag)) return;
+                    if (Startup && !ShouldPromptForUpdate(Tag, ModBase.VersionBaseName, IgnoredTag)) { RememberDeferredUpdate(Info, Source); return; }
+                    ClearDeferredUpdate();
                     UpdatePromptView View = null; UpdateSource DownloadSource = Source;
                     int Choice = ModMain.MyMsgBoxConfirmContent("请选择本次更新的下载源。", "发现 PCL Living Fork 新版本", "下载并更新", () => { View = new UpdatePromptView(Tag, Source); return View; }, "暂不更新", IsWarn: false);
                     if (Choice == 1)
                     {
                         ModBase.RunInUiWait(() => DownloadSource = View.SelectedSource);
                         Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice));
+                        ClearDeferredUpdate();
                         DownloadAndUpdate(Info, DownloadSource);
                     }
-                    else if (Choice == 2) Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice));
+                    else if (Choice == 2) {
+                        Settings.Set("ToolLauncherUpdateIgnoredTag", IgnoreTagAfterChoice(IgnoredTag, Tag, Choice));
+                        RememberDeferredUpdate(Info, Source);
+                    }
                 }
                 catch (Exception ex)
                 {

@@ -19,14 +19,14 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         PackUpdateFlowHost<TPackage, TPlan, TNetFile, TVersion, TInstance, TTask, TCombo, TWorker, TProgress> host) { this.update = update; this.host = host; }
     private static bool Same(string? left, string? right) => (left ?? "") == (right ?? "");
     public bool IsUpdating => host.ReadActive() != 0;
-    public void Start(TInstance? instance, bool online) {
+    public void Start(TInstance? instance, bool online, string? requestedVersion = null) {
         if (instance is null || host.EnvironmentBusy() || host.HasRunningGame() || host.HasRunningSessions() || host.LaunchLoading() || host.IsLocked(instance)) {
             host.HintRed("请先关闭游戏并等待版本任务完成。"); return;
         }
         string? archivePath = null;
         if (!online) { archivePath = host.SelectFile("选择新版整合包"); if (string.IsNullOrEmpty(archivePath)) return; }
         if (host.CompareExchangeActive(1, 0) != 0) { host.Hint("请等待当前整合包更新完成。"); return; }
-        TTask step = host.CreateStep("比较并更新整合包文件", task => Execute(instance, online, archivePath!, task));
+        TTask step = host.CreateStep("比较并更新整合包文件", task => Execute(instance, online, archivePath!, task, requestedVersion));
         TCombo loader = host.CreateCombo("更新整合包：" + host.Name(instance), step);
         TWorker worker = host.CreateWorker(loader, host.VersionFolder(instance));
         if (!host.TryAcquire(worker, host.VersionFolder(instance))) { host.ExchangeActive(0); return; }
@@ -85,7 +85,16 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         original.Source = (JObject)source.DeepClone(); original.Source["project"] = project.Id;
         return original;
     }
-    public string ChooseOnline(JObject baseline, string stage, CancellationToken token, ref JObject? source, TProgress progress) {
+    public List<TVersion> GetAvailableVersions(JObject baseline) {
+        var source = baseline["source"] as JObject ?? throw new IOException("没有在线来源记录，请先从文件更新或补全整合包记录。");
+        if (!Enum.TryParse(source["platform"]?.ToString(), out ResourcePlatforms platform) || platform is not (ResourcePlatforms.Modrinth or ResourcePlatforms.CurseForge)) throw new IOException("无效的整合包更新来源。");
+        string id = source["project"]?.ToString() ?? "";
+        if (!Regex.IsMatch(id, @"\A[A-Za-z0-9_-]+\z")) throw new IOException("无效的整合包项目编号。");
+        if (host.Project(id, platform).Types != ResourceTypes.ModPack) throw new IOException("来源不是整合包项目。");
+        host.RemoveVersionCache(id);
+        return host.Versions(id, platform, false).Where(version => !string.IsNullOrWhiteSpace(version.Id)).GroupBy(version => version.Id).Select(group => group.First()).OrderByDescending(version => version.ReleaseDate).ToList();
+    }
+    public string ChooseOnline(JObject baseline, string stage, CancellationToken token, ref JObject? source, TProgress progress, string? requestedVersion = null) {
         source = baseline["source"] as JObject;
         if (source is not null) source = (JObject)source.DeepClone();
         if (source is null) {
@@ -109,11 +118,12 @@ public sealed partial class PackUpdateFlowEngine<TFile, TPackage, TChange, TPlan
         if (projectInfo.Types != ResourceTypes.ModPack) throw new IOException("此地址不是整合包项目。");
         host.RemoveVersionCache(id);
         string? currentId = source["version"]?.ToString();
-        List<TVersion> versions = host.Versions(id, platform, false).Where(item => !Same(item.Id, currentId)).OrderByDescending(item => item.ReleaseDate).Take(60).ToList();
+        List<TVersion> versions = host.Versions(id, platform, false).Where(item => !Same(item.Id, currentId)).OrderByDescending(item => item.ReleaseDate).ToList();
         token.ThrowIfCancellationRequested();
         if (versions.Count == 0) throw new IOException("没有其他可下载的整合包版本。");
         TVersion? selected = null;
-        host.UiWait(() => selected = host.SelectVersion(versions, baseline["name"]?.ToString() ?? "整合包", baseline["version"]?.ToString()));
+        if (requestedVersion is not null) selected = versions.FirstOrDefault(version => Same(version.Id, requestedVersion)) ?? throw new IOException("所选版本已不在此整合包的可更新列表中，请刷新后重试。");
+        else host.UiWait(() => selected = host.SelectVersion(versions.Take(60).ToList(), baseline["name"]?.ToString() ?? "整合包", baseline["version"]?.ToString()));
         if (selected is null) throw new OperationCanceledException();
         token.ThrowIfCancellationRequested();
         string destination = Path.Combine(stage, platform == ResourcePlatforms.Modrinth ? "update.mrpack" : "update.zip");
