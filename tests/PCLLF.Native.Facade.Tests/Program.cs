@@ -12,6 +12,7 @@ internal static class Program
         ["launcher-update-page"] = LauncherUpdatePageChecks.Run,
         ["title-theme-toggle"] = TitleThemeToggleChecks.Run,
         ["theme-transition"] = ThemeTransitionChecks.Run,
+        ["deferred-update"] = DeferredUpdateButtonChecks.Run,
         ["resource-entry"] = MapResourceChecks.ResourceEntries,
         ["world-details"] = WorldChecks.Run,
         ["registry-names"] = RegistryChecks.Run,

@@ -192,8 +192,8 @@ namespace PCL
                 return;
             }
             var main = ModMain.FrmMain;
-            if (main is not null && ModTheme.IsDarkTheme != (Settings.Get<int>("UiLauncherColorMode") == 1))
-                ThemeTransition.Apply(main.PanForm, () => PaletteService.Refresh(NewTheme));
+            if (main?.PanForm is { IsLoaded: true } root && ModTheme.IsDarkTheme != (Settings.Get<int>("UiLauncherColorMode") == 1))
+                ThemeTransition.Apply(root, () => PaletteService.Refresh(NewTheme));
             else PaletteService.Refresh(NewTheme);
         }
         internal static global::System.Windows.Media.Brush CreateTitleBackground() => PaletteService.CreateTitleBackground();

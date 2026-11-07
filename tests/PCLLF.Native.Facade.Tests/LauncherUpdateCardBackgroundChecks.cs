@@ -21,6 +21,12 @@ internal static class LauncherUpdateCardBackgroundChecks {
         var stars = background.Children.Cast<UIElement>().OfType<Canvas>().Single(layer => layer.GetType().Name == "ThemeStarfield");
         var starWatcher = (DispatcherTimer)Native.Get(stars, "watcher")!;
         var starClocks = (List<AnimationClock>)Native.Get(stars, "clocks")!;
+        Canvas Seeded(int seed) => (Canvas)Activator.CreateInstance(stars.GetType(), Native.Flags, null, new object[] { 16, new Random(seed) }, null)!;
+        var pattern = (List<Point>)Native.Get(Seeded(17), "positions")!;
+        var anotherPattern = (List<Point>)Native.Get(Seeded(18), "positions")!;
+        Native.Check(!pattern.SequenceEqual(anotherPattern) && pattern.All(point => point.X is > 0 and < 1 && point.Y is > 0 and < 1) &&
+            pattern.Select(point => Math.Round((point.X + point.Y) * 10)).Distinct().Count() >= 6,
+            "Star positions were shared between instances, outside the card, or constrained to diagonal bands.");
         bool Moving() => (bool)Native.Get(background, "moving")!;
         bool StarsMoving() => (bool)Native.Get(stars, "moving")!;
         int suppression = ModAnimation.AniControlEnabled;
@@ -55,7 +61,7 @@ internal static class LauncherUpdateCardBackgroundChecks {
                 if (dark) {
                     foreach (var starClock in starClocks) starClock.Controller.SeekAlignedToLastTick(TimeSpan.Zero, TimeSeekOrigin.BeginTime);
                     double initialOpacity = stars.Children[0].Opacity;
-                    foreach (var starClock in starClocks) starClock.Controller.SeekAlignedToLastTick(TimeSpan.FromSeconds(2.5), TimeSeekOrigin.BeginTime);
+                    foreach (var starClock in starClocks) starClock.Controller.SeekAlignedToLastTick(TimeSpan.FromSeconds(.85), TimeSeekOrigin.BeginTime);
                     Native.Check(stars.Children[0].Opacity > initialOpacity + .1, "Dark-mode stars did not visibly twinkle.");
                 }
                 Native.Check(Contrast(LegacyThemePalette.Brush("ColorBrush1").Color, baseBrush.GradientStops[0].Color) >= 4.5,

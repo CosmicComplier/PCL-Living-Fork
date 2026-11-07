@@ -40,6 +40,7 @@ namespace PCL
             Controller.ConstructBeforeXaml();
             InitializeComponent();
             ConfigureThemeToggle(BtnTitleTheme);
+            ConfigureDeferredUpdateButton(BtnTitleUpdate, ModLauncherUpdate.ReopenDeferredUpdate);
             var titleStars = new ThemeStarfield(12);
             PanTitle.Children.Insert(1, titleStars);
             RegisterName("TitleStars", titleStars);
@@ -65,6 +66,20 @@ namespace PCL
             };
             ModTheme.WatchTheme(button, RefreshIcon);
             RefreshIcon();
+        }
+
+        private static void ConfigureDeferredUpdateButton(MyIconButton button, Action open)
+        {
+            button.Logo = ModBase.Logo.IconButtonRefresh;
+            button.Click += (_, _) => open();
+            button.Loaded += (_, _) => RefreshDeferredUpdateButton(button);
+            RefreshDeferredUpdateButton(button);
+        }
+        internal static void RefreshDeferredUpdateButton(MyIconButton button)
+        {
+            string tag = ModLauncherUpdate.DeferredUpdateTag();
+            button.ToolTip = "有可用更新 " + tag + "，点击查看";
+            button.Visibility = string.IsNullOrEmpty(tag) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void ShowUpdateLog() => Controller.ShowUpdateLog();

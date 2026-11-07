@@ -24,7 +24,10 @@ internal sealed class ThemeTransition {
         root.IsVisibleChanged += (_, _) => { if (!root.IsVisible) Clear(); };
         root.SizeChanged += (_, _) => Clear();
     }
-    internal static void Apply(Grid root, Action change) => instances.GetValue(root, target => new ThemeTransition(target)).Run(change);
+    internal static void Apply(Grid root, Action change) {
+        if (root is null) { change(); return; }
+        instances.GetValue(root, target => new ThemeTransition(target)).Run(change);
+    }
     private static bool MotionAllowed => ModAnimation.AniControlEnabled == 0 && ModAnimation.AniSpeed > 0 && ModAnimation.AniSpeed < 200 && SystemParameters.ClientAreaAnimation;
 
     private void Run(Action change) {

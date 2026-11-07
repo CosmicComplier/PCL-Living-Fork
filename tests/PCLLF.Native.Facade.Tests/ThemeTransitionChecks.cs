@@ -25,6 +25,12 @@ internal static class ThemeTransitionChecks {
         try {
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             ModAnimation.AniControlEnabled = 0; Native.Cache("SystemDebugAnim", 9);
+            bool coldApplied = false;
+            Native.Static("PCL.ThemeTransition", "Apply", null, (Action)(() => coldApplied = true));
+            Native.Check(coldApplied, "Theme changes before XAML construction were lost.");
+            Apply(Brushes.MidnightBlue);
+            Native.Check(Overlay() is null && ReferenceEquals(root.Background, Brushes.MidnightBlue), "Cold unloaded controls should apply their saved theme without capturing a transition.");
+            root.Background = Brushes.White;
             window.Show(); window.UpdateLayout();
             Apply(Brushes.MidnightBlue);
             if (SystemParameters.ClientAreaAnimation) {
