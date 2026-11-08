@@ -22,7 +22,9 @@ internal static class ModpackUpdateFlowChecks
     private static void TraceStage(string stage)
     {
         Volatile.Write(ref lastStage, stage);
-        if (Interlocked.Increment(ref traceCount) > 128) return;
+        int count = Interlocked.Increment(ref traceCount);
+        if (count > 128 && (stage.StartsWith("progress-",StringComparison.Ordinal) ||
+            stage.StartsWith("uiwait-",StringComparison.Ordinal))) return;
         Console.WriteLine("DIAG native modpack FLOW stage=" + stage + "; thread=" + Environment.CurrentManagedThreadId + "; elapsedMs=" + TraceClock.ElapsedMilliseconds);
         Console.Out.Flush();
     }
@@ -324,7 +326,7 @@ internal static class ModpackUpdateFlowChecks
                 Check(File.ReadAllText(originPath) == originBefore, label, "repaired origin was written before preview approval");
                 return scenario == "preview-cancel" ? 2 : 1;
             };
-            flow.Start(instance); flow.WaitStopped();
+            TraceStage(label + "-start"); flow.Start(instance); flow.WaitStopped(); TraceStage(label + "-stopped");
             Check(flow.PickerCalls == pickers + 1 && flow.Archives.Count == 0, label, "automatic source unexpectedly opened another picker");
             Check(requests == (scenario == "schema2" ? 0 : 1), label, "schema/version lookup count is wrong");
             Check(downloads == (scenario is "foreign" or "schema2" ? 0 : 1), label, "unverified or already-complete origin downloaded an archive");
