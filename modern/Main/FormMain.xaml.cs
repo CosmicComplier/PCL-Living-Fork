@@ -116,12 +116,15 @@ namespace PCL
         private void FormMain_Loaded(object sender, RoutedEventArgs e) => Controller.Loaded();
         private void UpgradeSub(int LastVersionCode) => Controller.Upgrade(LastVersionCode);
         private void DowngradeSub(int LastVersionCode) => Controller.Downgrade(LastVersionCode);
-        private void FormMain_Closing(object sender, CancelEventArgs e) => Controller.Closing(e);
-        public void EndProgram(bool SendWarning) => Controller.EndProgram(SendWarning);
+        private void FormMain_Closing(object sender, CancelEventArgs e) { e.Cancel = true; EndProgram(true); }
+        public void EndProgram(bool SendWarning) {
+            if (MmcLaunch.KeepAliveWhileSessionsFinish()) { Hidden = true; return; }
+            Controller.EndProgram(SendWarning);
+        }
         private static bool IsLogShown = false;
         public static void EndProgramForce(ModBase.ProcessReturnValues ReturnCode = ModBase.ProcessReturnValues.Success)
             => LegacyMainTermination.EndProgramForce((int)ReturnCode, CreateTerminationHost());
-        private void BtnTitleClose_Click(object sender, RoutedEventArgs e) => Controller.EndProgram(true);
+        private void BtnTitleClose_Click(object sender, RoutedEventArgs e) => EndProgram(true);
         private void FormDragMove(object sender, MouseButtonEventArgs e) => Controller.DragMove(sender);
         public bool IsSizeSaveable = false;
         private void FormMain_SizeChanged() => Controller.SizeChanged();
