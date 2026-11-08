@@ -15,6 +15,8 @@ internal static class MmcInstanceBackendTests {
         yield return ("MMC launch preparation keeps complete generations and repairs only missing managed inputs offline", LaunchPreparation);
         yield return ("MMC launch preparation rejects stale identity, new variants and damaged support without adopting bytes", LaunchRefusals);
         yield return ("MMC private payload placement binds measured files and preserves canceled or conflicting private roots", PrivatePayload);
+        yield return ("MMC initial import publishes thousands of tiny files without journal body copies", BulkPayloadImport);
+        yield return ("MMC initial private payload cancellation and post-decision corruption never publish a final root", BulkPayloadFailure);
     }
     private static void SourcePreparation() => SourcePreparationAsync().GetAwaiter().GetResult();
     private static async Task SourcePreparationAsync() {
@@ -73,6 +75,74 @@ internal static class MmcInstanceBackendTests {
         Equal("keep", JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "config.json"))).Value<string>("unknown-personal-pref"));
     }
     private static void FailureIsolation() => FailureIsolationAsync().GetAwaiter().GetResult();
+    private static void BulkPayloadImport() => BulkPayloadImportAsync().GetAwaiter().GetResult();
+    private static async Task BulkPayloadImportAsync() {
+        const int tinyFiles = 2000;
+        using Fixture fixture = new(tinyFiles);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        int moved = 0, verified = 0; long movedBytes = 0, verifiedBytes = 0;
+        var result = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)),
+            progress: new BackendProgress(value => {
+                if (value.Phase == "private-payload-install") { moved++; movedBytes = value.CompletedBytes; }
+                if (value.Phase == "private-payload-verify") { verified++; verifiedBytes = value.CompletedBytes; }
+            }));
+        if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(result.Failure);
+        elapsed.Stop();
+        var paths = result.Paths!;
+        for (int index = 0; index < tinyFiles; index++) Equal("bulk body " + index, File.ReadAllText(Path.Combine(paths.GameRoot, "config", "bulk", index.ToString("D5") + ".cfg")));
+        Equal("instance extra payload", File.ReadAllText(Path.Combine(paths.InstanceRoot, "icon.txt")));
+        string history = Path.Combine(paths.InstanceRoot, "PCL", "MmcTransactionHistory");
+        string record = Directory.EnumerateFiles(history, "prepared.record", SearchOption.AllDirectories).Single();
+        var journal = MmcDurableFiles.ReadRecord<MmcPreparedJournal>(record).Value;
+        Equal(true, journal.Mutations.Length < 64);
+        Equal(false, journal.Mutations.Any(value => value.RelativePath.StartsWith("minecraft/", StringComparison.OrdinalIgnoreCase) || value.RelativePath == "icon.txt"));
+        var manifest = JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPayload.json")));
+        Equal(tinyFiles + 3, ((JArray)manifest["Files"]!).Count); Equal(tinyFiles + 3, moved); Equal(moved, verified); Equal(movedBytes, verifiedBytes);
+        Equal(manifest.Value<long>("TotalBytes"), movedBytes);
+        var payloadHashes = ((JArray)manifest["Files"]!).OfType<JObject>().Select(value => value.Value<string>("Sha256")!).ToHashSet(StringComparer.Ordinal);
+        string[] bodyCopies = Directory.EnumerateFiles(Path.GetDirectoryName(record)!, "new-*.bin").ToArray();
+        Equal(false, bodyCopies.Any(file => payloadHashes.Contains(MmcDurableFiles.Observe(file)!)));
+        Equal(false, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPending.json")));
+        Equal(false, Directory.Exists(Path.Combine(paths.RuntimeRoot, ".staging")));
+        Console.WriteLine($"INFO private import {tinyFiles + 3} payload files/{movedBytes} bytes: {elapsed.ElapsedMilliseconds} ms; journal {journal.Mutations.Length} mutations/{bodyCopies.Length} new objects; zero bulk body copies.");
+    }
+    private static void BulkPayloadFailure() => BulkPayloadFailureAsync().GetAwaiter().GetResult();
+    private static async Task BulkPayloadFailureAsync() {
+        foreach (string mode in new[] { "cancel", "corrupt" }) {
+            using Fixture fixture = new(32); using CancellationTokenSource cancel = new();
+            var clock = System.Diagnostics.Stopwatch.StartNew(); var phases = new Dictionary<string, (long First, long Last)>();
+            void Observe(string phase) { long now = clock.ElapsedMilliseconds; phases[phase] = phases.TryGetValue(phase, out var previous) ? (previous.First, now) : (now, now); }
+            string? privateRoot = null;
+            string sibling = Path.Combine(Path.GetDirectoryName(fixture.VersionRoot)!, "untouched", "player.dat");
+            Directory.CreateDirectory(Path.GetDirectoryName(sibling)!); File.WriteAllText(sibling, "player bytes");
+            var result = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)) {
+                PrivatePayloadCheckpoint = (phase, index) => {
+                    Observe("payload-" + phase);
+                    if (phase != MmcInitialPayloadCheckpoint.Moved || index != 3) return;
+                    privateRoot = Directory.EnumerateDirectories(Path.GetDirectoryName(fixture.VersionRoot)!, ".pcllf-mmc-import-*").Single();
+                    if (mode == "cancel") cancel.Cancel();
+                },
+                TransactionCheckpoint = (phase, _) => { Observe("tx-" + phase); if (mode == "corrupt" && phase == MmcTransactionCheckpoint.CommitDecided) File.WriteAllText(Path.Combine(privateRoot!, "minecraft", "config", "example.cfg"), "post-decision external bytes"); }
+            }, cancel.Token, new BackendProgress(value => Observe(value.Phase)));
+            if (mode == "corrupt") Console.WriteLine("INFO 32-file fault smoke phase callback first..last elapsed milliseconds (not complete phase durations): " +
+                string.Join("; ", new[] { "package-extract", "payload-Prepared", "payload-Moved", "publishing-instance", "tx-Prepared", "tx-CommitDecided", "tx-Finalized", "private-payload-verify" }
+                    .Where(phases.ContainsKey).Select(phase => phase + "=" + phases[phase].First + ".." + phases[phase].Last)) + "; total=" + clock.ElapsedMilliseconds);
+            Equal(mode == "cancel" ? MmcInstanceBackendStatus.Cancelled : MmcInstanceBackendStatus.NeedsRecovery, result.Status);
+            Equal(false, Directory.Exists(fixture.VersionRoot)); Equal("player bytes", File.ReadAllText(sibling)); Equal(privateRoot, result.WorkingRoot);
+            Equal(true, File.Exists(Path.Combine(privateRoot!, "PCL", "MmcImportPending.json")));
+            Equal(true, File.Exists(Path.Combine(privateRoot!, "PCL", "MmcImportPayload.json")));
+            if (mode == "cancel") {
+                var files = (JArray)JObject.Parse(File.ReadAllText(Path.Combine(privateRoot!, "PCL", "MmcImportPayload.json")))["Files"]!;
+                Equal(4, files.OfType<JObject>().Count(file => File.Exists(Path.Combine(privateRoot!, file.Value<string>("TargetRelativePath")!.Replace('/', Path.DirectorySeparatorChar)))));
+                Equal(true, Directory.EnumerateFiles(Path.Combine(privateRoot!, "PCL", "MmcRuntime", ".staging"), "owner.txt", SearchOption.AllDirectories).Any());
+                Equal(false, File.Exists(Path.Combine(privateRoot!, "PCL", "InstanceDefinition.json")));
+            } else {
+                Equal("post-decision external bytes", File.ReadAllText(Path.Combine(privateRoot!, "minecraft", "config", "example.cfg")));
+                Equal(1L, MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(privateRoot!)).Definition.Generation);
+            }
+        }
+    }
+    private sealed class BackendProgress(Action<MmcInstanceBackendProgress> report) : IProgress<MmcInstanceBackendProgress> { public void Report(MmcInstanceBackendProgress value) => report(value); }
     private static void PrivatePayload() => PrivatePayloadAsync().GetAwaiter().GetResult();
     private static async Task PrivatePayloadAsync() {
         foreach (string mode in new[] { "complete", "cancel", "conflict" }) {
@@ -205,7 +275,7 @@ internal static class MmcInstanceBackendTests {
         public int Downloads;
         private readonly List<HttpClient> clients = [];
         private static readonly byte[] AssetIndex = Encoding.UTF8.GetBytes("{\"objects\":{}}");
-        public Fixture() {
+        public Fixture(int tinyFiles = 0) {
             Directory.CreateDirectory(Scope);
             using var zip = ZipFile.Open(Archive, ZipArchiveMode.Create);
             Add(zip, "README.txt", "opaque outer documentation");
@@ -217,6 +287,8 @@ internal static class MmcInstanceBackendTests {
             Add(zip, "pack/libraries/fixture.jar", "launcher library"); Add(zip, "pack/libraries/unreferenced.jar", "unreferenced original");
             Add(zip, "pack/minecraft/libraries/fixture.jar", "different game library"); Add(zip, "pack/minecraft/config/example.cfg", "player config");
             Add(zip, "pack/PCL/config.json", "{\"foreign-player-pref\":\"must-not-import\"}");
+            for (int index = 0; index < tinyFiles; index++) Add(zip, "pack/minecraft/config/bulk/" + index.ToString("D5") + ".cfg", "bulk body " + index);
+            if (tinyFiles != 0) Add(zip, "pack/icon.txt", "instance extra payload");
         }
         private static void Add(ZipArchive zip, string path, string content) { using var output = new StreamWriter(zip.CreateEntry(path).Open(), new UTF8Encoding(false)); output.Write(content); }
         public MmcInstanceBackend<MmcArtifactDownloadSpec> Backend(bool offline = false, Action? afterDownload = null) {
