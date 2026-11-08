@@ -19,7 +19,7 @@ internal static class MmcLaunchPreferenceChecks {
         byte[] index = Encoding.UTF8.GetBytes("{\"objects\":{}}"); string sha1 = Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(index));
         using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create)) {
             Add("pack/mmc-pack.json", """{"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.7.10"}]}""");
-            Add("pack/instance.cfg", "name=Preferences\nOverrideJavaLocation=true\nJavaPath=C:\\recommended\\bin\\java.exe\nOverrideJavaArgs=true\nJvmArgs=-Dhello=\"a b\" \"\" -Dduplicate=one -Dduplicate=two\nOverrideMemory=true\nMinMemAlloc=512\nMaxMemAlloc=4096\nOverrideWindow=true\nMinecraftWinWidth=1280\nMinecraftWinHeight=720\nLaunchMaximized=true\n");
+            Add("pack/instance.cfg", "name=Preferences\nOverrideJavaLocation=1\nJavaPath=C:/recommended/bin/java.exe\nOverrideJavaArgs=1\nJvmArgs=-Dhello=\"a b\" \"\" -Dduplicate=one -Dduplicate=two\nOverrideMemory=1\nMinMemAlloc=512\nMaxMemAlloc=4096\nOverrideWindow=1\nMinecraftWinWidth=1280\nMinecraftWinHeight=720\nLaunchMaximized=1\n");
             Add("pack/patches/net.minecraft.json", $$"""{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Game","mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"+jvmArgs":["-Drequired=kept"],"assetIndex":{"id":"fixture","url":"https://fixture.invalid/assets.json","sha1":"{{sha1}}","size":{{index.Length}}},"compatibleJavaMajors":[8]}""");
             Add("pack/libraries/fixture.jar", "owned local bytes");
             void Add(string path, string text) { using var output = new StreamWriter(zip.CreateEntry(path).Open(), new UTF8Encoding(false)); output.Write(text); }
@@ -39,12 +39,13 @@ internal static class MmcLaunchPreferenceChecks {
         Settings.Set("VersionAdvanceJvm", "-Dbackground=ignored", instance);
         Native.Check(MmcLaunchPreferences.Capture(instance, cfg, session).RuntimeSettings.UserJvmTokens.SequenceEqual(package.RuntimeSettings.UserJvmTokens), "Non-user Settings.Set changed a package mode.");
         using (MmcConfigurationCoordinator.Quiesce(version)) {
-            Settings.SetInstanceUserPreference("VersionAdvanceJvm", "", instance);
+            using var lease = MmcAdmissionGate.Acquire(version, imported.Definition!.InstanceId, TimeSpan.Zero);
+            Task userWrite = Task.Run(() => Settings.SetInstanceUserPreference("VersionAdvanceJvm", "", instance));
+            Native.Check(userWrite.Wait(1000), "User preference write waited for a foreign admission owner."); userWrite.GetAwaiter().GetResult();
             var overlay = MmcIniConfiguration.CapturePreferences(instance.Config);
             Native.Check(overlay.Ini["MmcJvmArgsMode"] == "Custom" && overlay.Ini["VersionAdvanceJvm"] == "", "Value and mode were not visible as one queued patch.");
             var empty = MmcLaunchPreferences.Capture(instance, cfg, session);
             Native.Check(empty.RuntimeSettings.UserJvmTokens.IsEmpty, "Explicit empty custom JVM args fell back to global/package args.");
-            using var lease = MmcAdmissionGate.Acquire(version, imported.Definition!.InstanceId, TimeSpan.Zero);
             MmcLaunchPreferences.Revalidate(instance, empty);
         }
         Settings.ResetInstanceUserPreference("VersionAdvanceJvm", instance);
@@ -52,6 +53,10 @@ internal static class MmcLaunchPreferenceChecks {
         MmcLaunchPreferences.SetForcedJava(instance, new Java(Path.Combine(root, "chosen-java", "bin")));
         var forced = MmcLaunchPreferences.Capture(instance, cfg, session);
         Native.Check(forced.JavaPreference.Mode == MmcLaunchPreferenceMode.Custom && forced.JavaPreference.Force && forced.JavaPreference.Path!.Contains("chosen-java"), "Actual JavaForced JSON was not captured with the mode.");
+        Settings.Set("VersionArgumentJavaSelect", new JObject { ["Path"] = Path.Combine(root, "old-legacy-java") }.ToString(Newtonsoft.Json.Formatting.None), instance);
+        Settings.SetInstanceUserPreference("VersionArgumentJavaV2", 0, instance);
+        var automatic = MmcLaunchPreferences.Capture(instance, cfg, session);
+        Native.Check(automatic.JavaPreference.Path is null && !automatic.JavaPreference.Force, "An explicit automatic Java selection reused obsolete forced Java metadata.");
         Settings.SetInstanceUserPreference("VersionRamType", 1, instance); Settings.SetInstanceUserPreference("VersionRamCustom", 20, instance);
         Native.Check(MmcLaunchPreferences.Capture(instance, cfg, session).RuntimeSettings.MaximumMemoryMiB == 5632, "User memory override did not replace package memory.");
         MmcLaunchPreferences.SetWindowOverride(instance, 1000, 600, fullscreen: true);
@@ -59,6 +64,10 @@ internal static class MmcLaunchPreferenceChecks {
         Native.Check(current.RuntimeSettings.ResolutionWidth == 1000 && current.RuntimeSettings.Fullscreen && !current.MaximizeWindow, "Custom window mode did not override package window.");
         bool rejected = false; try { MmcLaunchPreferences.Revalidate(instance, forced); } catch (IOException) { rejected = true; }
         Native.Check(rejected, "Changed launch settings were not rejected before process creation.");
+        MmcIniConfiguration.QueuePreferenceBatch(instance.Config, new Dictionary<string, string?> { ["MmcMemoryMode"] = "InheritGlobal", ["MmcWindowMode"] = "InheritGlobal" });
+        var inherited = MmcLaunchPreferences.Capture(instance, cfg, session);
+        Native.Check(inherited.RuntimeSettings.MaximumMemoryMiB == 3072 && inherited.RuntimeSettings.ResolutionWidth == 854 && inherited.RuntimeSettings.ResolutionHeight == 480, "Global memory/window preferences were not inherited independently.");
+        MmcLaunchPreferences.SetWindowOverride(instance, 1000, 600, fullscreen: true);
         MmcIniConfiguration.QueuePreferenceBatch(instance.Config, new Dictionary<string, string?> { ["MmcMemoryMode"] = "UsePackage" });
         var invalid = cfg with { Values = cfg.Values.SetItem("MaxMemAlloc", "") };
         rejected = false; try { MmcLaunchPreferences.Capture(instance, invalid, session); } catch (InvalidDataException) { rejected = true; }
