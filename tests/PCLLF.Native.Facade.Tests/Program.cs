@@ -43,6 +43,7 @@ internal static class Program
         ["mmc-java-maintenance"] = MmcJavaMaintenanceChecks.Run,
         ["mmc-managed-import"] = MmcManagedImportChecks.Run,
         ["mmc-launch-preferences"] = MmcLaunchPreferenceChecks.Run,
+        ["mmc-lifecycle"] = MmcLifecycleChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
