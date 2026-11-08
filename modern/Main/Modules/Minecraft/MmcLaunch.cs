@@ -167,6 +167,7 @@ public static class MmcLaunch {
                         MmcInstanceBackend<ModNet.NetFile>.ValidatePreparedLaunch(admission, prepared);
                         MmcLaunchPreferences.Revalidate(instance, preferences);
                         MmcRuntimeLaunchBuilder.RevalidateFilesAsync(runtime, token).GetAwaiter().GetResult();
+                        MmcClasspathInspector.RevalidateManifestInputs(runtime, classes, token);
                     }, (id, identity) => pins.Acquire(id, identity, prepared.Definition.InstanceId, prepared.Paths.InstanceRoot, token));
             } catch {
                 // A durable Launching intent may already represent a live process. Abandon only
