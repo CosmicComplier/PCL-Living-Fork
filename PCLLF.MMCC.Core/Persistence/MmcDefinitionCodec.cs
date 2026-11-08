@@ -207,9 +207,12 @@ public static class MmcDefinitionCodec {
 
     private static void ValidateDerived(MmcInstanceDefinition definition, Dictionary<string, MmcArtifactInventoryRecord> inventory,
         Dictionary<string, MmcArtifactLockRecord> locks, MmcReadLimits limits, Action<string?, int> text) {
-        Dictionary<string, MmcDerivedOutputRecord> objects = new(StringComparer.Ordinal);
+        Dictionary<(string Key, string View, string Context), MmcDerivedOutputRecord> objects = [];
+        Dictionary<string, MmcDerivedOutputRecord> adoptedObjects = new(StringComparer.Ordinal);
         foreach (var output in definition.DerivedOutputs) if (output is { Kind: MmcDerivedOutputKind.AssetObject }) {
-            if (output.ArtifactKey is null || !MmcDerivedProofs.IsAssetObjectKey(output.ArtifactKey) || !objects.TryAdd(output.ArtifactKey, output)) MmcJson.Fail("definition", "Asset derived-object identity is missing or duplicated.");
+            if (output.ArtifactKey is null || !MmcDerivedProofs.IsAssetObjectKey(output.ArtifactKey) || !objects.TryAdd((output.ArtifactKey, output.ViewKey, output.ContextFingerprint), output)) MmcJson.Fail("definition", "Asset derived-object identity is missing or duplicated.");
+            if (adoptedObjects.TryGetValue(output.ArtifactKey, out var old) && (!SameHash(old.Sha256, output.Sha256) || old.SizeBytes != output.SizeBytes)) MmcJson.Fail("definition", "An adopted asset-object key changed its expected contents across views.");
+            adoptedObjects[output.ArtifactKey] = output;
         }
         HashSet<string> targets = new(StringComparer.OrdinalIgnoreCase);
         long total = 0, nativeBytes = 0;
@@ -241,7 +244,7 @@ public static class MmcDefinitionCodec {
                         MmcJson.Fail("definition", "Asset-object identity/path does not bind its index and observed contents.");
                 }
             } else {
-                if (!objects.TryGetValue(output.ParentArtifactKey, out var parent) || !SameHash(parent.Sha256, output.ParentSha256) || !SameHash(output.Sha256, parent.Sha256) || output.SizeBytes != parent.SizeBytes || output.ObservedSha1 != parent.ObservedSha1 ||
+                if (!objects.TryGetValue((output.ParentArtifactKey, output.ViewKey, output.ContextFingerprint), out var parent) || !SameHash(parent.Sha256, output.ParentSha256) || !SameHash(output.Sha256, parent.Sha256) || output.SizeBytes != parent.SizeBytes || output.ObservedSha1 != parent.ObservedSha1 ||
                     output.ViewKey != parent.ViewKey || output.ContextFingerprint != parent.ContextFingerprint) MmcJson.Fail("definition", "Asset virtual/resource output must remain identical to its adopted object parent in the same view/context.");
                 string expected = output.Kind == MmcDerivedOutputKind.AssetVirtualFile ? root + "assets/" + output.RelativePath : definition.Layout.GameRootLeaf + "/resources/" + output.RelativePath;
                 if (output.TargetRelativePath != expected || output.Kind == MmcDerivedOutputKind.AssetVirtualFile && !output.RelativePath.StartsWith("virtual/", StringComparison.Ordinal)) MmcJson.Fail("definition", "Asset derived layout does not match its role.");

@@ -46,7 +46,9 @@ public enum MmcBindingIntent { InitialImport, AdoptDeclaredVariant, RepairExisti
 public sealed record MmcMaterializedArtifactFact(string ArtifactKey, string SourceRevision, string ObservedSha256,
     long SizeBytes, string RecoveryObjectRelativePath, string TargetRelativePath, string? ObservedSha1 = null);
 public sealed record MmcBindOptions(long ExpectedGeneration, long NewGeneration, MmcBindingIntent Intent,
-    string OutputJsonSha256, long ManifestGeneration);
+    string OutputJsonSha256, long ManifestGeneration) {
+    public MmcDerivationCompletion? NativeDerivation { get; init; }
+}
 public sealed record MmcBoundLaunchPlan(MmcCompiledProfile CompiledProfile, long DefinitionGeneration,
     string BoundFingerprint, ImmutableArray<MmcArtifactLockRecord> ActiveArtifactLocks);
 public sealed record MmcBindingResult(MmcInstanceDefinition? Definition, MmcBoundLaunchPlan? Plan,

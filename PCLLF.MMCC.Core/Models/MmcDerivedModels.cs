@@ -4,6 +4,8 @@ using System.Collections.Immutable;
 namespace PCLLF.MMCC.Core;
 
 public sealed record MmcArtifactDigestFact(string ArtifactKey, string SourceRevision, string Sha256, long SizeBytes);
+public sealed record MmcDerivationCompletion(string ProducerVersion, string SourceSetFingerprint,
+    string RuntimePlanFingerprint, string ViewKey, int OutputCount, bool Complete);
 public enum MmcDerivedOutputKind { NativeFile, AssetObject, AssetVirtualFile, AssetMappedResource }
 public sealed record MmcDerivedOutputRecord(MmcDerivedOutputKind Kind, string ParentArtifactKey, string ParentSha256,
     string ProducerVersion, string SourceSetFingerprint, string RuntimePlanFingerprint, string ContextFingerprint, string ViewKey,
