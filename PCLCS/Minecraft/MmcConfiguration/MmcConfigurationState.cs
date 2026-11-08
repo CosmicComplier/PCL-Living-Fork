@@ -8,10 +8,11 @@ using Newtonsoft.Json.Linq;
 namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
-internal sealed record MmcConfigPatch(long Sequence, JToken? Value, bool Remove);
+internal sealed record MmcConfigPatch(long Sequence, JToken? Value, bool Remove, MmcConfigurationContextStamp Context);
 internal readonly record struct MmcConfigValueVersion(long Epoch, long PatchSequence);
 internal sealed partial class MmcConfigurationState {
     internal readonly string Root;
+    internal string InspectionRoot;
     internal readonly object Sync = new();
     internal readonly SemaphoreSlim Writer = new(1, 1);
     internal readonly ManualResetEventSlim Resumed = new(true);
@@ -26,35 +27,40 @@ internal sealed partial class MmcConfigurationState {
     private JObject snapshot;
     private bool readsInvalid;
 
-    internal MmcConfigurationState(string root) {
-        Root = root;
+    internal MmcConfigurationState(string root, string logicalRoot) {
+        Root = root; InspectionRoot = logicalRoot;
         snapshot = [];
         using (var lease = MmcConfigurationCoordinator.TryPreferenceLease(root)) {
             if (lease is null) readsInvalid = true;
             else {
-                snapshot = MmcConfigurationCoordinator.ReadConfig(root);
-                InitializeIni();
-                KnownLegacyWritable = MmcManagementProbe.Read(root) is { State: MmcManagementState.Legacy, ObservationComplete: true };
+                try {
+                    snapshot = MmcConfigurationCoordinator.ReadConfig(root); InitializeIni();
+                    var management = MmcConfigurationPaths.ReadManagement(logicalRoot, root);
+                    KnownLegacyWritable = management is { State: MmcManagementState.Legacy, ObservationComplete: true };
+                    ObserveContext(MmcConfigurationCoordinator.ContextFor(root, management));
+                } catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException) { readsInvalid = true; LastSaveFailure = error; }
             }
         }
         Timer = new(static value => {
             if (value is WeakReference<MmcConfigurationState> weak && weak.TryGetTarget(out var state)) state.AutoFlush();
         }, new WeakReference<MmcConfigurationState>(this), Timeout.Infinite, Timeout.Infinite);
     }
-    internal MmcConfigValueVersion Enqueue(string key, JToken? value, bool remove) {
+    internal MmcConfigValueVersion Enqueue(string key, JToken? value, bool remove, MmcConfigurationContextStamp context) {
         if (string.IsNullOrEmpty(key)) throw new ArgumentException("配置键不能为空。", nameof(key));
         lock (Sync) {
-            Patches[key] = new(++sequence, value?.DeepClone(), remove);
+            AssertContext(context);
+            Patches[key] = new(++sequence, value?.DeepClone(), remove, context);
             MmcConfigurationCoordinator.PinPending(this);
             if (PauseCount == 0) Timer.Change(500, Timeout.Infinite);
             return new(Epoch, sequence);
         }
     }
-    internal JToken? Read(string key, out bool present, out MmcConfigValueVersion version) {
+    internal JToken? Read(string key, MmcConfigurationContextStamp context, long attachmentEpoch, out bool present, out MmcConfigValueVersion version) {
         bool refresh;
         lock (Sync) refresh = readsInvalid;
         if (refresh) Reload();
         lock (Sync) {
+            AssertContext(context, attachmentEpoch);
             if (Patches.TryGetValue(key, out var patch)) { version = new(Epoch, patch.Sequence); present = !patch.Remove; return patch.Value?.DeepClone(); }
             version = new(Epoch, 0);
             present = snapshot.TryGetValue(key, out var token); return token?.DeepClone();
@@ -94,18 +100,20 @@ internal sealed partial class MmcConfigurationState {
     private void FlushUnderWriter(CancellationToken token) {
         var pending = CapturePatches(); var iniPending = CaptureIniPatches(); if (pending.Count == 0 && iniPending.Count == 0) return;
         try {
-            var management = MmcManagementProbe.Read(Root);
+            MmcConfigurationCoordinator.AssertExistingVersionRoot(Root);
+            var management = MmcConfigurationPaths.ReadManagement(InspectionRoot, Root);
             MmcConfigurationCoordinator.AssertPreferenceWritable(management);
+            var context = MmcConfigurationCoordinator.ContextFor(Root, management); ObserveContext(context);
             lock (Sync) KnownLegacyWritable = management.State == MmcManagementState.Legacy;
             JObject current = MmcConfigurationCoordinator.ReadConfig(Root);
             var rejected = pending.Where(p => MmcConfigurationCoordinator.IsAlwaysReserved(p.Key) ||
-                management.State != MmcManagementState.Legacy && MmcConfigurationCoordinator.IsStructuralKey(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+                management.State != MmcManagementState.Legacy && MmcConfigurationCoordinator.IsStructuralKey(p.Key) || p.Value.Context != context).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
             foreach (string key in rejected.Keys) pending.Remove(key);
             Reject(rejected);
             MmcConfigurationCoordinator.Apply(current, pending);
             if (pending.Count != 0) MmcConfigurationCoordinator.WritePreferenceConfig(Root, current);
             Publish(current, pending); LastSaveFailure = null;
-            bool iniRejected = FlushIni(iniPending, management);
+            bool iniRejected = FlushIni(iniPending, management, context);
             if (rejected.Count != 0 || iniRejected) throw new IOException("拒绝过期或未授权的实例结构配置修改。请通过实例维护流程修改。");
         } catch (Exception error) { LastSaveFailure = error; throw; }
     }
@@ -118,7 +126,7 @@ internal sealed partial class MmcConfigurationState {
         try {
             lease ??= MmcConfigurationCoordinator.PreferenceLease(Root, CancellationToken.None);
             Writer.Wait();
-            try { Publish(MmcConfigurationCoordinator.ReadConfig(Root)); InitializeIni(); }
+            try { PublishObserved(MmcConfigurationCoordinator.ReadConfig(Root), MmcConfigurationCoordinator.ContextFor(Root, MmcConfigurationPaths.ReadManagement(InspectionRoot, Root))); InitializeIni(); }
             finally { Writer.Release(); }
         } finally { lease?.Dispose(); if (registered) EndOperation(); }
     }

@@ -11,7 +11,7 @@ using Newtonsoft.Json.Linq;
 namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
-public static class MmcConfigurationCoordinator {
+public static partial class MmcConfigurationCoordinator {
     // This is only a path-gate admission identity before reading disk, never an instance identity.
     private static readonly Guid PreferenceAdmissionIdentity = new("649a06b5-2b88-4f56-9abd-139c4d39cdf9");
     private static readonly ConcurrentDictionary<string, WeakReference<MmcConfigurationState>> states = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
@@ -38,10 +38,10 @@ public static class MmcConfigurationCoordinator {
         "sourceBundle", "artifactInventory", "artifactLocks", "installedProjection", "componentOverrides"
     };
     internal static MmcConfigurationState StateFor(string versionRoot) {
-        string root = MmcCanonicalPaths.ForAdmission(MmcInstancePaths.ValidateVersionRoot(versionRoot));
+        string logicalRoot = MmcConfigurationPaths.LogicalRoot(versionRoot), root = MmcConfigurationPaths.PhysicalRoot(logicalRoot);
         while (true) {
             if (states.TryGetValue(root, out var weak) && weak.TryGetTarget(out var found)) return found;
-            var created = new MmcConfigurationState(root); var candidate = new WeakReference<MmcConfigurationState>(created);
+            var created = new MmcConfigurationState(root, logicalRoot); var candidate = new WeakReference<MmcConfigurationState>(created);
             if (weak is null ? states.TryAdd(root, candidate) : states.TryUpdate(root, candidate, weak)) return created;
             created.Timer.Dispose();
         }
@@ -50,7 +50,7 @@ public static class MmcConfigurationCoordinator {
     public static MmcConfigurationQuiescence Quiesce(string versionRoot, CancellationToken cancellationToken = default) {
         MmcConfigurationState state = StateFor(versionRoot);
         lock (state.Sync) { state.PauseCount++; state.Resumed.Reset(); state.Timer.Change(Timeout.Infinite, Timeout.Infinite); }
-        try { OperationObserver?.Invoke(state.Root, "QuiescePaused"); state.Drained.Wait(cancellationToken); return new(state); }
+        try { OperationObserver?.Invoke(state.Root, "QuiescePaused"); state.Drained.Wait(cancellationToken); return new(state, MmcConfigurationPaths.LogicalRoot(versionRoot)); }
         catch {
             lock (state.Sync) { if (--state.PauseCount == 0) state.Resumed.Set(); }
             throw;
@@ -58,9 +58,9 @@ public static class MmcConfigurationCoordinator {
     }
     public static bool IsStructuralKey(string key) => structural.Contains(key);
     internal static bool IsAlwaysReserved(string key) => key != "MinecraftInstallManifest" && structural.Contains(key);
-    internal static MmcAdmissionLease PreferenceLease(string root, CancellationToken token) => MmcAdmissionGate.Acquire(root, PreferenceAdmissionIdentity, Timeout.InfiniteTimeSpan, token);
+    internal static MmcAdmissionLease PreferenceLease(string root, CancellationToken token) => MmcAdmissionGate.AcquireConfigurationRoot(root, PreferenceAdmissionIdentity, Timeout.InfiniteTimeSpan, token);
     internal static MmcAdmissionLease? TryPreferenceLease(string root) {
-        try { return MmcAdmissionGate.Acquire(root, PreferenceAdmissionIdentity, TimeSpan.Zero); }
+        try { return MmcAdmissionGate.AcquireConfigurationRoot(root, PreferenceAdmissionIdentity, TimeSpan.Zero); }
         catch (IOException) { return null; }
     }
     internal static void AssertPreferenceWritable(MmcManagementResult management) {
@@ -68,7 +68,7 @@ public static class MmcConfigurationCoordinator {
         throw new IOException("实例管理状态尚未确认，配置修改已排队并等待恢复。");
     }
     internal static JObject ReadConfig(string root) {
-        string path = MmcInstancePaths.Resolve(root).ResolveRelative(MmcPathRole.Instance, "PCL/config.json");
+        string path = MmcConfigurationPaths.Target(root, "PCL/config.json");
         if (MmcInstancePaths.Attributes(path) is null) return [];
         using FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (file.Length > MmcManagementReader.MaximumDocumentBytes) throw new IOException("实例配置超过读取预算。");
@@ -86,7 +86,8 @@ public static class MmcConfigurationCoordinator {
     }
     internal static byte[] ConfigBytes(JObject value) => new UTF8Encoding(false).GetBytes(value.ToString(Formatting.Indented));
     internal static void WritePreferenceConfig(string root, JObject value) {
-        string path = MmcInstancePaths.Resolve(root).ResolveRelative(MmcPathRole.Instance, "PCL/config.json");
+        AssertExistingVersionRoot(root);
+        string path = MmcConfigurationPaths.Target(root, "PCL/config.json");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + ".preferences-" + Guid.NewGuid().ToString("N");
         byte[] bytes = ConfigBytes(value); MmcDurableFiles.WriteNew(temporary, bytes);
@@ -98,12 +99,14 @@ public static class MmcConfigurationCoordinator {
 
 public sealed class MmcConfigurationQuiescence : IDisposable {
     internal readonly MmcConfigurationState State;
+    private readonly string logicalRoot;
     private bool disposed;
-    internal MmcConfigurationQuiescence(MmcConfigurationState state) => State = state;
-    public MmcConfigurationWriteScope OpenStructuralWrite(MmcAdmissionLease lease, long expectedGeneration) {
+    internal MmcConfigurationQuiescence(MmcConfigurationState state, string logicalRoot) { State = state; this.logicalRoot = logicalRoot; }
+    public MmcConfigurationWriteScope OpenStructuralWrite(MmcAdmissionLease lease, long expectedGeneration, bool adoptUnmanagedPreferences = false) {
         ObjectDisposedException.ThrowIf(disposed, this); lease.AssertHeld();
+        MmcInstancePaths.Resolve(logicalRoot); // Strict MMC publication never inherits ordinary root trust.
         if (!string.Equals(lease.VersionRoot, State.Root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) throw new IOException("设置协调目录与准入租约不一致。");
-        return new(State, lease, expectedGeneration);
+        return new(State, lease, expectedGeneration, adoptUnmanagedPreferences);
     }
     public void Dispose() {
         if (disposed) return; disposed = true;
@@ -123,7 +126,7 @@ public sealed partial class MmcConfigurationWriteScope : IDisposable {
     private readonly Dictionary<string, MmcConfigPatch> accepted;
     private bool disposed;
     public JObject ConfigSnapshot => (JObject)config.DeepClone();
-    internal MmcConfigurationWriteScope(MmcConfigurationState state, MmcAdmissionLease lease, long generation) {
+    internal MmcConfigurationWriteScope(MmcConfigurationState state, MmcAdmissionLease lease, long generation, bool adoptUnmanagedPreferences) {
         this.state = state; this.lease = lease; this.generation = generation;
         if (generation < 0) throw new ArgumentOutOfRangeException(nameof(generation));
         MmcFileTransactions.AssertNoPending(lease); MmcSessions.AssertNoActive(lease);
@@ -138,10 +141,12 @@ public sealed partial class MmcConfigurationWriteScope : IDisposable {
         oldConfigHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/config.json"));
         config = MmcConfigurationCoordinator.ReadConfig(state.Root);
         accepted = state.CapturePatches();
-        var rejected = accepted.Where(p => MmcConfigurationCoordinator.IsStructuralKey(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+        var expectedContext = new MmcConfigurationContextStamp(MmcConfigurationContextKind.Managed, lease.InstanceId);
+        bool AcceptContext(MmcConfigurationContextStamp context) => context == expectedContext || generation == 0 && adoptUnmanagedPreferences && context == MmcConfigurationContextStamp.Unmanaged;
+        var rejected = accepted.Where(p => MmcConfigurationCoordinator.IsStructuralKey(p.Key) || !AcceptContext(p.Value.Context)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         foreach (string key in rejected.Keys) accepted.Remove(key);
         state.Reject(rejected); MmcConfigurationCoordinator.Apply(config, accepted);
-        InitializeIniScope();
+        InitializeIniScope(AcceptContext);
     }
     public void SetConfig<T>(string key, T? value) {
         ObjectDisposedException.ThrowIf(disposed, this); lease.AssertHeld(); config[key] = value is null ? JValue.CreateNull() : JToken.FromObject(value);
@@ -156,7 +161,7 @@ public sealed partial class MmcConfigurationWriteScope : IDisposable {
         byte[] bytes = MmcConfigurationCoordinator.ConfigBytes(config);
         var mutations = request.Mutations.Concat([new MmcFileMutation("PCL/config.json", oldConfigHash, bytes, MmcDurableFiles.Hash(bytes))]).Concat(BuildIniMutation()).ToArray();
         MmcTransactionResult result = MmcFileTransactions.Execute(lease, request with { Mutations = mutations }, cancellationToken, checkpoint);
-        if (result.Outcome == MmcTransactionOutcome.Committed) { state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root), accepted); PublishIniScope(true); }
+        if (result.Outcome == MmcTransactionOutcome.Committed) { state.ObserveContext(MmcConfigurationCoordinator.ContextFor(state.Root, MmcManagementProbe.Read(state.Root))); state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root), accepted); PublishIniScope(true); }
         else if (result.Outcome == MmcTransactionOutcome.Aborted) { state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root)); PublishIniScope(false); }
         else state.InvalidateReads();
         return result;

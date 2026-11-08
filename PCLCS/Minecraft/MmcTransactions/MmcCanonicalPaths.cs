@@ -10,6 +10,20 @@ namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
 internal static class MmcCanonicalPaths {
+    // Ordinary instance callers already own/trust their root (including existing root junctions).
+    // Resolve aliases for mutual exclusion; descendants are checked separately by configuration paths.
+    internal static string ForTrustedRoot(string root) {
+        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (!OperatingSystem.IsWindows()) return root;
+        Stack<string> missing = new(); string existing = root;
+        while (MmcInstancePaths.Attributes(existing) is null) {
+            missing.Push(Path.GetFileName(existing)); existing = Path.GetDirectoryName(existing) ?? throw new IOException("无法解析配置根目录。");
+        }
+        if (!Directory.Exists(existing)) throw new IOException("配置根目录被普通文件占用。");
+        string resolved = ResolveExisting(existing);
+        while (missing.Count != 0) resolved = Path.Combine(resolved, missing.Pop());
+        return Path.TrimEndingDirectorySeparator(resolved);
+    }
     internal static string ForAdmission(string root) {
         if (!OperatingSystem.IsWindows()) return root;
         Stack<string> missing = new(); string existing = root;

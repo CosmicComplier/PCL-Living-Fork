@@ -10,9 +10,14 @@ namespace PCLCS;
 /// <summary>Cooperative cross-process admission. A lease is synchronous and must stay on its owning thread.</summary>
 public static class MmcAdmissionGate {
     public static MmcAdmissionLease Acquire(string versionRoot, Guid instanceId, TimeSpan timeout, CancellationToken cancellationToken = default) {
+        string root = MmcCanonicalPaths.ForAdmission(MmcInstancePaths.ValidateVersionRoot(versionRoot));
+        return AcquireCanonical(root, instanceId, timeout, cancellationToken);
+    }
+    internal static MmcAdmissionLease AcquireConfigurationRoot(string trustedRoot, Guid instanceId, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+        AcquireCanonical(MmcCanonicalPaths.ForTrustedRoot(trustedRoot), instanceId, timeout, cancellationToken);
+    private static MmcAdmissionLease AcquireCanonical(string root, Guid instanceId, TimeSpan timeout, CancellationToken cancellationToken) {
         if (instanceId == Guid.Empty) throw new ArgumentException("实例身份不能为空。", nameof(instanceId));
         if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan) throw new ArgumentOutOfRangeException(nameof(timeout));
-        string root = MmcCanonicalPaths.ForAdmission(MmcInstancePaths.ValidateVersionRoot(versionRoot));
         // Path is the exclusion key: changing an untrusted ID must not bypass an existing path lease.
         string key = OperatingSystem.IsWindows() ? root.ToUpperInvariant() : root;
         string name = "PCLLF.Mmc.Admission." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));

@@ -17,6 +17,11 @@ internal static class MmcConfigurationTests {
         yield return ("MMC configuration typed values preserve Set and repeated Read reference identity", TypedIdentity);
         yield return ("MMC INI preserves ordinary synchronous writes and queues busy or managed writes with structural fencing", IniAdmission);
         yield return ("MMC INI pending queue survives without an instance provider and flushes at owned shutdown", IniWithoutProvider);
+        yield return ("MMC configuration queued writes never recreate a deleted version root", DeletedRoot);
+        yield return ("MMC configuration a reused path cannot migrate old Java preferences into a new instance ID", ReusedIdentity);
+        yield return ("MMC configuration ordinary full temporary roots retain writable preference behavior", OrdinaryTemporaryRoot);
+        yield return ("MMC configuration trusts ordinary root junctions but rejects linked configuration descendants", OrdinaryRootJunction);
+        yield return ("MMC configuration malformed input constructs a readonly error provider without overwriting bytes", MalformedConstructor);
     }
     internal static bool TryRunChild(string[] args, out int exitCode) {
         exitCode = 0;
@@ -26,9 +31,9 @@ internal static class MmcConfigurationTests {
             using var provider = new InstanceConfigProvider(args[2]);
             if (args[1] == "lockorder") { RunLockOrder(provider, args[2]); return true; }
             if (args[1] == "rebase") { provider.Set("childPreference", "B", false); provider.Save(); return true; }
-            provider.Set("MinecraftInstallManifest", new JObject { ["stale"] = true }, false);
-            provider.Set("childPreference", "B-after-conversion", false);
             using (MmcConfigurationCoordinator.Quiesce(args[2])) {
+                provider.Set("MinecraftInstallManifest", new JObject { ["stale"] = true }, false);
+                provider.Set("childPreference", "B-after-conversion", false);
                 File.WriteAllText(args[3], "ready"); WaitFile(args[4], 10000);
             }
             try { provider.Save(); } catch (IOException) { }
@@ -55,18 +60,18 @@ internal static class MmcConfigurationTests {
         }
         File.WriteAllText(fixture.Go, "go"); WaitChild(child);
         Equal(1, fixture.Config()["MinecraftInstallManifest"]!["pcllfManagement"]!.Value<int>("generation"));
-        Equal("B-after-conversion", fixture.Config().Value<string>("childPreference"));
+        Equal(false, fixture.Config().ContainsKey("childPreference"));
     }
     private static void NonblockingSet() {
-        using Fixture fixture = new(); using var first = new InstanceConfigProvider(fixture.Root); using var second = new InstanceConfigProvider(fixture.Root);
+        using Fixture fixture = new(); fixture.Install(); using var first = new InstanceConfigProvider(fixture.Root); using var second = new InstanceConfigProvider(fixture.Root);
         first.Set("before", "one", false); Equal("one", second.Read("before", "", false));
         using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
         using (var lease = fixture.Lease())
-        using (var scope = quiet.OpenStructuralWrite(lease, 0)) {
+        using (var scope = quiet.OpenStructuralWrite(lease, 1)) {
             Task setter = Task.Run(() => second.Set("during", "two", false));
             Equal(true, setter.Wait(300));
-            scope.SetConfig("MinecraftInstallManifest", new JObject { ["pcllfManagement"] = fixture.Hint(1) });
-            Equal(MmcTransactionOutcome.Committed, scope.Execute(fixture.Publish(0)).Outcome);
+            scope.SetConfig("MinecraftInstallManifest", new JObject { ["pcllfManagement"] = fixture.Hint(2) });
+            Equal(MmcTransactionOutcome.Committed, scope.Execute(fixture.Publish(1)).Outcome);
         }
         first.Save(); Equal("one", fixture.Config().Value<string>("before")); Equal("two", fixture.Config().Value<string>("during"));
     }
@@ -81,13 +86,7 @@ internal static class MmcConfigurationTests {
         Equal(false, fixture.Config().ContainsKey("InstanceForcedJava")); Equal("kept", fixture.Config().Value<string>("unknown"));
     }
     private static void RollbackEpoch() {
-        using Fixture fixture = new(); using var provider = new InstanceConfigProvider(fixture.Root);
-        using (var initialQuiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
-        using (var initialLease = fixture.Lease())
-        using (var initialScope = initialQuiet.OpenStructuralWrite(initialLease, 0)) {
-            initialScope.SetConfig("MinecraftInstallManifest", new JObject { ["pcllfManagement"] = fixture.Hint(1) });
-            Equal(MmcTransactionOutcome.Committed, initialScope.Execute(fixture.Publish(0)).Outcome);
-        }
+        using Fixture fixture = new(); fixture.Install(); using var provider = new InstanceConfigProvider(fixture.Root);
         provider.Set("queued", "retained", false); long before = provider.Epoch;
         using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
         using (var lease = fixture.Lease())
@@ -152,9 +151,10 @@ internal static class MmcConfigurationTests {
             scope.SetIni("VersionArgumentIndieV2", "True"); scope.SetIni("CustomInfo", "pack");
             Equal(MmcTransactionOutcome.Committed, scope.Execute(fixture.Publish(0)).Outcome);
         }
-        LegacyBaseOperations.WriteIni(file, "CustomInfo", "next-launch", cache);
-        LegacyBaseOperations.WriteIni(file, "VersionArgumentIndieV2", "False", cache);
-        try { provider.Save(); } catch (IOException) { }
+        using var managedProvider = new InstanceConfigProvider(fixture.Root);
+        MmcIniConfiguration.WithInstanceContext(managedProvider, () => LegacyBaseOperations.WriteIni(file, "CustomInfo", "next-launch", cache));
+        MmcIniConfiguration.WithInstanceContext(managedProvider, () => LegacyBaseOperations.WriteIni(file, "VersionArgumentIndieV2", "False", cache));
+        try { managedProvider.Save(); } catch (IOException) { }
         var saved = LegacyBaseOperations.ParseIni(File.ReadAllText(file));
         Equal("True", saved["VersionArgumentIndieV2"]); Equal("next-launch", saved["CustomInfo"]); Equal("kept", saved["Unknown"]);
         bool rejected = false;
@@ -173,6 +173,79 @@ internal static class MmcConfigurationTests {
         }
         InstanceConfigProviders.SaveAll();
         var saved = LegacyBaseOperations.ParseIni(File.ReadAllText(file)); Equal("providerless", saved["CustomInfo"]); Equal("keep", saved["Unknown"]);
+    }
+    private static void DeletedRoot() {
+        using Fixture fixture = new(); using var provider = new InstanceConfigProvider(fixture.Root);
+        provider.Set("pending", "must-not-recreate", false); Directory.Delete(fixture.Root, true);
+        bool blocked = false;
+        try { provider.Save(); } catch (IOException) { blocked = true; }
+        Equal(true, blocked); Equal(false, Directory.Exists(fixture.Root));
+        MmcConfigurationCoordinator.DetachDeletedRoot(fixture.Root);
+        Equal(false, Directory.Exists(fixture.Root));
+        fixture.RecreateManaged(Guid.NewGuid());
+        using var attached = new InstanceConfigProvider(fixture.Root); attached.Set("new-owner", "allowed", false); attached.Save();
+        bool oldRejected = false; try { provider.Set("new-owner", "old-provider", false); } catch (IOException) { oldRejected = true; }
+        Equal(true, oldRejected); Equal("allowed", fixture.Config().Value<string>("new-owner"));
+    }
+    private static void ReusedIdentity() {
+        using Fixture fixture = new(); fixture.Install(); using var old = new InstanceConfigProvider(fixture.Root);
+        InstanceConfigProvider? fresh = null;
+        using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
+        using (var gate = fixture.Lease()) {
+            old.Set("oldOnly", "java-A", false);
+            Directory.Delete(fixture.Root, true); fixture.RecreateManaged(Guid.NewGuid());
+            fresh = new InstanceConfigProvider(fixture.Root); fresh.Set("InstanceForcedJava", "java-B", false);
+            bool blocked = false;
+            try { old.Set("InstanceForcedJava", "java-A-late", false); } catch (IOException) { blocked = true; }
+            Equal(true, blocked);
+        }
+        using (fresh) { try { fresh!.Save(); } catch (IOException) { } }
+        Equal("java-B", fixture.Config().Value<string>("InstanceForcedJava")); Equal(false, fixture.Config().ContainsKey("oldOnly"));
+    }
+    private static void OrdinaryTemporaryRoot() {
+        string scope = Path.Combine(Path.GetTempPath(), "pcllf-config-plain-" + Guid.NewGuid().ToString("N"));
+        string root = Path.Combine(scope, "temporary-version"); Directory.CreateDirectory(root);
+        try {
+            using var provider = new InstanceConfigProvider(root); provider.Set("plain", "value", false); provider.Save();
+            Equal("value", provider.Read("plain", "", false));
+            Equal("value", JObject.Parse(File.ReadAllText(Path.Combine(root, "PCL", "config.json"))).Value<string>("plain"));
+        } finally { InstanceConfigProviders.FlushAndDisposeWithin(scope); Directory.Delete(scope, true); }
+    }
+    private static void OrdinaryRootJunction() {
+        if (!OperatingSystem.IsWindows()) return;
+        string scope = Path.Combine(Path.GetTempPath(), "pcllf-config-junction-" + Guid.NewGuid().ToString("N"));
+        string target = Path.Combine(scope, "actual-target"), link = Path.Combine(scope, "logical-version"), outside = Path.Combine(scope, "separate-pcl");
+        Directory.CreateDirectory(target); Directory.CreateDirectory(outside); CreateJunction(link, target);
+        try {
+            using (var provider = new InstanceConfigProvider(link)) {
+                provider.Set("ordinary", "through-root-link", false); provider.Save();
+                Equal("through-root-link", provider.Read("ordinary", "", false));
+            }
+            string logicalHint = Path.Combine(target, "logical-version.json");
+            File.WriteAllText(logicalHint, "{\"pcllfManagement\":{\"schemaVersion\":99,\"managementKind\":\"Future\"}}");
+            Equal(MmcManagementState.ManagedUnsupported, MmcConfigurationPaths.ReadManagement(link, MmcConfigurationPaths.PhysicalRoot(link)).State);
+            File.Delete(logicalHint);
+            string pcl = Path.Combine(target, "PCL"); Directory.Move(pcl, Path.Combine(scope, "pcl-backup")); CreateJunction(pcl, outside);
+            try {
+                File.WriteAllText(Path.Combine(outside, "config.json"), "{\"external\":\"keep\"}");
+                using var rejected = new InstanceConfigProvider(link); bool blocked = false;
+                try { rejected.Set("ordinary", "must-not-write-child-link", false); rejected.Save(); } catch (IOException) { blocked = true; }
+                Equal(true, blocked); Equal("keep", JObject.Parse(File.ReadAllText(Path.Combine(outside, "config.json"))).Value<string>("external"));
+            } finally { Directory.Delete(pcl); }
+        } finally { InstanceConfigProviders.FlushAndDisposeWithin(scope); Directory.Delete(link); Directory.Delete(scope, true); }
+    }
+    private static void MalformedConstructor() {
+        using Fixture fixture = new(); string file = Path.Combine(fixture.Root, "PCL", "config.json"); File.WriteAllText(file, "{");
+        using var provider = new InstanceConfigProvider(fixture.Root); Equal(true, provider.LastSaveFailure is not null);
+        bool rejected = false; try { provider.Set("bad", "must-not-write", false); provider.Save(); } catch (IOException) { rejected = true; }
+        Equal(true, rejected); Equal("{", File.ReadAllText(file));
+    }
+    private static void CreateJunction(string path, string target) {
+        string command = "New-Item -ItemType Junction -Path '" + path.Replace("'", "''") + "' -Target '" + target.Replace("'", "''") + "' -ErrorAction Stop | Out-Null";
+        ProcessStartInfo start = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe")) { UseShellExecute = false, CreateNoWindow = true };
+        foreach (string value in new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(command)) }) start.ArgumentList.Add(value);
+        using Process process = Process.Start(start) ?? throw new Exception("Could not create controlled junction.");
+        if (!process.WaitForExit(15000)) { process.Kill(true); throw new Exception("Controlled junction command timed out."); } Equal(0, process.ExitCode);
     }
     private static Process StartChild(string mode, Fixture fixture) {
         string executable = Environment.ProcessPath!; ProcessStartInfo start = new(executable) { UseShellExecute = false, CreateNoWindow = true };
@@ -193,6 +266,19 @@ internal static class MmcConfigurationTests {
         public JObject Config() => JObject.Parse(File.ReadAllText(Path.Combine(Root, "PCL", "config.json")));
         public JObject Hint(long generation) => new() { ["schemaVersion"] = 1, ["managementKind"] = "Mmc", ["instanceId"] = id.ToString("D"), ["generation"] = generation };
         public MmcAdmissionLease Lease() => MmcAdmissionGate.Acquire(Root, id, TimeSpan.Zero);
+        public void Install() {
+            using var quiet = MmcConfigurationCoordinator.Quiesce(Root); using var lease = Lease(); using var scope = quiet.OpenStructuralWrite(lease, 0);
+            scope.SetConfig("MinecraftInstallManifest", new JObject { ["pcllfManagement"] = Hint(1) });
+            Equal(MmcTransactionOutcome.Committed, scope.Execute(Publish(0)).Outcome);
+        }
+        public void RecreateManaged(Guid newId) {
+            Directory.CreateDirectory(Path.Combine(Root, "PCL"));
+            JObject hint = Hint(1); hint["instanceId"] = newId.ToString("D");
+            JObject definition = (JObject)hint.DeepClone(); definition["formatProfile"] = "prism-v1"; definition["layout"] = new JObject { ["gameRootLeaf"] = "minecraft" };
+            File.WriteAllText(DefinitionFile, definition.ToString());
+            File.WriteAllText(Path.Combine(Root, "PCL", "config.json"), new JObject { ["MinecraftInstallManifest"] = new JObject { ["pcllfManagement"] = hint.DeepClone() } }.ToString());
+            File.WriteAllText(Path.Combine(Root, "sample.json"), new JObject { ["pcllfManagement"] = hint.DeepClone() }.ToString());
+        }
         public MmcFileTransactionRequest Publish(long previous) {
             JObject definition = Hint(previous + 1); definition["formatProfile"] = "prism-v1"; definition["layout"] = new JObject { ["gameRootLeaf"] = "minecraft" };
             byte[] bytes = Encoding.UTF8.GetBytes(definition.ToString()); byte[] version = Encoding.UTF8.GetBytes(new JObject { ["pcllfManagement"] = Hint(previous + 1) }.ToString());

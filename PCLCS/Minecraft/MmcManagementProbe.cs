@@ -26,10 +26,15 @@ public static class MmcManagementProbe {
             return new(new(false, Error: ex.Message), MmcManagementDocument.Missing, MmcManagementDocument.Missing,
                 ObservationComplete: false);
         }
+        return CaptureAtPhysicalRoot(root, Path.GetFileName(root));
+    }
+    // Configuration callers resolve/trust their ordinary root first. The public MMC entry above
+    // retains strict layout validation; a logical alias supplies the version JSON leaf explicitly.
+    internal static MmcManagementSnapshot CaptureAtPhysicalRoot(string root, string logicalVersionName) {
         string pcl = Path.Combine(root, "PCL");
         MmcManagementDocument definition = ReadDocument(Path.Combine(pcl, "InstanceDefinition.json"));
         MmcManagementDocument configHint = ReadHint(Path.Combine(pcl, "config.json"), true);
-        MmcManagementDocument versionHint = ReadHint(Path.Combine(root, Path.GetFileName(root) + ".json"), false);
+        MmcManagementDocument versionHint = ReadHint(Path.Combine(root, logicalVersionName + ".json"), false);
         bool sources = false, pending = false, complete = true;
         foreach (string store in ReservedStores) {
             try {

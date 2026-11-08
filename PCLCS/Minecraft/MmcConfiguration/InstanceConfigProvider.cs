@@ -14,6 +14,8 @@ namespace PCLCS;
 // Original LF host implementation; repository LICENCE applies. No Shared implementation is copied.
 public interface IInstanceConfigProvider : IConfigProvider, IDisposable {
     string VersionRoot { get; }
+    MmcConfigurationContextStamp ContextStamp { get; }
+    void AssertAttached();
     void Save();
     Task FlushAsync(CancellationToken cancellationToken = default);
 }
@@ -23,16 +25,19 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
     private sealed record TypedValue(MmcConfigValueVersion Version, object? Value);
     private readonly ConcurrentDictionary<string, TypedValue> typedValues = new(StringComparer.Ordinal);
     private readonly MmcConfigurationState state;
+    private readonly long attachmentEpoch;
     private Action? cacheInvalidator;
     private readonly IDisposable? cacheRegistration;
     private bool disposed;
     public string VersionRoot => state.Root;
+    public MmcConfigurationContextStamp ContextStamp { get; }
     public long Epoch => state.Epoch;
     public Exception? LastSaveFailure => state.LastSaveFailure;
     /// <param name="invalidatePreferenceCache">Optional data-only callback: only clear thread-safe value caches; never UI, Settings.Get/Set, disk I/O or synchronous dispatch. Not called during construction.</param>
     public InstanceConfigProvider(string versionRoot, Action? invalidatePreferenceCache = null) {
         state = MmcConfigurationCoordinator.StateFor(versionRoot);
-        lock (state.Sync) state.ProviderCount++;
+        ContextStamp = MmcConfigurationCoordinator.AttachProvider(state, MmcConfigurationPaths.LogicalRoot(versionRoot));
+        lock (state.Sync) { state.ProviderCount++; attachmentEpoch = state.AttachmentEpoch; }
         cacheInvalidator = invalidatePreferenceCache;
         if (cacheInvalidator is not null) cacheRegistration = state.RegisterInvalidator(cacheInvalidator);
         InstanceConfigProviders.Register(this);
@@ -41,12 +46,13 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (encrypted && value is not null) throw new NotImplementedException("加密需要改为使用识别码，现在尚未实现。");
         JToken token = value is null ? JValue.CreateNull() : JToken.FromObject(value);
-        lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); typedValues[key] = new(state.Enqueue(key, token, remove: false), value); }
+        lock (state.Sync) { AssertAttached(); typedValues[key] = new(state.Enqueue(key, token, remove: false, ContextStamp), value); }
     }
-    public void Remove(string key) { lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.Enqueue(key, null, remove: true); typedValues.TryRemove(key, out _); } }
+    public void Remove(string key) { lock (state.Sync) { AssertAttached(); state.Enqueue(key, null, remove: true, ContextStamp); typedValues.TryRemove(key, out _); } }
+    public void AssertAttached() { lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch); } }
     public T? Read<T>(string key, T? defaultValue, bool encrypted) {
         ObjectDisposedException.ThrowIf(disposed, this);
-        JToken? token = state.Read(key, out bool present, out var version);
+        JToken? token = state.Read(key, ContextStamp, attachmentEpoch, out bool present, out var version);
         if (!present) return defaultValue;
         if (typedValues.TryGetValue(key, out var cached) && cached.Version == version) return (T?)cached.Value;
         if (token is null || token.Type is JTokenType.Null or JTokenType.Undefined) return default;
@@ -57,7 +63,7 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
             typedValues[key] = new(version, value); return value;
         } catch (CryptographicException) { Remove(key); return defaultValue; }
     }
-    public bool HasValue(string key) { ObjectDisposedException.ThrowIf(disposed, this); state.Read(key, out bool present, out _); return present; }
+    public bool HasValue(string key) { ObjectDisposedException.ThrowIf(disposed, this); state.Read(key, ContextStamp, attachmentEpoch, out bool present, out _); return present; }
     public void DiscardCache() { ObjectDisposedException.ThrowIf(disposed, this); typedValues.Clear(); state.InvalidateReads(); }
     public void Save() { ObjectDisposedException.ThrowIf(disposed, this); state.Flush(CancellationToken.None); }
     public Task FlushAsync(CancellationToken cancellationToken = default) {
