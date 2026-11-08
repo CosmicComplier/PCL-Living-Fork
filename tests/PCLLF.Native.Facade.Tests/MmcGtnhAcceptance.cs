@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Windows.Threading;
 using MeloongCore;
 using PCL;
 using PCLCS;
@@ -181,7 +182,7 @@ internal static class MmcGtnhAcceptance {
             loader = ModModpack.ModpackInstall(sample.Archive) ?? throw new IOException("Actual modpack dispatcher did not start an import.");
             while (loader.State is ModBase.LoadState.Loading or ModBase.LoadState.Waiting ||
                 loader.Loaders.OfType<ModLoader.LoaderTask<string, MmcInstanceBackendResult>>().Any(value => value.LastRunningThread?.IsAlive == true)) {
-                Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, DateTime.UtcNow.AddSeconds(30));
+                PumpUiSlice();
                 ReportDownloads();
                 Thread.Sleep(100);
             }
@@ -251,6 +252,17 @@ internal static class MmcGtnhAcceptance {
         string temporary = Path.Combine(root, ReceiptName + ".pending");
         using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { JsonSerializer.Serialize(file, value, JsonOptions); file.Flush(true); }
         File.Move(temporary, Path.Combine(root, ReceiptName), false);
+    }
+    private static void PumpUiSlice() {
+        // ContextIdle is useful for the real UI callbacks, but lack of idle is not an import failure.
+        Dispatcher dispatcher = Dispatcher.CurrentDispatcher; DispatcherFrame frame = new();
+        DispatcherTimer timer = new(DispatcherPriority.Send, dispatcher) { Interval = TimeSpan.FromMilliseconds(250) };
+        EventHandler tick = (_, _) => frame.Continue = false;
+        timer.Tick += tick;
+        DispatcherOperation idle = dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => frame.Continue = false));
+        timer.Start();
+        try { Dispatcher.PushFrame(frame); }
+        finally { timer.Stop(); timer.Tick -= tick; if (idle.Status == DispatcherOperationStatus.Pending) idle.Abort(); }
     }
     private static string OwnedCacheCase(string runRoot, string sample, string acceptanceBase) {
         string run = Native.Full(runRoot), expectedBase = Native.Full(acceptanceBase);
