@@ -66,10 +66,10 @@ public static class MmcClasspathInspector {
         if (!digest.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase) || source.Length != expectedSize)
             throw new MmcRuntimeLaunchException("MMC_CLASSPATH_CHANGED", "A classpath/support JAR differs from its adopted bytes.");
         source.Position = 0;
-        int expectedEntries = MmcArtifactMaterializer.PreflightArchive(source, 100000, 4L * 1024 * 1024 * 1024, maximumEntryBytes: 256L * 1024 * 1024);
+        var index = MmcReadOnlyJarPreflight.Inspect(source);
         source.Position = 0;
-        using ZipArchive archive = new(source, ZipArchiveMode.Read, true);
-        if (archive.Entries.Count != expectedEntries) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_ZIP", "Classpath ZIP index changed during bounded inspection.");
+        using ZipArchive archive = new(source, ZipArchiveMode.Read, true, new UTF8Encoding(false, true));
+        if (archive.Entries.Count != index.Names.Length || archive.Entries.Where((entry, position) => entry.FullName != index.Names[position]).Any()) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_ZIP", "Classpath ZIP index changed during bounded inspection.");
         var manifests = archive.Entries.Where(e => e.FullName.Equals("META-INF/MANIFEST.MF", StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
         if (manifests.Length > 1) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST", "Ambiguous JAR manifest entries.");
         var manifest = manifests.Length == 0 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : ReadManifest(manifests[0]);
