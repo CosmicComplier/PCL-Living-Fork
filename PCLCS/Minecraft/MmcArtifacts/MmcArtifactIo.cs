@@ -64,6 +64,11 @@ internal sealed class MmcArtifactWorkspace : IDisposable {
 
 internal sealed class MmcArtifactIo {
     private static readonly uint[] CrcTable = BuildCrcTable();
+    internal static uint Crc32(ReadOnlySpan<byte> bytes) {
+        uint crc = uint.MaxValue;
+        foreach (byte value in bytes) crc = CrcTable[(crc ^ value) & 255] ^ (crc >> 8);
+        return ~crc;
+    }
     private readonly MmcArtifactLimits limits;
     private readonly IProgress<MmcArtifactProgress>? progress;
     private long copied;

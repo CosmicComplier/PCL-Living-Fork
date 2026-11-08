@@ -66,7 +66,14 @@ public sealed partial class MmcArtifactMaterializer {
         return result.ToImmutable();
     }
 
-    private static int NativeZipPreflight(Stream stream, int maximumEntries, long maximumOutput) {
+    private static int NativeZipPreflight(Stream stream, int maximumEntries, long maximumOutput) =>
+        PreflightArchive(stream, maximumEntries, maximumOutput);
+
+    // Shared index bounds; authorization and actual extraction budgets belong to the caller.
+    internal static int PreflightArchive(Stream stream, int maximumEntries, long maximumOutput,
+        Encoding? legacyNameEncoding = null, bool allowZip64EntrySizes = false, long? maximumEntryBytes = null) {
+        if (!stream.CanSeek || maximumEntries < 0 || maximumOutput < 0 || maximumEntryBytes < 0)
+            throw new ArgumentException("Invalid bounded ZIP source.");
         const int MaxCentralBytes = 16 * 1024 * 1024;
         long size = stream.Length;
         int tailLength = (int)Math.Min(size, 65557);
@@ -117,7 +124,7 @@ public sealed partial class MmcArtifactMaterializer {
                 throw new IOException("Native ZIP links are unsupported.");
             byte[] name = new byte[nameBytes]; stream.ReadExactly(name);
             string decoded;
-            try { decoded = new UTF8Encoding(false, true).GetString(name).Replace('\\', '/'); }
+            try { decoded = ((U16(header, 8) & 0x800) != 0 || legacyNameEncoding is null ? new UTF8Encoding(false, true) : legacyNameEncoding).GetString(name).Replace('\\', '/'); }
             catch (DecoderFallbackException error) { throw new IOException("Native ZIP filename encoding is unsupported.", error); }
             bool directory = decoded.EndsWith('/');
             string relative = decoded.TrimEnd('/'); MmcArtifactIo.Relative(relative);
@@ -136,11 +143,28 @@ public sealed partial class MmcArtifactMaterializer {
                 roles[prefix] = isDirectory;
             }
             if (!directory && !files.Add(relative)) throw new IOException("Native ZIP duplicate file target.");
-            uint length = U32(header, 24);
-            if (length == uint.MaxValue) throw new IOException("ZIP64 native entry output sizes are outside this extraction profile.");
-            declaredOutput = checked(declaredOutput + length);
+            ulong length = U32(header, 24);
+            bool consumedExtra = false;
+            if (length == uint.MaxValue) {
+                if (!allowZip64EntrySizes) throw new IOException("ZIP64 native entry output sizes are outside this extraction profile.");
+                byte[] extra = new byte[extraBytes]; stream.ReadExactly(extra); consumedExtra = true;
+                bool foundSize = false;
+                for (int cursor = 0; cursor < extra.Length;) {
+                    if (extra.Length - cursor < 4) throw new IOException("Truncated ZIP64 entry extra header.");
+                    int id = U16(extra, cursor), bytes = U16(extra, cursor + 2); cursor += 4;
+                    if (bytes > extra.Length - cursor) throw new IOException("Truncated ZIP64 entry extra data.");
+                    if (id == 1) {
+                        if (foundSize || bytes < 8) throw new IOException("Invalid ZIP64 entry size.");
+                        length = U64(extra, cursor); foundSize = true;
+                    }
+                    cursor += bytes;
+                }
+                if (!foundSize) throw new IOException("ZIP64 entry size is missing.");
+            }
+            if (length > long.MaxValue || length > (ulong)(maximumEntryBytes ?? maximumOutput)) throw new IOException("ZIP entry size exceeds its bounded profile.");
+            declaredOutput = checked(declaredOutput + (long)length);
             if (declaredOutput > maximumOutput) throw new IOException("Native ZIP declared output budget exceeded.");
-            stream.Seek(extraBytes + commentBytes, SeekOrigin.Current);
+            stream.Seek((consumedExtra ? 0 : extraBytes) + commentBytes, SeekOrigin.Current);
             remaining -= 46L + nameBytes + extraBytes + commentBytes;
         }
         if (count != entries) throw new IOException("Native ZIP actual entry count differs from its end record.");
