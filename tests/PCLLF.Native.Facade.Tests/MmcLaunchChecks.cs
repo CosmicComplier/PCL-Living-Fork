@@ -48,7 +48,7 @@ internal static class MmcLaunchChecks {
         private ModMinecraft.McInstance instance = null!;
         private ModLoader.LoaderCombo<object> plan = null!;
         private bool cancelAtSpawn;
-        private int starts, forbidden;
+        private int starts, forbidden, stoppedNotifications;
         private Guid currentSession;
         private const string ProbeSource = """
             package fixture;
@@ -77,6 +77,8 @@ internal static class MmcLaunchChecks {
                     System.out.println("OpenAL initialized");
                     System.out.println("Created textures controlled-atlas"); System.out.flush();
                     while (!Files.exists(Paths.get(control + ".exit"))) Thread.sleep(10);
+                    System.out.println("Someone is closing me!"); System.out.flush();
+                    Thread.sleep(400);
                 }
             }
             """;
@@ -111,7 +113,7 @@ internal static class MmcLaunchChecks {
             using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create)) {
                 Add(zip, "pack/mmc-pack.json", Encoding.UTF8.GetBytes("""{"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.7.10"}]}"""));
                 Add(zip, "pack/instance.cfg", Encoding.UTF8.GetBytes("name=Controlled MMC\nOverrideMemory=true\nMinMemAlloc=128\nMaxMemAlloc=256\nOverrideWindow=true\nMinecraftWinWidth=854\nMinecraftWinHeight=480\n"));
-                string patch = $$"""{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Main","mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"assetIndex":{"id":"owned","url":"{{server.Url("/index")}}","sha1":"{{Convert.ToHexStringLower(SHA1.HashData(assets))}}","size":{{assets.Length}}},"compatibleJavaMajors":[8]}""";
+                string patch = $$"""{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Main","libraries":[],"mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"assetIndex":{"id":"owned","url":"{{server.Url("/index")}}","sha1":"{{Convert.ToHexStringLower(SHA1.HashData(assets))}}","size":{{assets.Length}}},"compatibleJavaMajors":[8]}""";
                 Add(zip, "pack/patches/net.minecraft.json", Encoding.UTF8.GetBytes(patch)); Add(zip, "pack/libraries/fixture.jar", jar);
                 Add(zip, "pack/minecraft/options.txt", Encoding.UTF8.GetBytes("lang:en_us\n"));
             }
@@ -151,6 +153,7 @@ internal static class MmcLaunchChecks {
             ModLaunch.CurrentLaunchOptions = options;
             var steps = MmcLaunch.CreateSteps(instance, options, java => ModLaunch.McLaunchJavaSelected=java);
             var operation = (LegacyLaunchOperation)Native.Static("PCL.ModLaunch", "CreateLaunchCombo", "Owned MMC replay " + name, steps)!;
+            int previouslyStopped = Volatile.Read(ref stoppedNotifications);
             plan = (ModLoader.LoaderCombo<object>)operation.Source; ModLaunch.McLaunchLoaderReal = plan; ModLoader.LoaderTaskbar.Add(plan); operation.Start();
             Until(() => currentSession != Guid.Empty && ModLaunch.McLaunchWatcher is not null || plan.State == ModBase.LoadState.Failed, "actual Main MMC child and watcher");
             if (plan.State == ModBase.LoadState.Failed) throw new IOException("MMC executor failed: " + plan.Error);
@@ -173,6 +176,7 @@ internal static class MmcLaunchChecks {
                 else { File.WriteAllText(run+".ready",""); Until(()=>plan.State==ModBase.LoadState.Finished,"real log-driven startup completion"); File.WriteAllText(run+".exit",""); }
             }
             Until(()=>child.HasExited && !MmcLaunch.HasActiveSessions,"actual exit and session completion");
+            Native.Check(Volatile.Read(ref stoppedNotifications) == previouslyStopped + 1, "Verified exit did not complete exactly one real Watcher stop notification.");
             if (!startCancel && !waitCancel) Native.Check(child.ExitCode==0 && ModLaunch.McLaunchWatcher.State==ModWatcher.Watcher.MinecraftState.Ended,"Normal JVM did not finish through real Watcher.");
             else Native.Check(plan.State is ModBase.LoadState.Canceled or ModBase.LoadState.Failed,"Canceled launch is still live or reported success.");
             string history=Path.Combine(version,"PCL","MmcSessionHistory",id.ToString("N"));
@@ -186,6 +190,8 @@ internal static class MmcLaunchChecks {
         }
         private void InstallWatcherBoundaries() {
             var host=(WatcherHost)Native.Field(typeof(ModWatcher),"Host").GetValue(null)!;
+            var stopped = host.ProcessStopped;
+            host.ProcessStopped = (version, process, normal) => { stopped(version, process, normal); Interlocked.Increment(ref stoppedNotifications); };
             host.EnumWindows=(_,_)=>{}; host.RestoreLauncher=()=>{}; host.RefreshShutdownButton=()=>{}; host.CrashHint=()=>{}; host.FeedbackInfo=()=>{};
             host.LaunchLog=(text,_)=>diagnostics.Enqueue(text); host.CreateCrashAnalyzer=_=>new NoCrashUi();
             var original=host.RunInNewThread; host.RunInNewThread=(work,name)=>original(()=>{watcherThreads.Enqueue(Thread.CurrentThread); try {work();} catch(Exception error){asyncErrors.Enqueue(error);throw;}},name);
@@ -224,9 +230,40 @@ internal static class MmcLaunchChecks {
     private static void Add(ZipArchive zip,string path,byte[] value){using var output=zip.CreateEntry(path).Open();output.Write(value);}
     private static T ReadRecord<T>(string path){byte[] bytes=File.ReadAllBytes(path);int first=Array.IndexOf(bytes,(byte)'\n'),second=Array.IndexOf(bytes,(byte)'\n',first+1);Native.Check(first>0&&second>first,"Owned session record header invalid.");byte[] content=bytes[(second+1)..];Native.Check(Encoding.ASCII.GetString(bytes[(first+1)..second])==Convert.ToHexStringLower(SHA256.HashData(content)),"Owned session record digest invalid.");return System.Text.Json.JsonSerializer.Deserialize<T>(content)!;}
     private static string MainHash()=>Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Native.Main.Location)));
-    private static void RunChild(){
-        ModpackUpdateCleanup.VerifyIsolatedChild();string root=Path.Combine(Path.GetTempPath(),"PclNativeFacade-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);Program.ValidateRoot(root);Process? child=null;bool stopped=false;
-        try{string output=Path.Combine(root,"output");Native.Call(typeof(Program),"CopyOutput",null,AppContext.BaseDirectory,output);var start=new ProcessStartInfo(Path.Combine(output,Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().Location)+".exe")){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=root};foreach(string arg in new[]{"--groups",Group,ChildSwitch,"--isolated","--fixture",root})start.ArgumentList.Add(arg);child=Process.Start(start)!;var stdout=child.StandardOutput.ReadToEndAsync();var stderr=child.StandardError.ReadToEndAsync();string receipt=Path.Combine(root,Receipt);var timer=Stopwatch.StartNew();while(!File.Exists(receipt)){if(File.Exists(receipt+".failed"))throw new IOException(File.ReadAllText(receipt+".failed"));if(child.WaitForExit(10))throw new IOException("Replay child exited without receipt: "+child.ExitCode+"\n"+stdout.Result+"\n"+stderr.Result);if(timer.Elapsed>TimeSpan.FromSeconds(110))throw new TimeoutException("MMC replay child deadline exceeded.");}Native.Check(File.ReadAllText(receipt)==MainHash(),"Replay receipt belongs to a different Main assembly.");child.Kill(true);stopped=child.WaitForExit(5000);Native.Check(stopped&&Task.WaitAll([stdout,stderr],5000),"Replay child/output did not drain.");Console.Write(stdout.Result);Native.Check(stderr.Result.Length==0,stderr.Result);}
-        finally{if(child is not null){if(!child.HasExited){child.Kill(true);stopped=child.WaitForExit(5000);}child.Dispose();}if(stopped){Program.ValidateRoot(root);Directory.Delete(root,true);}}
+    private static void RunChild() {
+        ModpackUpdateCleanup.VerifyIsolatedChild();
+        string root = Path.Combine(Path.GetTempPath(), "PclNativeFacade-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root); Program.ValidateRoot(root);
+        Process? child = null; Task<string>? stdout = null, stderr = null; bool stopped = false, success = false;
+        try {
+            string output = Path.Combine(root, "output");
+            Native.Call(typeof(Program), "CopyOutput", null, AppContext.BaseDirectory, output);
+            var start = new ProcessStartInfo(Path.Combine(output, Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().Location) + ".exe")) {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = root
+            };
+            foreach (string arg in new[] { "--groups", Group, ChildSwitch, "--isolated", "--fixture", root }) start.ArgumentList.Add(arg);
+            child = Process.Start(start) ?? throw new IOException("Owned replay child did not start.");
+            stdout = child.StandardOutput.ReadToEndAsync(); stderr = child.StandardError.ReadToEndAsync();
+            string receipt = Path.Combine(root, Receipt); var timer = Stopwatch.StartNew();
+            while (!File.Exists(receipt)) {
+                if (File.Exists(receipt + ".failed")) throw new IOException(File.ReadAllText(receipt + ".failed"));
+                if (child.WaitForExit(10)) throw new IOException("Replay child exited without receipt: " + child.ExitCode);
+                if (timer.Elapsed > TimeSpan.FromSeconds(110)) throw new TimeoutException("MMC replay child deadline exceeded.");
+            }
+            Native.Check(File.ReadAllText(receipt) == MainHash(), "Replay receipt belongs to a different Main assembly.");
+            child.Kill(true); stopped = child.WaitForExit(5000);
+            Native.Check(stopped && Task.WaitAll([stdout, stderr], 5000), "Replay child/output did not drain.");
+            Console.Write(stdout.Result); Native.Check(stderr.Result.Length == 0, stderr.Result); success = true;
+        } catch (Exception error) {
+            if (child is not null) { if (!child.HasExited) child.Kill(true); stopped = child.WaitForExit(5000); }
+            if (stopped && stdout is not null && stderr is not null) Task.WaitAll([stdout, stderr], 5000);
+            if (stdout?.IsCompletedSuccessfully == true) File.WriteAllText(Path.Combine(root, "stdout.log"), stdout.Result);
+            if (stderr?.IsCompletedSuccessfully == true) File.WriteAllText(Path.Combine(root, "stderr.log"), stderr.Result);
+            throw new IOException("Owned MMC replay failed; retained evidence: " + root + "\n" +
+                (stderr?.IsCompletedSuccessfully == true ? stderr.Result : "Output is still pending."), error);
+        } finally {
+            if (child is not null) { if (!child.HasExited) { child.Kill(true); stopped = child.WaitForExit(5000); } child.Dispose(); }
+            if (success && stopped) { Program.ValidateRoot(root); Directory.Delete(root, true); }
+        }
     }
 }

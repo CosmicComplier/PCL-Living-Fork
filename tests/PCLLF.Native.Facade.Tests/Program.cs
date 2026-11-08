@@ -52,6 +52,7 @@ internal static class Program
     };
     // Requires explicit locally installed JDKs; keep these out of the normal CI/default registry.
     private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
+        ["mmc-launch-replay"] = MmcLaunchChecks.Run,
         ["mmc-launch-java"] = environment => {
             foreach (var check in MmcLaunchJavaChecks.Cases()) { check.Run(); Console.WriteLine("PASS " + check.Name); }
             environment.AssertNoForbiddenIo();
