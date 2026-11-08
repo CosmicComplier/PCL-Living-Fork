@@ -154,7 +154,12 @@ public static class MmcPlanBinder {
                 PackageFileInventory = packageInventory.Values.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).ToImmutableArray(),
                 PackageFileLocks = packageLocks.Values.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).ToImmutableArray(),
                 DerivedOutputs = mergedDerived.Values.OrderBy(x => x.TargetRelativePath, StringComparer.Ordinal).ToImmutableArray(),
-                InstalledProjection = new(plan.ProfileFingerprint, options.OutputJsonSha256, options.NewGeneration, plan.RuntimePlanFingerprint, new string('0', 64))
+                InstalledProjection = new(plan.ProfileFingerprint, options.OutputJsonSha256, options.NewGeneration, plan.RuntimePlanFingerprint, new string('0', 64)) {
+                    // A same-generation historical rebind is read-only. Recording missing
+                    // environment authority requires an explicit new-generation publication.
+                    RuntimeEnvironment = authority is not null && options.NewGeneration == authority.Generation && authority.InstalledProjection!.RuntimeEnvironment is null
+                        ? null : plan.Environment
+                }
             };
             string fingerprint = MmcDefinitionCodec.ComputeBoundFingerprint(candidate);
             if (authority is not null && options.NewGeneration == authority.Generation && !MmcDefinitionCodec.SameHash(fingerprint, authority.InstalledProjection!.BoundFingerprint))

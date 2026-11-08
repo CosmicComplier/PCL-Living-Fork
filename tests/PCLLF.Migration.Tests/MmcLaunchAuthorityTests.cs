@@ -18,6 +18,7 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC binder preserves published baseline authority across explicit candidate drafts", PublishedAuthority);
         yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
         yield return ("MMC binder follows virtual-first asset layout without unrequested resource writes", BothAssetLayouts);
+        yield return ("MMC binder records exact published environments and migrates old bindings only in a new generation", PublishedEnvironment);
     }
     private sealed record Fixture(MmcCompiledProfile Plan, MmcInstanceDefinition Definition,
         ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
@@ -76,6 +77,32 @@ internal static class MmcLaunchAuthorityTests {
         Require(fixture.Definition.ArtifactLocks.IsEmpty && fixture.Definition.InstalledProjection is null && result.Definition!.ArtifactLocks.Length == fixture.Facts.Length,
             "Binding mutated input definition or lost duplicated download-only semantics.");
         Require(MmcDefinitionCodec.Read(MmcDefinitionCodec.Serialize(result.Definition!)).Status == MmcDefinitionReadStatus.Valid && result.Plan!.BoundFingerprint == result.Definition!.InstalledProjection!.BoundFingerprint, "Bound projection did not persist coherently.");
+    }
+    private static void PublishedEnvironment() {
+        var fixture=Create();
+        var environment=fixture.Plan.Environment with { OsVersion="10.0.22631" };
+        var compilation=MmcProfileCompiler.Compile(fixture.Sources,environment);
+        Require(!compilation.HasErrors && compilation.Profile is not null,"Explicit environment fixture failed compilation.");
+        fixture=fixture with { Plan=compilation.Profile! };
+        var initial=Good(Bind(fixture)).Definition!;
+        Require(initial.InstalledProjection!.RuntimeEnvironment==environment,"New publication did not save every exact environment dimension.");
+        var old=initial with { InstalledProjection=initial.InstalledProjection with { RuntimeEnvironment=null } };
+        old=old with { InstalledProjection=old.InstalledProjection! with { BoundFingerprint=MmcDefinitionCodec.ComputeBoundFingerprint(old) } };
+        Require(MmcDefinitionCodec.Validate(old).IsEmpty,"Historical binding fixture was not valid.");
+        string before=MmcDefinitionCodec.Serialize(old);
+        var same=Good(Bind(fixture,old,options:Options(intent:MmcBindingIntent.RepairExisting))).Definition!;
+        Require(same.InstalledProjection!.RuntimeEnvironment is null && same.InstalledProjection.BoundFingerprint==old.InstalledProjection!.BoundFingerprint &&
+            MmcDefinitionCodec.Serialize(old)==before,"Read-only historical rebind silently changed its environment authority or input definition.");
+        var upgraded=Good(Bind(fixture,old,options:Options(next:2,intent:MmcBindingIntent.RepairExisting))).Definition!;
+        Require(upgraded.Generation==2 && upgraded.InstalledProjection!.RuntimeEnvironment==environment &&
+            upgraded.InstalledProjection.BoundFingerprint!=old.InstalledProjection!.BoundFingerprint && MmcDefinitionCodec.Serialize(old)==before,
+            "Explicit new-generation repair did not migrate its exact environment while retaining immutable old authority.");
+        var repeat=Good(Bind(fixture,upgraded,options:Options(expected:2,next:2,intent:MmcBindingIntent.RepairExisting))).Definition!;
+        Require(repeat.InstalledProjection!.RuntimeEnvironment==environment && repeat.InstalledProjection.BoundFingerprint==upgraded.InstalledProjection.BoundFingerprint,
+            "Same-generation repair of a recorded environment changed its binding.");
+        var unknown=MmcProfileCompiler.Compile(fixture.Sources,environment with { JavaMajor=0 });
+        Require(!unknown.HasErrors && unknown.Profile is not null,"Compiler must remain usable for an unselected Java analysis profile.");
+        Require(Bind(fixture with { Plan=unknown.Profile! }).HasErrors,"An unselected Java major was published as an exact runtime environment.");
     }
     private static void BindingRejections() {
         var fixture = Create();
