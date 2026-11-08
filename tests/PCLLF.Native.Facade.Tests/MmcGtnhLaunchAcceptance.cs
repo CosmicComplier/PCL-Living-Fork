@@ -64,7 +64,8 @@ internal static class MmcGtnhLaunchAcceptance {
         Native.Check(args.Contains("--isolated",StringComparer.Ordinal)&&Guid.TryParseExact(nonce,"N",out _)&&Same(AppContext.BaseDirectory,Path.Combine(fixture,"output")),"Game acceptance child/output identity differs.");
         using(var owner=Read(Path.Combine(report,"owner.json"))) {
             var o=owner.RootElement;
-            Native.Check(o.GetProperty("Kind").GetString()=="PCLLF.GtnhLaunchAcceptance"&&Same(o.GetProperty("Root").GetString()!,report)&&Same(o.GetProperty("OriginalCase").GetString()!,original)&&Same(o.GetProperty("Fixture").GetString()!,fixture)&&o.GetProperty("Nonce").GetString()==nonce,"Game acceptance ownership marker differs.");
+            Native.Check(o.GetProperty("Kind").GetString()=="PCLLF.GtnhLaunchAcceptance"&&Same(o.GetProperty("Root").GetString()!,report)&&Same(o.GetProperty("OriginalCase").GetString()!,original)&&Same(o.GetProperty("Fixture").GetString()!,fixture)&&o.GetProperty("Nonce").GetString()==nonce&&
+                Same(o.GetProperty("Java").GetString()!,Required(args,"--java-executable"))&&o.GetProperty("MaximumMiB").GetInt32()==Number(args,"--max-memory-mib",6144,1024,8192)&&o.GetProperty("MinimumMiB").GetInt32()==Number(args,"--min-memory-mib",1024,16,o.GetProperty("MaximumMiB").GetInt32()),"Game acceptance ownership marker differs.");
         }
         var imported=VerifyOwnership(original);
         retainedEnvironment=new(fixture);ModpackUpdateCleanup.VerifyIsolatedChild();
@@ -198,7 +199,9 @@ internal static class MmcGtnhLaunchAcceptance {
             File.Copy(Path.Combine(imported.InstanceRoot,"PCL","Setup.ini"),Path.Combine(report,"original-Setup.ini"),false);
             int slider=Enumerable.Range(0,4097).Single(v=>Math.Abs(InstanceRamPolicy.Manual(v)*1024-maximum)<0.01);
             var prefs=MmcLaunchPreferences.Capture(instance,saved.PackageConfiguration,Guid.NewGuid());
-            string optional=string.Join(" ",prefs.RuntimeSettings.UserJvmTokens.Select(QuoteToken));
+            // This explicit acceptance preference replaces its prior optional initial heap only;
+            // required component/bootstrap JVM tokens remain untouched in the bound Core plan.
+            string optional=string.Join(" ",prefs.RuntimeSettings.UserJvmTokens.Where(value=>!value.StartsWith("-Xms",StringComparison.Ordinal)).Select(QuoteToken));
             if(optional.Length>0)optional+=" ";optional+="-Xms"+minimum.ToString(CultureInfo.InvariantCulture)+"m";
             MmcLaunchPreferences.SetForcedJava(instance,new Java(Path.GetDirectoryName(java)!));
             Settings.SetInstanceUserPreference("VersionRamType",1,instance);Settings.SetInstanceUserPreference("VersionRamCustom",slider,instance);
