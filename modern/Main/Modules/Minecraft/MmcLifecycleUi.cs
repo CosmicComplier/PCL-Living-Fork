@@ -31,35 +31,33 @@ internal static class MmcLifecycleUi {
         var request = new MmcInstanceRelocationRequest(source.Paths.InstanceRoot, Path.Combine(parent, name),
             source.Definition.InstanceId, source.Definition.Generation, source.PrimarySha256, MmcInstanceRelocationKind.Rename);
         if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) throw new IOException("另一项 MMC 实例管理任务尚未完成。");
-        var fence = new MmcOperationCancellationFence();
+        var fence = new MmcOperationCancellationFence(() => Interlocked.Exchange(ref busy, 0));
         var worker = new MmcOperationWorker<string, MmcInstanceLifecycleResult>(fence, "保存新的版本名称", task => {
-            try {
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
-                var result = new MmcInstanceLifecycleBackend().RelocateAsync(request with {
-                    Checkpoint = (phase, _) => { if (phase == MmcLifecycleCheckpoint.BeforeDecision) fence.EnterDecision(linked.Token); }
-                }, linked.Token).GetAwaiter().GetResult();
-                task.Output = result;
-                if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(linked.Token);
-                if (result.Status != MmcInstanceBackendStatus.Succeeded || result.CurrentRoot is null)
-                    throw new IOException("重命名未完成，现场已保留以便恢复：" + result.Failure);
-                if (Published is not null) Published(result);
-                else ModBase.RunInUi(() => {
-                    var renamed = new ModMinecraft.McInstance(result.CurrentRoot).Load();
-                    if (ModMinecraft.McInstanceSelected is { } selected && MeloongCore.PathUtils.IsSame(selected.PathVersion, instance.PathVersion))
-                        ModMinecraft.McInstanceSelected = renamed;
-                    ModMinecraft.McInstanceListForceRefresh = true;
-                    ModMinecraft.McInstanceListLoader.Start(ModMinecraft.McFolderSelected, IsForceRestart: true);
-                    completed?.Invoke(renamed);
-                    ModMain.Hint("重命名成功！", ModMain.HintType.Green);
-                });
-            } finally { fence.Complete(); Interlocked.Exchange(ref busy, 0); }
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
+            var result = new MmcInstanceLifecycleBackend().RelocateAsync(request with {
+                Checkpoint = (phase, _) => { if (phase == MmcLifecycleCheckpoint.BeforeDecision) fence.EnterDecision(linked.Token); }
+            }, linked.Token).GetAwaiter().GetResult();
+            task.Output = result;
+            if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(linked.Token);
+            if (result.Status != MmcInstanceBackendStatus.Succeeded || result.CurrentRoot is null)
+                throw new IOException("重命名未完成，现场已保留以便恢复：" + result.Failure);
+            if (Published is not null) Published(result);
+            else ModBase.RunInUi(() => {
+                var renamed = new ModMinecraft.McInstance(result.CurrentRoot).Load();
+                if (ModMinecraft.McInstanceSelected is { } selected && MeloongCore.PathUtils.IsSame(selected.PathVersion, instance.PathVersion))
+                    ModMinecraft.McInstanceSelected = renamed;
+                ModMinecraft.McInstanceListForceRefresh = true;
+                ModMinecraft.McInstanceListLoader.Start(ModMinecraft.McFolderSelected, IsForceRestart: true);
+                completed?.Invoke(renamed);
+                ModMain.Hint("重命名成功！", ModMain.HintType.Green);
+            });
         }) { InterruptOnCancel = false };
         var combo = new MmcOperationCombo<string>(fence, "重命名 MMC 实例：" + instance.Name, [worker]);
         try {
             if (RegisterTask is not null) RegisterTask(combo);
             else { ModLoader.LoaderTaskbarAdd(combo); ModBase.RunInUi(() => ModMain.FrmMain?.BtnExtraDownload.ShowRefresh()); }
             combo.Start(source.Paths.InstanceRoot); return combo;
-        } catch { fence.Complete(); Interlocked.Exchange(ref busy, 0); throw; }
+        } catch { fence.AbandonUnstarted(); throw; }
     }
 
     private static MmcInstanceInspection ReadSource(ModMinecraft.McInstance instance) {

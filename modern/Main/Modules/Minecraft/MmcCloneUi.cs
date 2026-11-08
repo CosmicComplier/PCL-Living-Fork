@@ -23,31 +23,28 @@ internal static class MmcCloneUi {
         if (Interlocked.CompareExchange(ref InstanceClonerUi.Service.BusyCount, 1, 0) != 0)
             throw new IOException("另一项克隆或迁移任务尚未完成。");
         Interlocked.Exchange(ref busy, 1);
-        var fence = new MmcOperationCancellationFence();
+        var fence = new MmcOperationCancellationFence(() => {
+            Interlocked.Exchange(ref busy, 0);Interlocked.Exchange(ref InstanceClonerUi.Service.BusyCount, 0);
+            ModBase.RunInUi(InstanceClonerUi.ManagedChanged);
+        });
         var request = new MmcInstanceCloneRequest(source.Paths.InstanceRoot, Path.Combine(parent, name), name,
             source.Definition.InstanceId, source.Definition.Generation, source.PrimarySha256,
             new(options?.CopySaves == true, options?.CopyScreenshots == true, options?.CopyServers == true));
         var worker = new MmcOperationWorker<string, MmcInstanceCloneResult>(fence, "创建 MMC 独立副本", task => {
-            try {
-                using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
-                var result = new MmcInstanceCloneBackend().CloneAsync(request with {
-                    TransactionCheckpoint = (phase, _) => { if (phase == MmcTransactionCheckpoint.BeforeDecision) fence.EnterDecision(linked.Token); }
-                }, linked.Token, new Progress(task)).GetAwaiter().GetResult();
-                if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(linked.Token);
-                if (result.Status != MmcInstanceBackendStatus.Succeeded || result.Paths is null)
-                    throw new IOException("MMC 副本未完成创建，现场已保留：" + result.Failure);
-                task.Output = result;
-                if (Published is not null) Published(result);
-                else ModBase.RunInUi(() => {
-                    ModMinecraft.McInstanceListForceRefresh = true;
-                    ModMinecraft.McInstanceListLoader.Start(ModMinecraft.McFolderSelected, IsForceRestart: true);
-                    ModMain.Hint("已创建独立副本：" + name, ModMain.HintType.Green);
-                });
-            } finally {
-                fence.Complete(); Interlocked.Exchange(ref InstanceClonerUi.Service.BusyCount, 0);
-                Interlocked.Exchange(ref busy, 0);
-                ModBase.RunInUi(InstanceClonerUi.ManagedChanged);
-            }
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
+            var result = new MmcInstanceCloneBackend().CloneAsync(request with {
+                TransactionCheckpoint = (phase, _) => { if (phase == MmcTransactionCheckpoint.BeforeDecision) fence.EnterDecision(linked.Token); }
+            }, linked.Token, new Progress(task)).GetAwaiter().GetResult();
+            if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(linked.Token);
+            if (result.Status != MmcInstanceBackendStatus.Succeeded || result.Paths is null)
+                throw new IOException("MMC 副本未完成创建，现场已保留：" + result.Failure);
+            task.Output = result;
+            if (Published is not null) Published(result);
+            else ModBase.RunInUi(() => {
+                ModMinecraft.McInstanceListForceRefresh = true;
+                ModMinecraft.McInstanceListLoader.Start(ModMinecraft.McFolderSelected, IsForceRestart: true);
+                ModMain.Hint("已创建独立副本：" + name, ModMain.HintType.Green);
+            });
         }) { InterruptOnCancel = false };
         var combo = new MmcOperationCombo<string>(fence, "克隆 MMC 实例：" + name, [worker]);
         try {
@@ -55,7 +52,7 @@ internal static class MmcCloneUi {
             else { ModLoader.LoaderTaskbarAdd(combo); ModBase.RunInUi(() => ModMain.FrmMain?.BtnExtraDownload.ShowRefresh()); }
             combo.Start(source.Paths.InstanceRoot);
             return combo;
-        } catch { fence.Complete(); Interlocked.Exchange(ref InstanceClonerUi.Service.BusyCount, 0); Interlocked.Exchange(ref busy, 0); throw; }
+        } catch { fence.AbandonUnstarted(); throw; }
     }
     private sealed class Progress(ModLoader.LoaderTask<string, MmcInstanceCloneResult> task) : IProgress<MmcInstanceCloneProgress> {
         public void Report(MmcInstanceCloneProgress value) {

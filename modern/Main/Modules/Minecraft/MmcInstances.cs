@@ -40,19 +40,20 @@ public static class MmcInstances {
         var cancellation = new MmcOperationCancellationFence();
         ModLoader.LoaderCombo<string> combo = null;
         var worker = new MmcOperationWorker<string, MmcInstanceBackendResult>(cancellation, "读取 MMC 整合包", task => {
-            try { task.Output = ImportAsync(task, request, services, name => combo.Name = "MMC 整合包安装：" + name, cancellation).GetAwaiter().GetResult(); }
-            finally { cancellation.Complete(); }
+            task.Output = ImportAsync(task, request, services, name => combo.Name = "MMC 整合包安装：" + name, cancellation).GetAwaiter().GetResult();
         }) { InterruptOnCancel = false };
         combo = new MmcOperationCombo<string>(cancellation, "MMC 整合包安装：" + Path.GetFileNameWithoutExtension(request.ArchivePath), [worker]);
         // Deliberately does not attach McInstallState: its legacy one-second failure cleanup does
         // not own MMC import reservations or durable recovery journals.
-        if (services.RegisterTask is not null) services.RegisterTask(combo);
-        else {
-            ModLoader.LoaderTaskbarAdd(combo);
-            ModBase.RunInUi(() => ModMain.FrmMain.BtnExtraDownload.ShowRefresh());
-        }
-        combo.Start(request.ArchivePath);
-        return combo;
+        try {
+            if (services.RegisterTask is not null) services.RegisterTask(combo);
+            else {
+                ModLoader.LoaderTaskbarAdd(combo);
+                ModBase.RunInUi(() => ModMain.FrmMain.BtnExtraDownload.ShowRefresh());
+            }
+            combo.Start(request.ArchivePath);
+            return combo;
+        } catch { cancellation.AbandonUnstarted();throw; }
     }
 
     private static async Task<MmcInstanceBackendResult> ImportAsync(ModLoader.LoaderTask<string, MmcInstanceBackendResult> task,
