@@ -14,6 +14,16 @@ The host uses a fresh retained GUID profile and synthetic offline identity. Only
 
 The parent remains alive without a timeout kill or automatic restart. Evidence stays under `artifacts/mmc-gtnh-launch-acceptance/<timestamp-guid>`; `owner.json` identifies the profile, nonce and case, and each launch records process/session/Java/hash/command-length evidence. The game is left open for menu/world inspection.
 
+The agent that owns the long-running command must remain active until the game and host have exited. Hand off the evidence path and UI work without ending that command owner's agent. If the host disappears without an exit receipt, treat that run as interrupted, not a successful game exit or an inferred Minecraft crash. The root agent should own subsequent real-game commands.
+
+An interrupted retained run can be reconciled explicitly with:
+
+```powershell
+PCLLF.Native.Facade.Tests.exe --mmc-gtnh-reconcile-owned-run --case-root <same completed import case> --launch-root <interrupted launch evidence root>
+```
+
+This validates the prior owner/session chain and invokes the actual process-identity inspector and session/pin cleanup. Active or uncertain processes remain protected. It neither kills nor launches a game. Keep the interrupted logs and the reconciliation result. Build this runner with its normal project reference for actual game acceptance, so the host's complete runtime dependency graph is present.
+
 After the real Java process and session cleanup have exited, write `control.json` in that evidence root:
 
 ```json

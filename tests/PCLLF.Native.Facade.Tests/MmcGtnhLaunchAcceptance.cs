@@ -20,15 +20,38 @@ namespace PCLLF.Native.Facade.Tests;
 /// <summary>Explicit real-game acceptance. Never register in default CI or substitute a test game.</summary>
 internal static class MmcGtnhLaunchAcceptance {
     private const string ParentFlag="--mmc-gtnh-launch-acceptance",ChildFlag="--mmc-gtnh-launch-child";
+    private const string ReconcileFlag="--mmc-gtnh-reconcile-owned-run";
     private static FixtureEnvironment? retainedEnvironment;
     private static Scope? retainedScope;
     private static readonly JsonSerializerOptions JsonOptions=new(){WriteIndented=true};
     internal static bool TryRun(string[] args,out int code) {
         code=0;
-        if(!args.Contains(ParentFlag,StringComparer.Ordinal)&&!args.Contains(ChildFlag,StringComparer.Ordinal))return false;
-        try {code=args.Contains(ChildFlag,StringComparer.Ordinal)?RunChild(args):RunParent(args);}
+        if(!args.Contains(ParentFlag,StringComparer.Ordinal)&&!args.Contains(ChildFlag,StringComparer.Ordinal)&&!args.Contains(ReconcileFlag,StringComparer.Ordinal))return false;
+        try {code=args.Contains(ReconcileFlag,StringComparer.Ordinal)?ReconcileOwnedRun(args):args.Contains(ChildFlag,StringComparer.Ordinal)?RunChild(args):RunParent(args);}
         catch(Exception error){Console.Error.WriteLine("FAIL explicit GTNH game acceptance: "+error);code=1;}
         return true;
+    }
+
+    private static int ReconcileOwnedRun(string[] args) {
+        string original=Full(Required(args,"--case-root")),report=Full(Required(args,"--launch-root"));
+        var imported=VerifyOwnership(original);
+        using var owner=Read(Path.Combine(report,"owner.json"));var o=owner.RootElement;
+        string nonce=o.GetProperty("Nonce").GetString()!;
+        Native.Check(o.GetProperty("Kind").GetString()=="PCLLF.GtnhLaunchAcceptance"&&Same(o.GetProperty("Root").GetString()!,report)&&
+            Same(o.GetProperty("OriginalCase").GetString()!,original)&&Guid.TryParseExact(nonce,"N",out _),"Previous retained launch owner differs.");
+        Program.ValidateRoot(o.GetProperty("Fixture").GetString()!);
+        using var process=Read(Path.Combine(report,"launch-1-process.json"));var p=process.RootElement;
+        var receipt=p.GetProperty("Receipt").Deserialize<MmcSessionReceipt>()??throw new IOException("Prior session receipt is missing.");
+        Native.Check(p.GetProperty("Nonce").GetString()==nonce&&p.GetProperty("SessionId").GetGuid()==receipt.SessionId&&
+            receipt.InstanceId==imported.InstanceId&&Same(receipt.CanonicalRoot,imported.InstanceRoot)&&receipt.DefinitionGeneration==imported.Generation,
+            "Prior launch evidence belongs to another instance or session.");
+        var pins=new MmcJavaPinStore(Path.Combine(report,"java-pins"));
+        using var admission=MmcAdmissionGate.Acquire(imported.InstanceRoot,imported.InstanceId,TimeSpan.Zero);
+        var result=MmcSessions.Reconcile(admission,receipt.SessionId,new MmcSessionProcessInspector(),pins.ReleaseVerified);
+        Write(report,"reconciled-after-host-exit.json",new{Nonce=nonce,receipt.SessionId,Result=result,Keep=true});
+        Native.Check(result.Observation==MmcSessionObservation.ProvenExited,"Prior process exit cannot be proved; all receipts and pins remain protected: "+result.Diagnostic);
+        Console.WriteLine("PASS owned prior session exit reconciled using actual process identities; no game was killed or restarted.");
+        return 0;
     }
 
     private static int RunParent(string[] args) {
