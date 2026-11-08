@@ -16,6 +16,11 @@ public sealed record MmcInstanceRepairRequest(string VersionRoot, MmcRuntimeEnvi
     public string? ExpectedPrimarySha256 { get; init; }
 }
 public sealed record MmcInstanceBackendProgress(string Phase, long CompletedBytes = 0, long TotalBytes = 0);
+/// <summary>Explicit adoption of another variant declared by the same preserved package sources.</summary>
+public sealed record MmcInstanceAdoptVariantRequest(string VersionRoot, MmcRuntimeEnvironment Environment,
+    Guid ExpectedInstanceId, long ExpectedGeneration, string ExpectedPrimarySha256) {
+    public Action<MmcTransactionCheckpoint, int>? TransactionCheckpoint { get; init; }
+}
 public sealed record MmcInstanceBackendResult(MmcInstanceBackendStatus Status, MmcInstanceDefinition? Definition = null,
     MmcBoundLaunchPlan? BoundPlan = null, MmcInstancePaths? Paths = null, MmcConfiguration? PackageConfiguration = null,
     string? WorkingRoot = null, ImmutableArray<MmcDiagnostic> Diagnostics = default, string? Failure = null) {

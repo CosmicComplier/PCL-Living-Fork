@@ -6,8 +6,22 @@ namespace PCLCS;
 
 // Original LF host implementation, under the repository LICENCE.
 public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnull {
-    public async Task<MmcInstanceBackendResult> RepairAsync(MmcInstanceRepairRequest request, CancellationToken cancellationToken = default,
-        IProgress<MmcInstanceBackendProgress>? progress = null) {
+    public Task<MmcInstanceBackendResult> RepairAsync(MmcInstanceRepairRequest request, CancellationToken cancellationToken = default,
+        IProgress<MmcInstanceBackendProgress>? progress = null) => ChangeRuntimeAsync(request, MmcBindingIntent.RepairExisting, cancellationToken, progress);
+
+    public Task<MmcInstanceBackendResult> AdoptVariantAsync(MmcInstanceAdoptVariantRequest request,
+        CancellationToken cancellationToken = default, IProgress<MmcInstanceBackendProgress>? progress = null) {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.ExpectedInstanceId == Guid.Empty || request.ExpectedGeneration < 1 || !MmcDurableFiles.IsHash(request.ExpectedPrimarySha256))
+            throw new ArgumentException("Explicit variant adoption requires a fixed published identity, generation and digest.", nameof(request));
+        return ChangeRuntimeAsync(new(request.VersionRoot, request.Environment, request.ExpectedInstanceId) {
+            ExpectedGeneration = request.ExpectedGeneration, ExpectedPrimarySha256 = request.ExpectedPrimarySha256,
+            TransactionCheckpoint = request.TransactionCheckpoint
+        }, MmcBindingIntent.AdoptDeclaredVariant, cancellationToken, progress);
+    }
+
+    private async Task<MmcInstanceBackendResult> ChangeRuntimeAsync(MmcInstanceRepairRequest request, MmcBindingIntent intent,
+        CancellationToken cancellationToken, IProgress<MmcInstanceBackendProgress>? progress) {
         string? requestedRoot = request?.VersionRoot;
         try {
             ArgumentNullException.ThrowIfNull(request); cancellationToken.ThrowIfCancellationRequested();
@@ -30,28 +44,44 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             var saved = await MmcSavedSourceStore.LoadAsync(paths, definition, cancellationToken).ConfigureAwait(false);
             var compiled = Compile(saved.Resolved.Resolution, request.Environment);
             if (compiled.ProfileFingerprint != definition.InstalledProjection!.ProfileFingerprint) throw new IOException("Recompiled source identity differs from the published profile.");
+            bool sameVariant = compiled.RuntimePlanFingerprint == definition.InstalledProjection.RuntimePlanFingerprint;
+            if (!sameVariant && intent == MmcBindingIntent.RepairExisting)
+                return new(MmcInstanceBackendStatus.Rejected, WorkingRoot: paths.InstanceRoot,
+                    Failure: "A different runtime environment requires explicit variant adoption.",
+                    Diagnostics: [new("MMC_INSTANCE_VARIANT_REQUIRED", MmcDiagnosticSeverity.Error, "runtime", "Repair cannot silently change the adopted Java/platform variant.")]);
+            if (intent == MmcBindingIntent.AdoptDeclaredVariant) {
+                if (compiled.JavaPolicy.Kind != MmcJavaPolicyKind.DeclaredCandidates || !compiled.JavaPolicy.Allows(request.Environment.JavaMajor))
+                    throw new IOException("Variant adoption requires an explicit compatible Java declaration in the preserved package.");
+                if (sameVariant) {
+                    var existing = await PrepareLaunchAsync(new(paths.InstanceRoot, request.Environment, definition.InstanceId, definition.Generation), cancellationToken, progress).ConfigureAwait(false);
+                    return new(existing.Status, existing.Snapshot?.Definition, existing.Snapshot?.BoundPlan, existing.Snapshot?.Paths,
+                        existing.Snapshot?.PackageConfiguration, paths.InstanceRoot, existing.Diagnostics, existing.Failure);
+                }
+            }
             var locks = definition.ArtifactLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))
                 .Concat(definition.PackageFileLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))).ToImmutableArray();
             var preserved = PreservedArtifacts(saved.Baseline, compiled);
             var artifactRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, ActiveArtifacts(compiled), preserved, locks,
-                MmcArtifactIntent.RepairExisting, compiled.Assets);
+                intent == MmcBindingIntent.RepairExisting ? MmcArtifactIntent.RepairExisting : MmcArtifactIntent.AdoptDeclaredVariant, compiled.Assets);
             // All transport/preparation stays outside admission. Only already-locked bytes can satisfy repair.
             var fetched = await prefetch.PrefetchAsync(compiled, artifactRequest, cancellationToken).ConfigureAwait(false);
-            using var prepared = await materializer.PrepareAsync(artifactRequest, fetched.CreateAccess(), cancellationToken, ArtifactProgress(progress)).ConfigureAwait(false);
+            using var prepared = await materializer.PrepareAsync(artifactRequest, fetched.CreateAccess((artifact, token) => {
+                token.ThrowIfCancellationRequested(); return ValueTask.FromResult(VariantLocalOriginal(paths, definition, saved.Baseline, artifact));
+            }), cancellationToken, ArtifactProgress(progress)).ConfigureAwait(false);
             using var localTargets = new MmcArtifactWorkspace(paths);
             var localRepairs = await RepairPreservedTargetsAsync(paths, definition, compiled, prepared, localTargets, cancellationToken).ConfigureAwait(false);
             var observations = MmcArtifactBindingAdapter.Create(artifactRequest, compiled, prepared);
             long generation = checked(definition.Generation + 1);
             string name = Path.GetFileName(paths.InstanceRoot);
             byte[] projection = RenderProjection(name, definition.InstanceId, generation, compiled, prepared, paths);
-            var options = observations.ApplyTo(new(definition.Generation, generation, MmcBindingIntent.RepairExisting, Hash(projection), generation));
+            var options = observations.ApplyTo(new(definition.Generation, generation, intent, Hash(projection), generation));
             var bound = MmcPlanBinder.Bind(definition, compiled, observations.Facts, options, definition.ArtifactLocks,
                 observations.DerivedOutputs, observations.AssetIndexes, publishedBaseline: definition, packageBaseline: saved.BaselineInput);
             RequireBinding(bound);
             byte[] nextDefinition = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition!));
             var mutations = ArtifactMutations(prepared).Concat(localRepairs).Append(new MmcFileMutation(name + ".json", oldProjection, projection, Hash(projection)))
                 .Append(new MmcFileMutation("PCL/InstanceDefinition.json", primary.Sha256, nextDefinition, Hash(nextDefinition)));
-            progress?.Report(new("publishing-repair"));
+            progress?.Report(new(intent == MmcBindingIntent.RepairExisting ? "publishing-repair" : "adopting-runtime-variant"));
             using var quiet = MmcConfigurationCoordinator.Quiesce(paths.InstanceRoot, cancellationToken);
             using var gate = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken);
             if (MmcSavedSourceStore.ReadPrimary(paths).Sha256 != primary.Sha256 || MmcDurableFiles.Observe(projectionPath) != oldProjection)
@@ -67,6 +97,19 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             return new(MmcInstanceBackendStatus.Succeeded, bound.Definition, bound.Plan, paths, saved.PackageConfiguration, paths.InstanceRoot, []);
         } catch (OperationCanceledException error) { return new(MmcInstanceBackendStatus.Cancelled, WorkingRoot: requestedRoot, Failure: error.Message); }
         catch (Exception error) when (IsExpectedFailure(error)) { return new(MmcInstanceBackendStatus.NeedsRecovery, WorkingRoot: requestedRoot, Failure: error.Message); }
+    }
+
+    private static MmcArtifactSource? VariantLocalOriginal(MmcInstancePaths paths, MmcInstanceDefinition definition,
+        MmcValidatedPackageBaseline baseline, MmcArtifactReference artifact) {
+        if (artifact.Scope != MmcArtifactScope.InstanceLocal) return null;
+        var oldDeclaration = definition.ArtifactInventory.FirstOrDefault(value => value.Scope == MmcArtifactScope.InstanceLocal &&
+            value.RelativePath == artifact.RelativePath && value.SourceRevision == artifact.SourceRevision && value.ComponentUid == artifact.ComponentUid);
+        var oldLock = oldDeclaration is null ? null : definition.ArtifactLocks.FirstOrDefault(value => value.ArtifactKey == oldDeclaration.ArtifactKey);
+        if (oldLock is not null) return new(paths.InstanceRoot, paths.ResolveRelative(MmcPathRole.Instance, oldLock.RecoveryObjectRelativePath));
+        string target = "libraries/" + artifact.RelativePath;
+        var original = baseline.Baseline.Files.FirstOrDefault(value => value.Role == PCLLF.MMCC.Core.MmcPackageFileRole.LocalLibrary && value.TargetRelativePath == target);
+        var preserved = original is null ? null : definition.PackageFileLocks.FirstOrDefault(value => value.TargetRelativePath == target && value.AdoptedSha256 == original.Sha256 && value.SizeBytes == original.SizeBytes);
+        return preserved is null ? null : new(paths.InstanceRoot, paths.ResolveRelative(MmcPathRole.Instance, preserved.RecoveryObjectRelativePath));
     }
 
     private static async Task<ImmutableArray<MmcFileMutation>> RepairPreservedTargetsAsync(MmcInstancePaths paths, MmcInstanceDefinition definition,
