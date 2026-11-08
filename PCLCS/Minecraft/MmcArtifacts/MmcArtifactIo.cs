@@ -47,17 +47,19 @@ internal sealed class MmcArtifactWorkspace : IDisposable {
         MmcInstancePaths.EnsureNoLinks(marker);
         if (!File.Exists(marker) || new FileInfo(marker).Length > 4096 || File.ReadAllText(marker) != owner)
             throw new IOException("Artifact cleanup ownership marker changed; workspace preserved.");
-        DeleteOwnedDirectory(Root);
+        DeleteOwnedDirectory(Root, marker);
         disposed = true;
     }
 
-    private static void DeleteOwnedDirectory(string path) {
+    private static void DeleteOwnedDirectory(string path, string? finalMarker = null) {
         MmcInstancePaths.EnsureNoLinks(path);
         foreach (string child in System.IO.Directory.EnumerateFileSystemEntries(path)) {
+            if (finalMarker is not null && string.Equals(child, finalMarker, StringComparison.Ordinal)) continue;
             MmcInstancePaths.EnsureNoLinks(child);
             if ((File.GetAttributes(child) & FileAttributes.Directory) != 0) DeleteOwnedDirectory(child);
             else File.Delete(child);
         }
+        if (finalMarker is not null) { MmcInstancePaths.EnsureNoLinks(finalMarker); File.Delete(finalMarker); }
         System.IO.Directory.Delete(path, false);
     }
 }

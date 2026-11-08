@@ -88,7 +88,9 @@ public sealed partial class MmcArtifactMaterializer {
                     input.Lock.SizeBytes, artifact.Key, paths, workspace, io, mutations, cancellationToken).ConfigureAwait(false);
                 bindings.Add(new(artifact, input.Lock.AdoptedSha256, input.Lock.SizeBytes, relative, target, verified, input.ObservedSha1));
             }
-            var nativeFiles = await ExtractNativesAsync(artifacts.Where(x => x.Role == MmcArtifactRole.Native).Select(x => inputs[x.Key]),
+            var nativeInputs = artifacts.Where(x => x.Role == MmcArtifactRole.Native).Select(x => inputs[x.Key]).ToArray();
+            var cachedNativeFiles = await ReuseNativeCacheAsync(request.TrustedNativeCache, nativeInputs, viewKey, paths, targetClaims, cancellationToken).ConfigureAwait(false);
+            var nativeFiles = cachedNativeFiles ?? await ExtractNativesAsync(nativeInputs,
                 viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
             var assetFiles = await StageAssetsAsync(assetPlan, inputs, viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
             string? assetsRoot = assetPlan is null ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/assets");
@@ -98,7 +100,9 @@ public sealed partial class MmcArtifactMaterializer {
                 mutations.Values.ToImmutableArray(), true, true,
                 nativeFiles.IsEmpty ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/natives"), assetsRoot,
                 nativeFiles, assetFiles, gameAssetsRoot, mappedRoot,
-                inputs.Values.Select(x => new MmcArtifactObservation(x.Artifact.Key, x.Lock.AdoptedSha256, x.ObservedSha1, x.Lock.SizeBytes)).ToImmutableArray());
+                inputs.Values.Select(x => new MmcArtifactObservation(x.Artifact.Key, x.Lock.AdoptedSha256, x.ObservedSha1, x.Lock.SizeBytes)).ToImmutableArray(),
+                nativeInputs.Length == 0 ? null : new(viewKey, NativeSourceSet(nativeInputs), nativeFiles.Select(x => new MmcNativeFileFact(x.SourceArtifactKey, x.RelativePath, x.Sha256, x.SizeBytes)).ToImmutableArray()),
+                cachedNativeFiles is not null);
         } catch (Exception failure) {
             try { workspace.Dispose(); }
             catch (Exception cleanup) { throw new AggregateException("Artifact preparation failed; owned workspace cleanup also failed.", failure, cleanup); }

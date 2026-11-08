@@ -24,12 +24,16 @@ public sealed record MmcArtifactProgress(string Phase, string ArtifactKey, long 
 
 public sealed record MmcArtifactRequest(MmcInstancePaths Paths, string LogicalContext,
     ImmutableArray<MmcArtifactReference> Artifacts, ImmutableArray<MmcArtifactReference> AdditionalPreservedArtifacts,
-    ImmutableArray<MmcArtifactLock> ExistingLocks, MmcArtifactIntent Intent, MmcAssetIndex? Assets = null);
+    ImmutableArray<MmcArtifactLock> ExistingLocks, MmcArtifactIntent Intent, MmcAssetIndex? Assets = null,
+    MmcNativeViewCache? TrustedNativeCache = null);
 
 public sealed record MmcArtifactBinding(MmcArtifactReference Artifact, string Sha256, long SizeBytes,
     string TargetRelativePath, string TargetPath, string VerifiedInputPath, string? ObservedSha1 = null);
 public sealed record MmcArtifactObservation(string ArtifactKey, string ObservedSha256, string ObservedSha1, long SizeBytes);
 public sealed record MmcNativeFileBinding(string SourceArtifactKey, string RelativePath, string TargetPath, string Sha256, long SizeBytes);
+public sealed record MmcNativeFileFact(string SourceArtifactKey, string RelativePath, string Sha256, long SizeBytes);
+/// <summary>Only accept from validated instance binding/definition records, never a self-authenticating runtime manifest.</summary>
+public sealed record MmcNativeViewCache(string ViewKey, string SourceSetFingerprint, ImmutableArray<MmcNativeFileFact> CompleteFiles);
 public sealed record MmcAssetFileBinding(string Name, string ArtifactKey, string Sha1, string Sha256, long SizeBytes,
     string ObjectPath, string? VirtualPath, string? MappedResourcePath);
 
@@ -63,13 +67,15 @@ public sealed class MmcPreparedArtifacts : IDisposable {
     public string? GameAssetsRoot { get; }
     public string? MappedResourcesRoot { get; }
     public ImmutableArray<MmcArtifactObservation> Observations { get; }
+    public MmcNativeViewCache? NativeCache { get; }
+    public bool NativeCacheReused { get; }
 
     internal MmcPreparedArtifacts(MmcArtifactWorkspace workspace, string viewKey,
         ImmutableArray<MmcArtifactBinding> bindings, ImmutableArray<MmcArtifactLock> locks,
         ImmutableArray<MmcArtifactStagedMutation> mutations, bool nativeComplete, bool assetsMaterialized,
         string? nativeDirectory = null, string? assetsRoot = null, ImmutableArray<MmcNativeFileBinding> nativeFiles = default,
         ImmutableArray<MmcAssetFileBinding> assetFiles = default, string? gameAssetsRoot = null, string? mappedResourcesRoot = null,
-        ImmutableArray<MmcArtifactObservation> observations = default) {
+        ImmutableArray<MmcArtifactObservation> observations = default, MmcNativeViewCache? nativeCache = null, bool nativeCacheReused = false) {
         this.workspace = workspace; ViewKey = viewKey; OrderedBindings = bindings; AdoptedLocks = locks;
         StagedMutations = mutations; NativeExtractionComplete = nativeComplete; AssetsMaterialized = assetsMaterialized;
         NativeDirectory = nativeDirectory; AssetsRoot = assetsRoot;
@@ -77,6 +83,7 @@ public sealed class MmcPreparedArtifacts : IDisposable {
         AssetFiles = assetFiles.IsDefault ? [] : assetFiles;
         GameAssetsRoot = gameAssetsRoot; MappedResourcesRoot = mappedResourcesRoot;
         Observations = observations.IsDefault ? [] : observations;
+        NativeCache = nativeCache; NativeCacheReused = nativeCacheReused;
     }
     public void Dispose() => workspace.Dispose();
 }

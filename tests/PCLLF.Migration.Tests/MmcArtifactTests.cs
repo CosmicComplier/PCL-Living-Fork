@@ -28,6 +28,7 @@ internal static class MmcArtifactTests {
         yield return ("MMC assets reject ambiguous malformed and unsafe index data", () => Run(AssetInvalidIndexes));
         yield return ("MMC assets enforce metadata object and aggregate byte budgets", () => Run(AssetBudgets));
         yield return ("MMC materialization observations are measured even without declared SHA1", () => Run(ObservedDigests));
+        yield return ("MMC native hot views verify trusted facts without extracting unchanged jars", () => Run(NativeHotCache));
     }
 
     private static void Run(Func<Task> action) => action().GetAwaiter().GetResult();
@@ -320,6 +321,28 @@ internal static class MmcArtifactTests {
         using var prepared = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([artifact]), fixture.Access());
         string expected = Convert.ToHexStringLower(SHA1.HashData(bytes));
         Equal(expected, prepared.OrderedBindings.Single().ObservedSha1); Equal(expected, prepared.Observations.Single().ObservedSha1);
+    }
+
+    private static async Task NativeHotCache() {
+        using var fixture = new Fixture(); byte[] jar = Jar(("same.dll", [1, 2, 3]));
+        var native = Artifact("cached-native", "native.jar", jar) with { Role = MmcArtifactRole.Native };
+        fixture.Source(native.Key, jar);
+        ImmutableArray<MmcArtifactLock> locks; MmcNativeViewCache cache;
+        using (var first = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([native]), fixture.Access())) {
+            locks = first.AdoptedLocks; cache = first.NativeCache!;
+            // Isolated fixture publication only; actual transaction/crash behavior is verified by its own host tests.
+            foreach (var mutation in first.StagedMutations) fixture.Write(fixture.Resolve(mutation.TargetRelativePath), File.ReadAllBytes(mutation.StagedPath));
+        }
+        fixture.ClearSources(); int extracted = 0;
+        var request = fixture.Request([native], locks, MmcArtifactIntent.RepairExisting) with { TrustedNativeCache = cache };
+        using (var hot = await new MmcArtifactMaterializer().PrepareAsync(request, progress: new InlineProgress(x => { if (x.Phase == "native-extract") extracted++; }))) {
+            Equal(true, hot.NativeCacheReused); Equal(0, hot.StagedMutations.Length); Equal(0, extracted);
+            fixture.Write(hot.NativeFiles.Single().TargetPath, [9]);
+        }
+        using var repaired = await new MmcArtifactMaterializer().PrepareAsync(request);
+        Equal(false, repaired.NativeCacheReused);
+        Equal(true, repaired.StagedMutations.Any(x => x.TargetRelativePath.EndsWith("/natives/same.dll", StringComparison.Ordinal)));
+        Equal(Hash([1, 2, 3]), repaired.NativeFiles.Single().Sha256);
     }
 
     private static byte[] IndexJson(Dictionary<string, byte[]> files, bool virtualAssets = false, bool mapToResources = false) =>
