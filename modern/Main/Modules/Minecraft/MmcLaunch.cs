@@ -24,6 +24,9 @@ public static class MmcLaunch {
     // but cannot replace process creation, the session receipt, or Java pinning.
     internal static Action<Guid, Process> ProcessCreated { get; set; }
     internal static Func<MmcJavaPinStore> JavaPins { get; set; } = () => ModJava.MmcPins;
+    internal static Func<ModMinecraft.McInstance, MmcLaunchJavaSelection, bool> ConfirmVariantAdoption { get; set; } = (_, selection) =>
+        ModBase.RunInUiWait(() => ModMain.MyMsgBox("此实例尚未使用 Java " + selection.RuntimeJava.Major +
+            "。是否按整合包声明配置它并启动？", "配置 Java 环境", "配置并启动", "取消") == 1);
     public static bool KeepAliveWhileSessionsFinish() {
         if (Active.IsEmpty) return false;
         Interlocked.Exchange(ref closeAfterSessions, 1);
@@ -73,13 +76,22 @@ public static class MmcLaunch {
             preferences = MmcLaunchPreferences.Capture(instance, saved.PackageConfiguration, sessionId);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
                 preferences.JavaPreference, token).ConfigureAwait(false);
-            if (java.RequiresVariantAdoption) throw new InvalidOperationException("选择的 Java 对应新的运行变体，请先明确采用该变体再启动。");
             selectedJava(java.Java);
             string gameRoot = Path.GetDirectoryName(Path.GetDirectoryName(paths.InstanceRoot))!;
             string cache = Path.Combine(gameRoot, "PCL", "MmcCache");
             var backend = new MmcInstanceBackend<ModNet.NetFile>(MmcDownloads.CreateMetadataStore(Path.Combine(cache, "metadata")),
                 new(Path.Combine(gameRoot, "libraries"), Path.Combine(gameRoot, "assets"), Path.Combine(cache, "sources"), Path.Combine(gameRoot, "versions")),
                 MmcDownloads.BuildFile, (files, cancellation) => MmcDownloads.RunBatchAsync(files, cancellation, progress));
+            if (java.RequiresVariantAdoption) {
+                if (!ConfirmVariantAdoption(instance, java)) throw new OperationCanceledException(token);
+                token.ThrowIfCancellationRequested(); MmcLaunchPreferences.Revalidate(instance, preferences);
+                var adopted = await backend.AdoptVariantAsync(new(paths.InstanceRoot, java.Environment, primary.Definition.InstanceId,
+                    primary.Definition.Generation, primary.Sha256), token).ConfigureAwait(false);
+                if (adopted.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(token);
+                if (adopted.Status != MmcInstanceBackendStatus.Succeeded || adopted.Definition is null)
+                    throw new IOException("Java 环境未完成配置：" + adopted.Failure);
+                primary = MmcSavedSourceStore.ReadPrimary(paths);
+            }
             var result = await backend.PrepareLaunchAsync(new(paths.InstanceRoot, java.Environment, primary.Definition.InstanceId,
                 primary.Definition.Generation), token).ConfigureAwait(false);
             if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(token);
