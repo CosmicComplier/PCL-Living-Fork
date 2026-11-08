@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using PCLCS;
 
-internal static class MmcSessionTests {
+internal static partial class MmcSessionTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC session final validation and creation stay inside admission with one protected argv nonce", LaunchAndExit);
         yield return ("MMC session active receipt blocks structural transactions and another launch", StructuralGate);
@@ -17,11 +17,15 @@ internal static class MmcSessionTests {
         yield return ("MMC session host termination retains running receipt and blocks structural writes", KilledHost);
         yield return ("MMC unlaunched mutable runtime cleanup validates ownership and preserves receipts", AbandonMutable);
         yield return ("MMC mutable cleanup failure retains pin and exit evidence for reconciliation retry", RetryMutableCleanup);
+        yield return ("MMC deep mutable scopes use a trusted short authority and preserve unknown owners", ShortMutableIsolation);
+        yield return ("MMC short mutable cleanup releases pins only after confirmed exit and successful owned cleanup", ShortMutableExit);
+        yield return ("MMC short mutable host death retains runtime binding and blocks writes until reconciliation", ShortMutableHostDeath);
         if (OperatingSystem.IsWindows()) yield return ("MMC observes a suspended child image before its module list initializes", SuspendedImage);
     }
 
     internal static bool TryRunChild(string[] args, out int exitCode) {
         exitCode = 0;
+        if(TryRunShortHostChild(args,out exitCode))return true;
         string? nonce = args.FirstOrDefault(a => a.StartsWith(MmcSessions.NonceArgumentPrefix, StringComparison.Ordinal))?[MmcSessions.NonceArgumentPrefix.Length..];
         string[] data = args.Where(a => !a.StartsWith(MmcSessions.NonceArgumentPrefix, StringComparison.Ordinal)).ToArray();
         if (data.Length == 0 || data[0] is not ("--mmc-session-child" or "--mmc-session-host-child")) return false;

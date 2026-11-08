@@ -244,25 +244,18 @@ public static class MmcRuntimeLaunchBuilder {
         }
     }
     private static MmcRuntimeMutableDirectories DescribeMutablePaths(MmcInstancePaths paths, MmcRuntimeLaunchRequest request) {
-        string root = paths.ResolveRelative(MmcPathRole.Runtime, "sessions/" + request.Settings.SessionId.ToString("N"));
-        if (Directory.Exists(root) || File.Exists(root)) Fail("MMC_RUNTIME_SESSION_PATH", "A launch session requires a fresh owned mutable directory.");
-        return new(root, Path.Combine(root, "temp"), Path.Combine(root, "extract"));
+        var selected=MmcSessionRuntimeDirectories.Describe(paths,request.Definition.InstanceId,request.Settings.SessionId,request.BoundPlan.BoundFingerprint,request.RuntimeAuthority);
+        if(Directory.Exists(selected.SessionRoot)||File.Exists(selected.SessionRoot))Fail("MMC_RUNTIME_SESSION_PATH","A launch session requires a fresh owned mutable directory.");
+        return new(selected.SessionRoot,selected.TemporaryDirectory,selected.ExtractDirectory){RuntimeBinding=selected.RuntimeBinding};
     }
     private static void InitializeMutablePaths(MmcRuntimeMutableDirectories mutable, MmcRuntimeLaunchRequest request) {
-        string root = mutable.SessionRoot;
-        if (Directory.Exists(root) || File.Exists(root)) Fail("MMC_RUNTIME_SESSION_PATH", "A launch session requires a fresh owned mutable directory.");
-        Directory.CreateDirectory(root); MmcInstancePaths.EnsureNoLinks(root);
-        string owner = Path.Combine(root, "owner.txt");
-        using (var output = new FileStream(owner, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { byte[] data = Encoding.UTF8.GetBytes(Owner(request)); output.Write(data); output.Flush(true); }
-        Directory.CreateDirectory(mutable.TemporaryDirectory); Directory.CreateDirectory(mutable.ExtractDirectory);
+        MmcSessionRuntimeDirectories.CreateOwned(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,mutable.RuntimeBinding,request.RuntimeAuthority);
     }
-    private static string Owner(MmcRuntimeLaunchRequest request) => "PCLLF.MmcSessionMutable/v1\n" + request.Settings.SessionId.ToString("N") + "\n" + request.BoundPlan.BoundFingerprint;
     private static void ValidateMutableOwner(MmcRuntimeLaunchPlan launch) {
-        string expected = launch.Request.Paths.ResolveRelative(MmcPathRole.Runtime, "sessions/" + launch.Request.Settings.SessionId.ToString("N"));
-        MmcRuntimeFiles.SamePath(launch.MutableDirectories.SessionRoot, expected);
-        string marker = Path.Combine(expected, "owner.txt"); MmcInstancePaths.EnsureNoLinks(marker);
-        if (!File.Exists(marker) || new FileInfo(marker).Length > 4096 || File.ReadAllText(marker) != Owner(launch.Request)) Fail("MMC_RUNTIME_SESSION_PATH", "Owned mutable directory marker changed.");
-        MmcInstancePaths.CheckDirectoryRole(launch.MutableDirectories.TemporaryDirectory); MmcInstancePaths.CheckDirectoryRole(launch.MutableDirectories.ExtractDirectory);
+        var request=launch.Request;
+        var expected=MmcSessionRuntimeDirectories.Paths(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,launch.RuntimeBinding,request.RuntimeAuthority);
+        MmcRuntimeFiles.SamePath(launch.MutableDirectories.SessionRoot,expected.SessionRoot);MmcRuntimeFiles.SamePath(launch.MutableDirectories.TemporaryDirectory,expected.TemporaryDirectory);MmcRuntimeFiles.SamePath(launch.MutableDirectories.ExtractDirectory,expected.ExtractDirectory);
+        MmcSessionRuntimeDirectories.ValidateLaunch(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,launch.RuntimeBinding,request.RuntimeAuthority);
     }
     private static void ValidateGameAssets(MmcRuntimeLaunchRequest request, string view) {
         string actual = Path.GetFullPath(request.Directories.GameAssetsRoot);

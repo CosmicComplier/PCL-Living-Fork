@@ -24,6 +24,7 @@ public static class MmcLaunch {
     // but cannot replace process creation, the session receipt, or Java pinning.
     internal static Action<Guid, Process> ProcessCreated { get; set; }
     internal static Func<MmcJavaPinStore> JavaPins { get; set; } = () => ModJava.MmcPins;
+    internal static Func<MmcMutableRuntimeAuthority> MutableRuntimeAuthorityFactory { get; set; } = () => MmcMutableRuntimeAuthority.Default;
     internal static Func<ModMinecraft.McInstance, MmcLaunchJavaSelection, bool> ConfirmVariantAdoption { get; set; } = (_, selection) =>
         ModBase.RunInUiWait(() => ModMain.MyMsgBox("此实例尚未使用 Java " + selection.RuntimeJava.Major +
             "。是否按整合包声明配置它并启动？", "配置 Java 环境", "配置并启动", "取消") == 1);
@@ -134,11 +135,12 @@ public static class MmcLaunch {
             var settings = preferences.RuntimeSettings with {
                 ExtraGameTokens = preferences.RuntimeSettings.ExtraGameTokens.Concat(options.ExtraGameArgs).ToImmutableArray()
             };
+            var runtimeAuthority=MutableRuntimeAuthorityFactory();
             var request = new MmcRuntimeLaunchRequest(prepared.Definition, prepared.BoundPlan, prepared.Paths,
                 prepared.Targets.Select(value => new MmcRuntimeArtifactTarget(value.ArtifactKey, value.TargetRelativePath, value.ActualPath)).ToImmutableArray(),
                 java.RuntimeJava, settings, account,
                 new(prepared.Directories.ViewKey, prepared.Directories.NativeDirectory, prepared.Directories.AssetsRoot, prepared.Directories.GameAssetsRoot),
-                Support("JavaWrapper.jar"), Support("MmcExactBridge.jar"));
+                Support("JavaWrapper.jar"), Support("MmcExactBridge.jar")){RuntimeAuthority=runtimeAuthority};
             try {
                 // The named admission mutex is thread-affine. Block only this worker while the
                 // pure runtime reader finishes, retaining the same thread through Process.Start.
@@ -162,7 +164,7 @@ public static class MmcLaunch {
                 token.ThrowIfCancellationRequested();
                 session = MmcSessions.Launch(admission, new(prepared.Definition.InstanceId, prepared.Definition.Generation, runtime.RuntimeInputFingerprint,
                     MmcSessions.ObserveExecutable(java.Java.JavaExePath), MmcSessions.ObserveExecutable(Environment.ProcessPath!), runtime.CreateStartInfo(), prepared.Paths.GameRootLeaf) {
-                        SessionId = sessionId, RuntimeBinding = new(prepared.BoundPlan.BoundFingerprint)
+                        SessionId = sessionId, RuntimeBinding = runtime.RuntimeBinding,RuntimeAuthority=runtimeAuthority
                     }, () => {
                         token.ThrowIfCancellationRequested();
                         MmcInstanceBackend<ModNet.NetFile>.ValidatePreparedLaunch(admission, prepared);
@@ -176,7 +178,7 @@ public static class MmcLaunch {
                 if (runtime is not null && session is null) {
                     try {
                         using var admission = MmcAdmissionGate.Acquire(prepared.Paths.InstanceRoot, prepared.Definition.InstanceId, TimeSpan.Zero);
-                        MmcSessionRuntimeDirectories.AbandonUnlaunched(admission, sessionId, new(prepared.BoundPlan.BoundFingerprint));
+                        MmcSessionRuntimeDirectories.AbandonUnlaunched(admission, sessionId, runtime.RuntimeBinding,runtimeAuthority);
                     } catch (Exception error) { Logger.Warn(error, "MMC 启动临时目录保留，等待会话恢复确认"); }
                 }
                 throw;

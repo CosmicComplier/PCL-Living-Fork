@@ -49,9 +49,14 @@ public sealed class MmcRuntimeAccountSnapshot {
 public sealed record MmcRuntimeLaunchRequest(MmcInstanceDefinition Definition, MmcBoundLaunchPlan BoundPlan,
     MmcInstancePaths Paths, ImmutableArray<MmcRuntimeArtifactTarget> Targets, MmcRuntimeJavaSnapshot Java,
     MmcRuntimeSettingsSnapshot Settings, MmcRuntimeAccountSnapshot Account, MmcRuntimeDirectorySnapshot Directories,
-    MmcRuntimeSupportArtifact? Wrapper = null, MmcRuntimeSupportArtifact? Bridge = null);
+    MmcRuntimeSupportArtifact? Wrapper = null, MmcRuntimeSupportArtifact? Bridge = null) {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public MmcMutableRuntimeAuthority? RuntimeAuthority { get; init; }
+}
 public sealed record MmcRuntimeInputObservation(string Identity, string ActualPath, string Sha256, long SizeBytes);
-public sealed record MmcRuntimeMutableDirectories(string SessionRoot, string TemporaryDirectory, string ExtractDirectory);
+public sealed record MmcRuntimeMutableDirectories(string SessionRoot, string TemporaryDirectory, string ExtractDirectory) {
+    public MmcSessionRuntimeBinding RuntimeBinding { get; init; } = null!;
+}
 
 /// <summary>No Start method: the existing instance/session admission service must revalidate and create the process.</summary>
 public sealed class MmcRuntimeLaunchPlan {
@@ -70,6 +75,7 @@ public sealed class MmcRuntimeLaunchPlan {
     public ImmutableArray<string> OrderedGameClasspath { get; }
     public ImmutableArray<MmcRuntimeInputObservation> Inputs { get; }
     public MmcRuntimeMutableDirectories MutableDirectories { get; }
+    public MmcSessionRuntimeBinding RuntimeBinding=>MutableDirectories.RuntimeBinding;
     public string NonSensitiveArgumentFingerprint { get; }
     public string RuntimeInputFingerprint { get; }
     internal MmcRuntimeLaunchPlan(MmcRuntimeLaunchRequest request, ImmutableArray<string> arguments,

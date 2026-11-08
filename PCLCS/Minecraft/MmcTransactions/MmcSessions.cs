@@ -30,7 +30,7 @@ public static class MmcSessions {
         string sessionHistory = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessionHistory/" + sessionId.ToString("N"));
         if (MmcInstancePaths.Attributes(sessionDirectory) is not null || MmcInstancePaths.Attributes(sessionHistory) is not null)
             throw new IOException("会话 ID 已被使用，不能覆盖原有会话记录。");
-        if (request.RuntimeBinding is { } runtimeBinding) MmcSessionRuntimeDirectories.ValidateLaunch(paths, sessionId, runtimeBinding);
+        if (request.RuntimeBinding is { } runtimeBinding) MmcSessionRuntimeDirectories.ValidateLaunch(paths,request.InstanceId,sessionId,runtimeBinding,request.RuntimeAuthority);
         string nonce = Guid.NewGuid().ToString("N");
         IMmcJavaSessionPin pin = acquireJavaPin(sessionId, request.JavaIdentity) ?? throw new IOException("Java 服务未返回保护租约。");
         bool durableIntent = false; Process? process = null;
@@ -39,7 +39,7 @@ public static class MmcSessions {
             ValidateCurrentDefinition(paths, request.InstanceId, request.DefinitionGeneration, request.GameRootLeaf);
             if (!SameExecutable(ObserveExecutable(request.LauncherIdentity.ExecutablePath), request.LauncherIdentity)) throw new IOException("宿主镜像身份已变化。");
             finalValidation();
-            if (request.RuntimeBinding is { } finalBinding) MmcSessionRuntimeDirectories.ValidateLaunch(paths, sessionId, finalBinding);
+            if (request.RuntimeBinding is { } finalBinding) MmcSessionRuntimeDirectories.ValidateLaunch(paths,request.InstanceId,sessionId,finalBinding,request.RuntimeAuthority);
             string directory = sessionDirectory; Directory.CreateDirectory(directory);
             MmcSessionReceipt receipt = new(1, sessionId, request.InstanceId, paths.VersionRoot, request.DefinitionGeneration,
                 request.RuntimeFingerprint, nonce, request.JavaIdentity, request.LauncherIdentity) { RuntimeBinding = request.RuntimeBinding };
@@ -54,7 +54,7 @@ public static class MmcSessions {
             MmcSessionProcessRegistration running = new(1, sessionId, hash, process.Id, process.StartTime.ToUniversalTime().Ticks, image);
             MmcDurableFiles.WriteRecord(Path.Combine(directory, "Running.record"), running);
             checkpoint?.Invoke(MmcSessionCheckpoint.RunningPersisted);
-            return new(receipt, running, hash, process, pin);
+            return new(receipt, running, hash, process, pin,request.RuntimeAuthority);
         } catch {
             if (durableIntent) pin.KeepForRecovery();
             else pin.CompleteVerifiedExit();
@@ -70,7 +70,7 @@ public static class MmcSessions {
     }
 
     public static MmcSessionResult Reconcile(MmcAdmissionLease lease, Guid sessionId, IMmcSessionProcessInspector inspector,
-        Action<MmcSessionReceipt> releaseVerifiedJavaPin) {
+        Action<MmcSessionReceipt> releaseVerifiedJavaPin,MmcMutableRuntimeAuthority? runtimeAuthority=null) {
         lease.AssertHeld(); ArgumentNullException.ThrowIfNull(inspector); ArgumentNullException.ThrowIfNull(releaseVerifiedJavaPin);
         MmcInstancePaths paths = MmcInstancePaths.Resolve(lease.VersionRoot);
         try {
@@ -80,14 +80,14 @@ public static class MmcSessions {
             MmcSessionProcessRegistration? running = ReadRunning(receipt, hash, directory);
             if (MmcInstancePaths.Attributes(Path.Combine(directory, "Exited.record")) is not null) {
                 ValidateExit(directory, receipt, hash);
-                MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt);
+                MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt,runtimeAuthority);
                 releaseVerifiedJavaPin(receipt); Archive(paths, directory, sessionId);
                 return new(sessionId, MmcSessionObservation.ProvenExited);
             }
             MmcSessionObservation observation = inspector.Inspect(receipt, running);
             if (observation != MmcSessionObservation.ProvenExited) return new(sessionId, observation, observation == MmcSessionObservation.Unknown ? "会话仍待确认，保持只读。" : null);
             WriteExit(directory, receipt, hash, "TrustedHostProcessObservation");
-            MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt);
+                MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt,runtimeAuthority);
             releaseVerifiedJavaPin(receipt); Archive(paths, directory, sessionId);
             return new(sessionId, MmcSessionObservation.ProvenExited);
         } catch (Exception ex) when (IsFailure(ex)) { return new(sessionId, MmcSessionObservation.Unknown, ex.Message); }
@@ -104,7 +104,7 @@ public static class MmcSessions {
         string.Equals(Path.GetFullPath(first.ExecutablePath), Path.GetFullPath(second.ExecutablePath), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     internal static void CompleteOwnedExit(MmcAdmissionLease lease, MmcSessionReceipt receipt, MmcSessionProcessRegistration registration,
-        string hash, Process process, IMmcJavaSessionPin pin, Action<MmcSessionCheckpoint>? checkpoint) {
+        string hash, Process process, IMmcJavaSessionPin pin, Action<MmcSessionCheckpoint>? checkpoint,MmcMutableRuntimeAuthority? runtimeAuthority=null) {
         lease.AssertHeld();
         if (lease.InstanceId != receipt.InstanceId || !string.Equals(lease.VersionRoot, receipt.CanonicalRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new IOException("会话退出与准入身份不一致。");
@@ -114,7 +114,7 @@ public static class MmcSessions {
         var persisted = ReadLaunching(lease, paths, receipt.SessionId, directory);
         if (persisted.Hash != hash || ReadRunning(receipt, hash, directory) != registration) throw new IOException("会话收据与运行租约不一致。");
         WriteExit(directory, receipt, hash, "OwnedProcessHandleExited"); checkpoint?.Invoke(MmcSessionCheckpoint.ExitedPersisted);
-        MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt);
+        MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt,runtimeAuthority);
         pin.CompleteVerifiedExit(); Archive(paths, directory, receipt.SessionId);
     }
 
@@ -204,14 +204,15 @@ public sealed class MmcRunningSession : IDisposable {
     public Process Process { get; }
     private readonly string hash;
     private readonly IMmcJavaSessionPin pin;
+    private readonly MmcMutableRuntimeAuthority? runtimeAuthority;
     private bool complete, disposed;
-    internal MmcRunningSession(MmcSessionReceipt receipt, MmcSessionProcessRegistration registration, string hash, Process process, IMmcJavaSessionPin pin) {
-        Receipt = receipt; Registration = registration; this.hash = hash; Process = process; this.pin = pin;
+    internal MmcRunningSession(MmcSessionReceipt receipt, MmcSessionProcessRegistration registration, string hash, Process process, IMmcJavaSessionPin pin,MmcMutableRuntimeAuthority? runtimeAuthority=null) {
+        Receipt = receipt; Registration = registration; this.hash = hash; Process = process; this.pin = pin;this.runtimeAuthority=runtimeAuthority;
     }
     public void CompleteVerifiedExit(MmcAdmissionLease lease, Action<MmcSessionCheckpoint>? checkpoint = null) {
         if (disposed) throw new ObjectDisposedException(nameof(MmcRunningSession));
         if (complete) return;
-        MmcSessions.CompleteOwnedExit(lease, Receipt, Registration, hash, Process, pin, checkpoint); complete = true;
+        MmcSessions.CompleteOwnedExit(lease, Receipt, Registration, hash, Process, pin, checkpoint,runtimeAuthority); complete = true;
     }
     public void Dispose() {
         if (disposed) return;
