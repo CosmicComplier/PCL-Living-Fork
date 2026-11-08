@@ -1,6 +1,7 @@
 // Independently authored fixtures. Host test suite retains its existing license.
 using System.Collections.Immutable;
 using System.Text.Json;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 using PCLLF.MMCC.Core;
 
 internal static class MmcProfileTests {
@@ -27,6 +28,7 @@ internal static class MmcProfileTests {
         yield return ("MMC Java candidate declarations retain discrete positive integers", JavaCandidates);
         yield return ("MMC metadata limits apply per item cumulatively and to input structure", MetadataBudgets);
         yield return ("MMC archive sizes components edges and JSON depth are bounded", StructureBudgets);
+        yield return ("MMC cumulative raw and logical prefix path budgets reject product-size allocation", PathBudgets);
         yield return ("MMC results survive source mutation and detached JSON document disposal", Immutability);
     }
 
@@ -193,6 +195,13 @@ internal static class MmcProfileTests {
         Error(Input(Pack(new { uid = "a", version = "1" }, new { uid = "b", version = "1" })), "MMC_COMPONENT_BUDGET", new() { MaxComponents = 1 });
         Error(Input(patches: new() { ["net.minecraft.json"] = "{\"uid\":\"net.minecraft\",\"description\":{\"nested\":{\"tooDeep\":true}}}" }), "MMC_JSON", new() { MaxDepth = 2 });
         Error(Input(patches: new() { ["net.minecraft.json"] = Patch("net.minecraft", requires: [new { uid = "a", equals = "1" }, new { uid = "b", equals = "1" }]) }), "MMC_DEPENDENCY_BUDGET", new() { MaxDependencyEdges = 1 });
+    }
+    private static void PathBudgets() {
+        Error(Input(), "MMC_PATH_BUDGET", new() { MaxTotalPathCharacters = 20 }); // metadata path is counted too
+        Error(Input(extra: [new("a/b/c/file")]), "MMC_PATH_BUDGET", new() { MaxLogicalPathCharacters = 25 });
+        // Repeated prefix construction is charged before allocating substrings,
+        // even when its logical directory node was already present.
+        Error(Input(extra: [new("repeat/deep/a"), new("repeat/deep/b")]), "MMC_PATH_BUDGET", new() { MaxLogicalPathCharacters = 60 });
     }
     private static void Immutability() {
         MmcPackageInput input = Input(patches: new() { ["net.minecraft.json"] = "{\"uid\":\"net.minecraft\",\"+jvmArgs\":[\"first\"]}" });

@@ -20,8 +20,9 @@ public static class MmcPackageReader {
         ValidateLimits(limits);
         List<MmcDiagnostic> diagnostics = [];
         try {
-            var entries = Index(input.Entries, limits, diagnostics);
-            var metadata = Metadata(input.Metadata, entries, limits);
+            long rawPathCharacters = 0;
+            var entries = Index(input.Entries, limits, diagnostics, ref rawPathCharacters);
+            var metadata = Metadata(input.Metadata, entries, limits, ref rawPathCharacters);
             string[] manifests = entries.Where(e => !e.Value.IsDirectory && e.Key.Split('/')[^1].Equals("mmc-pack.json", StringComparison.OrdinalIgnoreCase))
                 .Select(e => e.Key).ToArray();
             if (manifests.Length != 1) throw new MmcInputException("MMC_ROOT", "archive", manifests.Length == 0 ? "Missing mmc-pack.json." : "Multiple instance roots require explicit selection.");
@@ -151,26 +152,37 @@ public static class MmcPackageReader {
         requests.Add(new(uid, version, source));
     }
 
-    private static Dictionary<string, MmcArchiveEntry> Index(IReadOnlyList<MmcArchiveEntry> source, MmcReadLimits limits, List<MmcDiagnostic> diagnostics) {
+    private static Dictionary<string, MmcArchiveEntry> Index(IReadOnlyList<MmcArchiveEntry> source, MmcReadLimits limits, List<MmcDiagnostic> diagnostics, ref long rawPathCharacters) {
         if (source.Count > limits.MaxArchiveEntries) throw new MmcInputException("MMC_ARCHIVE_BUDGET", "archive", "Entry count exceeded.");
         Dictionary<string, MmcArchiveEntry> entries = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> aliasDiagnostics = new(StringComparer.OrdinalIgnoreCase);
         long total = 0;
+        long logicalPathCharacters = 0;
         foreach (MmcArchiveEntry entry in source) {
             if (entry is null) throw new MmcInputException("MMC_PATH", "archive", "Null archive entry.");
+            ConsumeRawPath(entry.Path, ref rawPathCharacters, limits.MaxTotalPathCharacters);
             string path = Normalize(entry.Path, entry.IsDirectory);
             if (entry.UncompressedSize < 0 || entry.UncompressedSize > limits.MaxEntryBytes || total > limits.MaxArchiveBytes - entry.UncompressedSize)
                 throw new MmcInputException("MMC_ARCHIVE_BUDGET", path, "Declared unpacked size exceeded.");
             total += entry.UncompressedSize;
+            ConsumeLogical(path.Length);
             AddNode(path, entry);
             int separator = path.LastIndexOf('/');
             while (separator >= 0) {
+                // Charge even repeated prefix candidates before allocating the
+                // substring, bounding both retained nodes and repeated work.
+                ConsumeLogical(separator);
                 string parent = path[..separator];
                 AddNode(parent, new(parent, 0, true));
                 separator = path.LastIndexOf('/', separator - 1);
             }
         }
         return entries;
+        void ConsumeLogical(int characters) {
+            if (logicalPathCharacters > limits.MaxLogicalPathCharacters - characters)
+                throw new MmcInputException("MMC_PATH_BUDGET", "archive", "Cumulative logical path/prefix character budget exceeded.");
+            logicalPathCharacters += characters;
+        }
         void AddNode(string path, MmcArchiveEntry entry) {
             if (entries.TryGetValue(path, out MmcArchiveEntry? existing)) {
                 if (!entry.IsDirectory || !existing.IsDirectory)
@@ -187,12 +199,13 @@ public static class MmcPackageReader {
     }
 
     private static Dictionary<string, string> Metadata(IReadOnlyDictionary<string, string> source,
-        Dictionary<string, MmcArchiveEntry> entries, MmcReadLimits limits) {
+        Dictionary<string, MmcArchiveEntry> entries, MmcReadLimits limits, ref long rawPathCharacters) {
         if (source.Count > limits.MaxArchiveEntries) throw new MmcInputException("MMC_METADATA_BUDGET", "metadata", "Metadata count exceeded.");
         Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
         long total = 0;
         UTF8Encoding strictUtf8 = new(false, true);
         foreach ((string path, string content) in source) {
+            ConsumeRawPath(path, ref rawPathCharacters, limits.MaxTotalPathCharacters);
             string normalized = Normalize(path, false);
             if (content is null || !entries.TryGetValue(normalized, out MmcArchiveEntry? entry) || entry.IsDirectory)
                 throw new MmcInputException("MMC_METADATA_SOURCE", normalized, "Metadata has no matching archive file.");
@@ -242,9 +255,16 @@ public static class MmcPackageReader {
         return value;
     }
 
+    private static void ConsumeRawPath(string path, ref long total, long limit) {
+        if (string.IsNullOrEmpty(path)) throw new MmcInputException("MMC_PATH", "archive", "Empty path.");
+        if (total > limit - path.Length) throw new MmcInputException("MMC_PATH_BUDGET", "archive", "Cumulative source path character budget exceeded.");
+        total += path.Length;
+    }
+
     private static void ValidateLimits(MmcReadLimits limits) {
         if (limits.MaxArchiveEntries < 1 || limits.MaxComponents < 1 || limits.MaxDependencyEdges < 1 || limits.MaxDepth is < 1 or > 256 ||
-            limits.MaxMetadataBytes < 1 || limits.MaxTotalMetadataBytes < 1 || limits.MaxArchiveBytes < 1 || limits.MaxEntryBytes < 1)
+            limits.MaxMetadataBytes < 1 || limits.MaxTotalMetadataBytes < 1 || limits.MaxArchiveBytes < 1 || limits.MaxEntryBytes < 1 ||
+            limits.MaxTotalPathCharacters < 1 || limits.MaxLogicalPathCharacters < 1)
             throw new ArgumentOutOfRangeException(nameof(limits), "Limits must be positive and depth must be within 1..256.");
     }
 }

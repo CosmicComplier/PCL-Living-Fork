@@ -21,6 +21,8 @@ public sealed record MmcReadLimits {
     public long MaxTotalMetadataBytes { get; init; } = 128L * 1024 * 1024;
     public long MaxArchiveBytes { get; init; } = 64L * 1024 * 1024 * 1024;
     public long MaxEntryBytes { get; init; } = 4L * 1024 * 1024 * 1024;
+    public long MaxTotalPathCharacters { get; init; } = 16L * 1024 * 1024;
+    public long MaxLogicalPathCharacters { get; init; } = 32L * 1024 * 1024;
 }
 
 public enum MmcDiagnosticSeverity { Information, Warning, Error }
@@ -53,6 +55,7 @@ public sealed record MmcPackage(
     ImmutableArray<MmcMetadataRequest> MissingMetadata,
     ImmutableArray<MmcArchiveEntry> ArchiveEntries);
 
+/// <summary>Read diagnostics only. HasErrors=false is neither a complete semantic profile nor install/launch authorization.</summary>
 public sealed record MmcParseResult(MmcPackage? Package, ImmutableArray<MmcDiagnostic> Diagnostics) {
     public bool HasErrors => Diagnostics.Any(x => x.Severity == MmcDiagnosticSeverity.Error);
 }

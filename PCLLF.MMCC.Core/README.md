@@ -7,10 +7,10 @@
 实现范围：
 
 - 唯一实例根；可选 `instance.cfg`；不依赖 ZIP 目录条目的 `minecraft` / `.minecraft` 选择；源条目原始拼写保留。
-- Windows 逻辑路径树：纯目录大小写别名允许并诊断；重复叶文件、文件/目录角色冲突、隐式父文件冲突、穿越、设备名和源包伪造的 LF 管理路径拒绝。路径最多 128 段、32767 字符，每段最多 255 字符；逻辑节点最多条目预算的两倍。这些是输入检查，实际路径授权和真实解压预算仍归宿主。
+- Windows 逻辑路径树：纯目录大小写别名允许并诊断；重复叶文件、文件/目录角色冲突、隐式父文件冲突、穿越、设备名和源包伪造的 LF 管理路径拒绝。路径最多 128 段、32767 字符，每段最多 255 字符；逻辑节点最多条目预算的两倍。源条目与元数据键累计最多 16 Mi 字符，逻辑文件及父目录前缀的构造累计最多 32 Mi 字符，在生成前缀前扣计，重复前缀也计入。这些是输入检查，实际路径授权和真实解压预算仍归宿主。
 - 清单 formatVersion 1；组件 UID 唯一，保留 requested / cached / local effective version；important / dependencyOnly 不因 disabled 被静默移除。
 - 本地 `patches/<uid>.json` 的内容 UID 校验，兼容 `fileId`，严格检查重复 JSON 键、字段类型、依赖/冲突和已知能力。启用的未知关键能力拒绝；禁用来源保留并告警，启用前须重新验证。
-- 保留 mainClass、mainJar、assetIndex、参数数组、libraries / +libraries / mavenFiles、Java 离散候选与推荐名。嵌套下载、rules、extract 字段有显式读取表；数组 token 不再分词或去重。
+- 保留 mainClass、mainJar、assetIndex、参数数组、libraries / +libraries / mavenFiles、Java 离散候选与推荐名。嵌套下载、rules、extract 字段有显式读取表；数组 token 不再分词或去重。有嵌套库配置时附 `MMC_DEFERRED_LIBRARY_SEMANTICS` 信息诊断：本层仅检查形状和已注册字段，平台筛选、classifier 决策、解压和实际启动语义仍待 P2，`HasErrors=false` 不能作为支持它们的证明。
 - 基础依赖检查包括精确版本、循环、禁用提供者、冲突和缺失请求；已有组件保持作者顺序。
 - 元数据逐项与累计、条目/组件/依赖/深度/声明制品预算。源文本摘要是传入文本的 UTF-8 SHA256，不冒充原始 ZIP 或未解码原件摘要。
 
@@ -32,7 +32,7 @@ cfg 只支持明确的 scalar 子集，未宣称完整 Qt/QSettings：没有 Con
 | [Prism INIFile，固定 899d2f3](https://github.com/PrismLauncher/PrismLauncher/blob/899d2f3957215a09fe398a8a8cbb8a8a9c619968/launcher/settings/INIFile.cpp) | 确认旧格式与 ConfigVersion 分流；自有 scalar 状态机和保守拒绝策略，MMC-01/20 |
 | [Windows 文件命名规则](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | 普通设备名、COM/LPT 上标数字与 CONIN$/CONOUT$ 防护；未借此替代宿主路径边界 |
 
-`tests/PCLLF.Migration.Tests/MmcProfileTests.cs` 使用自有小型输入，实际 ProjectReference 由集成分支接入。23 个聚合用例覆盖首行/转义、可选 cfg、目录别名、重复/路径/角色冲突、JSON 歧义、local 版本/禁用、依赖、未知能力、预算与结果不可变。没有提交 GTNH 包、上游源代码或完整游戏元数据。
+`tests/PCLLF.Migration.Tests/MmcProfileTests.cs` 使用自有小型输入，实际 ProjectReference 由集成分支接入。24 个聚合用例覆盖首行/转义、可选 cfg、目录别名、重复/路径/角色冲突、JSON 歧义、local 版本/禁用、依赖、未知能力、累计路径/元数据预算与结果不可变。没有提交 GTNH 包、上游源代码或完整游戏元数据。
 
 P0 小边界实验先在忽略的 artifacts 中验证内容输入、来源摘要、有序不可变输出与宿主补齐回传，不访问玩家数据。之后才建立本项目。正式 parser 已只读检查本机两份官方 GTNH 2.9.0 原包：Java 8 的 18148 条目 / 3 组件 / 3 个缺失元数据请求；Java 17–26 的 18157 条目 / 5 本地组件 / 0 请求；各有 6 个纯目录别名告警，无解析错误。该记录仅证明源读取，未验证下载、最终合成、安装或游戏。原包身份与后续完整验收记录由宿主的 P0 样本基线维护。
 

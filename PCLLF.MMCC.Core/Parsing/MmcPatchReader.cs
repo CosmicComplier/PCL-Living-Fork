@@ -30,6 +30,7 @@ internal static class MmcPatchReader {
         uid ??= oldId;
         ValidateUid(uid!, source);
         string? version = MmcJson.String(root, "version", source);
+        bool deferredLibrarySemantics = false;
         foreach (JsonProperty field in root.EnumerateObject()) {
             if (!Fields.Contains(field.Name)) {
                 Unsupported(field.Name, source, enabled, diagnostics);
@@ -47,12 +48,12 @@ internal static class MmcPatchReader {
                             MmcJson.Fail(source, "compatibleJavaMajors requires positive integer majors.");
                     break;
                 case "mainJar":
-                    if (field.Value.ValueKind != JsonValueKind.Null) Library(field.Value, source, enabled, diagnostics);
+                    if (field.Value.ValueKind != JsonValueKind.Null) Library(field.Value, source, enabled, diagnostics, ref deferredLibrarySemantics);
                     break;
                 case "libraries": case "+libraries": case "mavenFiles":
                     if (field.Value.ValueKind != JsonValueKind.Array) MmcJson.Fail(source, $"{field.Name} must be an array.");
                     if (field.Value.GetArrayLength() > limits.MaxArchiveEntries) MmcJson.Fail(source, "Declared artifact budget exceeded.");
-                    foreach (JsonElement library in field.Value.EnumerateArray()) Library(library, source, enabled, diagnostics);
+                    foreach (JsonElement library in field.Value.EnumerateArray()) Library(library, source, enabled, diagnostics, ref deferredLibrarySemantics);
                     break;
                 case "assetIndex":
                     if (field.Value.ValueKind is not (JsonValueKind.Object or JsonValueKind.Null)) MmcJson.Fail(source, "assetIndex must be an object or null.");
@@ -68,13 +69,17 @@ internal static class MmcPatchReader {
                     break;
             }
         }
+        if (deferredLibrarySemantics) diagnostics.Add(new("MMC_DEFERRED_LIBRARY_SEMANTICS", MmcDiagnosticSeverity.Information, source,
+            "Library nested shapes are checked and retained; platform filtering, classifier resolution, extraction and execution semantics require the P2 compiler."));
         return new(source, Hash(text), uid!, version,
             Requirements(root, "requires", source), Requirements(root, "conflicts", source), MmcJson.Fields(root));
     }
 
-    private static void Library(JsonElement value, string source, bool enabled, List<MmcDiagnostic> diagnostics) {
+    private static void Library(JsonElement value, string source, bool enabled, List<MmcDiagnostic> diagnostics, ref bool deferredLibrarySemantics) {
         if (value.ValueKind != JsonValueKind.Object) MmcJson.Fail(source, "Library must be an object.");
         string name = MmcJson.String(value, "name", source, true)!;
+        if (value.EnumerateObject().Any(p => p.Name is "rules" or "downloads" or "natives" or "extract"))
+            deferredLibrarySemantics = true;
         string[] coordinate = name.Split('@')[0].Split(':');
         if (coordinate.Length is < 3 or > 4 || coordinate.Any(string.IsNullOrWhiteSpace)) MmcJson.Fail(source, "Invalid library coordinate.");
         foreach (JsonProperty field in value.EnumerateObject()) {
