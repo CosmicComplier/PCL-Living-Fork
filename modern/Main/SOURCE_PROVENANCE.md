@@ -92,8 +92,11 @@ The LF host adapters, archive audit tools and integration tests retain the
 repository's applicable existing license. Root `LICENCE`, third-party notices
 and the licenses of input packages are unchanged. A future binary distribution
 must supply the corresponding MPL-covered Core sources and notices, including
-when the assembly is bundled into a single executable. Parsing foundations do
-not yet enable the new managed MMC installation or game-launch path.
+when the assembly is bundled into a single executable. The managed MMC host
+installation, launch and repair path is now connected; actual acceptance and
+remaining capability boundaries are tracked in `docs/mmc-gtnh-acceptance.md`
+and `docs/mmc-completion-ledger.md`. Core parsing alone still grants no host
+filesystem or process authority.
 
 ## Native build inputs and preserved optional mode
 

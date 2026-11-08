@@ -158,7 +158,9 @@
         "mmc-import-publication",
         "mmc-package-revision",
         "mmc-package-scope",
-        "mmc-package-update"
+        "mmc-package-update",
+        "mmc-standard-managed",
+        "mmc-legacy-adoption"
       ],
       "windows_scripts": [],
       "world_checks": false,
@@ -326,6 +328,16 @@
       "groups": ["mmc-package-update"], "windows_scripts": [],
       "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
     },
+    "mmc-standard-managed-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-standard-managed"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-legacy-adoption-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-legacy-adoption"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
     "mmc-package-stage-tests": {
       "full": false, "product_build": false, "migration_run": true,
       "groups": ["mmc-archive", "mmc-backend"], "windows_scripts": [],
@@ -384,7 +396,9 @@
         "mmc-import-publication",
         "mmc-package-revision",
         "mmc-package-scope",
-        "mmc-package-update"
+        "mmc-package-update",
+        "mmc-standard-managed",
+        "mmc-legacy-adoption"
       ],
       "windows_scripts": [
         "Test-Release",

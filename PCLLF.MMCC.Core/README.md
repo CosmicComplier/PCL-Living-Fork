@@ -1,8 +1,8 @@
 # MMC metadata core
 
-本目录是按 [实例兼容设计](../docs/mmc-instance-design.md) 独立编写的 P1 读取与 P2 逻辑编译核心，使用 C# / `net10.0`。它接受宿主提供的条目描述与已解码的 UTF-8 元数据；不打开 ZIP、读取本机路径、联网、探测 Java、读取设置或账号、执行命令。没有 PCLCS、Main、WPF 或第三方包依赖。
+本目录是按 [实例兼容设计](../docs/mmc-instance-design.md) 独立编写的读取、组件解析、逻辑编译与定义绑定核心，使用 C# / `net10.0`。它接受宿主提供的条目描述与已解码的 UTF-8 元数据；不打开 ZIP、读取本机路径、联网、探测 Java、读取设置或账号、执行命令。没有 PCLCS、Main、WPF 或第三方包依赖。
 
-调用 `MmcPackageReader.Parse(MmcPackageInput, MmcReadLimits?)`，取得不可变 `MmcParseResult`、来源摘要、原组件顺序、保留的字段、缺失元数据请求与结构化诊断。`Package != null` 仍可能伴随错误，调用者必须检查 `HasErrors`。**解析成功不表示已经形成可安装/可执行的配置。** 此版本没有安装/启动授权 API。
+调用 `MmcPackageReader.Parse(MmcPackageInput, MmcReadLimits?)`，取得不可变 `MmcParseResult`、来源摘要、原组件顺序、保留的字段、缺失元数据请求与结构化诊断。`Package != null` 仍可能伴随错误，调用者必须检查 `HasErrors`。**解析成功不表示已经形成可安装/可执行的配置。** Core 另提供编译与不可变绑定结果；实际路径、文件事务和启动会话的授权由宿主执行。
 
 实现范围：
 
@@ -20,7 +20,7 @@ cfg 只支持明确的 scalar 子集，未宣称完整 Qt/QSettings：没有 Con
 
 `MmcComponentResolver.Resolve` 根据固定来源的元数据快照返回缺失批次，宿主取得内容后再次调用；支持推荐索引、依赖插入和有边界的自动依赖重选。`MmcProfileCompiler.Compile` 生成带来源的入口、参数、Java 策略与逻辑制品计划，保持作者顺序和本地覆盖。logging 是独立辅助制品，主 JAR 位于普通 classpath 之后，下载专用制品不混入 classpath；平台/native 与 Java 候选按显式兼容配置计算。
 
-Core 本身仍不执行远端获取、制品/原生库物化、文件事务、会话、安装、启动或修复。逻辑编译结果须由宿主校验路径、物化摘要并通过事务与会话门禁后使用，不能仅据 `MissingMetadata` 为空或编译通过宣称游戏已可运行。实际 GTNH 实机验收继续留在后续阶段。
+Core 本身仍不执行远端获取、制品/原生库物化、文件事务、会话、安装、启动或修复。逻辑编译结果须由宿主校验路径、物化摘要并通过事务与会话门禁后使用，不能仅据 `MissingMetadata` 为空或编译通过宣称游戏已可运行。当前宿主已接入受管理 MMC 导入、启动和修复；GTNH 2.9.0 Java 8 与 Java 21 的真实世界闭环及未测范围见[验收记录](../docs/mmc-gtnh-acceptance.md)，其余功能状态见[全任务清单](../docs/mmc-completion-ledger.md)。
 
 ## 机制依据与独立实现
 

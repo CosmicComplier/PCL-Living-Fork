@@ -55,6 +55,7 @@ internal static class Program
         ["mmc-move-ui"] = MmcMoveUiChecks.Run,
         ["mmc-repair-ui"] = MmcRepairUiChecks.Run,
         ["mmc-repair-admission"] = MmcRepairUiChecks.RunAdmission,
+        ["mmc-legacy-adoption-ui"] = MmcLegacyAdoptionUiChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
