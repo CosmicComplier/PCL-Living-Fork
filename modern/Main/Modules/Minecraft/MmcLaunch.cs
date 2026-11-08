@@ -156,7 +156,8 @@ public static class MmcLaunch {
                     throw new IOException("MMC 启动链校验失败：" + string.Join("；", authority.Diagnostics.Select(value => value.Message)));
                 var retainedJava = ModJava.GetManagedJavaRequirement(instance, authority, login.Type == "Nide");
                 if (!retainedJava.Range.Contains(java.Java.Version))
-                    throw new IOException("选定的 Java 不满足尚未被完整启动链证明替代的约束：" + retainedJava.Range);
+                    throw new IOException("选定的 Java 不满足尚未被完整启动链证明替代的约束：" + retainedJava.Range +
+                        string.Concat(authority.Diagnostics.Where(value => value.Severity == MmcDiagnosticSeverity.Warning).Select(value => "；" + value.Message)));
                 if (authority.HasAuthority) ModLaunch.McLaunchLog("MMC 自定义启动链已核对：" + string.Join("、", authority.Proof.Targets.Select(value => value.ComponentUid).Distinct()));
                 token.ThrowIfCancellationRequested();
                 session = MmcSessions.Launch(admission, new(prepared.Definition.InstanceId, prepared.Definition.Generation, runtime.RuntimeInputFingerprint,

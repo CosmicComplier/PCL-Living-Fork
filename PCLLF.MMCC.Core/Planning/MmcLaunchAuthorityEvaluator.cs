@@ -94,8 +94,15 @@ public static class MmcLaunchAuthorityEvaluator {
                     var candidate = MmcArtifactRules.Library(declaration, component, MmcArtifactRole.Classpath, plan.Environment, source, diagnostics);
                     if (candidate is not null) candidates.Add(candidate);
                 }
-                var final = plan.Classpath.Concat(plan.NativeArtifacts).Select(a => a.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                return candidates.Any(c => c.Role == MmcArtifactRole.Classpath) && candidates.All(c => final.Contains(c.Key)) &&
+                var final = plan.Classpath.Concat(plan.NativeArtifacts).ToArray();
+                bool Effective(MmcArtifactReference candidate) => final.Any(selected => selected.Key == candidate.Key ||
+                    selected.Role == candidate.Role && selected.Coordinate is { } selectedCoordinate && candidate.Coordinate is { } declaredCoordinate &&
+                    selectedCoordinate.Identity == declaredCoordinate.Identity && selectedCoordinate.Extension == declaredCoordinate.Extension &&
+                    MmcArtifactRules.CompareVersions(selectedCoordinate.Version, declaredCoordinate.Version) >= 0);
+                // The compiler's library slots select the higher Maven version. Its
+                // exact final inputs were checked above; superseded declarations do
+                // not require adding an obsolete JAR back to the live classpath.
+                return candidates.Any(c => c.Role == MmcArtifactRole.Classpath) && candidates.All(Effective) &&
                     plan.Classpath.Any(a => a.ComponentUid == component.Uid && a.SourceRevision == component.Patch.ContentSha256 && a.Role == MmcArtifactRole.Classpath);
             }
         } catch (MmcInputException error) { diagnostics.Add(new("MMC_AUTHORITY_CONSERVATIVE", MmcDiagnosticSeverity.Warning, error.SourcePath, error.Message)); return new(null, diagnostics.ToImmutableArray()); }

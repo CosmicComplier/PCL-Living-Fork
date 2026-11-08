@@ -15,6 +15,7 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC binder rejects arbitrary extra facts unowned targets and prior-lock omissions", Ownership);
         yield return ("MMC aggregate launch proof accepts a sourced local final entry while retaining target-specific heuristics", AggregateAuthority);
         yield return ("MMC aggregate launch proof remains conservative for missing class locks candidates or bound agents", ConservativeAuthority);
+        yield return ("MMC aggregate launch proof follows a bound higher-version library replacement without requiring the obsolete JAR", SupersededLibraryAuthority);
         yield return ("MMC binder preserves published baseline authority across explicit candidate drafts", PublishedAuthority);
         yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
         yield return ("MMC binder follows virtual-first asset layout without unrequested resource writes", BothAssetLayouts);
@@ -28,12 +29,13 @@ internal static class MmcLaunchAuthorityTests {
         ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
     private static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static string View => new('9', 64);
-    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false, bool storedOverride = false) {
+    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false, bool storedOverride = false, bool supersededLibrary = false) {
         Dictionary<string, object?> patch = new() {
             ["uid"] = "net.minecraft", ["version"] = "1", ["mainClass"] = "fixture.Main",
             ["mainJar"] = new Dictionary<string, object?> { ["name"] = "fixture:main:1:client", ["MMC-hint"] = "local" },
             ["libraries"] = new object[] { new Dictionary<string, object?> { ["name"] = "fixture:library:1", ["MMC-hint"] = "local" } }
         };
+        if (supersededLibrary) patch["libraries"] = ((object[])patch["libraries"]!).Append(new { name = "fixture:shared:1" }).ToArray();
         if (native) patch["+libraries"] = new[] { new { name = "fixture:native:1", natives = new { windows = "native-64" }, extract = new { exclude = new[] { "META-INF/" } } } };
         if (assetJson is not null) patch["assetIndex"] = new { id = "fixture", url = "https://example.invalid/fixture.json" };
         if (mavenDuplicates) patch["mavenFiles"] = new[] { new { name = "fixture:tool:1" }, new { name = "fixture:tool:1" } };
@@ -42,6 +44,11 @@ internal static class MmcLaunchAuthorityTests {
         string component = JsonSerializer.Serialize(patch);
         Dictionary<string, string> content = new() { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = component };
         if (lateEntrypoint) content["patches/bootstrap.json"] = "{\"uid\":\"bootstrap\",\"version\":\"1\",\"mainClass\":\"fixture.Boot\",\"+jvmArgs\":[\"-Djava.system.class.loader=fixture.Loader\"],\"+tweakers\":[\"fixture.Tweaker\"]}";
+        if (supersededLibrary) {
+            var boot = System.Text.Json.Nodes.JsonNode.Parse(content["patches/bootstrap.json"])!.AsObject();
+            boot["libraries"] = JsonSerializer.SerializeToNode(new[] { new { name = "fixture:shared:2" } });
+            content["patches/bootstrap.json"] = boot.ToJsonString();
+        }
         var parsed = MmcPackageReader.Parse(new(content.Select(c => new MmcArchiveEntry(c.Key)).ToArray(), content));
         var resolved = MmcComponentResolver.Resolve(parsed, [],overrides:storedOverride ? [new("net.minecraft",Enabled:true)] : []);
         Require(resolved.IsComplete, "Fixture resolution failed.");
@@ -272,6 +279,24 @@ internal static class MmcLaunchAuthorityTests {
             "Aggregate proof lost local final entry/classloader/tweaker structure or widened retired heuristics.");
         var differentJava = MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host() with { JavaIdentitySha256 = Hash("other Java identity") }, ClassObservations(fixture));
         Require(differentJava.HasAuthority && differentJava.Proof!.ProofFingerprint != proof.Proof!.ProofFingerprint, "Authority fingerprint did not bind Java identity.");
+    }
+    private static void SupersededLibraryAuthority() {
+        var fixture = Create(declaredJava: true, lateEntrypoint: true, supersededLibrary: true);
+        var bound = Good(Bind(fixture));
+        var selected = fixture.Plan.Classpath.Single(value => value.Coordinate?.Artifact == "shared");
+        Require(selected.Coordinate!.Version == "2" && !fixture.Plan.Classpath.Any(value => value.Coordinate?.Artifact == "shared" && value.Coordinate.Version == "1"),
+            "Fixture did not resolve the ordinary version replacement.");
+        var observations = ClassObservations(fixture);
+        var proof = MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host(), observations);
+        Require(proof.HasAuthority && proof.Retires("net.minecraft", MmcRetiredHeuristicKind.BuiltinMinecraftJavaInference),
+            "A bound higher-version library replacement still required the obsolete JAR: " + string.Join(";", proof.Diagnostics.Select(value => value.Message)));
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host(),
+            observations.Where(value => value.ArtifactKey != selected.Key).ToArray()).HasAuthority,
+            "Replacement authority omitted its ordered JAR observation.");
+        int replacementIndex = Enumerable.Range(0, observations.Length).Single(index => observations[index].ArtifactKey == selected.Key);
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host(),
+            observations.SetItem(replacementIndex, observations[replacementIndex] with { ArtifactSha256 = Hash("unrelated replacement") })).HasAuthority,
+            "Replacement authority accepted different bytes.");
     }
     private static void ConservativeAuthority() {
         var fixture = Create(declaredJava: true);
