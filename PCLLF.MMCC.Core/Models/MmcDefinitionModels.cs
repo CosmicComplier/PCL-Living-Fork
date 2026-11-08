@@ -33,7 +33,9 @@ public sealed record MmcInstanceDefinition(int SchemaVersion, string ManagementK
     ImmutableArray<MmcStoredComponentOverride> ComponentOverrides,
     ImmutableArray<MmcArtifactInventoryRecord> ArtifactInventory, ImmutableArray<MmcArtifactLockRecord> ArtifactLocks,
     MmcInstalledProjection? InstalledProjection = null, Guid? ParentInstanceId = null,
-    MmcExternalBundleReference? AuthorFileBaseline = null);
+    MmcExternalBundleReference? AuthorFileBaseline = null) {
+    public ImmutableArray<MmcDerivedOutputRecord> DerivedOutputs { get; init; } = [];
+}
 public enum MmcDefinitionValidationMode { Draft, Published }
 public enum MmcDefinitionReadStatus { Valid, Invalid, Unsupported }
 public sealed record MmcDefinitionReadResult(MmcInstanceDefinition? Definition, MmcDefinitionReadStatus Status,

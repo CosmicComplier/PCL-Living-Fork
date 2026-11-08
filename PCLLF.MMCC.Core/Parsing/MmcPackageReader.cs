@@ -7,6 +7,12 @@ namespace PCLLF.MMCC.Core;
 
 /// <summary>Pure source parsing. A successful result is not permission to install or launch.</summary>
 public static class MmcPackageReader {
+    internal static ImmutableArray<MmcDiagnostic> InspectPaths(IReadOnlyList<MmcArchiveEntry> entries, MmcReadLimits limits) {
+        List<MmcDiagnostic> diagnostics = [];
+        long pathCharacters = 0;
+        Index(entries, limits, diagnostics, ref pathCharacters);
+        return diagnostics.ToImmutableArray();
+    }
     private static readonly HashSet<string> ComponentFields = new(StringComparer.Ordinal) {
         "uid", "version", "disabled", "dependencyOnly", "important", "cachedVersion", "cachedName", "cachedRequires",
         "cachedConflicts", "cachedVolatile", "cachedOrder"

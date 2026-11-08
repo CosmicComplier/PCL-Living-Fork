@@ -87,7 +87,8 @@ public static class MmcDefinitionCodec {
             RequireArray(definition.ComponentOverrides, limits.MaxComponents);
             RequireArray(definition.ArtifactInventory, limits.MaxArchiveEntries);
             RequireArray(definition.ArtifactLocks, limits.MaxArchiveEntries);
-            estimated += 512L * (sources.MetadataRecords.Length + definition.ComponentOverrides.Length + definition.ArtifactInventory.Length + definition.ArtifactLocks.Length);
+            RequireArray(definition.DerivedOutputs, limits.MaxArchiveEntries * 2L);
+            estimated += 512L * (sources.MetadataRecords.Length + definition.ComponentOverrides.Length + definition.ArtifactInventory.Length + definition.ArtifactLocks.Length + definition.DerivedOutputs.Length);
             if (estimated > limits.MaxMetadataBytes) throw new MmcInputException("MMC_DEFINITION_BUDGET", "definition", "Definition record budget exceeded; large file baselines belong in external bundles.");
             HashSet<string> metadataKeys = new(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, string> sourceObjects = new(StringComparer.OrdinalIgnoreCase);
@@ -173,6 +174,7 @@ public static class MmcDefinitionCodec {
                 targets[item.TargetRelativePath] = item;
             }
             if (inventory.Values.Any(item => item.State == MmcArtifactAdoptionState.Adopted && !locks.ContainsKey(item.ArtifactKey))) MmcJson.Fail("definition", "Adopted inventory record has no immutable lock.");
+            ValidateDerived(definition, inventory, locks, limits, Text);
             if (definition.AuthorFileBaseline is { } baseline) {
                 CheckHash(baseline.ContentSha256); Text(baseline.ObjectRelativePath); ObjectPath(baseline.ObjectRelativePath, "PCL/MmcSource/" + sources.BundleSha256.ToLowerInvariant() + "/");
                 if (baseline.FormatVersion != 1 || baseline.EntryCount < 0 || baseline.EntryCount > limits.MaxArchiveEntries) MmcJson.Fail("definition", "Invalid external author-file baseline envelope.");
@@ -199,7 +201,52 @@ public static class MmcDefinitionCodec {
             .Concat(definition.SourceBundle.MetadataRecords.OrderBy(x => x.Kind).ThenBy(x => x.RelativePath, StringComparer.Ordinal).SelectMany(x => new[] { x.Kind.ToString(), x.RelativePath, x.ContentSha256, x.ObjectRelativePath, x.Uid, x.Version, x.ComponentSourceKind?.ToString(), x.SourceIdentity }))
             .Concat(definition.ComponentOverrides.OrderBy(x => x.Uid, StringComparer.Ordinal).SelectMany(x => new[] { x.Uid, x.Enabled?.ToString(), x.Version, x.PatchReference?.Sha256, x.PatchReference?.ObjectRelativePath }))
             .Concat(definition.ArtifactInventory.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.ComponentUid, x.Role.ToString(), x.Scope.ToString(), x.VariantTag, x.SourceRevision, x.RelativePath, x.State.ToString(), x.DeclaredSha1, x.DeclaredSha256, x.SourceObject?.Sha256, x.SourceObject?.ObjectRelativePath, x.SourceMetadataObjectRelativePath }))
-            .Concat(definition.ArtifactLocks.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.AdoptedSha256, x.SizeBytes.ToString(), x.RecoveryObjectRelativePath, x.TargetRelativePath, x.ObservedSha1 })));
+            .Concat(definition.ArtifactLocks.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.AdoptedSha256, x.SizeBytes.ToString(), x.RecoveryObjectRelativePath, x.TargetRelativePath, x.ObservedSha1 }))
+            .Concat(definition.DerivedOutputs.OrderBy(x => x.TargetRelativePath, StringComparer.Ordinal).SelectMany(x => new[] { x.Kind.ToString(), x.ParentArtifactKey, x.ParentSha256, x.ProducerVersion, x.SourceSetFingerprint, x.RuntimePlanFingerprint, x.ContextFingerprint, x.ViewKey, x.RelativePath, x.TargetRelativePath, x.Sha256, x.SizeBytes.ToString(), x.ArtifactKey, x.ObservedSha1, x.RecoveryObjectRelativePath })));
+    }
+
+    private static void ValidateDerived(MmcInstanceDefinition definition, Dictionary<string, MmcArtifactInventoryRecord> inventory,
+        Dictionary<string, MmcArtifactLockRecord> locks, MmcReadLimits limits, Action<string?, int> text) {
+        Dictionary<string, MmcDerivedOutputRecord> objects = new(StringComparer.Ordinal);
+        foreach (var output in definition.DerivedOutputs) if (output is { Kind: MmcDerivedOutputKind.AssetObject }) {
+            if (output.ArtifactKey is null || !MmcDerivedProofs.IsAssetObjectKey(output.ArtifactKey) || !objects.TryAdd(output.ArtifactKey, output)) MmcJson.Fail("definition", "Asset derived-object identity is missing or duplicated.");
+        }
+        HashSet<string> targets = new(StringComparer.OrdinalIgnoreCase);
+        long total = 0, nativeBytes = 0;
+        int nativeEntries = 0;
+        foreach (var output in definition.DerivedOutputs) {
+            if (output is null || !Enum.IsDefined(output.Kind)) MmcJson.Fail("definition", "Invalid derived output.");
+            CheckHash(output.ParentSha256); CheckHash(output.Sha256); CheckHash(output.SourceSetFingerprint); CheckHash(output.RuntimePlanFingerprint); CheckHash(output.ContextFingerprint); CheckHash(output.ViewKey);
+            text(output.ProducerVersion, 128); text(output.RelativePath, 4096); text(output.TargetRelativePath, 4096);
+            MmcArtifactRules.Relative(output.RelativePath, "definition.derived"); MmcArtifactRules.Relative(output.TargetRelativePath, "definition.derived");
+            if (output.ProducerVersion.Length == 0 || !SameHash(output.ContextFingerprint, MmcDerivedProofs.ComputeDerivedContextFingerprint(output.RuntimePlanFingerprint, output.SourceSetFingerprint, output.ProducerVersion))) MmcJson.Fail("definition", "Derived context fingerprint is inconsistent.");
+            if (output.SizeBytes < 0 || output.SizeBytes > limits.MaxEntryBytes || total > limits.MaxArchiveBytes - output.SizeBytes) MmcJson.Fail("definition", "Derived byte budget exceeded.");
+            total += output.SizeBytes;
+            if (!targets.Add(output.TargetRelativePath)) MmcJson.Fail("definition", "Derived outputs collide at a Windows target.");
+            string root = "PCL/MmcRuntime/" + output.ViewKey + "/";
+            if (output.Kind is MmcDerivedOutputKind.NativeFile or MmcDerivedOutputKind.AssetObject) {
+                CheckHash(output.ParentArtifactKey);
+                if (!locks.TryGetValue(output.ParentArtifactKey, out var parent) || !SameHash(parent.AdoptedSha256, output.ParentSha256)) MmcJson.Fail("definition", "Derived output lacks its immutable parent input lock.");
+                var parentInventory = inventory[output.ParentArtifactKey];
+                if (output.Kind == MmcDerivedOutputKind.NativeFile) {
+                    if (parentInventory.Role != MmcArtifactRole.Native || output.TargetRelativePath != root + "natives/" + output.RelativePath || output.ArtifactKey is not null || output.RecoveryObjectRelativePath is not null)
+                        MmcJson.Fail("definition", "Native output must derive from a native input into its owned extraction view.");
+                    if (++nativeEntries > 10000 || nativeBytes > 256L * 1024 * 1024 - output.SizeBytes) MmcJson.Fail("definition", "Native derived output budget exceeded.");
+                    nativeBytes += output.SizeBytes;
+                } else {
+                    if (parentInventory.Role != MmcArtifactRole.AssetIndex || output.ObservedSha1 is null || output.RecoveryObjectRelativePath is null) MmcJson.Fail("definition", "Asset object requires an observed hash, preserved original and locked asset-index parent.");
+                    CheckHash(output.ObservedSha1, 40); RecoveryPath(output.RecoveryObjectRelativePath, output.Sha256);
+                    string expected = "objects/" + output.ObservedSha1[..2].ToLowerInvariant() + "/" + output.ObservedSha1.ToLowerInvariant();
+                    if (output.RelativePath != expected || output.TargetRelativePath != root + "assets/" + expected || output.ArtifactKey != MmcDerivedProofs.ComputeAssetObjectKey(parent.ArtifactKey, parent.AdoptedSha256, output.ObservedSha1, output.SizeBytes))
+                        MmcJson.Fail("definition", "Asset-object identity/path does not bind its index and observed contents.");
+                }
+            } else {
+                if (!objects.TryGetValue(output.ParentArtifactKey, out var parent) || !SameHash(parent.Sha256, output.ParentSha256) || !SameHash(output.Sha256, parent.Sha256) || output.SizeBytes != parent.SizeBytes || output.ObservedSha1 != parent.ObservedSha1 ||
+                    output.ViewKey != parent.ViewKey || output.ContextFingerprint != parent.ContextFingerprint) MmcJson.Fail("definition", "Asset virtual/resource output must remain identical to its adopted object parent in the same view/context.");
+                string expected = output.Kind == MmcDerivedOutputKind.AssetVirtualFile ? root + "assets/" + output.RelativePath : definition.Layout.GameRootLeaf + "/resources/" + output.RelativePath;
+                if (output.TargetRelativePath != expected || output.Kind == MmcDerivedOutputKind.AssetVirtualFile && !output.RelativePath.StartsWith("virtual/", StringComparison.Ordinal)) MmcJson.Fail("definition", "Asset derived layout does not match its role.");
+            }
+        }
     }
 
     internal static bool SameHash(string left, string right) => left.Equals(right, StringComparison.OrdinalIgnoreCase);

@@ -11,6 +11,9 @@ internal static class MmcDefinitionTests {
         yield return ("MMC definition validates artifact recovery targets states and declared digests", ArtifactLocks);
         yield return ("MMC definition pins fingerprints and projection generation", Projection);
         yield return ("MMC definition bounds arrays text and external author file baselines", Budgets);
+        yield return ("MMC asset index reader binds raw parent bytes before accepting object membership", AssetIndexMembership);
+        yield return ("MMC derived input protocols bind ordered native sources exclusions and context", DerivedProtocols);
+        yield return ("MMC definition keeps native output authority under immutable parent locks", DerivedPersistence);
     }
     internal static string Hash(char digit) => new(digit, 64);
     internal static MmcInstanceDefinition Draft(string? resolutionFingerprint = null) {
@@ -90,5 +93,39 @@ internal static class MmcDefinitionTests {
         var external = bundle with { AuthorFileBaseline = new(Hash('7'), "PCL/MmcSource/" + bundle.SourceBundle.BundleSha256 + "/author-files.json", 100000) };
         Require(MmcDefinitionCodec.Validate(external, MmcDefinitionValidationMode.Draft).IsEmpty, "Large author-file list envelope must remain external.");
         Require(!MmcDefinitionCodec.Validate(external with { AuthorFileBaseline = external.AuthorFileBaseline! with { EntryCount = 100001 } }, MmcDefinitionValidationMode.Draft).IsEmpty, "External list count budget ignored.");
+    }
+    private static void AssetIndexMembership() {
+        byte[] content = System.Text.Encoding.UTF8.GetBytes("{\"objects\":{\"sounds/a.ogg\":{\"hash\":\"" + new string('a', 40) + "\",\"size\":5}},\"virtual\":true}");
+        string digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+        var result = MmcAssetIndexReader.Read(new(Hash('4'), content), digest);
+        Require(!result.HasErrors && result.Index is { Virtual: true } && result.Index.Objects is [{ Name: "sounds/a.ogg", SizeBytes: 5 }], "Verified asset-index membership was lost.");
+        Require(MmcAssetIndexReader.Read(new(Hash('4'), content), Hash('0')).HasErrors, "Changed raw asset index was accepted under the old parent digest.");
+        byte[] unsafeContent = System.Text.Encoding.UTF8.GetBytes("{\"objects\":{\"../escape\":{\"hash\":\"" + new string('a', 40) + "\",\"size\":5}}}");
+        string unsafeDigest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(unsafeContent));
+        Require(MmcAssetIndexReader.Read(new(Hash('4'), unsafeContent), unsafeDigest).HasErrors, "Unsafe asset logical name accepted.");
+        Require(MmcAssetIndexReader.Read(new(Hash('4'), content), digest, new() { MaxMetadataBytes = 10 }).HasErrors, "Asset-index byte budget ignored.");
+    }
+    private static void DerivedProtocols() {
+        var source = new MmcFieldSource("fixture", "1", "package:patches/fixture.json", Hash('6'), "libraries", 0);
+        var artifact = new MmcArtifactReference(Hash('4'), "fixture", Hash('6'), MmcArtifactRole.Native, MmcArtifactScope.Shared,
+            new("fixture", "native", "1", "", "jar"), "fixture/native/1/native.jar", [], null, null, 10, "natives-windows-64", ["META-INF/"], source);
+        MmcArtifactDigestFact fact = new(artifact.Key, artifact.SourceRevision, Hash('5'), 10);
+        string original = MmcDerivedProofs.ComputeNativeSourceSetFingerprint([artifact], [fact]);
+        string repeated = MmcDerivedProofs.ComputeNativeSourceSetFingerprint([artifact], [fact]);
+        string changed = MmcDerivedProofs.ComputeNativeSourceSetFingerprint([artifact with { ExtractExcludes = [] }], [fact]);
+        Require(original == repeated && original != changed, "Native input/exclusion fingerprint lost determinism.");
+        Require(MmcDerivedProofs.ComputeDerivedContextFingerprint(Hash('1'), original, "bounded-native-v1") != MmcDerivedProofs.ComputeDerivedContextFingerprint(Hash('2'), original, "bounded-native-v1"), "Derived context omitted runtime plan identity.");
+    }
+    private static void DerivedPersistence() {
+        var draft = WithArtifact();
+        string view = Hash('9'), sourceSet = Hash('8'), runtime = Hash('3');
+        var parentInventory = draft.ArtifactInventory[0] with { Role = MmcArtifactRole.Native, Scope = MmcArtifactScope.Shared, RelativePath = "fixture/native.jar" };
+        var parent = draft.ArtifactLocks[0] with { TargetRelativePath = "PCL/MmcRuntime/" + view + "/libraries/" + parentInventory.RelativePath };
+        var output = new MmcDerivedOutputRecord(MmcDerivedOutputKind.NativeFile, parent.ArtifactKey, parent.AdoptedSha256, "bounded-native-v1", sourceSet, runtime,
+            MmcDerivedProofs.ComputeDerivedContextFingerprint(runtime, sourceSet, "bounded-native-v1"), view, "native.dll", "PCL/MmcRuntime/" + view + "/natives/native.dll", Hash('7'), 2);
+        var definition = Published(draft with { ArtifactInventory = [parentInventory], ArtifactLocks = [parent], DerivedOutputs = [output] });
+        Require(MmcDefinitionCodec.Read(MmcDefinitionCodec.Serialize(definition)).Status == MmcDefinitionReadStatus.Valid, "Native output authority did not roundtrip.");
+        Require(!MmcDefinitionCodec.Validate(definition with { DerivedOutputs = [output with { ParentSha256 = Hash('0') }] }, MmcDefinitionValidationMode.Draft).IsEmpty, "Native output detached from its parent lock.");
+        Require(!MmcDefinitionCodec.Validate(definition with { DerivedOutputs = [output with { TargetRelativePath = "libraries/native.dll" }] }, MmcDefinitionValidationMode.Draft).IsEmpty, "Native output escaped its runtime view.");
     }
 }
