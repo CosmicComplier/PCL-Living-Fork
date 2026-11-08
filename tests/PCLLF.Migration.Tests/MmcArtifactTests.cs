@@ -31,6 +31,11 @@ internal static class MmcArtifactTests {
         yield return ("MMC native hot views verify trusted facts without extracting unchanged jars", () => Run(NativeHotCache));
         yield return ("MMC prepared adapter binds actual initial native and asset observations", () => Run(BindingAdapterInitial));
         yield return ("MMC prepared adapter repairs from published authority without losing locks", () => Run(BindingAdapterRepair));
+        yield return ("MMC prefetch uses one static and one asset batch with cache reuse", () => Run(PrefetchBatches));
+        yield return ("MMC prefetch deduplicates source targets and rejects hash conflicts", () => Run(PrefetchDeduplication));
+        yield return ("MMC prefetch reuses a matching original version main jar", () => Run(PrefetchMainJar));
+        yield return ("MMC hashless prefetch isolates Maven paths and preserves actual source pins", () => Run(PrefetchHashless));
+        yield return ("MMC prefetch cancellation drains the supplied runner and cleans fresh candidates", () => Run(PrefetchCancellation));
     }
 
     private static void Run(Func<Task> action) => action().GetAwaiter().GetResult();
@@ -406,16 +411,102 @@ internal static class MmcArtifactTests {
         Equal(published.DerivedOutputs.Length, rebound.Definition.DerivedOutputs.Length);
     }
 
+    private static MmcArtifactCacheRoots CacheRoots(Fixture files) => new(Path.Combine(files.Scope, "shared-libraries"), Path.Combine(files.Scope, "shared-assets"),
+        Path.Combine(files.Scope, "mmc-source-cache"), Path.Combine(files.Scope, "shared-versions"));
+    private static async Task PrefetchBatches() {
+        using var fixture = new BindingFixture(native: true, assets: true);
+        var roots = CacheRoots(fixture.Files); var batches = new List<ImmutableArray<MmcArtifactDownloadSpec>>();
+        var adapter = new MmcArtifactPrefetchAdapter<MmcArtifactDownloadSpec>(roots, x => x, (files, token) => {
+            batches.Add(files);
+            foreach (var file in files) { token.ThrowIfCancellationRequested(); fixture.Files.Write(file.DownloadPath, fixture.Files.Payload(file.Artifact)); }
+            return Task.CompletedTask;
+        });
+        var result = await adapter.PrefetchAsync(fixture.Plan, fixture.Request());
+        Equal(2, batches.Count); Equal(2, result.BatchCount); Equal(5, result.RequestedFileCount);
+        Equal(true, batches[0].Any(x => x.Artifact.Role == MmcArtifactRole.AssetIndex && x.DownloadPath.StartsWith(roots.AssetsRoot, StringComparison.Ordinal)));
+        Equal(true, batches[1].All(x => MmcArtifactMaterializer.IsAssetObjectReference(x.Artifact) && x.DownloadPath.StartsWith(roots.AssetsRoot, StringComparison.Ordinal)));
+        using var prepared = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request(), result.CreateAccess());
+        Equal(true, prepared.AssetsMaterialized); Equal(true, prepared.NativeExtractionComplete);
+        var hot = await adapter.PrefetchAsync(fixture.Plan, fixture.Request());
+        Equal(0, hot.BatchCount); Equal(2, batches.Count);
+    }
+
+    private static async Task PrefetchDeduplication() {
+        using var fixture = new BindingFixture(duplicateDownloadOnly: true);
+        var roots = CacheRoots(fixture.Files); var received = new List<MmcArtifactDownloadSpec>();
+        var adapter = new MmcArtifactPrefetchAdapter<MmcArtifactDownloadSpec>(roots, x => x, (files, token) => {
+            received.AddRange(files);
+            foreach (var file in files) fixture.Files.Write(file.DownloadPath, fixture.Files.Payload(file.Artifact));
+            return Task.CompletedTask;
+        });
+        var result = await adapter.PrefetchAsync(fixture.Plan, fixture.Request());
+        Equal(1, result.BatchCount); Equal(2, received.Count);
+        Equal(fixture.Plan.Classpath[0].Key, received[0].Artifact.Key);
+        Equal(2, received[0].ArtifactKeys.Length);
+        var library = fixture.Plan.Classpath[0];
+        var conflict = library with { Key = Hash(Encoding.UTF8.GetBytes("conflict")), Sha1 = Convert.ToHexStringLower(SHA1.HashData([9])), Size = 1 };
+        await Throws<IOException>(() => adapter.PrefetchAsync(fixture.Plan, fixture.Request() with { AdditionalPreservedArtifacts = [conflict] }));
+        Equal(2, received.Count);
+    }
+
+    private static async Task PrefetchMainJar() {
+        using var fixture = new BindingFixture(); var roots = CacheRoots(fixture.Files);
+        var library = fixture.Plan.Classpath.First(x => x.Role == MmcArtifactRole.Classpath);
+        fixture.Files.Write(Path.Combine(roots.LibrariesRoot, library.RelativePath), fixture.Files.Payload(library));
+        string original = Path.Combine(roots.VersionsRoot!, fixture.Plan.MinecraftVersion, fixture.Plan.MinecraftVersion + ".jar");
+        fixture.Files.Write(original, fixture.Files.Payload(fixture.Plan.MainJar));
+        var adapter = new MmcArtifactPrefetchAdapter<MmcArtifactDownloadSpec>(roots, x => x, (files, token) => throw new Exception("No network batch is needed."));
+        var result = await adapter.PrefetchAsync(fixture.Plan, fixture.Request());
+        Equal(0, result.BatchCount); Equal(original, result.Sources[fixture.Plan.MainJar.Key].FilePath);
+    }
+
+    private static async Task PrefetchHashless() {
+        using var fixture = new BindingFixture(hashlessLibrary: true); var roots = CacheRoots(fixture.Files);
+        var library = fixture.Plan.Classpath.First(x => x.Role == MmcArtifactRole.Classpath);
+        fixture.Files.Write(Path.Combine(roots.LibrariesRoot, library.RelativePath), [9, 9]);
+        fixture.Files.Write(Path.Combine(roots.LibrariesRoot, fixture.Plan.MainJar.RelativePath), fixture.Files.Payload(fixture.Plan.MainJar));
+        int batches = 0; byte[] remote = fixture.Files.Payload(library);
+        var adapter = new MmcArtifactPrefetchAdapter<MmcArtifactDownloadSpec>(roots, x => x, (files, token) => {
+            batches++; foreach (var file in files) fixture.Files.Write(file.DownloadPath, remote); return Task.CompletedTask;
+        });
+        var first = await adapter.PrefetchAsync(fixture.Plan, fixture.Request());
+        Equal(1, batches); Equal(true, first.Sources[library.Key].FilePath.StartsWith(roots.SourceCacheRoot, StringComparison.Ordinal));
+        Equal(Hash(remote), Hash(File.ReadAllBytes(first.Sources[library.Key].FilePath)));
+        var hot = await adapter.PrefetchAsync(fixture.Plan, fixture.Request()); Equal(1, batches); Equal(0, hot.BatchCount);
+        string pin = Directory.GetFiles(roots.SourceCacheRoot, "pin.json", SearchOption.AllDirectories).Single();
+        string originalPin = File.ReadAllText(pin);
+        fixture.Files.Write(first.Sources[library.Key].FilePath, [8, 8]); remote = [8, 8];
+        var adopted = new MmcArtifactLock(library.Key, library.SourceRevision, Hash([1, 2]), 2, "PCL/MmcArtifacts/sha256/" + Hash([1, 2]));
+        await Throws<IOException>(() => adapter.PrefetchAsync(fixture.Plan, fixture.Request() with { ExistingLocks = [adopted], Intent = MmcArtifactIntent.RepairExisting }));
+        Equal(originalPin, File.ReadAllText(pin));
+    }
+
+    private static async Task PrefetchCancellation() {
+        using var fixture = new BindingFixture(hashlessLibrary: true); var roots = CacheRoots(fixture.Files);
+        fixture.Files.Write(Path.Combine(roots.LibrariesRoot, fixture.Plan.MainJar.RelativePath), fixture.Files.Payload(fixture.Plan.MainJar));
+        using var cancel = new CancellationTokenSource(); bool drained = false;
+        var adapter = new MmcArtifactPrefetchAdapter<MmcArtifactDownloadSpec>(roots, x => x, (files, token) => {
+            fixture.Files.Write(files[0].DownloadPath, [1]); cancel.Cancel(); drained = true;
+            return Task.FromCanceled(token);
+        });
+        await Throws<OperationCanceledException>(() => adapter.PrefetchAsync(fixture.Plan, fixture.Request(), cancel.Token));
+        Equal(true, drained);
+        Equal(0, Directory.GetFiles(roots.SourceCacheRoot, "payload-*.bin", SearchOption.AllDirectories).Length);
+        Equal(0, Directory.GetFiles(roots.SourceCacheRoot, "pin.json", SearchOption.AllDirectories).Length);
+    }
+
     private sealed class BindingFixture : IDisposable {
         internal Fixture Files { get; } = new();
         internal MmcCompiledProfile Plan { get; }
         internal MmcInstanceDefinition Definition { get; }
-        internal BindingFixture(bool native = false, bool assets = false) {
+        internal BindingFixture(bool native = false, bool assets = false, bool duplicateDownloadOnly = false, bool hashlessLibrary = false) {
             byte[] main = [7, 8], library = [1, 2], nativeBytes = Jar(("META-INF/notice", [0]), ("fixture.dll", [3, 4]));
             byte[] assetBytes = [4, 5, 6];
             byte[] indexBytes = IndexJson(new Dictionary<string, byte[]> { ["sound/fixture.ogg"] = assetBytes }, virtualAssets: true);
             object Download(byte[] bytes, string name) => new { url = "https://example.invalid/" + name, sha1 = Convert.ToHexStringLower(SHA1.HashData(bytes)), size = bytes.Length };
-            var libraries = new List<object> { new { name = "fixture:library:1", downloads = new { artifact = Download(library, "library.jar") } } };
+            object libraryDownload = hashlessLibrary ? new { url = "https://example.invalid/library.jar", size = library.Length } : Download(library, "library.jar");
+            object libraryEntry = new { name = "fixture:library:1", downloads = new { artifact = libraryDownload } };
+            var libraries = new List<object> { libraryEntry };
             if (native) libraries.Add(new {
                 name = "fixture:native:1", natives = new { windows = "natives-windows-${arch}" },
                 downloads = new { classifiers = new Dictionary<string, object> { ["natives-windows-64"] = Download(nativeBytes, "native.jar") } },
@@ -427,6 +518,7 @@ internal static class MmcArtifactTests {
                 ["libraries"] = libraries
             };
             if (assets) patch["assetIndex"] = new { id = "fixture", url = "https://example.invalid/fixture.json", sha1 = Convert.ToHexStringLower(SHA1.HashData(indexBytes)), size = indexBytes.Length };
+            if (duplicateDownloadOnly) patch["mavenFiles"] = new[] { libraryEntry, libraryEntry };
             string manifest = "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"}]}";
             string component = JsonSerializer.Serialize(patch);
             var metadata = new Dictionary<string, string> { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = component };
@@ -495,6 +587,7 @@ internal static class MmcArtifactTests {
         }
         public void Source(string key, byte[] bytes) { string path = Path.Combine(Cache, Hash(Encoding.UTF8.GetBytes(key))); Write(path, bytes); Sources[key] = path; }
         public void AssetSource(byte[] bytes) { string hash = Convert.ToHexStringLower(SHA1.HashData(bytes)); string path = Path.Combine(Cache, "assets", hash); Write(path, bytes); AssetSources[hash] = path; }
+        public byte[] Payload(MmcArtifactReference artifact) => File.ReadAllBytes(Sources.TryGetValue(artifact.Key, out var path) ? path : AssetSources[artifact.Sha1!]);
         public void Write(string path, byte[] bytes) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllBytes(path, bytes); }
         public string Resolve(string relative) => Paths.ResolveRelative(MmcPathRole.Instance, relative);
         public MmcArtifactRequest Request(ImmutableArray<MmcArtifactReference> artifacts, ImmutableArray<MmcArtifactLock> locks = default,
