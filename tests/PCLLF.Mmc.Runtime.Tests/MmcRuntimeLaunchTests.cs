@@ -8,7 +8,7 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 using PCLCS;
 using PCLLF.MMCC.Core;
 
-internal static class MmcRuntimeLaunchTests {
+internal static partial class MmcRuntimeLaunchTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC exact bridge has deterministic owned support bytes and reviewed source", BridgeIdentity);
         yield return ("MMC production runtime preserves actual Java8 Java17 and Java21 argv through original Wrapper and exact bridge", ActualArgv);
@@ -17,6 +17,7 @@ internal static class MmcRuntimeLaunchTests {
         yield return ("MMC classpath inspector preserves shadow order and resolves Java multi-release entries", ClasspathAndMultiRelease);
         yield return ("MMC deep 92-JAR launch preserves early system-loader classpath and bounded compressed transport", LongArguments);
         yield return ("MMC runtime reserves the final managed-session nonce at the Windows command boundary", SessionNonceBudget);
+        yield return ("MMC readonly JAR namespace permits resources without weakening extraction", ReadOnlyJarNamespace);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();
@@ -106,13 +107,14 @@ public final class TestLoader extends ClassLoader {
         internal string Root { get; }
         internal MmcRuntimeLaunchRequest Request { get; }
         internal Fixture(int javaMajor = 17, bool multiRelease = false, bool loader = true, string? unknownArgument = null, MmcRuntimeWrapperMode wrapperMode = MmcRuntimeWrapperMode.JavaWrapper,
-            bool unmarkedVersions = false, bool laterTooNew = false, bool firstTooNew = false, bool longClasspath = false) {
+            bool unmarkedVersions = false, bool laterTooNew = false, bool firstTooNew = false, bool longClasspath = false, Func<byte[], byte[]>? firstJarTransform = null) {
             Root = Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests", "run-" + Guid.NewGuid().ToString("N"));
             string instance = Path.Combine(Root, "versions", "实例 space");
             if (longClasspath) instance = Path.Combine(Root, "versions", "deep-" + new string('d', Math.Max(1, 139 - Root.Length - "\\versions\\deep-\\minecraft".Length)));
             Directory.CreateDirectory(Path.Combine(instance, "minecraft"));
             var paths = MmcInstancePaths.Resolve(instance, "minecraft"); string view = new('f', 64);
             byte[] first = unmarkedVersions ? Compiled.Value.UnmarkedVersions : multiRelease ? Compiled.Value.MultiRelease : Compiled.Value.First;
+            if (firstJarTransform is not null) first = firstJarTransform(first);
             if (firstTooNew) first = WithClassVersion(first, 99);
             byte[] second = laterTooNew ? WithClassVersion(Compiled.Value.Second, 99) : Compiled.Value.Second;
             byte[] main = laterTooNew ? WithClassVersion(Compiled.Value.Main, 99) : Compiled.Value.Main;

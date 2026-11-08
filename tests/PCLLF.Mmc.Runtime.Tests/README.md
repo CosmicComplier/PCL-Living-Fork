@@ -47,3 +47,8 @@ Wrapper 本体没有修改或重打包。`MmcRuntimeBridgeTransport.JavaSource` 
 多版本 JAR 的观察按 manifest 与实际 Java major 选取真实 entry，并保留 MR entry 路径。当前 Core 结构证明对 MR class 仍可保守拒绝；观察通过不表示所有自定义 classloader 都按标准 JarFile 规则工作，也不表示实际 Minecraft 启动、世界、修复已验收。隐式 manifest Class-Path 与未建立执行输入绑定的 agent/argfile/替代模块模式明确拒绝。
 
 窄审查回归还按 [Java 17 JarFile 实现属性](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/jar/JarFile.html)核对最终生效的 `jdk.util.jar.enableMultiRelease` 与 `jdk.util.jar.version`：包/用户的 `-D` 顺序不改写，支持 JAR 与游戏 JAR 使用同一策略；`false` 禁用，`force` 不会给缺少 manifest 标记的 JAR 凭空开启 MR，版本上限按实际 Java 夹到 8～当前 major。Java 8 忽略这些 MR 属性。类观察保留每个 JAR 的显式存在/缺失，只有 classpath 最早实际命中的版本需要通过字节码兼容检查；后面的被遮蔽副本不阻止有效启动。`classpath` 组会与真实 Java 8/17 进程对照上述行为，并验证真正首个不兼容版本仍被拒绝。
+
+
+`--group jar-namespace` 覆盖只读 Java JAR namespace：普通 exact 重复资源、大小写不同的资源/类名、Windows 特殊名与 literal 资源名可读；重复 class 或 manifest 明确 unsupported，预算、UTF8/压缩与 native duplicate 拒绝均保留。此策略不授权任何提取，也不改变 native/源包 Windows 目标规则。结构 ZIP64 end record 有界支持；per-entry ZIP64 大小/offset 仍 unsupported。
+
+可显式执行 `--readonly-jar-proof <本地原始 JAR 路径>`，将不改字节的原件纳入真正的 Inspector Java8/21 类头证明，并核对源 SHA256 前后不变；不会执行该 JAR 或 Minecraft。该参数不属于默认组，也不会给 CI 增加外部 JAR 依赖。
