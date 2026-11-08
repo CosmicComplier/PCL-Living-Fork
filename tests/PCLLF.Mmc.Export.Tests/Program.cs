@@ -29,6 +29,7 @@ internal static class ExportChecks {
         yield return ("extra game and fullscreen become native component arguments without host identity",ExtraGameAndFullscreen);
         yield return ("literal account data is rejected while ordinary version query URLs remain portable",AccountAndUrls);
         yield return ("hardlink originals and adopted-CAS changes remain protected across output volumes",OutputAndOriginals);
+        yield return ("published ZIP outcome survives a late cancelled progress observer",PublishedObserver);
     }
     private static void RoundTrip() {
         foreach(int major in new[]{8,21}) using(var fixture=new Fixture(major)) {
@@ -126,14 +127,29 @@ internal static class ExportChecks {
         using(var fixture=new Fixture(8,versionQuery:true)){var source=fixture.Import("source");Success(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"query-version.zip")).GetAwaiter().GetResult());}
     }
     private static void ExtraGameAndFullscreen() {
-        using var fixture=new Fixture(21,tweaks:false);var source=fixture.Import("source");using var provider=new InstanceConfigProvider(source.Paths!.InstanceRoot);
+        foreach(bool tweaks in new[]{false,true}) {
+        using var fixture=new Fixture(21,tweaks:tweaks);var source=fixture.Import("source");using var provider=new InstanceConfigProvider(source.Paths!.InstanceRoot);
         MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]="--custom value",["MmcWindowMode"]="Custom",["MmcWindowWidth"]="1024",["MmcWindowHeight"]="768",["MmcWindowFullscreen"]="True",["MmcWindowMaximized"]="False"});
         var result=new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"extra-game.zip")).GetAwaiter().GetResult();Success(result);
         var imported=fixture.Import("extra-game-target",result.OutputZipPath!);string[] values=imported.BoundPlan!.CompiledProfile.GameArguments.Select(a=>a.Value).ToArray();
-        Check(values.SequenceEqual(new[]{"--sample","value","--custom","value","--fullscreen"}),"Portable extra/fullscreen changed native argument sequence.");
+        Check(values.SequenceEqual(source.BoundPlan!.CompiledProfile.GameArguments.Select(argument=>argument.Value).Concat(new[]{"--custom","value","--fullscreen"})),"Portable extra/fullscreen changed native argument sequence.");
         Check(imported.BoundPlan.CompiledProfile.MainClass==source.BoundPlan!.CompiledProfile.MainClass,"Preference conversion changed main entry.");
+        var required=MmcLaunchClassRequirements.Collect(imported.BoundPlan.CompiledProfile.MainClass,imported.BoundPlan.CompiledProfile.JvmArguments.Select(argument=>argument.Value),values,imported.BoundPlan.CompiledProfile.Tweakers);
+        Check(!tweaks||required.Contains("fixture.Tweak"),"Raw tweak class escaped the shared class-requirement proof.");
         MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]="--title \"literal space\""});
         Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"cannot-encode-legacy-token.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Native legacy whitespace token was exported with wrong quote semantics.");
+        }
+    }
+    private static void PublishedObserver() {
+        using var fixture=new Fixture(8);var source=fixture.Import("source");var request=fixture.Request(source,"observer.zip");
+        var result=new MmcInstanceExportBackend().ExportAsync(request,progress:new ThrowAfterPublication()).GetAwaiter().GetResult();Success(result);
+        Check(File.Exists(result.OutputZipPath!),"Published ZIP disappeared after observer cancellation.");
+        using var provider=new InstanceConfigProvider(source.Paths!.InstanceRoot);
+        MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["MmcJvmArgsMode"]="Custom",["VersionAdvanceJvm"]="'unterminated"});
+        Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"malformed-preference.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Malformed preference faulted instead of a clear capability refusal.");
+    }
+    private sealed class ThrowAfterPublication:IProgress<MmcInstanceExportProgress> {
+        public void Report(MmcInstanceExportProgress value){if(value.Phase=="export-completed")throw new OperationCanceledException("late owned observer cancellation");}
     }
     private static void UserPatch() {
         using var fixture=new Fixture(21,userComponent:true);var source=fixture.Import("source");

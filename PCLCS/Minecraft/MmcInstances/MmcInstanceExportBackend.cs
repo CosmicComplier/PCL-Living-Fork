@@ -46,10 +46,14 @@ public sealed class MmcInstanceExportBackend {
             // Same-directory staging gives a same-volume, no-overwrite publication. A competing
             // creator wins safely: Move fails and its existing file is never replaced.
             File.Move(partial,target,false);
-            progress?.Report(new("export-completed",preview.EntryCount,preview.EntryCount,preview.UncompressedBytes,preview.UncompressedBytes));
+            try { progress?.Report(new("export-completed",preview.EntryCount,preview.EntryCount,preview.UncompressedBytes,preview.UncompressedBytes)); }
+            catch(Exception observerError) when(observerError is OperationCanceledException or IOException or InvalidOperationException or ArgumentException) {
+                // Atomic publication is the outcome boundary. A late UI/progress observer cannot
+                // turn a completed file into "cancelled" while that finished ZIP exists on disk.
+            }
             return new(MmcInstanceExportStatus.Completed,target,zipHash,preview);
         } catch(OperationCanceledException error) {return new(MmcInstanceExportStatus.Cancelled,Preview:preview,RetainedPartialFile:Existing(partial),Failure:error.Message);}
-        catch(Exception error) when(error is IOException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException or AggregateException) {
+        catch(Exception error) when(error is IOException or InvalidDataException or ArgumentException or FormatException or System.Text.Json.JsonException or InvalidOperationException or UnauthorizedAccessException or AggregateException) {
             return new(partial is null?MmcInstanceExportStatus.Rejected:MmcInstanceExportStatus.Failed,Preview:preview,RetainedPartialFile:Existing(partial),Failure:error.Message);
         }
     }

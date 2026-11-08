@@ -54,14 +54,21 @@ internal static class MmcInstanceExportMetadata {
         ValidateAccountTemplates(current.GameArguments.Select(argument=>argument.Value).ToArray());
         bool overlay=!prefs.ExtraGame.IsEmpty||prefs.Fullscreen;
         if(overlay) {
-            // Structured tweaks remain critical Authority inputs. Do not fold them into raw args
-            // until the shared authority evaluator proves those raw classes as well.
-            if(!current.Tweakers.IsEmpty) throw new InvalidDataException("Ordered game/fullscreen preference conversion with structured tweakers requires raw-tweak authority support; no ZIP was published.");
             string uid="org.pcllf.portable-launch-preferences";
-            if(patches.ContainsKey(uid)) throw new InvalidDataException("Export preference component UID is already in use.");
+            for(int suffix=1;patches.ContainsKey(uid);suffix++) {
+                if(suffix>4096)throw new InvalidDataException("No bounded portable-preference component UID is available.");
+                uid="org.pcllf.portable-launch-preferences."+suffix.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
             var game=current.GameArguments.Select(a=>a.Value).Concat(prefs.ExtraGame).ToList();
             if(prefs.Fullscreen&&!game.Contains("--fullscreen",StringComparer.Ordinal)) game.Add("--fullscreen");
             if(game.Any(token=>token.Length==0||token.Any(char.IsWhiteSpace))) throw new InvalidDataException("Prism legacy minecraftArguments cannot encode a literal empty/whitespace argument token; refusing an inexact export.");
+            if(!current.Tweakers.IsEmpty) {
+                // Complete argv already contains these flags. Leaving +tweakers would append
+                // them a second time after the preference tail. The shared Core requirements
+                // collector and Authority now prove raw --tweakClass as well as structured ones.
+                foreach(JsonObject patch in patches.Values)patch.Remove("+tweakers");
+                transformations.Add("Structured tweaks encoded as the identical ordered raw --tweakClass tokens; shared launch-class proof remains mandatory.");
+            }
             patches.Add(uid,new JsonObject { ["formatVersion"]=1,["uid"]=uid,["version"]="1",["order"]=int.MaxValue,["minecraftArguments"]=string.Join(' ',game) });
             components.Add(new JsonObject { ["uid"]=uid,["version"]="1" });
             transformations.Add("Portable game/fullscreen preferences encoded as a final ordinary MMC component.");
@@ -106,7 +113,9 @@ internal static class MmcInstanceExportMetadata {
         var game=expected.GameArguments.Select(a=>a.Value).Concat(prefs.ExtraGame).ToList(); if(prefs.Fullscreen&&!game.Contains("--fullscreen",StringComparer.Ordinal))game.Add("--fullscreen");
         if(expected.MainClass!=actual.MainClass||expected.MinecraftVersion!=actual.MinecraftVersion||expected.MinecraftVersionType!=actual.MinecraftVersionType||expected.Assets.Id!=actual.Assets.Id||
             !expected.JvmArguments.Select(a=>a.Value).SequenceEqual(actual.JvmArguments.Select(a=>a.Value))||!game.SequenceEqual(actual.GameArguments.Select(a=>a.Value))||
-            !expected.Tweakers.SequenceEqual(actual.Tweakers)||!expected.Traits.SequenceEqual(actual.Traits)||Policy(expected.JavaPolicy)!=Policy(actual.JavaPolicy)||
+            !MmcLaunchClassRequirements.Collect(expected.MainClass,expected.JvmArguments.Select(a=>a.Value),game,expected.Tweakers)
+                .SequenceEqual(MmcLaunchClassRequirements.Collect(actual.MainClass,actual.JvmArguments.Select(a=>a.Value),actual.GameArguments.Select(a=>a.Value),actual.Tweakers))||
+            !expected.Traits.SequenceEqual(actual.Traits)||Policy(expected.JavaPolicy)!=Policy(actual.JavaPolicy)||
             !expected.Classpath.Select(Artifact).SequenceEqual(actual.Classpath.Select(Artifact))||!expected.NativeArtifacts.Select(Artifact).SequenceEqual(actual.NativeArtifacts.Select(Artifact))||
             !expected.DownloadOnlyArtifacts.Select(Artifact).SequenceEqual(actual.DownloadOnlyArtifacts.Select(Artifact))||!expected.AuxiliaryArtifacts.Select(Artifact).SequenceEqual(actual.AuxiliaryArtifacts.Select(Artifact)))
             throw new InvalidDataException("Portable MMC projection changed the effective launch contract; refusing export.");

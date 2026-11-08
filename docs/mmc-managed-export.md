@@ -24,11 +24,11 @@
 | 玩家数据 | saves、截图、servers 默认不带；各自 bool 选项明确包含；已知账号/令牌 store 和 LF PCL/事务/会话/历史/运行缓存始终不入 ZIP |
 | JVM 偏好 | InheritGlobal 不复制全局值；UsePackage/Custom 写合法 override，Custom 空字符串保留 `OverrideJavaArgs=true` 与空 `JvmArgs`；新实例以包内 override 接收 |
 | Java/内存 | 不导出本机绝对 Java 身份。默认拒绝无法移植的机器 Java/range/硬件内存；可显式选 DiscardMachineJavaSelection、给定 portable min/max MiB，preview 记录转换 |
-| 窗口/额外 game | 普通窗口、包内/手动内存可表达。无 structured tweak 时，额外 game/fullscreen 可转最后一个合法组件；有 structured tweak 的精确折叠仍需共享 Authority 先支持 raw tweak 证明，当前明确拒绝，未称全部能力完成 |
+| 窗口/额外 game | 普通窗口、包内/手动内存可表达。额外 game/fullscreen 转最后一个合法组件。无偏好尾部时原 structured tweakers 不变；有尾部时将原 --tweakClass 按原位置保留在完整 game argv，再追加偏好，清除独立+tweakers避免重复，preview 记录表示转换，共享类证明同时验证 raw tweaks |
 
 组件有效启动定义经离线 Parse→Resolve→Compile，比对 main、JVM/game argv、tweakers、classpath/mainJar 顺序、native/download-only/aux、traits 与 Java policy。来源 hash、artifact key 和新实例身份不会冒充相同。native/source ZIP 提取规则未修改。
 
-固定 Prism [MinecraftInstance.cpp](https://github.com/PrismLauncher/PrismLauncher/blob/899d2f3957215a09fe398a8a8cbb8a8a9c619968/launcher/minecraft/MinecraftInstance.cpp#L704-L712) 的 legacy minecraftArguments 按 ASCII 空格 split，随后追加 structured tweakers；它不执行引号解析。因此 literal 空/带空白单 token 不能假装通过加引号等价导出。若 source 的当前解释与该原生契约不一致，需先修正/重验源，不固化旧解析错误。
+固定 Prism [MinecraftInstance.cpp](https://github.com/PrismLauncher/PrismLauncher/blob/899d2f3957215a09fe398a8a8cbb8a8a9c619968/launcher/minecraft/MinecraftInstance.cpp#L704-L712) 的 legacy minecraftArguments 按 ASCII 空格 split，随后追加 structured tweakers；它不执行引号解析。因此 literal 空/带空白单 token 不能假装通过加引号等价导出。若 source 的当前解释与该原生契约不一致，需先修正/重验源，不固化旧解析错误。依赖 Core `b492fabe` 的共享 raw/host 类要求和 `26dab1b5` 的仅 legacy 字段原生 split 修复；JVM/tokenizer 的语义不随之改变。
 
 ## 独立回归
 
@@ -36,6 +36,8 @@
 C:\Users\16892\.codex\tools\dotnet10\dotnet.exe run --project tests/PCLLF.Mmc.Export.Tests/PCLLF.Mmc.Export.Tests.csproj
 ```
 
-该测试工程 ProjectReference 真正 modern/PCLCS，不链接第二份生产代码。自有小包通过真实 backend 导入→导出 ZIP→重导，覆盖 Java8/21 声明、fixed remote→local patch、已发布用户补丁、同名两根 library 字节、current config、new identity、空 JVM override、player 选项、inactive tree/未知数据、已有/冲突/原包/inside/非法输出、source/prefs stale，以及 held 真 ZIP writer 取消后的 drain。所有网络响应和制品是自有 tiny metadata/JAR fixture；不访问公网，不下载 GTNH，不启动 Minecraft/JVM。
+该测试工程 ProjectReference 真正 modern/PCLCS，不链接第二份生产代码。自有小包通过真实 backend 导入→导出 ZIP→重导，覆盖 Java8/21 声明、fixed remote→local patch、已发布用户补丁、同名两根 library 字节、current config、new identity、空 JVM override、player 选项、inactive tree/未知数据、已有/冲突/原包/inside/非法输出、source/prefs stale，以及 held 真 ZIP writer 取消后的 drain。还覆盖有/无 structured tweaks 的 extra/fullscreen 精确 argv 和 raw class requirement、目标硬链接、不改原包、源 D:→目标 C: 但 staging/final 同目录、CAS 最后时刻篡改，以及 atomic publish 后观察者抛取消仍返回 Completed。所有网络响应和制品是自有 tiny metadata/JAR fixture；不访问公网，不下载 GTNH，不启动 Minecraft/JVM。
 
 测试 roots 带 `PCLLF-MmcExportTests-<GUID>` 所有权文件并保留。曾在旧 import publication 遇到 transient reader-lock 导致 private-root rename AccessDenied，发生在 Export 之前；相关 roots 保留，集成前置 `3989d589` 提供重新验证后的 publication 修复。该依赖未混入导出提交，也不把测试前置失败写成导出成功。
+
+最新验证：串行真图 build 0 warning / 0 error；十个聚合组全 run 通过。有效自有 tiny JAR 包含 Java8 class 字节，但测试不启动 JVM/游戏。测试 fixture 与失败/取消 partial 按所有权保留，不删除玩家路径。known account 文件和 launcher/account flag 常量值明确拒绝；opaque mod 配置按字节复制，不将通用导出器描述为任意第三方模组凭据格式的解析/清洗器。
