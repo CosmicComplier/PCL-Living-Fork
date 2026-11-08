@@ -50,6 +50,22 @@ public static partial class MmcConfigurationCoordinator {
         return text.Replace(source + "\\", target + "\\", comparison).Replace(source + "/", slashTarget + "/", comparison)
             .Replace(slashSource + "/", slashTarget + "/", comparison).Replace(slashSource + "\\", slashTarget + "\\", comparison);
     }
+    /// <summary>Quarantine stays pending: only its verified operation owner may durably consume transferred ordinary preference keys.</summary>
+    internal static void FlushRelocatedPreferences(MmcConfigurationQuiescence quiet,MmcAdmissionLease lease,Guid id,string expectedPrimarySha256){
+        lease.AssertHeld();var state=quiet.State;
+        if(state.Root!=lease.VersionRoot||lease.InstanceId!=id||MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(state.Root)).Sha256!=expectedPrimarySha256)throw new IOException("Quarantine preference publication lost its fixed identity.");
+        MmcFileTransactions.AssertNoPending(lease);MmcSessions.AssertNoActive(lease);
+        Dictionary<string,MmcConfigPatch> json;Dictionary<string,MmcIniPatch> pendingIni;
+        lock(state.Sync){
+            state.AssertContext(new(MmcConfigurationContextKind.Managed,id));if(state.PauseCount==0||state.Inflight!=0)throw new IOException("Quarantine preference publication requires a drained state.");
+            json=state.CapturePatches();pendingIni=state.CaptureIniPatches();
+            if(json.Any(pair=>IsStructuralKey(pair.Key)||pair.Value.Context.InstanceId!=id)||pendingIni.Any(pair=>MmcIniConfiguration.IsStructural(pair.Key)||pair.Value.Context.InstanceId!=id))throw new IOException("Quarantine cannot consume foreign or structural preference patches.");
+        }
+        var disk=ReadConfig(state.Root);string ini=MmcIniConfiguration.ReadIni(state.Root);Apply(disk,json);
+        foreach(var pair in pendingIni)ini=LegacyBaseOperations.ReplaceIniValue(ini,pair.Key,pair.Value.Value);
+        if(json.Count!=0)WritePreferenceConfig(state.Root,disk);if(pendingIni.Count!=0)MmcIniConfiguration.WriteIni(state.Root,ini);
+        state.Publish(disk,json);state.PublishIni(ini,pendingIni,notify:false);
+    }
 }
 internal sealed partial class MmcConfigurationState {
     internal void DetachAfterRelocation() {

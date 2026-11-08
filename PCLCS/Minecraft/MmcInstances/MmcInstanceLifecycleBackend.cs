@@ -50,7 +50,7 @@ public sealed partial class MmcInstanceLifecycleBackend {
             if(bound.HasErrors||bound.Definition is null)throw new IOException("Lifecycle binding failed: "+string.Join("; ",bound.Diagnostics.Select(value=>value.Code)));
             byte[] nextDefinition=Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition));
             if(oldName!=newName&&MmcInstancePaths.Attributes(paths.ResolveRelative(MmcPathRole.Instance,newName+".json"))is not null)throw new IOException("New compatibility filename is already occupied.");
-            var intent=new MmcLifecycleIntent(1,Guid.NewGuid(),request.Kind.ToString(),definition.InstanceId,source,target,definition.Generation,next,primary.Sha256,MmcDurableFiles.Hash(nextDefinition),paths.GameRootLeaf);
+            var intent=new MmcLifecycleIntent(1,Guid.NewGuid(),request.Kind.ToString(),definition.InstanceId,source,target,definition.Generation,next,primary.Sha256,MmcDurableFiles.Hash(nextDefinition),paths.GameRootLeaf){WorkspaceRelativePath=Path.GetRelativePath(source,prepared.StageRoot).Replace('\\','/')};
             journal=MmcInstanceLifecycleJournal.Create(intent,sourceLease);request.Checkpoint?.Invoke(MmcLifecycleCheckpoint.IntentPrepared,journal.DirectoryPath);fence.Token.ThrowIfCancellationRequested();
             journal.MarkPending(source);request.Checkpoint?.Invoke(MmcLifecycleCheckpoint.MarkerWritten,journal.DirectoryPath);
             using(var permit=journal.Enter(sourceLease))using(var settings=access.Quiet[source].OpenProjectionRepair(sourceLease,definition.Generation,primary.Sha256)) {
@@ -60,7 +60,7 @@ public sealed partial class MmcInstanceLifecycleBackend {
                 if(oldName!=newName)mutations.Add(new(oldName+".json",definition.InstalledProjection!.OutputJsonSha256,null,null));
                 var result=settings.Execute(new(definition.InstanceId,definition.Generation,next,mutations),fence.Token,(phase,_)=>{
                     if(phase==MmcTransactionCheckpoint.Prepared){journal.BindPreparedTransaction(source);request.Checkpoint?.Invoke(MmcLifecycleCheckpoint.StructurePrepared,journal.DirectoryPath);}
-                    if(phase==MmcTransactionCheckpoint.BeforeDecision)fence.EnterDecision();
+                    if(phase==MmcTransactionCheckpoint.BeforeDecision){request.Checkpoint?.Invoke(MmcLifecycleCheckpoint.BeforeDecision,journal.DirectoryPath);fence.EnterDecision();}
                     if(phase==MmcTransactionCheckpoint.CommitDecided){decided=true;request.Checkpoint?.Invoke(MmcLifecycleCheckpoint.CommitDecided,journal.DirectoryPath);}
                 });
                 if(result.Outcome!=MmcTransactionOutcome.Committed){if(result.Outcome==MmcTransactionOutcome.Aborted){journal.Complete("Aborted");journal.ClearPending(source);}return new(fence.Token.IsCancellationRequested?MmcInstanceBackendStatus.Cancelled:MmcInstanceBackendStatus.NeedsRecovery,journal.DirectoryPath,source,Failure:result.Diagnostic);}
@@ -96,6 +96,7 @@ public sealed partial class MmcInstanceLifecycleBackend {
         if(!journal.Owns(target)||MmcInstancePaths.Attributes(source)is not null)throw new IOException("Lifecycle directory location is missing or conflicting.");
         using(var permit=journal.Enter(access.Leases[target])) {
             MmcConfigurationCoordinator.CompletePathRelocation(access.Quiet[source],access.Quiet[target],access.Leases[source],access.Leases[target],intent.InstanceId,delete?intent.SourcePrimarySha256:intent.TargetPrimarySha256!);
+            if(delete)MmcConfigurationCoordinator.FlushRelocatedPreferences(access.Quiet[target],access.Leases[target],intent.InstanceId,intent.SourcePrimarySha256);
             checkpoint?.Invoke(MmcLifecycleCheckpoint.BeforeFinalization,journal.DirectoryPath);journal.Complete(delete?"Quarantined":"Moved");if(!delete)journal.ClearPending(target);
         }
         checkpoint?.Invoke(MmcLifecycleCheckpoint.Completed,journal.DirectoryPath);

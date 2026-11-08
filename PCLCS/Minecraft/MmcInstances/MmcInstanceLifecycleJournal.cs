@@ -6,11 +6,14 @@ namespace PCLCS;
 
 // Original LF host implementation; governed by the repository LICENCE.
 internal sealed record MmcLifecycleIntent(int SchemaVersion, Guid OperationId, string Kind, Guid InstanceId, string SourceRoot, string TargetRoot,
-    long SourceGeneration, long TargetGeneration, string SourcePrimarySha256, string? TargetPrimarySha256, string GameRootLeaf);
+    long SourceGeneration, long TargetGeneration, string SourcePrimarySha256, string? TargetPrimarySha256, string GameRootLeaf) {
+    public string? WorkspaceRelativePath { get; init; }
+}
 internal sealed record MmcLifecycleMarker(int SchemaVersion, Guid OperationId, Guid InstanceId, string OperationDirectory, string IntentSha256);
 internal sealed record MmcLifecycleTxLink(Guid TransactionId, string PreparedSha256);
 internal sealed record MmcLifecycleDecision(int SchemaVersion, Guid OperationId, string IntentSha256, string Kind);
 internal sealed record MmcLifecycleCompletion(int SchemaVersion, Guid OperationId, string IntentSha256, string Disposition);
+internal sealed record MmcLifecycleRestore(int SchemaVersion,Guid RestoreId,Guid DeleteOperationId,string DeleteIntentSha256);
 
 internal sealed class MmcInstanceLifecycleJournal {
     internal const string MarkerRelative = "PCL/MmcLifecyclePending.json";
@@ -48,6 +51,7 @@ internal sealed class MmcInstanceLifecycleJournal {
         if(intent.SchemaVersion!=1 || intent.OperationId==Guid.Empty || intent.InstanceId==Guid.Empty || intent.Kind is not ("Rename" or "Move" or "Delete") ||
             intent.SourceGeneration<1 || !MmcDurableFiles.IsHash(intent.SourcePrimarySha256) || intent.GameRootLeaf is not ("minecraft" or ".minecraft")) throw new IOException("Unknown or damaged lifecycle intent.");
         MmcInstanceCloneReservation.ValidateRoots(intent.SourceRoot,intent.TargetRoot);
+        if(intent.WorkspaceRelativePath is { } workspace){string[] parts=workspace.Split('/');if(parts.Length!=4||parts[0]!="PCL"||parts[1]!="MmcRuntime"||parts[2]!=".staging"||!Guid.TryParseExact(parts[3],"N",out Guid id)||id==Guid.Empty)throw new IOException("Lifecycle workspace pointer is invalid.");}
         if(intent.Kind=="Delete" ? intent.TargetGeneration!=intent.SourceGeneration || intent.TargetPrimarySha256 is not null :
             intent.TargetGeneration!=checked(intent.SourceGeneration+1) || !MmcDurableFiles.IsHash(intent.TargetPrimarySha256)) throw new IOException("Lifecycle generation/decision shape is invalid.");
     }
@@ -78,6 +82,19 @@ internal sealed class MmcInstanceLifecycleJournal {
         return MmcDurableFiles.Hash(marker);
     }
     internal MmcPendingOperationPermit Enter(MmcAdmissionLease lease)=>MmcPendingOperationPermit.ForLifecycle(lease,this);
+    internal void RecoverWorkspace(MmcAdmissionLease lease){
+        if(Intent.WorkspaceRelativePath is not { } relative)return;
+        // The original driver takes this source admission before creating any workspace, and
+        // retains it through every synchronous GetResult/Dispose and directory operation. Recovery
+        // cannot acquire both gates until that actual producer has exited (or its process died).
+        _=ValidatePendingPermit(lease);MmcFileTransactions.AssertNoPending(lease);
+        MmcArtifactWorkspace.RecoverOwned(lease,relative,Intent.SourceRoot);
+    }
+    internal void RecoverUnmarkedWorkspace(MmcAdmissionLease lease){
+        lease.AssertHeld();if(lease.VersionRoot!=Intent.SourceRoot||lease.InstanceId!=Intent.InstanceId||Owns(lease.VersionRoot)||
+            MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(lease.VersionRoot)).Sha256!=Intent.SourcePrimarySha256)throw new IOException("Unmarked lifecycle preparation has no unchanged source authority.");
+        MmcFileTransactions.AssertNoPending(lease);if(Intent.WorkspaceRelativePath is { } relative)MmcArtifactWorkspace.RecoverOwned(lease,relative,Intent.SourceRoot);
+    }
     internal void BindPreparedTransaction(string location) {
         var candidate=FindTransaction(location);
         if(candidate is null) throw new IOException("Lifecycle structural journal was not prepared.");
@@ -137,6 +154,25 @@ internal sealed class MmcInstanceLifecycleJournal {
         string path=Path.Combine(DirectoryPath,"completed.record"); var expected=new MmcLifecycleCompletion(1,Intent.OperationId,intentHash,disposition);
         if(!File.Exists(path)) MmcDurableFiles.WriteRecord(path,expected); else if(Completion()!=expected) throw new IOException("Lifecycle completion conflicts with its original result.");
     }
+    internal string PrepareRestore(){
+        if(Intent.Kind!="Delete"||Completion()?.Disposition!="Quarantined")throw new IOException("Only a completed quarantine supports restoration.");
+        AbandonRestorePreparation();return MmcDurableFiles.WriteRecord(Path.Combine(DirectoryPath,"restore.record"),new MmcLifecycleRestore(1,Guid.NewGuid(),Intent.OperationId,intentHash));
+    }
+    private (MmcLifecycleRestore Intent,string Hash) ReadRestore(){
+        var(value,hash)=MmcDurableFiles.ReadRecord<MmcLifecycleRestore>(Path.Combine(DirectoryPath,"restore.record"));
+        if(value.SchemaVersion!=1||value.RestoreId==Guid.Empty||value.DeleteOperationId!=Intent.OperationId||value.DeleteIntentSha256!=intentHash)throw new IOException("Quarantine restoration intent is invalid.");return(value,hash);
+    }
+    internal bool HasRestoreDecision(){
+        string path=Path.Combine(DirectoryPath,"RestoreCommitDecided.record");if(!File.Exists(path))return false;
+        var(intent,hash)=ReadRestore();if(MmcDurableFiles.ReadRecord<MmcLifecycleDecision>(path).Value!=new MmcLifecycleDecision(1,intent.RestoreId,hash,"RestoreDelete"))throw new IOException("Quarantine restoration decision is damaged.");return true;
+    }
+    internal void DecideRestore(){var(intent,hash)=ReadRestore();MmcDurableFiles.WriteRecord(Path.Combine(DirectoryPath,"RestoreCommitDecided.record"),new MmcLifecycleDecision(1,intent.RestoreId,hash,"RestoreDelete"));}
+    internal void AbandonRestorePreparation(string? expectedHash=null){
+        string path=Path.Combine(DirectoryPath,"restore.record");if(!File.Exists(path)||HasRestoreDecision())return;var(_,hash)=ReadRestore();if(expectedHash is not null&&hash!=expectedHash)throw new IOException("A different restore preparation owns this record.");File.Delete(path);
+    }
+    internal bool IsRestored(){string path=Path.Combine(DirectoryPath,"restored.record");if(!File.Exists(path))return false;
+        if(!HasRestoreDecision()||MmcDurableFiles.ReadRecord<MmcLifecycleCompletion>(path).Value!=new MmcLifecycleCompletion(1,Intent.OperationId,intentHash,"Restored"))throw new IOException("Quarantine restore completion is invalid.");return true;}
+    internal void CompleteRestore(){string path=Path.Combine(DirectoryPath,"restored.record");if(!File.Exists(path))MmcDurableFiles.WriteRecord(path,new MmcLifecycleCompletion(1,Intent.OperationId,intentHash,"Restored"));else _=IsRestored();}
 }
 
 internal sealed partial class MmcPendingOperationPermit {

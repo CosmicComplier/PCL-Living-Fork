@@ -3,6 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using PCLCS;
 using PCLLF.MMCC.Core;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 internal static class MmcInstanceLifecycleTests {
     internal static IEnumerable<(string Name,Action Run)> Cases() {
@@ -10,6 +13,79 @@ internal static class MmcInstanceLifecycleTests {
         yield return ("MMC lifecycle permits require an exact published source and bound durable intent", JournalPermit);
         yield return ("MMC rename and same-volume move preserve identity/worlds and advance name projections without an installed Java", Relocation);
         yield return ("MMC lifecycle predecision cancellation rolls back while decided target conflicts recover forward", CancellationAndConflict);
+        yield return ("MMC delete quarantines only private data and restores without reviving detached providers", DeleteRestore);
+        yield return ("MMC exclusive primary file locks preserve the source and allow safe relocation retry", LockedDirectory);
+        yield return ("MMC killed lifecycle producers recover exact predecision rollback and postdecision forward publication", KilledProducer);
+        yield return ("MMC terminal recovery rejects another valid instance primary without attributing or changing it", TerminalReplacement);
+    }
+    internal static bool TryRunChild(string[] args,out int exitCode){
+        exitCode=0;if(args.Length==0||args[0]!="--mmc-lifecycle-child")return false;
+        try{
+            if(args.Length!=7)throw new IOException("Bad owned lifecycle child arguments.");
+            string scope=Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(args[1]))!)!)!;
+            string leaf=Path.GetFileName(scope);if(!leaf.StartsWith("pcllf-mmc-lifecycle-",StringComparison.Ordinal)||!Guid.TryParseExact(leaf[20..],"N",out _)||Path.GetDirectoryName(args[6])!=scope)throw new IOException("Lifecycle child is outside its GUID fixture.");
+            var request=new MmcInstanceRelocationRequest(args[1],args[2],Guid.Parse(args[3]),1,args[4]){Checkpoint=(phase,directory)=>{
+                if(args[5]=="prepared"&&phase==MmcLifecycleCheckpoint.StructurePrepared||args[5]=="decided"&&phase==MmcLifecycleCheckpoint.CommitDecided){File.WriteAllText(args[6],directory);using ManualResetEventSlim hold=new();hold.Wait();}
+            }};
+            var result=new MmcInstanceLifecycleBackend().RelocateAsync(request).GetAwaiter().GetResult();Console.Error.WriteLine(result.Failure);exitCode=93;
+        }catch(Exception error){Console.Error.WriteLine(error);exitCode=94;}return true;
+    }
+    private static void LockedDirectory(){
+        using Fixture fixture=new();var source=fixture.Import();var service=new MmcInstanceLifecycleBackend();MmcInstanceLifecycleResult result;
+        string hash=MmcSavedSourceStore.ReadPrimary(source.Paths!).Sha256;
+        using(var handle=new FileStream(Path.Combine(fixture.Source,"PCL","InstanceDefinition.json"),FileMode.Open,FileAccess.Read,FileShare.None)){
+            result=service.RelocateAsync(new(fixture.Source,fixture.Target,source.Definition!.InstanceId,1,hash)).GetAwaiter().GetResult();
+            Equal(MmcInstanceBackendStatus.Rejected,result.Status);Equal(true,Directory.Exists(fixture.Source));Equal(false,Directory.Exists(fixture.Target));
+        }
+        Equal(1L,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(fixture.Source)).Definition.Generation);
+        var recovered=service.RelocateAsync(new(fixture.Source,fixture.Target,source.Definition!.InstanceId,1,hash)).GetAwaiter().GetResult();if(recovered.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(recovered.Failure);
+        Equal(false,Directory.Exists(fixture.Source));Equal("world bytes",File.ReadAllText(Path.Combine(fixture.Target,"minecraft","saves","world","level.dat")));
+    }
+    private static void TerminalReplacement(){
+        using Fixture fixture=new();using Fixture foreign=new();var source=fixture.Import();var other=foreign.Import();var service=new MmcInstanceLifecycleBackend();
+        var result=service.RelocateAsync(new(fixture.Source,fixture.Target,source.Definition!.InstanceId,1,MmcSavedSourceStore.ReadPrimary(source.Paths!).Sha256)).GetAwaiter().GetResult();if(result.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(result.Failure);
+        byte[] replacement=File.ReadAllBytes(Path.Combine(foreign.Source,"PCL","InstanceDefinition.json"));string targetPrimary=Path.Combine(fixture.Target,"PCL","InstanceDefinition.json");File.WriteAllBytes(targetPrimary,replacement);
+        var refused=service.RecoverAsync(result.OperationDirectory!).GetAwaiter().GetResult();Equal(MmcInstanceBackendStatus.NeedsRecovery,refused.Status);Equal(true,refused.Definition is null);Equal(true,replacement.SequenceEqual(File.ReadAllBytes(targetPrimary)));Equal(other.Definition!.InstanceId,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(fixture.Target)).Definition.InstanceId);
+    }
+    private static void KilledProducer(){
+        foreach(string phase in new[]{"prepared","decided"}){
+            using Fixture fixture=new();var source=fixture.Import();string ready=Path.Combine(fixture.Root,"ready.txt");
+            var start=new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
+            foreach(string value in new[]{"--mmc-lifecycle-child",fixture.Source,fixture.Target,source.Definition!.InstanceId.ToString("D"),MmcSavedSourceStore.ReadPrimary(source.Paths!).Sha256,phase,ready})start.ArgumentList.Add(value);
+            using var child=Process.Start(start)??throw new IOException("Owned lifecycle child did not start.");var output=child.StandardOutput.ReadToEndAsync();var errors=child.StandardError.ReadToEndAsync();
+            try{
+                var timer=Stopwatch.StartNew();while(!File.Exists(ready)){if(child.HasExited)throw new IOException("Lifecycle child exited: "+errors.GetAwaiter().GetResult());if(timer.ElapsedMilliseconds>20000)throw new TimeoutException("Lifecycle child did not reach its exact boundary.");Thread.Sleep(2);}
+                string directory=File.ReadAllText(ready);
+                Equal(MmcInstanceBackendStatus.NeedsRecovery,new MmcInstanceLifecycleBackend().RecoverAsync(directory).GetAwaiter().GetResult().Status);
+                child.Kill(true);if(!child.WaitForExit(5000))throw new IOException("Owned lifecycle child did not exit.");
+                var recovered=new MmcInstanceLifecycleBackend().RecoverAsync(directory).GetAwaiter().GetResult();
+                if(phase=="prepared"){if(recovered.Status!=MmcInstanceBackendStatus.Cancelled)throw new Exception(recovered.Failure);Equal(true,Directory.Exists(fixture.Source));Equal(false,Directory.Exists(fixture.Target));Equal(1L,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(fixture.Source)).Definition.Generation);}
+                else{if(recovered.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(recovered.Failure);Equal(false,Directory.Exists(fixture.Source));Equal(2L,recovered.Definition!.Generation);}
+                Equal("world bytes",File.ReadAllText(Path.Combine(recovered.CurrentRoot!,"minecraft","saves","world","level.dat")));
+            }finally{if(!child.HasExited){child.Kill(true);child.WaitForExit(5000);}}
+        }
+    }
+    private static void DeleteRestore(){
+        using Fixture fixture=new();var source=fixture.Import();var service=new MmcInstanceLifecycleBackend();using CancellationTokenSource cancel=new();
+        using var old=new InstanceConfigProvider(fixture.Source);
+        string shared=Path.Combine(fixture.Root,"assets","unrelated.bin");Directory.CreateDirectory(Path.GetDirectoryName(shared)!);File.WriteAllText(shared,"shared bytes");
+        var deleted=service.DeleteAsync(new(fixture.Source,source.Definition!.InstanceId,1,MmcSavedSourceStore.ReadPrimary(source.Paths!).Sha256){Checkpoint=(phase,_)=>{
+            if(phase==MmcLifecycleCheckpoint.MarkerWritten){old.Set("queued-before-delete","keep pending value",false);MmcIniConfiguration.QueuePreferenceBatch(old,new Dictionary<string,string?>{["MmcJvmArgsMode"]="Custom",["VersionAdvanceJvm"]=""});}
+            if(phase==MmcLifecycleCheckpoint.CommitDecided)cancel.Cancel();}},cancel.Token).GetAwaiter().GetResult();
+        if(deleted.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(deleted.Failure);
+        Equal(true,deleted.Quarantined);Equal(false,Directory.Exists(fixture.Source));Equal(true,cancel.IsCancellationRequested);Denied(old.Save);
+        Equal("world bytes",File.ReadAllText(Path.Combine(deleted.CurrentRoot!,"minecraft","saves","world","level.dat")));Equal("shared bytes",File.ReadAllText(shared));
+        Equal("keep pending value",Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(Path.Combine(deleted.CurrentRoot!,"PCL","config.json"))).Value<string>("queued-before-delete"));
+        Equal("",LegacyBaseOperations.ParseIni(File.ReadAllText(Path.Combine(deleted.CurrentRoot!,"PCL","Setup.ini")))["VersionAdvanceJvm"]);
+        Equal(MmcManagementState.PendingTransaction,MmcManagementProbe.Read(deleted.CurrentRoot!).State);
+        Equal(true,service.RecoverAsync(deleted.OperationDirectory!).GetAwaiter().GetResult().Quarantined);
+        Directory.CreateDirectory(fixture.Source);File.WriteAllText(Path.Combine(fixture.Source,"foreign.bin"),"keep");
+        Equal(MmcInstanceBackendStatus.NeedsRecovery,service.RestoreDeletedAsync(deleted.OperationDirectory!).GetAwaiter().GetResult().Status);Equal("keep",File.ReadAllText(Path.Combine(fixture.Source,"foreign.bin")));
+        File.Delete(Path.Combine(fixture.Source,"foreign.bin"));Directory.Delete(fixture.Source,false);
+        var restored=service.RestoreDeletedAsync(deleted.OperationDirectory!).GetAwaiter().GetResult();if(restored.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(restored.Failure);
+        Equal(false,restored.Quarantined);Equal(source.Definition.InstanceId,restored.Definition!.InstanceId);Equal(1L,restored.Definition.Generation);Equal(false,Directory.Exists(deleted.CurrentRoot!));Denied(old.Save);
+        Equal(MmcManagementState.ManagedMmc,MmcManagementProbe.Read(fixture.Source).State);Equal("shared bytes",File.ReadAllText(shared));
+        Equal(MmcInstanceBackendStatus.Succeeded,service.RecoverAsync(deleted.OperationDirectory!).GetAwaiter().GetResult().Status);
     }
     private static void Relocation(){
         using Fixture fixture=new();var imported=fixture.Import();var service=new MmcInstanceLifecycleBackend();
@@ -30,14 +106,15 @@ internal static class MmcInstanceLifecycleTests {
         Equal(false,Directory.Exists(renamed));Equal(false,Directory.Exists(fixture.Source));
     }
     private static void CancellationAndConflict(){
-        foreach(string mode in new[]{"before","after","conflict"}){
+        foreach(string mode in new[]{"before","at-decision","after","conflict"}){
             using Fixture fixture=new();var imported=fixture.Import();using CancellationTokenSource cancel=new();var service=new MmcInstanceLifecycleBackend();
             var result=service.RelocateAsync(new(fixture.Source,fixture.Target,imported.Definition!.InstanceId,1,MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256){
                 Checkpoint=(phase,_)=>{if(mode=="before"&&phase==MmcLifecycleCheckpoint.StructurePrepared)cancel.Cancel();
+                    if(mode=="at-decision"&&phase==MmcLifecycleCheckpoint.BeforeDecision)cancel.Cancel();
                     if(mode=="after"&&phase==MmcLifecycleCheckpoint.CommitDecided)cancel.Cancel();
                     if(mode=="conflict"&&phase==MmcLifecycleCheckpoint.BeforeDirectoryMove){Directory.CreateDirectory(fixture.Target);File.WriteAllText(Path.Combine(fixture.Target,"foreign.txt"),"keep");}}
             },cancel.Token).GetAwaiter().GetResult();
-            if(mode=="before"){Equal(MmcInstanceBackendStatus.Cancelled,result.Status);Equal(1L,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(fixture.Source)).Definition.Generation);Equal(false,Directory.Exists(fixture.Target));Equal(MmcManagementState.ManagedMmc,MmcManagementProbe.Read(fixture.Source).State);}
+            if(mode is "before" or "at-decision"){Equal(MmcInstanceBackendStatus.Cancelled,result.Status);Equal(1L,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(fixture.Source)).Definition.Generation);Equal(false,Directory.Exists(fixture.Target));Equal(MmcManagementState.ManagedMmc,MmcManagementProbe.Read(fixture.Source).State);}
             else if(mode=="after"){if(result.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(result.Failure);Equal(true,cancel.IsCancellationRequested);Equal(2L,result.Definition!.Generation);}
             else{Equal(MmcInstanceBackendStatus.NeedsRecovery,result.Status);Equal("keep",File.ReadAllText(Path.Combine(fixture.Target,"foreign.txt")));Equal(MmcManagementState.PendingTransaction,MmcManagementProbe.Read(fixture.Source).State);
                 File.Delete(Path.Combine(fixture.Target,"foreign.txt"));Directory.Delete(fixture.Target,false);

@@ -5,7 +5,7 @@ namespace PCLCS;
 
 // Original LF host implementation; governed by the repository LICENCE.
 public enum MmcInstanceRelocationKind { Rename, Move }
-public enum MmcLifecycleCheckpoint { IntentPrepared, MarkerWritten, StructurePrepared, CommitDecided, BeforeDirectoryMove, DirectoryMoved, BeforeFinalization, Completed }
+public enum MmcLifecycleCheckpoint { IntentPrepared, MarkerWritten, StructurePrepared, CommitDecided, BeforeDirectoryMove, DirectoryMoved, BeforeFinalization, Completed, BeforeDecision }
 public sealed record MmcInstanceRelocationRequest(string SourceRoot, string TargetRoot, Guid ExpectedInstanceId, long ExpectedGeneration,
     string ExpectedPrimarySha256, MmcInstanceRelocationKind Kind = MmcInstanceRelocationKind.Move) {
     public ImmutableArray<MmcRuntimeEnvironment> LegacyEnvironmentCandidates { get; init; } = [];

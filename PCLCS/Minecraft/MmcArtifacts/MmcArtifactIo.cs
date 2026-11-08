@@ -50,6 +50,18 @@ internal sealed class MmcArtifactWorkspace : IDisposable {
         DeleteOwnedDirectory(Root, marker);
         disposed = true;
     }
+    /// <summary>Lifecycle recovery only: its recorded workspace and original producer share the held instance gate for their entire lifetime.</summary>
+    internal static void RecoverOwned(MmcAdmissionLease lease,string relative,string expectedOwnerRoot) {
+        lease.AssertHeld();string[] parts=relative.Split('/');
+        if(parts.Length!=4||parts[0]!="PCL"||parts[1]!="MmcRuntime"||parts[2]!=".staging"||!Guid.TryParseExact(parts[3],"N",out Guid id)||id==Guid.Empty)
+            throw new IOException("Lifecycle workspace pointer is not an exact owned GUID boundary.");
+        string root=MmcInstancePaths.Resolve(lease.VersionRoot).ResolveRelative(MmcPathRole.Instance,relative);
+        if(MmcInstancePaths.Attributes(root)is null)return;MmcInstancePaths.EnsureNoLinks(root);
+        string marker=Path.Combine(root,"owner.txt");MmcInstancePaths.EnsureNoLinks(marker);
+        if(new FileInfo(marker).Length>4096||File.ReadAllText(marker)!="PCLLF.MmcArtifactWorkspace/v1\n"+parts[3]+"\n"+expectedOwnerRoot)
+            throw new IOException("Lifecycle workspace owner bytes changed; preserving every file.");
+        DeleteOwnedDirectory(root,marker);
+    }
 
     private static void DeleteOwnedDirectory(string path, string? finalMarker = null) {
         MmcInstancePaths.EnsureNoLinks(path);
