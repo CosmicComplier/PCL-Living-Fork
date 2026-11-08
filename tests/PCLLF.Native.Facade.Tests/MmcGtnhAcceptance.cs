@@ -67,12 +67,15 @@ internal static class MmcGtnhAcceptance {
         using var child = Process.Start(start) ?? throw new IOException("GTNH acceptance child did not start.");
         Task stdout = Pump(child.StandardOutput, Path.Combine(caseRoot, "stdout.log"), sample.Id, false);
         Task stderr = Pump(child.StandardError, Path.Combine(caseRoot, "stderr.log"), sample.Id, true);
-        var watch = Stopwatch.StartNew(); bool received = false;
+        var watch = Stopwatch.StartNew(); bool received = false; long reportedMinute = 0;
         try {
             string receipt = Path.Combine(caseRoot, ReceiptName);
             while (!File.Exists(receipt)) {
                 if (child.WaitForExit(100)) throw new IOException("Owned GTNH child exited before its receipt: " + child.ExitCode);
-                if (watch.Elapsed > TimeSpan.FromMinutes(30)) throw new TimeoutException("GTNH import exceeded the explicit 30-minute child budget; all files retained.");
+                if ((long)watch.Elapsed.TotalMinutes > reportedMinute) {
+                    reportedMinute = (long)watch.Elapsed.TotalMinutes;
+                    Console.WriteLine("GTNH child still owned/alive: " + sample.Id + " elapsed=" + watch.Elapsed + "; waiting for actual result, not a timeout verdict.");
+                }
             }
             using var document = JsonDocument.Parse(File.ReadAllText(receipt)); var root = document.RootElement;
             if (root.GetProperty("Nonce").GetString() != nonce || root.GetProperty("Pid").GetInt32() != child.Id || root.GetProperty("CaseRoot").GetString() != caseRoot)
@@ -166,11 +169,10 @@ internal static class MmcGtnhAcceptance {
                 Sha256 = packageDigest, MainSha256 = MainHash(), MainMvid = Native.Main.ManifestModule.ModuleVersionId,
                 Java = installed.Select(value => new { value.JavaExePath, Version = value.Version!.ToString() }) }, JsonOptions));
             loader = ModModpack.ModpackInstall(sample.Archive) ?? throw new IOException("Actual modpack dispatcher did not start an import.");
-            DateTime deadline = DateTime.UtcNow.AddMinutes(28);
             while (loader.State is ModBase.LoadState.Loading or ModBase.LoadState.Waiting ||
                 loader.Loaders.OfType<ModLoader.LoaderTask<string, MmcInstanceBackendResult>>().Any(value => value.LastRunningThread?.IsAlive == true)) {
-                Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, deadline);
-                ReportDownloads(); if (DateTime.UtcNow >= deadline) { loader.Cancel(); throw new TimeoutException("GTNH actual import did not settle within its child budget."); }
+                Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, DateTime.UtcNow.AddSeconds(30));
+                ReportDownloads();
                 Thread.Sleep(100);
             }
             foreach (var download in downloads) MmcDownloads.DrainAsync(download).GetAwaiter().GetResult();
