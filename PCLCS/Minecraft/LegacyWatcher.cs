@@ -49,6 +49,8 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
     private string? windowTitle = "";
     private int pid, stopCallbackCompleted, logProgress;
     private Action? afterStopped;
+    private Func<string, string>? logRedactor;
+    private int? windowTypeOverride;
     private string? environmentPoint;
     private bool reachedRunning, isWindowAppeared, isWindowFinished;
     private IntPtr windowHandle;
@@ -61,7 +63,9 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
         get => state;
         set { if (Is(state, value)) return; state = value; if (Is(value, host.Running)) reachedRunning = true; group.StateChanged(); }
     }
-    public void Initialize(TLoader Loader, TInstance Instance, string? WindowTitle, Action<Process>? BeforeMonitoring = null, Action? OnStopped = null, string? EnvironmentPoint = null) {
+    public void Initialize(TLoader Loader, TInstance Instance, string? WindowTitle, Action<Process>? BeforeMonitoring = null, Action? OnStopped = null, string? EnvironmentPoint = null, Func<string, string>? LogRedactor = null, int? WindowTypeOverride = null) {
+        logRedactor = LogRedactor;
+        windowTypeOverride = WindowTypeOverride;
         owner.CoreLoader = Loader; owner.CoreInstance = Instance; windowTitle = WindowTitle; pid = host.LoaderInput(Loader).Id;
         afterStopped = OnStopped; environmentPoint = EnvironmentPoint;
         WatcherLog("开始 Minecraft 日志监控");
@@ -75,8 +79,13 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
         owner.CoreGameProcess = host.LoaderInput(Loader);
         BeforeMonitoring?.Invoke(owner.CoreGameProcess);
         // LF starts asynchronous reads before subscribing; preserve that timing.
-        owner.CoreGameProcess.BeginOutputReadLine(); owner.CoreGameProcess.BeginErrorReadLine();
-        owner.CoreGameProcess.OutputDataReceived += LogReceived; owner.CoreGameProcess.ErrorDataReceived += LogReceived;
+        if (logRedactor is not null) {
+            owner.CoreGameProcess.OutputDataReceived += LogReceived; owner.CoreGameProcess.ErrorDataReceived += LogReceived;
+            owner.CoreGameProcess.BeginOutputReadLine(); owner.CoreGameProcess.BeginErrorReadLine();
+        } else {
+            owner.CoreGameProcess.BeginOutputReadLine(); owner.CoreGameProcess.BeginErrorReadLine();
+            owner.CoreGameProcess.OutputDataReceived += LogReceived; owner.CoreGameProcess.ErrorDataReceived += LogReceived;
+        }
         host.RunInNewThread(() => {
             try {
                 while (!Is(State, host.Ended) && !Is(State, host.Canceled) &&
@@ -96,7 +105,11 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
             } catch (Exception error) { Logger.Error(error, "Minecraft 日志监控主循环出错"); State = host.Ended; }
         }, "Minecraft Watcher PID " + pid);
     }
-    private void LogReceived(object sender, DataReceivedEventArgs e) { lock (waitingLogLock) owner.CoreWaitingLog.Add(e.Data!); }
+    private void LogReceived(object sender, DataReceivedEventArgs e) {
+        string? text = e.Data;
+        if (text is not null && logRedactor is not null) text = logRedactor(text);
+        lock (waitingLogLock) owner.CoreWaitingLog.Add(text!);
+    }
     private bool IsNormalExit() => reachedRunning && owner.CoreGameProcess.ExitCode == 0 && !Is(State, host.Crashed) && !Is(State, host.Canceled);
     private void TimerLog() {
         try {
@@ -156,7 +169,7 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
             string name = window.Value.Value; IntPtr handle = window.Value.Key;
             if (!name.StartsWithF("FML") && !name.StartsWithF("Quilt Loader")) {
                 windowHandle = handle; WatcherLog($"Minecraft 窗口已加载：{name}（{handle.ToInt64()}）"); isWindowFinished = true;
-                if (host.WindowType() == 4) host.RunInNewThread(() => {
+                if ((windowTypeOverride ?? host.WindowType()) == 4) host.RunInNewThread(() => {
                     try { Thread.Sleep(2000); host.ShowWindow(windowHandle, 3); WatcherLog($"已最大化 Minecraft 窗口：{handle.ToInt64()}"); }
                     catch (Exception error) { Logger.Warn(error, "最大化 Minecraft 窗口时出现错误"); }
                 }, "MinecraftWindowMaximize");

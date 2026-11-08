@@ -101,10 +101,10 @@ namespace PCL
             public List<string> WaitingLog = new List<string>(1000);
             public ConcurrentQueue<string> LatestLog = new ConcurrentQueue<string>();
             private readonly LegacyWatcher<Watcher, PCL.ModMinecraft.McInstance, PCL.ModLoader.LoaderTask<Process, int>, MinecraftState> Native;
-            public Watcher(PCL.ModLoader.LoaderTask<Process, int> Loader, PCL.ModMinecraft.McInstance Instance, string WindowTitle, Action<Process> BeforeMonitoring = null, Action OnStopped = null, string EnvironmentPoint = null)
+            public Watcher(PCL.ModLoader.LoaderTask<Process, int> Loader, PCL.ModMinecraft.McInstance Instance, string WindowTitle, Action<Process> BeforeMonitoring = null, Action OnStopped = null, string EnvironmentPoint = null, Func<string, string> LogRedactor = null, int? WindowTypeOverride = null)
             {
                 Native = new LegacyWatcher<Watcher, PCL.ModMinecraft.McInstance, PCL.ModLoader.LoaderTask<Process, int>, MinecraftState>(this, Host, Group);
-                Native.Initialize(Loader, Instance, WindowTitle, BeforeMonitoring, OnStopped, EnvironmentPoint);
+                Native.Initialize(Loader, Instance, WindowTitle, BeforeMonitoring, OnStopped, EnvironmentPoint, LogRedactor, WindowTypeOverride);
             }
 
             public MinecraftState State
