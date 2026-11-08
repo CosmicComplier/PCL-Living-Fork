@@ -153,6 +153,14 @@ internal static class MmcProfileTests {
             ["consumer.json"] = Patch("consumer", requires: [new { uid = "missing", equals = "2", suggests = "3" }])
         }));
         Require(result.Components[0].Uid == "consumer" && result.MissingMetadata.Any(r => r.Uid == "missing" && r.Version == "2"), "Exact dependency or original component order lost.");
+        var emptyExactExisting = Good(Input(Pack(new { uid = "consumer", version = "1" }, new { uid = "dep", version = "1" }), patches: new() {
+            ["consumer.json"] = Patch("consumer", requires: [new { uid = "dep", equals = "", suggests = "1" }]), ["dep.json"] = Patch("dep")
+        }));
+        Require(emptyExactExisting.Components[0].LocalPatch!.Requires[0].EqualsVersion is null && emptyExactExisting.Components[0].LocalPatch!.Fields["requires"][0].GetProperty("equals").GetString() == "", "Empty exact constraint or its source representation changed.");
+        var emptyExactMissing = Good(Input(Pack(new { uid = "consumer", version = "1" }), patches: new() {
+            ["consumer.json"] = Patch("consumer", requires: [new { uid = "dep", equals = "", suggests = "1" }])
+        }));
+        Require(emptyExactMissing.MissingMetadata is [{ Uid: "dep", Version: "1" }], "Empty exact version suppressed a valid suggestion.");
         Error(Input(Pack(new { uid = "unknown" })), "MMC_VERSION_REQUIRED");
     }
     private static void InvalidGraphs() {

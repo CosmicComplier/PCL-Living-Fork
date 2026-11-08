@@ -145,7 +145,11 @@ internal static class MmcPatchReader {
                 if (field.Name is not ("uid" or "equals" or "suggests")) MmcJson.Fail(source, $"Unsupported {key} field: {field.Name}.");
             string uid = MmcJson.String(item, "uid", source, true)!;
             ValidateUid(uid, source);
-            result.Add(new(uid, MmcJson.String(item, "equals", source), MmcJson.String(item, "suggests", source)));
+            string? exact = MmcJson.String(item, "equals", source);
+            string? suggested = MmcJson.String(item, "suggests", source);
+            // An explicitly empty constraint contributes no version requirement.
+            // Nonempty strings are preserved exactly; Fields retains raw input.
+            result.Add(new(uid, exact == "" ? null : exact, suggested == "" ? null : suggested));
         }
         return result.ToImmutable();
     }
