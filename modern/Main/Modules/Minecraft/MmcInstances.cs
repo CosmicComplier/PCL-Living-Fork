@@ -37,13 +37,13 @@ public static class MmcInstances {
         ArgumentNullException.ThrowIfNull(request);
         var services = ServicesFactory?.Invoke(request) ?? CreateServices(request);
         if (services.Metadata is null || services.CacheRoots is null) throw new InvalidOperationException("MMC 导入缺少下载和元数据服务。");
-        var cancellation = new ImportCancellationFence();
+        var cancellation = new MmcOperationCancellationFence();
         ModLoader.LoaderCombo<string> combo = null;
-        var worker = new ImportWorker<string, MmcInstanceBackendResult>(cancellation, task => {
+        var worker = new MmcOperationWorker<string, MmcInstanceBackendResult>(cancellation, "读取 MMC 整合包", task => {
             try { task.Output = ImportAsync(task, request, services, name => combo.Name = "MMC 整合包安装：" + name, cancellation).GetAwaiter().GetResult(); }
             finally { cancellation.Complete(); }
         }) { InterruptOnCancel = false };
-        combo = new ImportCombo<string>(cancellation, "MMC 整合包安装：" + Path.GetFileNameWithoutExtension(request.ArchivePath), [worker]);
+        combo = new MmcOperationCombo<string>(cancellation, "MMC 整合包安装：" + Path.GetFileNameWithoutExtension(request.ArchivePath), [worker]);
         // Deliberately does not attach McInstallState: its legacy one-second failure cleanup does
         // not own MMC import reservations or durable recovery journals.
         if (services.RegisterTask is not null) services.RegisterTask(combo);
@@ -56,7 +56,7 @@ public static class MmcInstances {
     }
 
     private static async Task<MmcInstanceBackendResult> ImportAsync(ModLoader.LoaderTask<string, MmcInstanceBackendResult> task,
-        ModpackMmcInstallRequest request, MmcImportServices services, Action<string> named, ImportCancellationFence cancellation) {
+        ModpackMmcInstallRequest request, MmcImportServices services, Action<string> named, MmcOperationCancellationFence cancellation) {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), cancellation.Token);
         CancellationToken token = linked.Token;
         using var source = await MmcArchiveSourceReader.ReadAsync(request.ArchivePath, cancellationToken: token,
@@ -161,30 +161,4 @@ public static class MmcInstances {
         };
     }
     private sealed class SyncProgress<T>(Action<T> report) : IProgress<T> { public void Report(T value) => report(value); }
-    private sealed class ImportCancellationFence {
-        private readonly object gate = new();
-        private readonly CancellationTokenSource source = new();
-        private bool finishing, completed;
-        public CancellationToken Token => source.Token;
-        public void Cancel(Action standardCancel) {
-            lock (gate) {
-                if (finishing || completed) return;
-                source.Cancel(); standardCancel();
-            }
-        }
-        public void EnterDecision(CancellationToken token) {
-            lock (gate) { token.ThrowIfCancellationRequested(); finishing = true; }
-        }
-        public void Complete() { lock (gate) { completed = true; source.Dispose(); } }
-    }
-    // The existing scheduler reads the concrete type's first generic argument as its input
-    // contract. Keep the MMC cancellation adapters generic so that contract remains available.
-    private sealed class ImportWorker<TIn, TOut>(ImportCancellationFence fence, Action<ModLoader.LoaderTask<TIn, TOut>> work)
-        : ModLoader.LoaderTask<TIn, TOut>("读取 MMC 整合包", work) {
-        public override void Cancel() => fence.Cancel(() => base.Cancel());
-    }
-    private sealed class ImportCombo<TIn>(ImportCancellationFence fence, string name, IEnumerable<ModLoader.LoaderBase> children)
-        : ModLoader.LoaderCombo<TIn>(name, children) {
-        public override void Cancel() => fence.Cancel(() => base.Cancel());
-    }
 }

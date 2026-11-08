@@ -32,9 +32,46 @@ internal static class MmcLifecycleChecks {
         foreach(var pair in cases) { string path=Path.Combine(game,"versions",pair.Key); Directory.CreateDirectory(path); pair.Value(path); CheckRefused(path); }
         CheckUiAndBackground(managed);
         CheckOrdinary(root,game,managed);
+        CheckManagedCloneUi(managed);
         InstanceConfigProviders.FlushAndDisposeWithin(root);
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS mmc-lifecycle: real managed import/prepare/repair, six damaged/residual/unknown states, public clone/migration/history/update/component/delete refusal, UI/background dispatch before tasks, loose metadata/custom ordinary root/junction preservation. Guards do not claim P4 implementation.");
+        Console.WriteLine("PASS mmc-lifecycle: real managed import/prepare/repair, six damaged/residual/unknown states, dedicated managed UI clone with new identity/source preservation, legacy clone/migration/history/update/component/delete refusal, UI/background dispatch before tasks, loose metadata/custom ordinary root/junction preservation. Guards do not claim P4 implementation.");
+    }
+
+    private static void CheckManagedCloneUi(string sourceRoot) {
+        string before = TreeHash(sourceRoot);
+        var type = Native.Type("PCL.MmcCloneUi");
+        var register = Native.Property(type, "RegisterTask"); var published = Native.Property(type, "Published");
+        object? oldRegister = register.GetValue(null), oldPublished = published.GetValue(null);
+        var scheduler = (PCLCS.Loaders.LegacyLoaderHost<ModLoader.LoaderBase, ModBase.LoadState, MyLoading.MyLoadingState>)
+            Native.Field(typeof(ModLoader), "NativeLoaderHost").GetValue(null)!;
+        Action refresh = scheduler.RefreshExtraDownload;
+        using ManualResetEventSlim refreshed = new(false);
+        ModLoader.LoaderCombo<string>? actual = null; MmcInstanceCloneResult? result = null;
+        try {
+            // Only replace the absent window's presentation callback. The real
+            // combo, state producers and backend must finish before restoration.
+            scheduler.RefreshExtraDownload = refreshed.Set;
+            register.SetValue(null, new Action<ModLoader.LoaderCombo<string>>(loader => { actual = loader; ModLoader.LoaderTaskbar.Add(loader); }));
+            published.SetValue(null, new Action<MmcInstanceCloneResult>(value => result = value));
+            var owner = new ModMinecraft.McInstance(sourceRoot).Load();
+            object options = Activator.CreateInstance(Native.Type("PCL.InstanceCloneOptions"), true)!;
+            Native.Static("PCL.InstanceClonerUi", "Start", owner, "managed-ui-copy", options);
+            Native.Check(actual is not null, "Managed UI clone did not dispatch to the dedicated task.");
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            while (actual!.State == ModBase.LoadState.Loading || !refreshed.IsSet) {
+                if (timer.Elapsed > TimeSpan.FromSeconds(30)) throw new TimeoutException("Controlled managed clone task did not finish.");
+                Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, DateTime.UtcNow.AddSeconds(2)); Thread.Sleep(5);
+            }
+            Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, DateTime.UtcNow.AddSeconds(2));
+            Native.Check(actual.State == ModBase.LoadState.Finished && result?.Status == MmcInstanceBackendStatus.Succeeded,
+                "Dedicated clone task failed: " + actual.Error);
+            var source = MmcInstanceInspector.Read(sourceRoot); var clone = MmcInstanceInspector.Read(result!.Paths!.InstanceRoot);
+            Native.Check(clone.IsConsistent && clone.Definition!.InstanceId != source.Definition!.InstanceId &&
+                clone.Definition.ParentInstanceId == source.Definition.InstanceId && clone.Definition.Generation == 1,
+                "UI clone did not publish a fresh linked MMC identity.");
+            Native.Check(TreeHash(sourceRoot) == before, "Managed UI clone changed its source instance.");
+        } finally { scheduler.RefreshExtraDownload = refresh; register.SetValue(null, oldRegister); published.SetValue(null, oldPublished); }
     }
 
     private static void CheckRefused(string path) {
@@ -104,7 +141,10 @@ internal static class MmcLifecycleChecks {
             Hint(Native.Field(Native.Type("PCL.InstanceClonerUi"),"Service").GetValue(null)!,"Hint");
             Hint(Native.Field(Native.Type("PCL.EnvironmentHistoryUi"),"Service").GetValue(null)!,"HintError");
             Hint(Native.Field(Native.Type("PCL.ModpackUpdateFlow"),"Engine").GetValue(null)!,"HintRed");
-            Native.Static("PCL.InstanceClonerUi","Start",instance,"blocked-copy",null);
+            // The old workflow remains guarded; the Main UI wrapper now dispatches the supported
+            // managed clone path, verified separately below through the real dedicated backend.
+            object legacyClone = Native.Field(Native.Type("PCL.InstanceClonerUi"), "Service").GetValue(null)!;
+            Native.Call(legacyClone.GetType(), "Start", legacyClone, instance, "blocked-copy", null);
             Native.Static("PCL.EnvironmentHistoryUi","Start",instance,true,null,null);
             Native.Static("PCL.ModpackUpdateFlow","Start",instance,true);
         } finally { while(restore.Count>0)restore.Pop()(); }
