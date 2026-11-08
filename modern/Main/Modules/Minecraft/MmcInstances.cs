@@ -60,7 +60,10 @@ public static class MmcInstances {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), cancellation.Token);
         CancellationToken token = linked.Token;
         using var source = await MmcArchiveSourceReader.ReadAsync(request.ArchivePath, cancellationToken: token,
-            progress: new SyncProgress<MmcArchiveProgress>(value => { if (value.TotalBytes > 0) task.Progress = Math.Min(0.15, 0.15 * value.CompletedBytes / value.TotalBytes); })).ConfigureAwait(false);
+            progress: new SyncProgress<MmcArchiveProgress>(value => {
+                if (value.TotalBytes > 0) task.Progress = Math.Min(0.15, 0.15 * value.CompletedBytes / value.TotalBytes);
+                services.ProgressObserved?.Invoke(new(value.Phase, value.CompletedBytes, value.TotalBytes));
+            })).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
         string candidate = request.InstanceName ?? source.Package.Configuration.Name;
         string name = services.SelectName is not null ? services.SelectName(candidate) : SelectName(request.MinecraftFolder, candidate);
