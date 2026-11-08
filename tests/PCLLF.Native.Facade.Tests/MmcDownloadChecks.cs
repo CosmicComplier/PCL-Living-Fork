@@ -38,6 +38,7 @@ internal static class MmcDownloadChecks {
             FiniteCopyGrowth(retained); Console.WriteLine("DIAG MMC finite-copy source growth complete");
             UiCancellation(retained); Console.WriteLine("DIAG MMC UI cancellation scheduling complete");
             MetadataTransport(retained); Console.WriteLine("DIAG MMC standard metadata transport complete");
+            ProtectedJavaCancellation(retained); Console.WriteLine("DIAG MMC protected Java download cancellation complete");
             retained.Finish();
             environment.AssertNoForbiddenIo();
             Native.Check(System.Windows.Application.Current.Windows.Count == 0, "MMC downloader opened a window.");
@@ -221,6 +222,36 @@ internal static class MmcDownloadChecks {
         var store = MmcDownloads.CreateMetadataStore(Path.Combine(scope.Root, "metadata-cache"), new Uri(scope.Server.Url("/metadata/")));
         Task<IReadOnlyList<MmcMetadataContent>> read = store.FetchBatchAsync([new("net.minecraft", "1")]); scope.Complete(read);
         Native.Check(read.Result.Count == 1 && read.Result[0].ContentUtf8 == Encoding.UTF8.GetString(bytes), "Main metadata factory did not reuse the real bounded source service.");
+    }
+
+    private static void ProtectedJavaCancellation(Scope scope) {
+        string runtime = Path.Combine(scope.Root, "owned-runtime"), home = Path.Combine(runtime, "owned-http-jre");
+        string bin = Path.Combine(home, "bin"), sentinel = Path.Combine(bin, "retained-before-drain.txt");
+        Directory.CreateDirectory(bin); File.WriteAllText(sentinel, "owned inert Java maintenance fixture");
+        var pins = new MmcJavaPinStore(Path.Combine(runtime, ".pcllf-mmc-pins"));
+        byte[] bytes = Encoding.UTF8.GetBytes("inert synthetic Java download bytes; never executed");
+        using ManualResetEventSlim entered = new(), release = new();
+        scope.Server.Add("/protected-java-cancel", bytes, entered, release);
+        var plan = new LegacyJavaDownloadPlan { BaseDirectory = home, Files = [new LegacyJavaDownloadFile {
+            Sources = [scope.Server.Url("/protected-java-cancel")], Destination = Path.Combine(bin, "java.exe"),
+            Hash = Convert.ToHexStringLower(SHA256.HashData(bytes)), ActualSize = bytes.Length
+        }] };
+        var operation = (LegacyJavaDownloadOperation)Native.Call(typeof(ModJava), "CreateProtectedJavaDownload", null, plan, pins, runtime)!;
+        scope.PermitWideCredentials = true;
+        Task wait = Task.Run(() => operation.Wait(default, null));
+        scope.Until(() => entered.IsSet, "protected Java actual HTTP transfer enters");
+        var loader = ModNet.NetManager.Tasks.Single(item => item.Name == "下载 Java 文件" && item.Files.Any(file =>
+            string.Equals(Path.GetFullPath(file.LocalPath), Path.Combine(bin, "java.exe"), StringComparison.OrdinalIgnoreCase)));
+        foreach (var file in loader.Files) scope.Capture(file);
+        operation.Cancel(); scope.Until(() => loader.State == ModBase.LoadState.Canceled, "protected Java cancellation applies");
+        Native.Check(!wait.IsCompleted && Directory.Exists(home) && File.Exists(sentinel), "Java incomplete cleanup ran before the actual HTTP writer drained.");
+        bool blocked = false;
+        try { using var forbidden = pins.EnterMaintenance(home, TimeSpan.Zero); }
+        catch (IOException) { blocked = true; }
+        Native.Check(blocked, "Java maintenance gate was released while a canceled download still owned writers.");
+        release.Set(); scope.Canceled(wait); scope.NoWriters(loader); scope.PermitWideCredentials = false;
+        Native.Check(!Directory.Exists(home), "Java incomplete cleanup did not finish before Wait returned cancellation.");
+        using (pins.EnterMaintenance(home, TimeSpan.Zero)) { }
     }
 
     private sealed class Scope {
