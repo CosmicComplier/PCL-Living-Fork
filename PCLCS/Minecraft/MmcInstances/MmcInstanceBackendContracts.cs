@@ -14,6 +14,7 @@ public sealed record MmcInstanceRepairRequest(string VersionRoot, MmcRuntimeEnvi
     public Action<MmcTransactionCheckpoint, int>? TransactionCheckpoint { get; init; }
     public long? ExpectedGeneration { get; init; }
     public string? ExpectedPrimarySha256 { get; init; }
+    public MmcInstanceRepairSelection? StrictSelection { get; init; }
 }
 public sealed record MmcInstanceBackendProgress(string Phase, long CompletedBytes = 0, long TotalBytes = 0);
 /// <summary>Explicit adoption of another variant declared by the same preserved package sources.</summary>

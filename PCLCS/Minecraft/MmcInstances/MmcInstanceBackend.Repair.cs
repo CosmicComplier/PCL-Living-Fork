@@ -31,6 +31,8 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             if (request.ExpectedGeneration is { } expectedGeneration && definition.Generation != expectedGeneration ||
                 request.ExpectedPrimarySha256 is { } expectedHash && primary.Sha256 != expectedHash)
                 throw new IOException("The selected instance generation/definition changed before repair.");
+            if (request.StrictSelection is { } strict && (strict.InstanceId != definition.InstanceId || strict.Generation != definition.Generation ||
+                strict.PrimarySha256 != primary.Sha256)) throw new IOException("Strict repair selection differs from its request authority.");
             var paths = MmcInstancePaths.Resolve(request.VersionRoot, definition.Layout.GameRootLeaf);
             using (var readGate = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken)) {
                 MmcFileTransactions.AssertNoPending(readGate); MmcSessions.AssertNoActive(readGate);
@@ -89,9 +91,11 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             using var gate = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken);
             if (MmcSavedSourceStore.ReadPrimary(paths).Sha256 != primary.Sha256 || MmcDurableFiles.Observe(projectionPath) != oldProjection)
                 throw new IOException("Definition or projection changed while repair was preparing; no prepared changes were published.");
+            if (request.StrictSelection is { } selected) MmcInstanceRepairSelections.Revalidate(gate, selected);
             VerifyPreparedInputs(paths, prepared);
             VerifySourceRecords(paths, definition);
             using var settings = quiet.OpenProjectionRepair(gate, definition.Generation, primary.Sha256);
+            if (request.StrictSelection is not null) MmcInstanceRepairSelections.AssertConfiguration(definition, settings.ConfigSnapshot);
             SetManifest(settings, saved.Resolved.Resolution.Profile!, compiled, definition.InstanceId, generation);
             MmcTransactionResult result = settings.Execute(new(definition.InstanceId, definition.Generation, generation, MergeMutations(mutations)), cancellationToken, request.TransactionCheckpoint);
             if (result.Outcome != MmcTransactionOutcome.Committed)

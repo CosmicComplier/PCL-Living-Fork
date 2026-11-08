@@ -53,6 +53,8 @@ internal static class Program
         ["mmc-export-ui"] = MmcExportUiChecks.Run,
         ["mmc-history-ui"] = MmcHistoryUiChecks.Run,
         ["mmc-move-ui"] = MmcMoveUiChecks.Run,
+        ["mmc-repair-ui"] = MmcRepairUiChecks.Run,
+        ["mmc-repair-admission"] = MmcRepairUiChecks.RunAdmission,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,

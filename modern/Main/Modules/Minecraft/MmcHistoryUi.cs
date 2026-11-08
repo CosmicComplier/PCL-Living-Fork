@@ -54,7 +54,7 @@ internal static class MmcHistoryUi {
     }
 
     internal static ModLoader.LoaderCombo<string> StartCapture(MmcInstanceHistoryCaptureRequest request) => Start("记录 MMC 环境", request.VersionRoot, (task, token, fence) => {
-        var result = new MmcInstanceHistoryBackend().CaptureAsync(request with { Checkpoint = phase => {
+        var result = new MmcInstanceHistoryBackend().CaptureAsync(request with { FullSafeEnvironment = true, Checkpoint = phase => {
             CaptureCheckpointObserved?.Invoke(phase); request.Checkpoint?.Invoke(phase);
             if (phase == MmcInstanceHistoryCheckpoint.SourcesCaptured) fence.EnterDecision(token);
         } }, token).GetAwaiter().GetResult(); task.Output = result;

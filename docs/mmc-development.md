@@ -272,3 +272,16 @@ MMC 管理识别将包更新回执残留纳入保护证据；`mmc-profile` 含�
 最新 Main 构建 78 个既有警告／0 错误，Native 构建 0／0；`mmc-move-ui`、`mmc-rename-admission`、
 `mmc-export-ui` 三个真实 Main 组分别通过原有 60 秒预算。第二眼静态审查未发现可证 P1/P2。
 导出选项的内存输入同时使用现有 LF 文本控件；普通实例的管理入口没有增加 MMC 身份写入。
+
+## 2026-11-09 补全按钮接入实际 MMC 后端
+
+概览页“补全文件”现在在旧设置读取及 Maven 推断前分派受管理 MMC，使用真实下载、Loader、
+取消收尾和 `RepairAsync`。运行环境取已发布的精确指纹，不按 Minecraft 版本重新猜 Java。
+只缺生成 JSON 时，验证主定义与剩余配置身份后重建；已有外部改写 JSON 或冲突管理记录不静默覆盖。
+提交前在静默化及准入内重验固定身份，并验证实际合并的配置快照；允许普通偏好变更，拒绝迟到的异 ID／代数。
+
+Root Main 编译 78 个既有警告／0 错误；使用该真实 DLL 的 Native 构建 0／0。
+`mmc-repair-ui` 与 `mmc-repair-admission` 各在独立 60 秒子进程通过：损坏私有 mainJar、删除版本 JSON、
+删除原 ZIP 后离线补全，再 `RepairIncomplete=false` 准备成功；入口类／JVM、世界、个人配置和未知偏好保留。
+实际调度早取消、迟到 Start、提交前配置身份变更、pending／未知会话以及 Unresolved 旧对象重载约束均已验证。
+独立 high 静态复核已关闭配置身份 TOCTOU，未发现新增可证 P1/P2。这些测试没有执行 Minecraft。

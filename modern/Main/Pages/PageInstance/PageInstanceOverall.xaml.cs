@@ -98,6 +98,7 @@ namespace PCL
                     if (!ReferenceEquals(PageInstanceLeft.Instance, Target)) return;
                     PageInstanceLeft.Instance = renamed; Controller.Reload();
                 }),
+                BeginManagedRepair = MmcRepairUi.Prompt,
                 ReadIni = new Func<global::System.String, global::System.String, global::System.String, global::System.String>((Path, Key, DefaultValue) => global::PCL.ModBase.ReadIni(Path, Key, DefaultValue)),
                 WriteIni = new Action<global::System.String, global::System.String, global::System.String>((Path, Key, Value) => global::PCL.ModBase.WriteIni(Path, Key, Value)),
                 ReadLogo = Path => global::PCL.MinecraftLogoCompatibility.ReadVersionLogo(Path),

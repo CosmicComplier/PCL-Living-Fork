@@ -120,7 +120,14 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
     }
     public void Repair() {
         try {
-            if (host.Locked(host.Instance())) { host.HintRed("该版本正在被修改，请稍后再补全文件！"); return; }
+            var target = host.Instance();
+            if (host.Locked(target)) { host.HintRed("该版本正在被修改，请稍后再补全文件！"); return; }
+            // Dispatch before legacy settings reads and library inference. Damaged,
+            // pending and unsupported MMC evidence must never fall through to Forge fix.
+            if (!MmcManagementProbe.Read(target.PathVersion).CanUseLegacyBackend && host.BeginManagedRepair is not null) {
+                host.BeginManagedRepair(target); return;
+            }
+            MmcInstanceCapabilities.RequireLegacy(target.PathVersion, "旧版本文件补全");
             if (host.IgnoreFileCheck(host.Instance())) { host.HintBlue("请先关闭 [版本设置 → 设置 → 高级启动选项 → 关闭文件校验]，然后再尝试补全文件！"); return; }
             foreach (string ongoing in host.TaskNames()) if (ongoing == host.Instance().Name + " 文件补全") { host.HintRed("正在处理中，请稍候！"); return; }
             string name = host.Instance().Name + " 文件补全"; TCombo loader = host.CreateFixLoader(host.Instance(), name);
