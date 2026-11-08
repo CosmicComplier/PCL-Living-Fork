@@ -58,8 +58,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                         existing.Snapshot?.PackageConfiguration, paths.InstanceRoot, existing.Diagnostics, existing.Failure);
                 }
             }
-            var locks = definition.ArtifactLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))
-                .Concat(definition.PackageFileLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))).ToImmutableArray();
+            var locks = ExistingArtifactLocks(definition);
             var preserved = PreservedArtifacts(saved.Baseline, compiled);
             var artifactRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, ActiveArtifacts(compiled), preserved, locks,
                 intent == MmcBindingIntent.RepairExisting ? MmcArtifactIntent.RepairExisting : MmcArtifactIntent.AdoptDeclaredVariant, compiled.Assets);

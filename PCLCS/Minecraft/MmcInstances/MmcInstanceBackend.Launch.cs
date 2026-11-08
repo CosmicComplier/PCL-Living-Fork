@@ -117,9 +117,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
         if (!allowIncomplete && MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, Path.GetFileName(paths.InstanceRoot) + ".json")) != expected.Definition.InstalledProjection!.OutputJsonSha256)
             throw new IOException("The MMC compatibility projection changed after preparation.");
     }
-    private static ImmutableArray<MmcArtifactLock> ExistingArtifactLocks(MmcInstanceDefinition definition) => definition.ArtifactLocks
-        .Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))
-        .Concat(definition.PackageFileLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))).ToImmutableArray();
+    private static ImmutableArray<MmcArtifactLock> ExistingArtifactLocks(MmcInstanceDefinition definition) => MmcPublishedArtifactLocks.Create(definition);
     private static MmcNativeViewCache? PublishedNativeCache(MmcInstanceDefinition definition, MmcCompiledProfile compiled) {
         var native = definition.DerivedOutputs.Where(value => value.Kind == MmcDerivedOutputKind.NativeFile && value.RuntimePlanFingerprint == compiled.RuntimePlanFingerprint).ToArray();
         if (native.Length == 0 || native.Select(value => value.ViewKey).Distinct(StringComparer.Ordinal).Count() != 1 || native.Select(value => value.SourceSetFingerprint).Distinct(StringComparer.Ordinal).Count() != 1) return null;
