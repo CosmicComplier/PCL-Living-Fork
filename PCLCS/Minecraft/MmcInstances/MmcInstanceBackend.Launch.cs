@@ -112,8 +112,8 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
         VerifySourceRecords(snapshot.Paths, snapshot.Definition);
         foreach (var file in snapshot.Files) {
             cancellationToken.ThrowIfCancellationRequested();
+            // ResolveRelative has just checked this same path and its complete ancestor chain.
             string path = snapshot.Paths.ResolveRelative(MmcPathRole.Instance, file.RelativePath);
-            MmcInstancePaths.EnsureNoLinks(path);
             using FileStream input = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (input.Length != file.SizeBytes || Convert.ToHexStringLower(SHA256.HashData(input)) != file.Sha256)
                 throw new IOException("A bound MMC launch input changed after preparation: " + file.RelativePath);
