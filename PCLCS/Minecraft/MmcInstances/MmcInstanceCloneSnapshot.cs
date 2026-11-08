@@ -87,11 +87,11 @@ internal static class MmcInstanceCloneSnapshot {
         return new(relative, Convert.ToHexStringLower(hash.GetHashAndReset()), size);
     }
     internal static void Copy(MmcInstancePaths source, MmcInstancePaths target, MmcCloneInventory inventory, CancellationToken token,
-        IProgress<MmcInstanceCloneProgress>? progress, Action<MmcInstanceCloneCheckpoint, int>? checkpoint) {
-        foreach (string directory in inventory.Directories) MmcArtifactIo.Directory(target.ResolveRelative(MmcPathRole.Instance, directory));
+        IProgress<MmcInstanceCloneProgress>? progress, Action<MmcInstanceCloneCheckpoint, int>? checkpoint, Action? validateOwnership = null) {
+        foreach (string directory in inventory.Directories) { token.ThrowIfCancellationRequested(); validateOwnership?.Invoke(); MmcArtifactIo.Directory(target.ResolveRelative(MmcPathRole.Instance, directory)); }
         int completed = 0; long bytes = 0;
         foreach (var file in inventory.Files) {
-            token.ThrowIfCancellationRequested(); string inputPath = source.ResolveRelative(MmcPathRole.Instance, file.RelativePath), outputPath = target.ResolveRelative(MmcPathRole.Instance, file.RelativePath);
+            token.ThrowIfCancellationRequested(); validateOwnership?.Invoke(); string inputPath = source.ResolveRelative(MmcPathRole.Instance, file.RelativePath), outputPath = target.ResolveRelative(MmcPathRole.Instance, file.RelativePath);
             MmcArtifactIo.Directory(Path.GetDirectoryName(outputPath)!);
             using (var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 131072, FileOptions.SequentialScan))
             using (var output = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, FileOptions.SequentialScan)) {
