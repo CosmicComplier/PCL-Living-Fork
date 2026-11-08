@@ -2,12 +2,16 @@ using System.Collections.Immutable;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
+using System.Security.Cryptography;
+using Newtonsoft.Json.Linq;
 using PCLCS;
 using PCLLF.MMCC.Core;
 
 internal static class MmcInstanceBackendTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC import preparation measures the full archive and keeps opaque docs outside live settings", SourcePreparation);
+        yield return ("MMC backend imports real files and repairs offline after original ZIP deletion without touching player data", ImportRepair);
+        yield return ("MMC backend rejects damaged authority and retains interrupted import ownership", FailureIsolation);
     }
     private static void SourcePreparation() => SourcePreparationAsync().GetAwaiter().GetResult();
     private static async Task SourcePreparationAsync() {
@@ -36,11 +40,66 @@ internal static class MmcInstanceBackendTests {
         source.ArchiveEntries.Select(entry => new MmcPackageArchiveDescriptor(entry.Path, entry.IsDirectory, entry.SizeBytes, entry.Crc32)).ToImmutableArray(),
         prepared.Files.Select(file => new MmcPackageFileRecord(file.ArchiveRelativePath!, Enum.Parse<PCLLF.MMCC.Core.MmcPackageFileRole>(file.Role.ToString()), file.TargetRelativePath,
             file.Sha256, file.Sha1, file.SizeBytes, file.Crc32)).ToImmutableArray());
+    private static void ImportRepair() => ImportRepairAsync().GetAwaiter().GetResult();
+    private static async Task ImportRepairAsync() {
+        using Fixture fixture = new(); var backend = fixture.Backend();
+        var imported = await backend.ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        Equal(MmcInstanceBackendStatus.Succeeded, imported.Status);
+        var paths = imported.Paths!;
+        Equal("launcher library", File.ReadAllText(Path.Combine(paths.LocalLibraryRoot, "fixture.jar")));
+        Equal("different game library", File.ReadAllText(Path.Combine(paths.GameRoot, "libraries", "fixture.jar")));
+        Equal(2, imported.Definition!.PackageFileLocks.Length); Equal(1, fixture.Downloads);
+        Equal(false, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPending.json")));
+        JObject settings = JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "config.json")));
+        Equal(false, settings.ContainsKey("foreign-player-pref"));
+        using (var provider = new InstanceConfigProvider(paths.InstanceRoot)) { provider.Set("unknown-personal-pref", "keep", false); provider.Save(); }
+        string playerConfig = Path.Combine(paths.GameRoot, "config", "example.cfg"); File.WriteAllText(playerConfig, "edited player config");
+        string save = Path.Combine(paths.GameRoot, "saves", "world", "level.dat"); Directory.CreateDirectory(Path.GetDirectoryName(save)!); File.WriteAllText(save, "keep world");
+        File.Delete(fixture.Archive); Directory.Delete(fixture.CacheRoot, true);
+        foreach (var locked in imported.Definition.ArtifactLocks) File.Delete(paths.ResolveRelative(MmcPathRole.Instance, locked.TargetRelativePath));
+        foreach (var locked in imported.Definition.PackageFileLocks) File.Delete(paths.ResolveRelative(MmcPathRole.Instance, locked.TargetRelativePath));
+        File.Delete(Path.Combine(paths.InstanceRoot, "fixture.json"));
+        var repaired = await fixture.Backend(offline: true).RepairAsync(new(paths.InstanceRoot, new("windows", "x86_64", 8), imported.Definition.InstanceId));
+        if (repaired.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(repaired.Failure);
+        Equal(MmcInstanceBackendStatus.Succeeded, repaired.Status); Equal(2L, repaired.Definition!.Generation); Equal(1, fixture.Downloads);
+        Equal("launcher library", File.ReadAllText(Path.Combine(paths.LocalLibraryRoot, "fixture.jar")));
+        Equal("unreferenced original", File.ReadAllText(Path.Combine(paths.LocalLibraryRoot, "unreferenced.jar")));
+        Equal("edited player config", File.ReadAllText(playerConfig)); Equal("keep world", File.ReadAllText(save));
+        Equal("different game library", File.ReadAllText(Path.Combine(paths.GameRoot, "libraries", "fixture.jar")));
+        Equal("keep", JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "config.json"))).Value<string>("unknown-personal-pref"));
+    }
+    private static void FailureIsolation() => FailureIsolationAsync().GetAwaiter().GetResult();
+    private static async Task FailureIsolationAsync() {
+        using (Fixture fixture = new()) {
+            var imported = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+            if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+            string primary = Path.Combine(fixture.VersionRoot, "PCL", "InstanceDefinition.json"); JObject json = JObject.Parse(File.ReadAllText(primary));
+            json["artifactLocks"]![0]!["adoptedSha256"] = new string('0', 64); File.WriteAllText(primary, json.ToString());
+            var failed = await fixture.Backend(offline: true).RepairAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8)));
+            Equal(MmcInstanceBackendStatus.NeedsRecovery, failed.Status); Equal("launcher library", File.ReadAllText(Path.Combine(fixture.VersionRoot, "libraries", "fixture.jar")));
+        }
+        using (Fixture fixture = new()) {
+            string existing = Path.Combine(Path.GetDirectoryName(fixture.VersionRoot)!, "existing", "player.dat"); Directory.CreateDirectory(Path.GetDirectoryName(existing)!); File.WriteAllText(existing, "untouched");
+            var failed = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)) {
+                TransactionCheckpoint = (phase, _) => { if (phase == MmcTransactionCheckpoint.Prepared) throw new MmcTransactionInterruptionException("controlled interruption"); }
+            });
+            Equal(MmcInstanceBackendStatus.NeedsRecovery, failed.Status); Equal(false, Directory.Exists(fixture.VersionRoot)); Equal("untouched", File.ReadAllText(existing));
+            Equal(true, File.Exists(Path.Combine(failed.WorkingRoot!, "PCL", "MmcImportPending.json")));
+            using CancellationTokenSource cancellation = new(); cancellation.Cancel();
+            Equal(MmcInstanceBackendStatus.Cancelled, (await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)), cancellation.Token)).Status);
+            Equal(false, Directory.Exists(fixture.VersionRoot));
+        }
+    }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}."); }
     private sealed class Fixture : IDisposable {
         public string Scope { get; } = Path.Combine(Path.GetTempPath(), "pcllf-mmc-backend-" + Guid.NewGuid().ToString("N"));
         public string Archive => Path.Combine(Scope, "fixture.zip");
         public string VersionRoot => Path.Combine(Scope, "minecraft", "versions", "fixture");
+        public string CacheRoot => Path.Combine(Scope, "cache");
+        public int Downloads;
+        private readonly List<HttpClient> clients = [];
+        private static readonly byte[] AssetIndex = Encoding.UTF8.GetBytes("{\"objects\":{}}");
         public Fixture() {
             Directory.CreateDirectory(Scope);
             using var zip = ZipFile.Open(Archive, ZipArchiveMode.Create);
@@ -48,12 +107,28 @@ internal static class MmcInstanceBackendTests {
             zip.CreateEntry("pack/minecraft/");
             Add(zip, "pack/mmc-pack.json", "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1.7.10\"}]}");
             Add(zip, "pack/instance.cfg", "name=Fixture\nOverrideJavaArgs=true\nJvmArgs=-Dfixture=yes\n");
-            Add(zip, "pack/patches/net.minecraft.json", """{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Game","mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"assetIndex":{"id":"fixture","url":"https://fixture.invalid/assets.json","sha1":"0000000000000000000000000000000000000000","size":1},"compatibleJavaMajors":[8]}""");
+            Add(zip, "pack/patches/net.minecraft.json", """{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Game","mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"assetIndex":{"id":"fixture","url":"https://fixture.invalid/assets.json","sha1":"0000000000000000000000000000000000000000","size":1},"compatibleJavaMajors":[8]}"""
+                .Replace(new string('0', 40), Convert.ToHexStringLower(SHA1.HashData(AssetIndex))).Replace("\"size\":1", "\"size\":" + AssetIndex.Length));
             Add(zip, "pack/libraries/fixture.jar", "launcher library"); Add(zip, "pack/libraries/unreferenced.jar", "unreferenced original");
             Add(zip, "pack/minecraft/libraries/fixture.jar", "different game library"); Add(zip, "pack/minecraft/config/example.cfg", "player config");
             Add(zip, "pack/PCL/config.json", "{\"foreign-player-pref\":\"must-not-import\"}");
         }
         private static void Add(ZipArchive zip, string path, string content) { using var output = new StreamWriter(zip.CreateEntry(path).Open(), new UTF8Encoding(false)); output.Write(content); }
-        public void Dispose() { InstanceConfigProviders.FlushAndDisposeWithin(Scope); if (Directory.Exists(Scope)) Directory.Delete(Scope, true); }
+        public MmcInstanceBackend<MmcArtifactDownloadSpec> Backend(bool offline = false) {
+            HttpClient client = new(new NoNetwork()); clients.Add(client);
+            MmcMetadataStore metadata = new(Path.Combine(CacheRoot, "metadata"), new Uri("https://metadata.invalid/"), client);
+            return new(metadata, new(Path.Combine(CacheRoot, "libraries"), Path.Combine(CacheRoot, "assets"), Path.Combine(CacheRoot, "sources")), value => value,
+                async (batch, token) => {
+                    if (offline) throw new IOException("Controlled offline fixture refused a download.");
+                    foreach (var item in batch) {
+                        if (!item.Urls.Contains("https://fixture.invalid/assets.json")) throw new Exception("Unexpected controlled download source.");
+                        await File.WriteAllBytesAsync(item.DownloadPath, AssetIndex, token); Downloads++;
+                    }
+                });
+        }
+        private sealed class NoNetwork : HttpMessageHandler {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => throw new IOException("No live metadata network in this fixture.");
+        }
+        public void Dispose() { foreach (var client in clients) client.Dispose(); InstanceConfigProviders.FlushAndDisposeWithin(Scope); if (Directory.Exists(Scope)) Directory.Delete(Scope, true); }
     }
 }
