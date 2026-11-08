@@ -19,6 +19,7 @@ internal static partial class MmcRuntimeLaunchTests {
         yield return ("MMC runtime reserves the final managed-session nonce at the Windows command boundary", SessionNonceBudget);
         yield return ("MMC readonly JAR namespace permits resources without weakening extraction", ReadOnlyJarNamespace);
         yield return ("MMC manifest absent inputs remain gated through final admission and actual JDK file URLs", ManifestAbsentInputs);
+        yield return ("MMC short owned native paths load the same locked SDL3 through actual Java21 and LWJGL", ShortNativePaths);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();
@@ -105,6 +106,7 @@ public final class TestLoader extends ClassLoader {
         Task.WaitAll(output, errors); Require(process.ExitCode == 0, "Self-authored Java fixture compilation failed.");
     }
     private sealed class Fixture : IDisposable {
+        private readonly string mutableScope=Path.Combine(Path.GetTempPath(),Guid.NewGuid().ToString("N"));
         internal string Root { get; }
         internal MmcRuntimeLaunchRequest Request { get; }
         internal Fixture(int javaMajor = 17, bool multiRelease = false, bool loader = true, string? unknownArgument = null, MmcRuntimeWrapperMode wrapperMode = MmcRuntimeWrapperMode.JavaWrapper,
@@ -167,17 +169,20 @@ public final class TestLoader extends ClassLoader {
             Request = new(bound.Definition!, bound.Plan!, paths, targets.ToImmutableArray(), new(java, javaHash, javaHash, javaMajor, "amd64", 64), settings,
                 new("PlayerOne", new string('1', 32), "synthetic-secret-token-one", "token:synthetic-secret-token-one:uuid", "legacy", "{\"synthetic\":\"property\"}"),
                 new(view, paths.ResolveRelative(MmcPathRole.Runtime, view + "/natives"), paths.ResolveRelative(MmcPathRole.Runtime, view + "/assets"), paths.ResolveRelative(MmcPathRole.Runtime, view + "/assets/virtual/legacy")),
-                new(wrapper, Hash(Compiled.Value.Wrapper), Compiled.Value.Wrapper.Length), new(bridge, Hash(bridgeBytes), bridgeBytes.Length));
+                new(wrapper, Hash(Compiled.Value.Wrapper), Compiled.Value.Wrapper.Length), new(bridge, Hash(bridgeBytes), bridgeBytes.Length)){RuntimeAuthority=FixtureAuthority(mutableScope)};
         }
         internal void RemoveMutable(MmcRuntimeLaunchPlan plan) {
             string target = Path.GetFullPath(plan.MutableDirectories.SessionRoot);
-            Require(target.StartsWith(Path.GetFullPath(Root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "Test cleanup escaped its owned fixture.");
+            string expected=plan.RuntimeBinding.MutableLayout is null?Path.Combine(Request.Paths.RuntimeRoot,"sessions",Request.Settings.SessionId.ToString("N")):
+                Path.Combine(mutableScope,"m",Request.Definition.InstanceId.ToString("N"),Request.Settings.SessionId.ToString("N"));
+            Require(target.Equals(Path.GetFullPath(expected),StringComparison.OrdinalIgnoreCase), "Test cleanup escaped its computed owned fixture.");
             Directory.Delete(target, true);
         }
         public void Dispose() {
             string root = Path.GetFullPath(Root), parent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests"));
             Require(root.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && Guid.TryParseExact(Path.GetFileName(root)["run-".Length..], "N", out _), "Fixture cleanup target is not owned.");
             if (Directory.Exists(root)) Directory.Delete(root, true);
+            DeleteMutableFixture(mutableScope);
         }
     }
     private sealed record Output(ImmutableArray<string> Arguments, Dictionary<string, string> Properties, string Mode, string Loader);

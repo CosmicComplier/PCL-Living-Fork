@@ -56,6 +56,7 @@ public static class MmcLaunch {
         private ModWatcher.Watcher watcher;
         private MmcRunningSession session;
         private MmcJavaPinStore pins;
+        private MmcMutableRuntimeAuthority runtimeAuthority;
         private int canceled;
         private readonly TaskCompletionSource monitoringFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -70,9 +71,10 @@ public static class MmcLaunch {
             if (options.SaveBatch is not null) throw new InvalidOperationException("MMC 启动参数包含会话绑定信息，当前不能导出普通启动脚本。");
             var paths = MmcInstancePaths.Resolve(instance.PathVersion);
             pins = JavaPins() ?? throw new IOException("MMC Java 保护服务不可用。");
+            runtimeAuthority=MutableRuntimeAuthorityFactory()??throw new IOException("MMC 会话临时目录授权不可用。");
             var primary = MmcSavedSourceStore.ReadPrimary(paths);
             paths = MmcInstancePaths.Resolve(instance.PathVersion, primary.Definition.Layout.GameRootLeaf);
-            ReconcilePrevious(paths, primary.Definition.InstanceId, pins, token);
+            ReconcilePrevious(paths, primary.Definition.InstanceId, pins, token,runtimeAuthority);
             saved = await MmcSavedSourceStore.LoadAsync(paths, primary.Definition, token).ConfigureAwait(false);
             preferences = MmcLaunchPreferences.Capture(instance, saved.PackageConfiguration, sessionId);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
@@ -135,7 +137,6 @@ public static class MmcLaunch {
             var settings = preferences.RuntimeSettings with {
                 ExtraGameTokens = preferences.RuntimeSettings.ExtraGameTokens.Concat(options.ExtraGameArgs).ToImmutableArray()
             };
-            var runtimeAuthority=MutableRuntimeAuthorityFactory();
             var request = new MmcRuntimeLaunchRequest(prepared.Definition, prepared.BoundPlan, prepared.Paths,
                 prepared.Targets.Select(value => new MmcRuntimeArtifactTarget(value.ArtifactKey, value.TargetRelativePath, value.ActualPath)).ToImmutableArray(),
                 java.RuntimeJava, settings, account,
@@ -239,7 +240,7 @@ public static class MmcLaunch {
         if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != WrapperSha256) throw new IOException("MMC JavaWrapper 资源摘要不符。");
         return bytes;
     }
-    private static void ReconcilePrevious(MmcInstancePaths paths, Guid instanceId, MmcJavaPinStore pins, CancellationToken token) {
+    private static void ReconcilePrevious(MmcInstancePaths paths, Guid instanceId, MmcJavaPinStore pins, CancellationToken token,MmcMutableRuntimeAuthority runtimeAuthority) {
         using var admission = MmcAdmissionGate.Acquire(paths.InstanceRoot, instanceId, TimeSpan.Zero, token);
         MmcFileTransactions.AssertNoPending(admission);
         string directory = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessions");
@@ -248,7 +249,7 @@ public static class MmcLaunch {
         if (entries.Length > 1024) throw new IOException("MMC 会话记录超过恢复预算。");
         foreach (string entry in entries) {
             if (!Guid.TryParseExact(Path.GetFileName(entry), "N", out Guid id)) throw new IOException("MMC 存在无法识别的会话记录，需要恢复确认。");
-            var result = MmcSessions.Reconcile(admission, id, new MmcSessionProcessInspector(), pins.ReleaseVerified);
+            var result = MmcSessions.Reconcile(admission, id, new MmcSessionProcessInspector(), pins.ReleaseVerified,runtimeAuthority);
             if (result.Observation != MmcSessionObservation.ProvenExited)
                 throw new IOException("此 MMC 实例仍在运行或会话尚待确认：" + result.Diagnostic);
         }
