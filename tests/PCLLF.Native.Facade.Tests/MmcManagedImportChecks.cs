@@ -38,6 +38,7 @@ internal static class MmcManagedImportChecks {
         private readonly ConcurrentBag<Thread> workers = new();
         private readonly List<ModLoader.LoaderCombo<string>> roots = [];
         private readonly List<MmcInstanceBackendResult> published = [];
+        private readonly List<ModNet.LoaderDownload> downloads = [];
         private readonly List<string?> candidates = [];
         private readonly HttpClient metadataClient = new();
         private readonly string root, game;
@@ -49,7 +50,13 @@ internal static class MmcManagedImportChecks {
         private static readonly byte[] AssetIndex = Encoding.UTF8.GetBytes("{\"objects\":{}}");
         internal Scope(FixtureEnvironment environment) {
             this.environment = environment; root = Path.Combine(environment.Data, Group); game = Path.Combine(root, "minecraft"); Directory.CreateDirectory(game);
-            ModBase.RunInUi(); Native.Field(typeof(ModMinecraft), "_McFolderSelected").SetValue(null, game + Path.DirectorySeparatorChar);
+            ModBase.RunInUi(); _ = FileTaskShell.Install(); Native.Field(typeof(ModMinecraft), "_McFolderSelected").SetValue(null, game + Path.DirectorySeparatorChar);
+            // Genuine list refresh evaluates these two uncached legacy account records even
+            // for an offline pack. Model only an empty owned store; every other read stays guarded.
+            object settings = Native.Get(Native.Field(typeof(Settings), "Backend").GetValue(null)!, "host")!;
+            var registry = (Func<string, string, string?, string?>)Native.Get(settings, "ReadRegistry")!;
+            Native.Set(settings, "ReadRegistry", new Func<string, string, string?, string?>((path, key, fallback) =>
+                path == @"HKEY_CURRENT_USER\Software\PCL" && key is "CacheNideServer" or "CacheAuthServerServer" ? null : registry(path, key, fallback)));
             var profile = new JsonConfigProvider(Path.Combine(root, "private-config.json")); ConfigProviders.Default = profile;
             Native.Check(ReferenceEquals(Configs.JavaList.Provider, profile), "Java entries captured an external profile; refusing real user settings.");
             Java selected = FindJava(); javaMajor = selected.Version!.Major; Configs.JavaList.Set(new ConcurrentList<Java>([selected])); Configs.JavaConfigVersion.Set(Versions.JavaConfigVersion);
@@ -71,6 +78,7 @@ internal static class MmcManagedImportChecks {
                 SelectName = candidate => { candidates.Add(candidate); if (string.IsNullOrEmpty(candidate)) { prompts++; return prompt; } return candidate; },
                 RegisterTask = value => { roots.Add(value); current = value; ModLoader.LoaderTaskbar.Add(value); },
                 Published = value => published.Add(value),
+                DownloadCreated = value => downloads.Add(value),
                 TransactionObserved = (phase, _) => { if (cancelAt == phase) current!.Cancel(); }
             }));
         }
@@ -81,6 +89,7 @@ internal static class MmcManagedImportChecks {
             prompt = "ManagedPrompt"; var missing = Start("missing-cfg", null); Complete(missing, ModBase.LoadState.Finished);
             Native.Check(prompts == 1 && candidates.Last() is null, "Missing cfg did not request a name."); VerifyPublished("ManagedPrompt");
             Native.Check(published.Count == 2 && forbidden == 0, "Managed roots did not finish through the new backend only.");
+            Native.Check(server.Requested("/assets-managedfirstline") && server.Requested("/assets-missing-cfg") && downloads.Count >= 2, "Managed import did not use the owned HTTP endpoints through actual download loaders.");
         }
         internal void MixedRootRouting() {
             foreach (var (markers, expected) in new[] {
@@ -137,8 +146,20 @@ internal static class MmcManagedImportChecks {
             Native.Check(File.ReadAllText(Path.Combine(version, "minecraft", "config", "example.cfg")) == "initial game config", "Managed game data is missing.");
             Native.Check(!File.Exists(Path.Combine(version, "PCL", "MmcImportPending.json")), "Successful root remained pending.");
         }
-        private void Until(Func<bool> complete) { DateTime deadline = DateTime.UtcNow.AddSeconds(25); while (!complete()) { Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, deadline); if (DateTime.UtcNow >= deadline) throw new TimeoutException("Managed import actual worker did not drain."); Thread.Sleep(2); } }
-        internal void Finish() { server.Dispose(); metadataClient.Dispose(); InstanceConfigProviders.SaveAll(); Native.Check(forbidden == 0, "Managed import used ordinary installer."); }
+        private void Until(Func<bool> complete) {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(25);
+            try { while (!complete()) { Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, deadline); if (DateTime.UtcNow >= deadline) throw new TimeoutException("Managed import actual worker did not drain."); Thread.Sleep(2); } }
+            catch (TimeoutException error) {
+                throw new TimeoutException("Managed import did not drain: " + string.Join("; ", roots.SelectMany(value => new[] { value }.Cast<ModLoader.LoaderBase>().Concat(value.Loaders)).Select(value => value.Name + "=" + value.State + " progress=" + value.Progress + " error=" + value.Error)) + "; downloads=" + string.Join("; ", ModNet.NetManager.Tasks.Select(value => value.Name + "=" + value.State + " error=" + value.Error)), error);
+            }
+        }
+        internal void Finish() {
+            foreach (var download in downloads) {
+                Native.Check(((ILegacyNetworkDownload<ModNet.NetFile>)download).CoreRecord.ActiveIoProducerCount == 0 && download.Files.All(file => file.ActiveIoProducerCount == 0), "Managed download retained an active file producer.");
+            }
+            Native.Check(ModNet.NetManager.FileRemain == 0, "Managed manager retains unfinished files.");
+            server.Dispose(); metadataClient.Dispose(); InstanceConfigProviders.SaveAll(); Native.Check(forbidden == 0, "Managed import used ordinary installer.");
+        }
         private static Java FindJava() {
             var paths = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().Where(value => ((string)value.Key).StartsWith("JAVA_HOME", StringComparison.OrdinalIgnoreCase)).Select(value => Path.Combine((string)value.Value!, "bin"))
                 .Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -161,7 +182,11 @@ internal static class MmcManagedImportChecks {
             string receipt = Path.Combine(root, Receipt); var timer = Stopwatch.StartNew();
             while (!File.Exists(receipt)) {
                 if (File.Exists(receipt + ".failed")) throw new IOException(File.ReadAllText(receipt + ".failed"));
-                if (timer.ElapsedMilliseconds > 90000 || child.WaitForExit(10)) throw new TimeoutException("Managed import child did not produce a completion receipt.");
+                if (child.WaitForExit(10)) {
+                    Native.Check(Task.WaitAll([stdout, stderr], 5000), "Failed managed child output did not drain.");
+                    throw new IOException("Managed import child exited before its receipt: exit=" + child.ExitCode + "\n" + stdout.Result + "\n" + stderr.Result);
+                }
+                if (timer.ElapsedMilliseconds > 90000) throw new TimeoutException("Managed import child did not produce a completion receipt.");
             }
             Native.Check(File.ReadAllText(receipt) == string.Join('\n', nonce, child.Id, MainHash(), "published-and-drained"), "Managed receipt is not bound to the owned child/Main.");
             child.Kill(true); stopped = child.WaitForExit(5000); Native.Check(stopped, "Owned manager child did not stop.");
