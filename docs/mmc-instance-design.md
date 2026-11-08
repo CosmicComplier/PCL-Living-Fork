@@ -283,7 +283,7 @@ Core 拥有 InstanceDefinition、组件、制品、计划等领域类型及其�
 | --- | --- |
 | mainClass / mainJar | 有序启用组件中最后一个非空 mainClass、最后一个非 null mainJar 生效；空值不清除已有值。主 JAR 独立为制品，进入 classpath 时位于普通库之后 |
 | minecraftArguments / +jvmArgs / +tweakers | minecraftArguments 采用最后一个非空字符串；额外 JVM 参数按组件顺序追加并保留重复 token 组。Tweaker 应用时先从已有序列移除本次出现者，再追加本次序列，与 R2 一致；最终 token 化，不再交给普通旧去重器 |
-| assetIndex / 游戏版本类型 | 仅 net.minecraft 贡献游戏版本/type/assets；非空资源对象覆盖原资源对象。其他组件的相同字段保留来源但不直接覆盖，并给出诊断 |
+| assetIndex / 游戏版本类型 | 仅 net.minecraft 贡献游戏版本/type/assets；非空资源对象覆盖原资源对象。其他组件的相同字段保留来源但不直接覆盖，并给出诊断。资产索引保留 virtual/map_to_resources 原标志；prism-v1 按固定 R2 的 virtual 优先、否则 map_to_resources 选择布局，两者为 true 时给出优先级诊断，不额外改写游戏 resources |
 | libraries / +libraries | 先按 R2 读取规则追加至统一输入；按运行环境过滤，再分普通/native 列表。标识键采用 GradleSpecifier.matchName 的 group/artifact/classifier（不含版本）；唯一匹配时只有更高版本替换且保持原槽位，等/低版本保留原项，无匹配追加。若同键有多个已有项导致 R2 匹配歧义，LF 拒绝歧义输入并说明，避免顺手换成另一套“最高版本去重”规则；扩展名/真实路径/摘要冲突另行拒绝 |
 | mavenFiles | 按顺序保留，过滤平台不适用/native 项，不应用普通库的版本去重；下载但不自动加入 classpath |
 | MMC-hint: local / MMC-filename / absoluteUrl | 按实例库真实文件位置和合法文件名解析；本地库不以网络同坐标文件替代 |

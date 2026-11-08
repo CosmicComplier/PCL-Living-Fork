@@ -219,7 +219,7 @@ public static class MmcPlanBinder {
             var item = new MmcDerivedOutputRecord(MmcDerivedOutputKind.AssetObject, index.Key, parent.ObservedSha256, "bounded-assets-v1", sources, plan.RuntimePlanFingerprint, context, view,
                 relative, target, fact.ObservedSha256, fact.SizeBytes, key, fact.ObservedSha1, fact.RecoveryObjectRelativePath);
             if (adopted.TryAdd(key, item)) accepted.Add(item);
-            var outputKinds = (read.Index.Virtual ? new[] { MmcDerivedOutputKind.AssetVirtualFile } : []).Concat(read.Index.MapToResources ? [MmcDerivedOutputKind.AssetMappedResource] : []);
+            var outputKinds = (read.Index.Virtual ? new[] { MmcDerivedOutputKind.AssetVirtualFile } : []).Concat(read.Index.EffectiveMapToResources ? [MmcDerivedOutputKind.AssetMappedResource] : []);
             foreach (var kind in outputKinds) {
                 bool virtualFile = kind == MmcDerivedOutputKind.AssetVirtualFile;
                 string outputRelative = virtualFile ? "virtual/" + plan.Assets.Id + "/" + asset.Name : asset.Name;

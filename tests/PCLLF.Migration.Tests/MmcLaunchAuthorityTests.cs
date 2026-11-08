@@ -17,7 +17,7 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC aggregate launch proof remains conservative for missing class locks candidates or bound agents", ConservativeAuthority);
         yield return ("MMC binder preserves published baseline authority across explicit candidate drafts", PublishedAuthority);
         yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
-        yield return ("MMC binder validates both virtual and mapped outputs when the verified index requires both", BothAssetLayouts);
+        yield return ("MMC binder follows virtual-first asset layout without unrequested resource writes", BothAssetLayouts);
     }
     private sealed record Fixture(MmcCompiledProfile Plan, MmcInstanceDefinition Definition,
         ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
@@ -50,7 +50,7 @@ internal static class MmcLaunchAuthorityTests {
         foreach (var source in resolved.Profile!.Components) metadataRecords.Add(new("patches/" + source.Uid + ".json", source.Patch.ContentSha256, prefix + "patches/" + source.Uid + ".json",
             MmcSourceRecordKind.Component, source.Uid, source.Version, MmcComponentSourceKind.PackageLocal, "package:patches/" + source.Uid + ".json"));
         draft = draft with { SourceBundle = draft.SourceBundle with { MetadataRecords = metadataRecords.ToImmutable() } };
-        var artifacts = plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).DistinctBy(a => a.Key).ToArray();
+        var artifacts = plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).GroupBy(a => a.Key).Select(g => g.First()).ToArray();
         var facts = artifacts.Select(a => new MmcMaterializedArtifactFact(a.Key, a.SourceRevision,
             a.Role == MmcArtifactRole.AssetIndex ? Hash(assetJson!) : Hash("verified fixture bytes:" + a.Key),
             a.Role == MmcArtifactRole.AssetIndex ? Encoding.UTF8.GetByteCount(assetJson!) : 10,
@@ -153,7 +153,7 @@ internal static class MmcLaunchAuthorityTests {
     private static ImmutableArray<MmcJarClassObservation> ClassObservations(Fixture fixture) {
         string? systemLoader = fixture.Plan.JvmArguments.Select(a => a.Value).LastOrDefault(a => a.StartsWith("-Djava.system.class.loader=", StringComparison.Ordinal));
         string[] names = new[] { fixture.Plan.MainClass }.Concat(systemLoader is null ? [] : new[] { systemLoader["-Djava.system.class.loader=".Length..] }).Concat(fixture.Plan.Tweakers).Distinct().ToArray();
-        return fixture.Plan.Classpath.DistinctBy(a => a.Key).Select((artifact, position) => new MmcJarClassObservation(artifact.Key,
+        return fixture.Plan.Classpath.GroupBy(a => a.Key).Select(g => g.First()).Select((artifact, position) => new MmcJarClassObservation(artifact.Key,
             fixture.Facts.Single(f => f.ArtifactKey == artifact.Key).ObservedSha256,
             names.Select(name => new MmcJarClassPresence(name, position == 0, position == 0 ? name.Replace('.', '/') + ".class" : null)).ToImmutableArray())).ToImmutableArray();
     }
@@ -231,8 +231,10 @@ internal static class MmcLaunchAuthorityTests {
         var virtualFile = new MmcDerivedOutputRecord(MmcDerivedOutputKind.AssetVirtualFile, key, sha256, "bounded-assets-v1", sources, fixture.Plan.RuntimePlanFingerprint, context, View,
             "virtual/fixture/sound/test.ogg", "PCL/MmcRuntime/" + View + "/assets/virtual/fixture/sound/test.ogg", sha256, 3, ObservedSha1: sha1);
         var mapped = virtualFile with { Kind = MmcDerivedOutputKind.AssetMappedResource, RelativePath = "sound/test.ogg", TargetRelativePath = "minecraft/resources/sound/test.ogg" };
-        Error(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [virtualFile]), "MMC_BIND_ASSET_DERIVED");
+        Require(Good(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [virtualFile])).Definition!.DerivedOutputs.Length == 2,
+            "prism-v1 virtual priority was not retained when both raw flags were set.");
         Error(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [mapped]), "MMC_BIND_ASSET_DERIVED");
-        Require(Good(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [virtualFile, mapped])).Definition!.DerivedOutputs.Length == 3, "Both required legacy asset layouts were not bound.");
+        Require(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [virtualFile, mapped]).HasErrors,
+            "Unrequested mapped resources were accepted despite virtual-first precedence.");
     }
 }

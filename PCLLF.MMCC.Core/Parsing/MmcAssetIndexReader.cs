@@ -42,7 +42,10 @@ public static class MmcAssetIndexReader {
                 result.Add(new(item.Name, hash.ToLowerInvariant(), size));
             }
             diagnostics.AddRange(MmcPackageReader.InspectPaths(entries, limits));
-            return new(new(input.ArtifactKey, digest, MmcJson.Boolean(root, "virtual", "asset-index"), MmcJson.Boolean(root, "map_to_resources", "asset-index"), result.ToImmutable()), diagnostics.ToImmutableArray());
+            bool virtualAssets = MmcJson.Boolean(root, "virtual", "asset-index"), mapped = MmcJson.Boolean(root, "map_to_resources", "asset-index");
+            if (virtualAssets && mapped) diagnostics.Add(new("MMC_ASSET_LAYOUT_PRECEDENCE", MmcDiagnosticSeverity.Information, "asset-index",
+                "prism-v1 uses the virtual layout first; the preserved map_to_resources flag is inactive for this index."));
+            return new(new(input.ArtifactKey, digest, virtualAssets, mapped, result.ToImmutable()), diagnostics.ToImmutableArray());
         } catch (MmcInputException error) { diagnostics.Add(new(error.Code, MmcDiagnosticSeverity.Error, error.SourcePath, error.Message)); }
         catch (DecoderFallbackException) { diagnostics.Add(new("MMC_ASSET_INDEX_ENCODING", MmcDiagnosticSeverity.Error, "asset-index", "Invalid asset-index UTF-8.")); }
         return new(null, diagnostics.ToImmutableArray());
