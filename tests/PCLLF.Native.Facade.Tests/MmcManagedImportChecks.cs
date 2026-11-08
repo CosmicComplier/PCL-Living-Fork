@@ -22,7 +22,7 @@ internal static class MmcManagedImportChecks {
         try {
             Native.Check(args.Length == 7 && args[0] == "--groups" && args[1] == Group && args[2] == ChildSwitch && args[4] == "--isolated" && args[5] == "--fixture" && Native.Full(args[6]) == Native.Full(environment.Root), "Managed MMC child identity differs.");
             ModpackUpdateCleanup.VerifyIsolatedChild(); retained = new(environment);
-            retained.MixedRootRouting(); retained.Success(); retained.DecisionCancellation(); retained.UnsupportedAndMultipleRoots(); retained.Finish(); environment.AssertNoForbiddenIo();
+            retained.MixedRootRouting(); retained.UnstartedCancellation(); retained.Success(); retained.ScheduledCancellation(); retained.DecisionCancellation(); retained.UnsupportedAndMultipleRoots(); retained.Finish(); environment.AssertNoForbiddenIo();
             Native.Check(System.Windows.Application.Current.Windows.Count == 0, "Managed MMC opened a window.");
             File.WriteAllText(Path.Combine(environment.Root, Receipt), string.Join('\n', args[3], Environment.ProcessId, MainHash(), "published-and-drained"));
             Console.WriteLine("PASS mmc-managed-import: production Main callback/Loader/Java probe, owned HTTP NetFile download, missing cfg/name, full publication, pre/post-decision cancel fence and failed MMC refusal; no game launch.");
@@ -47,6 +47,7 @@ internal static class MmcManagedImportChecks {
         private MmcTransactionCheckpoint? cancelAt;
         private int prompts, forbidden;
         private string prompt = "";
+        private ManualResetEventSlim? heldPrepared, preparedEntered;
         private static readonly byte[] AssetIndex = Encoding.UTF8.GetBytes("{\"objects\":{}}");
         internal Scope(FixtureEnvironment environment) {
             this.environment = environment; root = Path.Combine(environment.Data, Group); game = Path.Combine(root, "minecraft"); Directory.CreateDirectory(game);
@@ -79,8 +80,29 @@ internal static class MmcManagedImportChecks {
                 RegisterTask = value => { roots.Add(value); current = value; ModLoader.LoaderTaskbar.Add(value); },
                 Published = value => published.Add(value),
                 DownloadCreated = value => downloads.Add(value),
-                TransactionObserved = (phase, _) => { if (cancelAt == phase) current!.Cancel(); }
+                TransactionObserved = (phase, _) => {
+                    if(phase==MmcTransactionCheckpoint.Prepared&&heldPrepared is not null){preparedEntered!.Set();if(!heldPrepared.Wait(10000))throw new TimeoutException("Owned scheduled import was not released.");}
+                    if (cancelAt == phase) current!.Cancel();
+                }
             }));
+        }
+        internal void UnstartedCancellation(){
+            using var pause=new MmcRootUpdatePause(()=>current);var canceled=Start("UnstartedCancel","name=UnstartedCancel\n");
+            Native.Check(pause.Captured,"Managed import root Update was not captured at its actual scheduler boundary.");canceled.Cancel();pause.Release();pause.AwaitReturn();
+            var worker=canceled.Loaders.Single();
+            Native.Check((bool)Native.Property(worker.GetType(),"OperationCompleted").GetValue(worker)!&&Native.Get(worker,"LastRunningThread")is null,"Unstarted import did not release its fence or started an I/O producer.");
+            worker.Start("late-start-must-not-run");
+            Native.Check(Native.Get(worker,"LastRunningThread")is null&&!Directory.Exists(Path.Combine(game,"versions","UnstartedCancel")),"Late canceled import Start wrote its target.");
+        }
+        internal void ScheduledCancellation(){
+            using var held=new ManualResetEventSlim();using var entered=new ManualResetEventSlim();heldPrepared=held;preparedEntered=entered;
+            var canceled=Start("ScheduledCancel","name=ScheduledCancel\n");
+            try {
+                Until(()=>entered.IsSet);canceled.Cancel();var worker=canceled.Loaders.Single();
+                Native.Check(!(bool)Native.Property(worker.GetType(),"OperationCompleted").GetValue(worker)!&&Native.Get(worker,"LastRunningThread")is Thread {IsAlive:true},"Scheduled import released resources before its actual delegate drained.");
+            }finally{held.Set();}
+            Complete(canceled,ModBase.LoadState.Canceled);heldPrepared=null;preparedEntered=null;
+            Native.Check((bool)Native.Property(canceled.Loaders.Single().GetType(),"OperationCompleted").GetValue(canceled.Loaders.Single())!,"Returned canceled import retained its fence.");
         }
         internal void Success() {
             var first = Start("ManagedFirstLine", "name=ManagedFirstLine\nOverrideJavaArgs=true\nJvmArgs=-Dmanaged=yes\n"); Complete(first, ModBase.LoadState.Finished);

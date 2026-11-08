@@ -53,6 +53,16 @@ internal static class MmcLifecycleChecks {
             register.SetValue(null, new Action<ModLoader.LoaderCombo<string>>(loader => { actual = loader; ModLoader.LoaderTaskbar.Add(loader); }));
             published.SetValue(null, new Action<MmcInstanceLifecycleResult>(value => result = value));
             var instance = new ModMinecraft.McInstance(sourceRoot).Load();
+            using(var pause=new MmcRootUpdatePause(()=>actual)){
+                Native.Static("PCL.MmcLifecycleUi","StartRename",instance,"managed-ui-canceled-rename",null);
+                Native.Check(actual is not null&&pause.Captured,"Managed rename root did not reach the real Update scheduling boundary.");
+                actual!.Cancel();pause.Release();pause.AwaitReturn();
+                Native.Check(!(bool)Native.Property(type,"HasActiveOperation").GetValue(null)!,"Unstarted canceled rename retained its busy lease.");
+                Native.Check(Native.Get(actual.Loaders.Single(),"LastRunningThread")is null&&!Directory.Exists(Path.Combine(Path.GetDirectoryName(sourceRoot)!,"managed-ui-canceled-rename")),"Unstarted rename launched a worker or wrote its target.");
+                actual.Loaders.Single().Start(sourceRoot);
+                Native.Check(Native.Get(actual.Loaders.Single(),"LastRunningThread")is null,"A late rename worker Start escaped its canceled one-shot fence.");
+            }
+            actual=null;refreshed.Reset();
             var host = new InstanceOverallPageHost<ModMinecraft.McInstance, Grid, object> {
                 Instance = () => instance,
                 BeginManagedRename = target => Native.Static("PCL.MmcLifecycleUi", "StartRename", target, "managed-ui-renamed", null),
@@ -93,6 +103,17 @@ internal static class MmcLifecycleChecks {
             published.SetValue(null, new Action<MmcInstanceCloneResult>(value => result = value));
             var owner = new ModMinecraft.McInstance(sourceRoot).Load();
             object options = Activator.CreateInstance(Native.Type("PCL.InstanceCloneOptions"), true)!;
+            using(var pause=new MmcRootUpdatePause(()=>actual)){
+                Native.Static("PCL.InstanceClonerUi","Start",owner,"managed-ui-canceled-clone",options);
+                Native.Check(actual is not null&&pause.Captured,"Managed clone root did not reach the real Update scheduling boundary.");
+                actual!.Cancel();pause.Release();pause.AwaitReturn();
+                object cloneService=Native.Field(Native.Type("PCL.InstanceClonerUi"),"Service").GetValue(null)!;
+                Native.Check(!(bool)Native.Property(type,"HasActiveOperation").GetValue(null)!&&Convert.ToInt32(Native.Get(cloneService,"BusyCount"))==0,"Unstarted canceled clone retained its own or legacy busy lease.");
+                Native.Check(Native.Get(actual.Loaders.Single(),"LastRunningThread")is null&&!Directory.Exists(Path.Combine(Path.GetDirectoryName(sourceRoot)!,"managed-ui-canceled-clone")),"Unstarted clone launched a worker or wrote its target.");
+                actual.Loaders.Single().Start(sourceRoot);
+                Native.Check(Native.Get(actual.Loaders.Single(),"LastRunningThread")is null,"A late clone worker Start escaped its canceled one-shot fence.");
+            }
+            actual=null;refreshed.Reset();
             Native.Static("PCL.InstanceClonerUi", "Start", owner, "managed-ui-copy", options);
             Native.Check(actual is not null, "Managed UI clone did not dispatch to the dedicated task.");
             var timer = System.Diagnostics.Stopwatch.StartNew();
