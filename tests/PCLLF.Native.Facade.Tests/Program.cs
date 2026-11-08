@@ -42,12 +42,20 @@ internal static class Program
         ["mmc-download"] = MmcDownloadChecks.Run,
         ["mmc-java-maintenance"] = MmcJavaMaintenanceChecks.Run,
         ["mmc-managed-import"] = MmcManagedImportChecks.Run,
+        ["mmc-launch-preferences"] = MmcLaunchPreferenceChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
         ["mod-favorites"] = ModFavoriteChecks.Run,
         ["update-log-prompt"] = UpdateLogPromptChecks.Run,
         ["instance-sidebar"] = InstanceSidebarChecks.Run
+    };
+    // Requires explicit locally installed JDKs; keep these out of the normal CI/default registry.
+    private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
+        ["mmc-launch-java"] = environment => {
+            foreach (var check in MmcLaunchJavaChecks.Cases()) { check.Run(); Console.WriteLine("PASS " + check.Name); }
+            environment.AssertNoForbiddenIo();
+        }
     };
     [STAThread]
     private static int Main(string[] args)
@@ -61,6 +69,9 @@ internal static class Program
             {
                 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(Cases.Keys.ToArray()));
                 return 0;
+            }
+            if (args.SequenceEqual(new[] { "--list-explicit-groups" }, StringComparer.Ordinal)) {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(ExplicitCases.Keys.ToArray())); return 0;
             }
             if (args.Contains("--modpack-download-child", StringComparer.Ordinal))
                 return ModpackDownloadProcess.RunChild(args);
@@ -78,7 +89,7 @@ internal static class Program
                 return NativeDependencyChecks.IndexChild(environment, args);
             foreach (string group in selected)
             {
-                Cases[group](environment);
+                (Cases.TryGetValue(group, out var run) ? run : ExplicitCases[group])(environment);
                 environment.AssertNoForbiddenIo();
                 Console.WriteLine("PASS native facade " + group);
             }
@@ -108,7 +119,7 @@ internal static class Program
         if (selected.Length == 0 || selected.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("Empty facade selection.");
         foreach (string item in selected)
-            if (!Cases.ContainsKey(item))
+            if (!Cases.ContainsKey(item) && !ExplicitCases.ContainsKey(item))
                 throw new ArgumentException("Unknown facade group: " + item);
         if (selected.Contains("registry-data", StringComparer.Ordinal) && selected.Distinct(StringComparer.Ordinal).Count() != 1)
             throw new ArgumentException("Select registry-data alone in its fresh hosted-profile process.");
