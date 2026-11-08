@@ -28,6 +28,7 @@ internal static class MmcConfigurationTests {
         yield return ("MMC new identity reads and edits never adopt old JSON or INI pending overlays", PendingReadIsolation);
         yield return ("MMC settings cache namespace survives controlled validation to identity handoff races", CacheIdentityBarriers);
         yield return ("MMC managed layout rejects before cache mutation and before INI overlay", ImmediateLayoutFence);
+        yield return ("MMC ordinary invalid integer and boolean preferences retain conversion fallback without masking read failures", OrdinaryConversionFallback);
         if (typeof(InstanceConfigProvider).Assembly.GetType("PCLCS.Configs") is not null)
             yield return ("MMC configuration actual JavaForced deserialization and PreviewGet Reset use the coordinated provider", ActualJavaReset);
     }
@@ -454,6 +455,23 @@ internal static class MmcConfigurationTests {
                 Equal("True", LegacyBaseOperations.ParseIni(File.ReadAllText(file))[settings.Entry.Key]);
             } else { Equal(false, settings.Engine.Get(settings.Entry.Key, owner)); }
         }
+    }
+    private static void OrdinaryConversionFallback() {
+        foreach (object fallback in new object[] { 123, true }) {
+            using Fixture fixture = new(); string file = Path.Combine(fixture.Root, "PCL", "Setup.ini");
+            const string text = "InvalidPreference:not-a-valid-number-or-bool\r\n"; File.WriteAllText(file, text);
+            using var provider = new InstanceConfigProvider(fixture.Root); PreferenceOwner owner = new(fixture.Root + Path.DirectorySeparatorChar, provider);
+            PreferenceHarness settings = new("InvalidPreference", fallback); int errors = 0;
+            settings.Host.Log = (error, _, _, _) => { if (error is not null) errors++; };
+            Equal(fallback, settings.Engine.Get("InvalidPreference", owner)); Equal(fallback, settings.Entry.GetCache(owner));
+            Equal(fallback, settings.Engine.Get("InvalidPreference", owner)); Equal(1, errors); Equal(text, File.ReadAllText(file));
+        }
+        using Fixture failed = new(); using var failedProvider = new InstanceConfigProvider(failed.Root);
+        PreferenceOwner failedOwner = new(failed.Root + Path.DirectorySeparatorChar, failedProvider); PreferenceHarness blocked = new("BlockedRead", 7);
+        int blockedLogs = 0; blocked.Host.Log = (_, _, _, _) => blockedLogs++;
+        blocked.Host.ReadInstanceIni = (_, _, _) => throw new FormatException("controlled read/gate failure, not a value conversion");
+        bool rejected = false; try { blocked.Engine.Get("BlockedRead", failedOwner); } catch (FormatException) { rejected = true; }
+        Equal(true, rejected); Equal<object?>(null, blocked.Entry.GetCache(failedOwner)); Equal(0, blockedLogs);
     }
     private static void RunActualJavaReset(InstanceConfigProvider provider, string root) {
         // Each invocation is a fresh controlled process. Bind global Java entries to a private profile

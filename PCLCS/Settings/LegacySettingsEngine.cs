@@ -137,6 +137,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
             entry.Set(forcedSetting, instance);
             return forcedSetting;
         }
+        bool valueConversionFailed = false;
         try {
             string? gotValue = null;
             string encryptionIdentify = deviceIdentify ?? host.Identify();
@@ -162,9 +163,20 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
                     }
                 }
             }
-            entry.Set(Coerce(gotValue, entry.Type), instance);
+            object converted;
+            try { converted = Coerce(gotValue, entry.Type); }
+            catch (Exception error) when (error is FormatException or InvalidCastException or OverflowException) {
+                valueConversionFailed = true; throw;
+            }
+            entry.Set(converted, instance);
         } catch (Exception error) {
-            if (entry.GetSourceCode() == LegacySettingSource.Instance && host.InstanceCacheKey is not null) throw;
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && host.InstanceCacheKey is not null) {
+                // A successfully read but malformed ordinary preference retains LF's default fallback.
+                // A failed read/gate never becomes a default, and a handoff during conversion is checked
+                // again before logging or publishing even that default into the owner's fixed namespace.
+                if (!valueConversionFailed) throw;
+                if (instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
+            }
             Log(error, "读取设置失败：" + key, LegacySettingsLogLevel.Error, true);
             entry.Set(Coerce(entry.DefaultValue, entry.Type), instance);
         }
