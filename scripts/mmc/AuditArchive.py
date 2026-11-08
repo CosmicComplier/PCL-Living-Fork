@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import struct
 import sys
 import unicodedata
 import zipfile
@@ -32,6 +33,7 @@ MAX_SEGMENT_CHARS = 255
 MAX_PATH_INPUT_CHARS = 16 * 1024**2
 MAX_PATH_NODES = MAX_ENTRIES * 2
 MAX_PATH_NODE_CHARS = 32 * 1024**2
+MAX_CENTRAL_DIRECTORY_BYTES = 16 * 1024**2
 PATH_CASE_PROFILE = "lf-audit-python-simple-uppercase-v1"
 DEVICE = re.compile(r"^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)", re.I | re.ASCII)
 PATCH_FIELDS = {
@@ -79,6 +81,106 @@ def target_key(value: str) -> str:
             raise AuditError(f"Unsupported path casing in {PATH_CASE_PROFILE}: U+{ord(char):04X}")
         result.append(upper)
     return "".join(result)
+
+
+def preflight_zip(stream) -> dict:
+    """Bound the central directory before ZipFile allocates its full index.
+
+    Supported ZIP64 has one disk and the fixed 44-byte EOCD payload. SFX offset
+    adjustments, extensible ZIP64 records, trailing data and directory digital
+    signatures are explicitly outside this audit profile.
+    """
+    stream.seek(0, 2)
+    size = stream.tell()
+    tail_size = min(size, 65557)
+    stream.seek(size - tail_size)
+    tail = stream.read(tail_size)
+    position = tail.rfind(b"PK\x05\x06")
+    if position < 0 or len(tail) - position < 22:
+        raise AuditError("Missing or truncated ZIP end-of-central-directory record")
+    eocd = struct.unpack_from("<4s4H2LH", tail, position)
+    _, disk, central_disk, disk_count, count, central_bytes, central_offset, comment_bytes = eocd
+    if position + 22 + comment_bytes != len(tail):
+        raise AuditError("Unsupported trailing data or ambiguous ZIP comment")
+    if disk != 0 or central_disk != 0 or disk_count != count:
+        raise AuditError("Multi-disk ZIP is unsupported")
+    eocd_offset = size - tail_size + position
+    central_end = eocd_offset
+    stream.seek(max(0, eocd_offset - 20))
+    locator = stream.read(min(20, eocd_offset))
+    has_zip64 = len(locator) == 20 and locator[:4] == b"PK\x06\x07"
+    sentinel = count == 0xFFFF or central_bytes == 0xFFFFFFFF or central_offset == 0xFFFFFFFF
+    if sentinel and not has_zip64:
+        raise AuditError("ZIP64 sentinel requires a valid bounded ZIP64 locator")
+    if has_zip64:
+        _, zip64_disk, zip64_offset, disk_total = struct.unpack("<4sLQL", locator)
+        if zip64_disk != 0 or disk_total != 1:
+            raise AuditError("Multi-disk ZIP64 is unsupported")
+        if zip64_offset + 56 != eocd_offset - 20:
+            raise AuditError("Unsupported ZIP64 locator offset or extensible record")
+        stream.seek(zip64_offset)
+        record = stream.read(56)
+        if len(record) != 56:
+            raise AuditError("Truncated ZIP64 end record")
+        values = struct.unpack("<4sQ2H2L4Q", record)
+        signature, payload_bytes, _, _, disk64, central_disk64, disk_count64, count64, central_bytes64, central_offset64 = values
+        if signature != b"PK\x06\x06" or payload_bytes != 44:
+            raise AuditError("Unsupported ZIP64 end record size or signature")
+        if disk64 != 0 or central_disk64 != 0 or disk_count64 != count64:
+            raise AuditError("Multi-disk ZIP64 is unsupported")
+        for classic, expanded, marker in ((count, count64, 0xFFFF), (central_bytes, central_bytes64, 0xFFFFFFFF),
+                                           (central_offset, central_offset64, 0xFFFFFFFF)):
+            if classic != marker and classic != expanded:
+                raise AuditError("Conflicting ZIP and ZIP64 directory declarations")
+        count, central_bytes, central_offset = count64, central_bytes64, central_offset64
+        central_end = zip64_offset
+    if count > MAX_ENTRIES:
+        raise AuditError("ZIP preflight exceeds entry count budget")
+    if central_bytes > MAX_CENTRAL_DIRECTORY_BYTES:
+        raise AuditError("ZIP preflight exceeds central-directory byte budget")
+    if central_offset > central_end or central_bytes != central_end - central_offset:
+        raise AuditError("Unsupported or inconsistent ZIP central-directory bounds")
+    stream.seek(central_offset)
+    remaining = central_bytes
+    scanned = 0
+    path_chars = 0
+    while remaining:
+        if remaining < 46:
+            raise AuditError("Truncated central-directory fixed header")
+        header = stream.read(46)
+        if len(header) != 46:
+            raise AuditError("Truncated central-directory fixed header")
+        fields = struct.unpack("<4s6H3L5H2L", header)
+        if fields[0] != b"PK\x01\x02":
+            raise AuditError("Unsupported central-directory record signature")
+        scanned += 1
+        if scanned > MAX_ENTRIES:
+            raise AuditError("ZIP preflight scanned entry count budget exceeded")
+        name_bytes, extra_bytes, entry_comment_bytes, entry_disk = fields[10:14]
+        if entry_disk != 0:
+            raise AuditError("Multi-disk central-directory entry is unsupported")
+        variable_bytes = name_bytes + extra_bytes + entry_comment_bytes
+        if 46 + variable_bytes > remaining:
+            raise AuditError("Truncated central-directory variable fields")
+        raw_name = stream.read(name_bytes)
+        try:
+            name = raw_name.decode("utf-8" if fields[3] & 0x800 else "cp437")
+        except UnicodeError as exc:
+            raise AuditError("Invalid central-directory filename encoding") from exc
+        path_chars += utf16_length(name)
+        if path_chars > MAX_PATH_INPUT_CHARS:
+            raise AuditError("ZIP preflight exceeds aggregate input path character budget")
+        entry_path(name)
+        target_key(name)
+        stream.seek(extra_bytes + entry_comment_bytes, 1)
+        remaining -= 46 + variable_bytes
+    if scanned != count:
+        raise AuditError("ZIP preflight entry count disagrees with end record")
+    stream.seek(0)
+    return {"centralDirectoryBytes": central_bytes, "centralDirectoryOffset": central_offset,
+            "scannedEntryCount": scanned, "inputPathUtf16Chars": path_chars,
+            "zip64": has_zip64, "maxCentralDirectoryBytes": MAX_CENTRAL_DIRECTORY_BYTES,
+            "profile": "lf-audit-bounded-single-disk-zip-v1"}
 
 
 def entry_path(raw: str) -> tuple[str, bool]:
@@ -263,6 +365,7 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
         before = os.fstat(stream.fileno())
         report["source"].update(sizeBytes=before.st_size, sha256=hashlib.file_digest(stream, "sha256").hexdigest())
         stream.seek(0)
+        report["zipPreflight"] = preflight_zip(stream)
         with zipfile.ZipFile(stream) as archive:
             files, counts, directory_keys = index_archive(archive)
             report["archive"] = counts
@@ -275,10 +378,17 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
             lookup = {target_key(path): path for path in files}
             relative_files = {x[len(root):]: info for x, info in files.items() if target_key(x).startswith(root_key)}
             relative_lookup = {target_key(path): path for path in relative_files}
+            reserved_nodes = {"PCL/INSTANCEDEFINITION.JSON", "PCL/MMCSOURCE", "PCL/MMCOVERRIDES",
+                              "PCL/MMCARTIFACTS", "PCL/MMCRUNTIME", "PCL/MMCTRANSACTIONS"}
             for path in relative_files:
                 folded = target_key(path)
-                if folded == "PCL/INSTANCEDEFINITION.JSON" or folded.startswith(("PCL/MMCSOURCE/", "PCL/MMCARTIFACTS/", "PCL/MMCTRANSACTIONS/")):
+                if folded.startswith("PCL/MMC") or any(folded == node or folded.startswith(node + "/") for node in reserved_nodes):
                     raise AuditError(f"Package contains reserved LF management metadata: {path}")
+            for key in directory_keys:
+                if key.startswith(root_key):
+                    relative_key = key[len(root_key):]
+                    if relative_key.startswith("PCL/MMC") or any(relative_key == node or relative_key.startswith(node + "/") for node in reserved_nodes):
+                        raise AuditError(f"Package contains reserved LF management directory: {relative_key}")
             manifest_path = manifests[0]
             cfg_path = lookup.get(root_key + "INSTANCE.CFG")
             selected = [manifest_path]
@@ -322,11 +432,21 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
                                   "effectiveEnabled": important or dependency or not disabled,
                                   "declaredFields": list(comp)})
             patches = []
+            nested_patch_metadata = []
             patch_uids: set[str] = set()
             for path, data in metadata.items():
                 if not target_key(path).startswith(root_key + "PATCHES/"):
                     continue
+                relative_patch_path = path[len(root):]
+                patch_leaf = relative_patch_path.split("/", 1)[1]
+                if "/" in patch_leaf:
+                    nested_patch_metadata.append({"path": relative_patch_path,
+                                                  "sha256": hashlib.sha256(data).hexdigest(),
+                                                  "reason": "Nested metadata is not a direct local component patch"})
+                    continue
                 summary = patch_summary(parse_json(data, path), path[len(root):], hashlib.sha256(data).hexdigest())
+                if patch_leaf[:-5] != summary["uid"]:
+                    raise AuditError(f"Local patch filename does not match uid/fileId: {relative_patch_path}")
                 if summary["uid"] in patch_uids:
                     raise AuditError(f"Duplicate local patch UID: {summary['uid']}")
                 patch_uids.add(summary["uid"])
@@ -342,6 +462,7 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
                 gameRoot={"selected": "minecraft" if "minecraft" in trees else ".minecraft" if ".minecraft" in trees else "minecraft",
                           "presentTrees": trees, "bothTreesPreserved": len(trees) == 2},
                 components=summaries, patches=patches,
+                ignoredNestedPatchMetadata=nested_patch_metadata,
                 metadata={"fileCount": len(metadata), "totalBytes": total_metadata,
                           "digests": {x[len(root):]: hashlib.sha256(data).hexdigest() for x, data in metadata.items()}},
                 localLibraryFiles=[x for x in relative_files if target_key(x).startswith("LIBRARIES/")],

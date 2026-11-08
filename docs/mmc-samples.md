@@ -60,6 +60,10 @@ Python 工具采用显式受限的 `lf-audit-python-simple-uppercase-v1` 比较�
 
 输出必须是新文件，工具拒绝覆盖已有报告、原包路径及指向原包的 hardlink/symlink；最终通过独占创建再次防止检查后出现的目标被覆盖。重复审计时选择新的报告名，保留旧证据。
 
+在构造 Python `ZipFile` 索引前，先读取最多 65557 字节的 EOCD 尾部，限制中央目录为 16 MiB，并以固定 46 字节 CDR 头逐条扫描、跳过有界 extra/comment；实际扫描计数也受 100000 限制，不能仅信任 EOCD 的计数。单盘 ZIP64 支持固定 44 字节 EOCD payload 并验证 locator、长度、偏移和普通/64 位声明一致性；多盘、扩展 ZIP64 记录、SFX 偏移调整、目录数字签名及尾部附加数据明确拒绝。`zipPreflight` 记录实际扫描量；畸形输入测试确认拒绝发生于 `ZipFile` 构造之前。
+
+只有直接位于 `patches/<uid>.json` 的补丁参与本地组件匹配；目录名及 `.json` 扩展名按比较配置查找，文件 stem 必须与 `uid/fileId` 精确一致。`patches/backup/dep.json` 等嵌套 JSON 可作为源元数据记录，但不能代替 `dep` 组件或消除远端元数据请求。所有 `PCL/Mmc*` 保留节点及其后代（包括节点本身为文件或空目录）、`PCL/InstanceDefinition.json` 均拒绝外来包注入。
+
 ```powershell
 python -X utf8 scripts/mmc/AuditArchive.py 'D:\User\Downloads\GT_New_Horizons_2.9.0_Java_8.zip' --source-url https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_8.zip --output artifacts/mmc-baseline/java8.audit.json
 python -X utf8 scripts/mmc/AuditArchive.py 'D:\User\Downloads\GT_New_Horizons_2.9.0_Java_17-26.zip' --source-url https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_17-26.zip --output artifacts/mmc-baseline/java17-26.audit.json
