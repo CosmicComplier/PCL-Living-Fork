@@ -91,7 +91,7 @@ public sealed partial class MmcOwnedImportReservation {
         VerifyMarker(TemporaryRoot);
         return MmcDurableFiles.Hash(marker);
     }
-    private static void CreateExclusiveDirectory(string path) {
+    internal static void CreateExclusiveDirectory(string path) {
         // Directory.CreateDirectory adopts an existing directory and is not an ownership primitive.
         bool created = OperatingSystem.IsWindows() ? CreateDirectoryW(path, IntPtr.Zero) : Mkdir(path, 448) == 0;
         if (!created) throw new IOException("Private import directory could not be exclusively created.", new Win32Exception(Marshal.GetLastWin32Error()));

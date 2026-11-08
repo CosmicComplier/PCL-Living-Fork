@@ -111,7 +111,7 @@ public sealed class MmcInstanceCloneBackend {
         if (MmcDurableFiles.Observe(MmcInstancePaths.Resolve(lease.VersionRoot).ResolveRelative(MmcPathRole.Instance, Path.GetFileName(lease.VersionRoot) + ".json")) != source.Definition.InstalledProjection!.OutputJsonSha256)
             throw new IOException("Clone source compatibility projection changed.");
     }
-    private static MmcCompiledProfile CompileEnvironment(MmcResolutionResult resolved, MmcInstanceDefinition definition, ImmutableArray<MmcRuntimeEnvironment> supplied) {
+    internal static MmcCompiledProfile CompileEnvironment(MmcResolutionResult resolved, MmcInstanceDefinition definition, ImmutableArray<MmcRuntimeEnvironment> supplied) {
         if (!resolved.IsComplete || resolved.Profile is null) throw new IOException("Clone source metadata is incomplete.");
         List<MmcRuntimeEnvironment> candidates = [];
         if (definition.InstalledProjection!.RuntimeEnvironment is { } stored) candidates.Add(stored);
