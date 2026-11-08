@@ -12,19 +12,23 @@ internal static class MmcLifecycleUi {
     internal static bool HasActiveOperation => Volatile.Read(ref busy) != 0;
     internal static Action<ModLoader.LoaderCombo<string>> RegisterTask { get; set; }
     internal static Action<MmcInstanceLifecycleResult> Published { get; set; }
+    internal static Func<string, string, string> SelectRenameName { get; set; }
 
     internal static void PromptRename(ModMinecraft.McInstance instance, Action<ModMinecraft.McInstance> completed) {
         var source = ReadSource(instance);
-        string name = ModMain.MyMsgBoxInput("重命名版本", "", instance.Name,
+        string parent = Path.GetDirectoryName(source.Paths.InstanceRoot)!;
+        string name = SelectRenameName is not null ? SelectRenameName(instance.Name, parent) : ModMain.MyMsgBoxInput("重命名版本", "", instance.Name,
             new Collection<Validate> { new ValidateFolderName(Path.GetDirectoryName(source.Paths.InstanceRoot),
                 IgnoreList: [instance.Name]) });
         if (string.IsNullOrWhiteSpace(name) || name == instance.Name) return;
-        StartRename(instance, name, completed);
+        StartRenameSnapshot(instance, name, source, completed);
     }
 
     internal static ModLoader.LoaderCombo<string> StartRename(ModMinecraft.McInstance instance, string name,
-        Action<ModMinecraft.McInstance> completed = null) {
-        var source = ReadSource(instance);
+        Action<ModMinecraft.McInstance> completed = null) => StartRenameSnapshot(instance, name, ReadSource(instance), completed);
+
+    private static ModLoader.LoaderCombo<string> StartRenameSnapshot(ModMinecraft.McInstance instance, string name,
+        MmcInstanceInspection source, Action<ModMinecraft.McInstance> completed) {
         string parent = Path.GetDirectoryName(source.Paths.InstanceRoot)!;
         string error = new ValidateFolderName(parent).Validate(name);
         if (!string.IsNullOrEmpty(error)) throw new IOException("版本名称无效：" + error);

@@ -46,6 +46,7 @@ internal static class Program
         ["mmc-launch-preferences"] = MmcLaunchPreferenceChecks.Run,
         ["mmc-lifecycle"] = MmcLifecycleChecks.Run,
         ["mmc-quarantine-list"] = MmcQuarantineListChecks.Run,
+        ["mmc-rename-admission"] = MmcRenameAdmissionChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
