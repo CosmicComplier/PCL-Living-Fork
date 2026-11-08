@@ -195,6 +195,10 @@
                         <RowDefinition Height="60" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Java Launch Wrapper" TextWrapping="Wrap" FontWeight="Bold" />
@@ -282,6 +286,16 @@
                     <TextBlock Grid.Row="22" Grid.Column="2" Grid.ColumnSpan="2" Text="Copyright © 2016–2026 Alexandre Mutel&#xa;Licensed under the BSD 2-Clause License." TextWrapping="Wrap" />
                     <Expander Grid.Row="23" Grid.Column="2" Grid.ColumnSpan="2" Header="查看 Markdig 完整许可" Margin="0,7,0,18">
                         <TextBlock x:Name="LabMarkdigLicense" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"/>
+                    </Expander>
+                    <TextBlock Grid.Row="24" Grid.Column="0" Text="MeloongCore" TextWrapping="Wrap" FontWeight="Bold" />
+                    <TextBlock Grid.Row="24" Grid.Column="2" Grid.ColumnSpan="2" Text="MeloongCore contributors&#xa;Licensed under the Apache License, Version 2.0." TextWrapping="Wrap" />
+                    <Expander Grid.Row="25" Grid.Column="2" Grid.ColumnSpan="2" Header="查看 MeloongCore 完整许可" Margin="0,7,0,18">
+                        <TextBlock x:Name="LabMeloongCoreLicense" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"/>
+                    </Expander>
+                    <TextBlock Grid.Row="26" Grid.Column="0" Text=".NET runtime / CoreCLR" TextWrapping="Wrap" FontWeight="Bold" />
+                    <TextBlock Grid.Row="26" Grid.Column="2" Grid.ColumnSpan="2" Text="Copyright © .NET Foundation and Contributors&#xa;Licensed under the MIT License." TextWrapping="Wrap" />
+                    <Expander Grid.Row="27" Grid.Column="2" Grid.ColumnSpan="2" Header="查看 .NET 完整许可" Margin="0,7,0,18">
+                        <TextBlock x:Name="LabDotNetLicense" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"/>
                     </Expander>
                 </Grid>
             </local:MyCard>

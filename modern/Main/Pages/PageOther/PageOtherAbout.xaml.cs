@@ -25,9 +25,16 @@ namespace PCL
         {
             __LfAttachOwnHandles();
             this.InitializeComponent();
-            using var license = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/LivingPCL;component/Licenses/Markdig.txt")).Stream;
+            LabMarkdigLicense.Text = ReadLicense("Markdig.txt");
+            LabMeloongCoreLicense.Text = ReadLicense("MeloongCore.txt");
+            LabDotNetLicense.Text = ReadLicense("dotnet-runtime.txt");
+        }
+
+        private static string ReadLicense(string name)
+        {
+            using var license = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/LivingPCL;component/Licenses/" + name)).Stream;
             using var reader = new System.IO.StreamReader(license);
-            LabMarkdigLicense.Text = reader.ReadToEnd();
+            return reader.ReadToEnd();
         }
 
         private void PageOtherAbout_Loaded(object sender, RoutedEventArgs e)

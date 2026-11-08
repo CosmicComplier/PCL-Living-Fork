@@ -32,6 +32,8 @@ MeloongCore、第三方库、图标、字体、帮助文件及其他资源分别
 - .NET bundle 身份读取器使用的格式实现：MIT，Copyright (c) .NET Foundation and Contributors；见 [完整许可](modern/ThirdParty/dotnet-runtime-bundle/LICENSE.TXT)及[固定源文件清单](modern/ThirdParty/dotnet-runtime-bundle/source-manifest.json)。既有 CoreCLR 数值解析算法移植的 MIT 许可与署名完整保留在[对应源码文件头](PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs)。
 - Markdig 1.6.0：BSD 2-Clause，Copyright (c) 2016-2026, Alexandre Mutel；见[完整许可](modern/ThirdParty/Markdig/LICENSE.txt)。该文本同时作为应用资源供关于页展示。
 
+上述 MeloongCore、.NET 和 Markdig 完整许可均作为应用资源保留，可在关于页的第三方许可区域展开阅读；单文件打包沿用这些资源。
+
 新原创 [PCLLF.MMCC.Core](PCLLF.MMCC.Core/README.md) 使用自身的 [MPL-2.0 许可](PCLLF.MMCC.Core/LICENSE)；其许可范围不替换宿主的根许可、既有第三方声明或输入整合包的许可。
 
 Minecraft、Mojang 和 Microsoft 的名称与相关资产归相应权利人所有。本项目不是 Minecraft 官方产品，未经 Mojang 或 Microsoft 批准，也不与其关联。
