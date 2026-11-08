@@ -7,6 +7,7 @@ internal static class MmcCompilationTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC compiler applies final nonempty entry and main JAR after ordinary libraries", Entrypoint);
         yield return ("MMC compiler preserves JVM array tokens and moves repeated tweaker groups", Arguments);
+        yield return ("MMC native legacy game arguments split literal spaces before macro expansion with quotes slashes and tabs retained", LegacyGameArguments);
         yield return ("MMC compiler only accepts Minecraft game assets and retains provenance", AssetOwnership);
         yield return ("MMC compiler replaces higher library versions in the original slot", LibraryVersions);
         yield return ("MMC compiler keeps mavenFiles download-only with duplicates", MavenFiles);
@@ -60,8 +61,22 @@ internal static class MmcCompilationTests {
         var profile = Good(Compile(new() { ["minecraftArguments"] = "--arg \"\" --path '中文 path'", ["+jvmArgs"] = new[] { "-Dpath=中文 space", "", "-Dsame=1", "-Dsame=1" }, ["+tweakers"] = new[] { "A", "B" } },
             [Patch("second", ("+jvmArgs", new[] { "--add-opens", "java.base/java.lang=ALL-UNNAMED" }), ("+tweakers", new[] { "A", "A" }))]));
         Require(profile.JvmArguments.Select(a => a.Value).SequenceEqual(["-Dpath=中文 space", "", "-Dsame=1", "-Dsame=1", "--add-opens", "java.base/java.lang=ALL-UNNAMED"]), "Array tokens were split or deduplicated.");
-        Require(profile.Tweakers.SequenceEqual(["B", "A", "A"]) && profile.GameArguments[1].Value == "" && profile.GameArguments[3].Value == "中文 path", "Tweaker move or empty game argument changed.");
+        Require(profile.Tweakers.SequenceEqual(["B", "A", "A"]) && profile.GameArguments.Select(value => value.Value).SequenceEqual(
+            ["--arg", "\"\"", "--path", "'中文", "path'", "--tweakClass", "B", "--tweakClass", "A", "--tweakClass", "A"]), "Native legacy game tokens or tweaker move changed.");
         Error(Compile(new() { ["+jvmArgs"] = new[] { "bad\0argument" } }), "MMC_ARGUMENTS");
+    }
+    private static void LegacyGameArguments() {
+        // Fixed Prism processMinecraftArgs splits ASCII ' ' before replacing macros.
+        // This expected vector is native data, independently of the cfg/JVM tokenizer.
+        const string raw = "  --quote \"two words\" --single 'two words' --slash C:\\tail\\ --tab left\tright --newline left\nright --empty ${client_token} --literal \"\" --open \"unterminated   ";
+        string[] expected = ["--quote", "\"two", "words\"", "--single", "'two", "words'", "--slash", "C:\\tail\\", "--tab", "left\tright", "--newline", "left\nright", "--empty", "${client_token}", "--literal", "\"\"", "--open", "\"unterminated"];
+        var compiled = Good(Compile(new() { ["minecraftArguments"] = raw }));
+        Require(compiled.GameArguments.Select(value => value.Value).SequenceEqual(expected), "Native game splitting interpreted shell quotes, escaped a slash, split non-ASCII-space whitespace or removed a macro token.");
+        Require(Good(Compile(new() { ["minecraftArguments"] = "    " })).GameArguments.IsEmpty &&
+            Good(Compile(new() { ["minecraftArguments"] = "" })).GameArguments.IsEmpty, "Empty/space-only legacy game input created synthetic tokens.");
+        Error(Compile(new() { ["minecraftArguments"] = "--bad invalid\0token" }), "MMC_ARGUMENTS");
+        Require(MmcArgumentTokenizer.Tokenize("-Dvalue=\"two words\" '' --tab\tvalue").SequenceEqual(["-Dvalue=two words", "", "--tab", "value"]),
+            "Fixing native game arguments changed cfg/JVM quote and whitespace tokenization.");
     }
     private static void AssetOwnership() {
         var result = Compile(patches: [Patch("custom", ("assetIndex", new { id = "wrong", url = "https://example.invalid/wrong" }), ("type", "wrong"))]);

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace PCLLF.MMCC.Core;
 
-/// <summary>Tokenizes declared command strings only; +jvmArgs array members never pass through this parser.</summary>
+/// <summary>Tokenizes cfg/user command strings; native minecraftArguments and +jvmArgs array members never pass through this parser.</summary>
 public static class MmcArgumentTokenizer {
     public static ImmutableArray<string> Tokenize(string value) {
         ArgumentNullException.ThrowIfNull(value);

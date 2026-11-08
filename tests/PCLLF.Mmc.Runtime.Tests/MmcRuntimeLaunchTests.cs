@@ -205,18 +205,24 @@ public final class TestLoader extends ClassLoader {
     }
     private static void ActualArgv() {
         foreach (int major in new[] { 8, 17, 21 }) {
-            using Fixture fixture = new(major);
-            var plan = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
+            using Fixture fixture = new(major, unknownArgument: "--emptyMacro ${client_token} --literalTab left\tright --unclosed \"unterminated");
+            var account = fixture.Request.Account;
+            var request = fixture.Request with { Account = new(account.Name, account.Uuid, account.AccessToken, account.Session, account.UserType, account.UserPropertiesJson, clientToken: "") };
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(request).GetAwaiter().GetResult();
             var observed = Run(plan);
             Require(observed.Properties["java.specification.version"] == (major == 8 ? "1.8" : major.ToString()), "Explicit fixture executable does not actually run the requested Java major.");
             Require(observed.Mode == "first" && observed.Loader == "fixture.TestLoader", "Actual VM CP order or startup system loader differs from the bound plan.");
             Require(observed.Arguments.TakeLast(5).SequenceEqual(fixture.Request.Settings.ExtraGameTokens), "Actual Wrapper/bridge argv lost empty, Unicode, slash or quote semantics.");
+            Require(Flag(observed, "--value") == "''" && Flag(observed, "--trail") == "'tail\\'" && Flag(observed, "--中文") == "'中文" && observed.Arguments.Contains("path'") &&
+                Flag(observed, "--emptyMacro") == "" && Flag(observed, "--literalTab") == "left\tright" && Flag(observed, "--unclosed") == "\"unterminated",
+                "Actual native legacy argv changed literal quotes/backslashes/tabs or dropped an empty post-split macro expansion.");
             Require(observed.Properties["fixture.value"] == "regex\\\\d+ trailing\\", "Wrapper reparsing corrupted JVM property values.");
             Require(observed.Properties["user.dir"].Equals(fixture.Request.Paths.GameRoot, StringComparison.OrdinalIgnoreCase), "Actual process working directory is not GameRoot.");
             foreach (string property in new[] { "java.io.tmpdir", "oolloo.jlw.tmpdir", "org.lwjgl.system.SharedLibraryExtractPath" }) Require(observed.Properties[property].StartsWith(plan.MutableDirectories.SessionRoot.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase), "Native/Wrapper extraction escaped the per-session mutable root.");
             var separator = observed.Properties["java.class.path"].Split(';');
             Require(separator.TakeLast(plan.OrderedGameClasspath.Length).SequenceEqual(plan.OrderedGameClasspath.Select(p => Path.GetRelativePath(fixture.Request.Paths.GameRoot, p).Replace('\\', '/'))), "Game classpath order/mainJar tail changed behind Wrapper prefix.");
             MmcRuntimeLaunchBuilder.RevalidateFilesAsync(plan).GetAwaiter().GetResult();
+            Console.WriteLine("LEGACY_ARGV java=" + major + " literal-quotes/slash/tab=true empty-macro-token=true exact-host-array=true");
         }
     }
     private static string Flag(Output output, string name) { int i = output.Arguments.IndexOf(name); Require(i >= 0 && i + 1 < output.Arguments.Length, "Expected controlled game flag missing."); return output.Arguments[i + 1]; }

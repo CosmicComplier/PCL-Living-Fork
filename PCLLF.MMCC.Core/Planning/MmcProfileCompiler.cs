@@ -143,8 +143,12 @@ public static class MmcProfileCompiler {
             if (loggingArgument is not null) jvm.Add(loggingArgument);
             List<MmcArgumentToken> gameArguments = [];
             if (gameArgumentString is not null) {
-                try { gameArguments.AddRange(MmcArgumentTokenizer.Tokenize(gameArgumentString).Select(v => new MmcArgumentToken(v, gameArgumentSource!))); }
-                catch (FormatException e) { throw new MmcInputException("MMC_ARGUMENTS", gameArgumentSource!.Source, e.Message); }
+                // Native legacy-game semantics: literal ASCII spaces only, before macro
+                // expansion. Quotes/backslashes/tabs are data, not shell syntax. Independently
+                // implemented from Prism 899d2f3957215a09fe398a8a8cbb8a8a9c619968,
+                // launcher/minecraft/MinecraftInstance.cpp processMinecraftArgs (L704-L712).
+                gameArguments.AddRange(gameArgumentString.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(v => new MmcArgumentToken(v, gameArgumentSource!)));
             }
             foreach (var tweaker in tweakers) { gameArguments.Add(new("--tweakClass", tweaker.Source)); gameArguments.Add(new(tweaker.Value, tweaker.Source)); }
             if (jvm.Concat(gameArguments).Any(argument => argument.Value.Contains('\0')))
