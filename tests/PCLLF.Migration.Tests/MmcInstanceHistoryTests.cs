@@ -10,6 +10,7 @@ internal static class MmcInstanceHistoryTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC history restores its published runtime and private environment into a new generation while retaining current worlds and preferences", RoundTrip);
         yield return ("MMC history rejects damaged point objects, unanchored references and missing adopted originals before live mutations", Damaged);
+        yield return ("MMC history refuses to omit or overwrite a player-edited mapped resource from a complete undo point", EditedMappedResource);
         yield return ("MMC history refuses active sessions, pending operations, old coverage and a different instance identity", Barriers);
         yield return ("MMC history cancels before decision and recovers controlled interrupted transactions on either side of the decision", Transactions);
         yield return ("MMC history preserves an unknown private library when a later point reintroduces its old path", UnknownReintroducedLibrary);
@@ -221,13 +222,28 @@ internal static class MmcInstanceHistoryTests {
     }
     private static MmcInstanceHistoryRestoreRequest Request(Fixture fixture, MmcInstanceHistoryPoint point) { var current = fixture.Primary(); return new(fixture.VersionRoot, current.Definition.InstanceId, current.Definition.Generation, current.Sha256, point.PointId, point.ManifestSha256); }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}."); }
+    private static void EditedMappedResource() {
+        using Fixture fixture = new(mappedResources: true); fixture.Import(); var history = new MmcInstanceHistoryBackend();
+        var point = Capture(fixture, history, "mapped original"); string before = fixture.Primary().Sha256;
+        fixture.Put("minecraft/resources/owned.ogg", "player edited resource");
+        var capture = history.CaptureAsync(CaptureRequest(fixture, "must retain every byte")).GetAwaiter().GetResult();
+        var restore = history.RestoreAsync(Request(fixture, point)).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, capture.Status); Equal(null, capture.Point);
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, restore.Status); Equal(null, restore.UndoPoint);
+        Equal(before, fixture.Primary().Sha256); Equal("player edited resource", fixture.Read("minecraft/resources/owned.ogg"));
+    }
     private sealed class Fixture : IDisposable {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "pcllf-mmc-history-" + Guid.NewGuid().ToString("N"));
         internal string VersionRoot => Path.Combine(Root, "game", "versions", "fixture");
         private readonly HttpClient client = new(new NoNetwork());
-        private readonly byte[] index = Encoding.UTF8.GetBytes("{\"objects\":{}}");
+        private readonly byte[] index;
+        private readonly byte[] mappedBytes = Encoding.UTF8.GetBytes("owned mapped original");
         private bool imported;
-        internal Fixture() {
+        internal Fixture(bool mappedResources = false) {
+            string objectHash = Convert.ToHexStringLower(SHA1.HashData(mappedBytes));
+            index = mappedResources ? System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new {
+                map_to_resources = true, objects = new Dictionary<string, object> { ["owned.ogg"] = new { hash = objectHash, size = mappedBytes.Length } }
+            }) : Encoding.UTF8.GetBytes("{\"objects\":{}}");
             Directory.CreateDirectory(Root); string digest = Convert.ToHexStringLower(SHA1.HashData(index));
             using var zip = ZipFile.Open(Path.Combine(Root, "fixture.zip"), ZipArchiveMode.Create);
             Add("pack/mmc-pack.json", """{"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.7.10"}]}""");
@@ -239,7 +255,7 @@ internal static class MmcInstanceHistoryTests {
         }
         internal MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(new(Path.Combine(Root, "metadata"), new Uri("https://metadata.invalid/"), client),
             new(Path.Combine(Root, "global-libraries"), Path.Combine(Root, "global-assets"), Path.Combine(Root, "global-sources")), value => value,
-            async (batch, token) => { if (imported) throw new IOException("No network after initial fixture import."); foreach (var file in batch) await File.WriteAllBytesAsync(file.DownloadPath, index, token); });
+            async (batch, token) => { if (imported) throw new IOException("No network after initial fixture import."); foreach (var file in batch) await File.WriteAllBytesAsync(file.DownloadPath, file.Urls.Any(url => url.EndsWith("index.json", StringComparison.Ordinal)) ? index : mappedBytes, token); });
         internal MmcInstanceBackendResult Import() {
             var result = Backend().ImportAsync(new(Path.Combine(Root, "fixture.zip"), VersionRoot, "fixture", new("windows", "x86_64", 8))).GetAwaiter().GetResult();
             if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(result.Failure); imported = true; return result;

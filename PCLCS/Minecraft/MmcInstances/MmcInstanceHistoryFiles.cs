@@ -28,6 +28,15 @@ internal static class MmcInstanceHistoryFiles {
             string? actual = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, library.Key));
             if (actual is not null && actual != library.Value.Sha256) throw new IOException("History cannot capture an unknown modified private library: " + library.Key);
         }
+        foreach (var mapped in definition.DerivedOutputs.Where(value => value.Kind == MmcDerivedOutputKind.AssetMappedResource &&
+            value.RuntimePlanFingerprint == definition.InstalledProjection!.RuntimePlanFingerprint)) {
+            token.ThrowIfCancellationRequested();
+            string? actual = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, mapped.TargetRelativePath));
+            // Environment snapshots omit reproducible derived resources. Edited bytes
+            // are no longer reproducible and must not vanish from a purported full undo.
+            if (actual is not null && actual != mapped.Sha256)
+                throw new IOException("History cannot omit a player-edited mapped resource: " + mapped.TargetRelativePath);
+        }
         Add("PCL/InstanceDefinition.json", primary.Sha256);
         foreach (var item in definition.SourceBundle.MetadataRecords) Add(item.ObjectRelativePath, item.ContentSha256);
         foreach (var item in definition.ComponentOverrides) if (item.PatchReference is { } patch) Add(patch.ObjectRelativePath, patch.Sha256);
