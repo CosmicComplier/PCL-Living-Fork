@@ -45,7 +45,7 @@ def documentation_only(paths: list[str]) -> bool:
     return bool(paths) and all(is_documentation_path(name) for name in paths)
 
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java", "mmc-backend")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -314,6 +314,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mmc-archive",), (), build=False)
             elif stem in {"MmcDefinition", "MmcLaunchAuthority", "MmcProjection"}:
                 include(("mmc-definition",), (), build=False)
+            elif stem == "MmcInstanceBackend":
+                include(("mmc-backend",), (), build=False)
             elif stem.startswith("WorldMetadata"):
                 include(("world-metadata",), (), build=False)
             elif stem == "LocalGameData":
@@ -407,7 +409,12 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             elif name.startswith("PCLCS/Minecraft/MmcArchive/"):
                 include(("mmc-archive",), (), build=False)
             elif name.startswith("PCLCS/Minecraft/MmcInstances/"):
-                include(("mmc-archive",) if leaf == "MmcPackageFileStager.cs" else ("mmc-definition",), (), build=False)
+                if leaf == "MmcPackageFileStager.cs":
+                    include(("mmc-archive", "mmc-backend"), (), build=False)
+                elif leaf.startswith(("MmcInstanceBackend", "MmcSavedSourceStore", "MmcOwnedImportReservation")):
+                    include(("mmc-backend",), (), build=False)
+                else:
+                    include(("mmc-definition",), (), build=False)
             elif leaf.startswith(("MmcManagement", "MmcInstancePaths")):
                 include(("mmc-profile",), (), build=False)
             elif leaf.startswith("InstanceResourceOnline"):

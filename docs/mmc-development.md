@@ -63,6 +63,12 @@ High关闭了本轮计划指纹、旧绑定权威、身份overlay/缓存和布�
 Java durable pin存储的3项定向测试通过（保留未确认pin、维护互斥、损坏记录保留），
 现有Java下载器实际维护与取消drain接线仍待下载器生产者观测接口完成。
 
+后端文件闭环已由0ef4ab5接入：受控小包实际导入、完整author baseline/source对象与opaque文档保存、
+正式published Definition/JSON/config/INI同事务发布、私有sibling目录无覆盖发布，以及原ZIP和全局cache删除后
+离线恢复缺失库/投影均已执行。Root定向mmc-backend三项通过，另覆盖坏primary、取消/故障现场保留；
+个人config/saves与游戏内同名libraries不被修复覆盖。此处下载callback为受控测试源，
+不等同Main NetFile真实网络或GTNH整包验收。Main入口、真实下载/启动监视与后续生命周期任务继续进行。
+
 ## 已有证据与当前边界
 
 - R7 map 已提交为共享基线；原工作目录的 README、图标及其他未提交工作未纳入。
