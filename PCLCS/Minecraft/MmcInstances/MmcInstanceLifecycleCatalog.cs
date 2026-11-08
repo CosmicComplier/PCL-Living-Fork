@@ -62,15 +62,21 @@ public static class MmcInstanceLifecycleCatalog {
 
     private static MmcLifecycleCatalogEntry Inspect(string root, string directory, ref long remaining) {
         directory = ValidateDirectory(root, directory);
-        List<FileStream> pins = []; List<string> recordFacts = [];
+        List<FileStream> pins = []; List<MmcAdmissionLease> leases = []; List<string> recordFacts = [];
         try {
+            // Pin only the immutable store record before taking the read gates.
+            // A catalog must not briefly deny a live producer's Move/ClearPending
+            // by opening instance files while that producer holds admission.
+            PinOptional(Path.Combine(directory, "intent.record"), MaximumRecordBytes, pins, ref remaining);
+            var journal = MmcInstanceLifecycleJournal.Read(directory); var intent = journal.Intent;
+            foreach (string location in new[] { intent.SourceRoot, intent.TargetRoot }.Order(StringComparer.OrdinalIgnoreCase))
+                leases.Add(MmcAdmissionGate.Acquire(location, intent.InstanceId, TimeSpan.Zero));
             foreach (string record in Records) {
                 string path = Path.Combine(directory, record);
                 if (MmcInstancePaths.Attributes(path) is null) continue;
                 var pin = Pin(path, MaximumRecordBytes, out long length); pins.Add(pin); Budget(ref remaining, length);
                 recordFacts.Add(record); recordFacts.Add(Convert.ToHexStringLower(SHA256.HashData(pin))); pin.Position = 0;
             }
-            var journal = MmcInstanceLifecycleJournal.Read(directory); var intent = journal.Intent;
             string name = Path.GetFileName(intent.SourceRoot);
             bool sourceExists = MmcInstancePaths.Attributes(intent.SourceRoot) is not null;
             bool targetExists = MmcInstancePaths.Attributes(intent.TargetRoot) is not null;
@@ -122,7 +128,10 @@ public static class MmcInstanceLifecycleCatalog {
             if (sourceOwned || targetOwned || sourceHash == intent.SourcePrimarySha256 && !targetExists)
                 return Entry(MmcLifecycleCatalogState.Incomplete, decided ? "操作已决定提交，可继续完成。" : "操作在提交前中断，可恢复原实例。", recover: true);
             return Entry(MmcLifecycleCatalogState.Conflict, "未找到与记录完全一致的实例；请保留现场。");
-        } finally { foreach (var pin in pins) pin.Dispose(); }
+        } finally {
+            foreach (var pin in pins) pin.Dispose();
+            foreach (var lease in leases.AsEnumerable().Reverse()) lease.Dispose();
+        }
     }
 
     private static string Primary(string versionRoot, Guid id, long[] generations, List<FileStream> pins, ref long remaining) {
