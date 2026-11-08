@@ -14,6 +14,58 @@ The complete typed `NativeHandles` sources and `modern/BuildEvents` preserve ori
 
 The C#/.NET 10 product is integrated into `main`. Current development, build and validation instructions are in [BUILDING_MODERN.md](../../docs/BUILDING_MODERN.md), and public artifact policy is in [PUBLISHING.md](../../docs/PUBLISHING.md). The migration-era [handoff and validation ledger](https://github.com/DDZmumo/PCL-Living-Fork/blob/4d635f143287720ea37a97326e4752528685fece/docs/MIGRATION_STATUS.md#migration-handoff) is retained in Git history. Its paused goals and temporary branch restrictions describe that historical checkpoint, not current development authorization. Actual account, game and upgrade acceptance must still be reported separately for each tested commit and environment.
 
+## Embedded runtime JARs
+
+These are actual inherited runtime components, rather than MMC mechanism
+references. The Java Wrapper and agent are explicit `PCLCS.csproj` embedded
+resources; the existing native resource schema retains `Resources/transformer.jar`.
+Their binaries are unchanged by this license/source delivery.
+
+- `PCLCS/Launch/JavaWrapper.jar`: Java Launch Wrapper 1.4.4, MIT,
+  Copyright (c) 2022 00ll00. SHA-256
+  `88eb3ee58854e916437831697ef6a2fd493da9bc4ffb018f620cd88f090952aa`
+  equals the official [v1.4.4 release asset digest](https://github.com/00ll00/java_launch_wrapper/releases/tag/v1.4.4).
+  The tag resolves to `da6121dcf3c5d0f1f02be402b1fbbfdd9e07e095`.
+  Its complete [MIT text](../ThirdParty/JavaLaunchWrapper/LICENSE.txt) and
+  [artifact record](../ThirdParty/JavaLaunchWrapper/NOTICE.txt) are retained.
+- `PCLCS/Launch/LwjglUnsafeAgent.jar`: LWJGL Unsafe Agent 2.0, Apache-2.0,
+  Copyright 2026 Glavo. SHA-256
+  `6c07d3508dc090a12076876bdc227a19ce195a41c9e2c6535c3f82213b1b2015`
+  equals the official [2.0 release asset digest](https://github.com/HMCL-dev/lwjgl-unsafe-agent/releases/tag/2.0).
+  The tag resolves to `6755ad42e444d472a5a849bbe85128e05b6442e5`.
+  The [fixed attribution and source record](../ThirdParty/LwjglUnsafeAgent/NOTICE.txt)
+  identifies the upstream README/source license header; this fixed tree has
+  no separate LICENSE/NOTICE file. The full Apache-2.0 text is reused from
+  [MeloongCore-Wpf/LICENSE.txt](../ThirdParty/MeloongCore-Wpf/LICENSE.txt),
+  with this agent's own Glavo attribution displayed alongside it.
+- `Plain Craft Launcher 2/Resources/transformer.jar`: HMCL Transformer
+  Discovery Service 1.0, GPL-3.0-or-later with the upstream Section 7 terms,
+  Copyright (C) 2020 huangyuhui and contributors. SHA-256
+  `ea5756fec2e06d5aa5824b54f9c26ae46a7ab43ca9a57e747f1f63e1269f7dad`;
+  its Git blob `3ea51be50926e0b72ac87e7c8e73086edbbd6f04` exactly matches
+  [HMCL's historical JAR](https://github.com/HMCL-dev/HMCL/blob/7c510f9fb8655598a26b1b5937bcb0046d0960d4/HMCLCore/src/main/resources/assets/game/HMCLTransformerDiscoveryService-1.0.jar)
+  at `7c510f9fb8655598a26b1b5937bcb0046d0960d4`. The same fixed tree supplies
+  its Java source, service registration and original build scripts.
+  [SOURCE.md](../ThirdParty/HMCLTransformerDiscoveryService/SOURCE.md) and
+  the [source manifest](../ThirdParty/HMCLTransformerDiscoveryService/source-manifest.json)
+  identify every retained source file, full GPL text and additional terms.
+  The source set also preserves the actual compile-only ModLauncher 4.1.0
+  interface from `5bfa59b715884c91a8b90aa53d270776d0a60186`, Copyright
+  (C) 2017-2019 cpw, with its fixed LGPLv3 notice and GPL/LGPL texts.
+  This API source is used to rebuild the component; it is not an added host
+  runtime dependency. LF added an offline component build script and source
+  packaging on 2026-11-08; the HMCL Java implementation remains unchanged.
+
+The complete notices and licenses are embedded for offline About-page reading.
+The entire Transformer source set is also embedded; the About-page source
+button exports it as a machine-readable ZIP from the same resources. The
+single-EXE package requires no loose source or license attachment for these
+resources. A regenerated component JAR is not asserted to be byte-identical
+to the historical artifact. These source/artifact identities were checked
+against official upstream sources on 2026-11-08; they do not certify the
+licensing of the whole product. No license is added for pure-reference MMC
+implementations.
+
 ## LF 1.3.5-pre-3 synchronization
 
 The additional LF source is pinned to `50b028da5fcad2226d74d901a41d8c43a249bfb2`; the initial LF/PCL/CE baselines above remain unchanged. The original LF `LICENCE` applies. This batch copies no CE product base or policy.
