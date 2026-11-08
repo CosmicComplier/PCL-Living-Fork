@@ -14,6 +14,13 @@ namespace PCLCS;
 internal static class MmcRuntimeFiles {
     internal static readonly StringComparison PathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     internal static string JavaPath(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Replace('\\', '/');
+    internal static string RelativeJavaPath(string gameRoot, string path) {
+        string relative = Path.GetRelativePath(gameRoot, path);
+        // A different volume cannot be represented relative to GameRoot. All
+        // bound artifacts normally share its volume; retain the exact absolute
+        // representation if a future owned support role permits otherwise.
+        return relative.Replace('\\', '/');
+    }
     internal static void Hash(string? hash) {
         if (hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit)) throw new MmcRuntimeLaunchException("MMC_RUNTIME_DIGEST", "A verified runtime identity is missing or malformed.");
     }

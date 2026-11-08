@@ -56,7 +56,9 @@ public static class MmcRuntimeLaunchBuilder {
         }
         var mutable = DescribeMutablePaths(currentPaths, request);
         ImmutableArray<string> classpath = compiled.Classpath.Select(a => targets[a.Key].ActualPath).ToImmutableArray();
-        string gameClasspath = string.Join(Path.PathSeparator, classpath.Select(MmcRuntimeFiles.JavaPath));
+        // Targets/observations stay absolute. Only the Java representation is relative
+        // to the fixed process/user.dir root, avoiding repeated deep instance prefixes.
+        string gameClasspath = string.Join(Path.PathSeparator, classpath.Select(path => MmcRuntimeFiles.RelativeJavaPath(currentPaths.GameRoot, path)));
         var replacements = Variables(request, targets, gameClasspath, mutable);
         List<Value> logicalJvm = [];
         if (settings.MinimumMemoryMiB > 0) logicalJvm.Add(new("-Xms" + settings.MinimumMemoryMiB.ToString(CultureInfo.InvariantCulture) + "m", "-Xms" + settings.MinimumMemoryMiB.ToString(CultureInfo.InvariantCulture) + "m"));
@@ -65,7 +67,9 @@ public static class MmcRuntimeLaunchBuilder {
         logicalJvm.AddRange(userJvm);
         logicalJvm.AddRange(compiled.JvmArguments.Select(a => Expand(a.Value, replacements, request.Account)));
         ValidateJvm(logicalJvm.Select(t => t.Actual).ToArray());
+        ValidateWorkingDirectory(logicalJvm.Select(t => t.Actual), currentPaths.GameRoot);
         foreach (var property in new[] {
+            "-Duser.dir=" + currentPaths.GameRoot,
             "-Djava.library.path=" + MmcRuntimeFiles.JavaPath(request.Directories.NativeDirectory),
             "-Djava.io.tmpdir=" + MmcRuntimeFiles.JavaPath(mutable.TemporaryDirectory),
             "-Doolloo.jlw.tmpdir=" + MmcRuntimeFiles.JavaPath(mutable.TemporaryDirectory),
@@ -85,7 +89,7 @@ public static class MmcRuntimeLaunchBuilder {
         List<string> actual = logicalJvm.Select(a => a.Actual).ToList(), redacted = logicalJvm.Select(a => a.Redacted).ToList();
         List<string> sensitive = Secrets(request.Account).ToList();
         string vmClasspath = settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper
-            ? string.Join(Path.PathSeparator, new[] { request.Wrapper!.ActualPath, request.Bridge!.ActualPath }.Concat(classpath).Select(MmcRuntimeFiles.JavaPath)) : gameClasspath;
+            ? string.Join(Path.PathSeparator, new[] { request.Wrapper!.ActualPath, request.Bridge!.ActualPath }.Concat(classpath).Select(path => MmcRuntimeFiles.RelativeJavaPath(currentPaths.GameRoot, path))) : gameClasspath;
         string cpProperty = "-Djava.class.path=" + vmClasspath;
         actual.Add(cpProperty); redacted.Add(cpProperty);
         if (settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper) {
@@ -100,7 +104,7 @@ public static class MmcRuntimeLaunchBuilder {
             actual.Add(compiled.MainClass); redacted.Add(compiled.MainClass);
             actual.AddRange(game.Select(a => a.Actual)); redacted.AddRange(game.Select(a => a.Redacted));
         }
-        if (OperatingSystem.IsWindows() && CommandLength(request.Java.ExecutablePath, actual) > 32766) Fail("MMC_RUNTIME_COMMAND_LENGTH", "The exact Windows command line exceeds its platform limit; a shorter approved instance path is required.");
+        if (OperatingSystem.IsWindows()) MmcRuntimeWindowsCommandLine.Validate(request.Java.ExecutablePath, actual);
         string argumentFingerprint = MmcRuntimeFiles.Fingerprint(new[] { "mmc-runtime-arguments-v1", settings.WrapperMode.ToString(), compiled.MainClass }
             .Concat(logicalJvm.Select(a => a.Redacted)).Concat(game.Select(a => a.Redacted)).Concat([cpProperty, request.Wrapper?.Sha256, request.Bridge?.Sha256]));
         string inputFingerprint = MmcRuntimeFiles.Fingerprint(new[] { "mmc-runtime-inputs-v1", definition.InstanceId.ToString("D"), definition.Generation.ToString(CultureInfo.InvariantCulture), request.BoundPlan.BoundFingerprint,
@@ -228,6 +232,15 @@ public static class MmcRuntimeLaunchBuilder {
         foreach (string token in jvm.Where(t => t.StartsWith("-D", StringComparison.Ordinal))) { int split = token.IndexOf('=', 2); string key = split < 0 ? token[2..] : token[2..split]; if (key.Length == 0) Fail("MMC_RUNTIME_ARGUMENT", "Empty JVM property name."); properties[key] = split < 0 ? "" : token[(split + 1)..]; }
         return properties;
     }
+    private static void ValidateWorkingDirectory(IEnumerable<string> jvm, string gameRoot) {
+        foreach (string token in jvm.Where(t => t == "-Duser.dir" || t.StartsWith("-Duser.dir=", StringComparison.Ordinal))) {
+            string value = token == "-Duser.dir" ? "" : token["-Duser.dir=".Length..];
+            try {
+                if (Path.IsPathFullyQualified(value) && Path.TrimEndingDirectorySeparator(Path.GetFullPath(value)).Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(gameRoot)), MmcRuntimeFiles.PathComparison)) continue;
+            } catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException) { }
+            Fail("MMC_RUNTIME_WORKING_DIRECTORY", "JVM user.dir must be the bound GameRoot; relative classpath inputs cannot use another working directory.");
+        }
+    }
     private static MmcRuntimeMutableDirectories DescribeMutablePaths(MmcInstancePaths paths, MmcRuntimeLaunchRequest request) {
         string root = paths.ResolveRelative(MmcPathRole.Runtime, "sessions/" + request.Settings.SessionId.ToString("N"));
         if (Directory.Exists(root) || File.Exists(root)) Fail("MMC_RUNTIME_SESSION_PATH", "A launch session requires a fresh owned mutable directory.");
@@ -256,18 +269,6 @@ public static class MmcRuntimeLaunchBuilder {
         MmcInstancePaths.EnsureNoLinks(actual);
     }
     private static IEnumerable<string> Secrets(MmcRuntimeAccountSnapshot account) => new[] { account.AccessToken, account.Session, account.UserPropertiesJson, account.ClientToken, account.Xuid }.OfType<string>().Where(v => v.Length != 0);
-    private static long CommandLength(string executable, IEnumerable<string> arguments) {
-        long total = executable.Length + 3L;
-        foreach (string value in arguments) {
-            total += value.Length + 1L;
-            if (value.Length == 0 || value.Any(c => char.IsWhiteSpace(c) || c == '"')) {
-                total += 2; int slash = 0;
-                foreach (char c in value) { if (c == '\\') slash++; else { if (c == '"') total += slash + 1; slash = 0; } }
-                total += slash;
-            }
-        }
-        return total;
-    }
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void Fail(string code, string message) => throw new MmcRuntimeLaunchException(code, message);
 }

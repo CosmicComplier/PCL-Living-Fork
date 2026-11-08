@@ -85,6 +85,7 @@ public sealed class MmcRuntimeLaunchPlan {
         EffectiveJvmArguments = effectiveJvmArguments;
     }
     public ProcessStartInfo CreateStartInfo() {
+        if (OperatingSystem.IsWindows()) MmcRuntimeWindowsCommandLine.Validate(Request.Java.ExecutablePath, arguments);
         var start = new ProcessStartInfo(Request.Java.ExecutablePath) {
             UseShellExecute = false, WorkingDirectory = Request.Paths.GameRoot, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
