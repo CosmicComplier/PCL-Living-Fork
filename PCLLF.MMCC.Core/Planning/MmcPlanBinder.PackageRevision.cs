@@ -5,6 +5,7 @@ namespace PCLLF.MMCC.Core;
 public sealed record MmcPackageRevisionBindOptions(Guid ExpectedInstanceId, long ExpectedGeneration,
     string ExpectedPrimarySha256, string ExpectedPackageSha256, string OutputJsonSha256, MmcRetainedRevisionFact Retained) {
     public MmcDerivationCompletion? NativeDerivation { get; init; }
+    public ReadOnlyMemory<byte>? PackageOwnershipContent { get; init; }
 }
 
 public static partial class MmcPlanBinder {
@@ -42,6 +43,11 @@ public static partial class MmcPlanBinder {
             if (baseline.HasErrors || baseline.Baseline is null) return new(null, null, baseline.Diagnostics);
             if (baseline.Baseline.GameRootLeaf != source.Layout.GameRootLeaf)
                 Fail("MMC_PACKAGE_REVISION_LAYOUT", "The new author baseline does not justify the selected game-tree role.");
+            if (source.PackageOwnershipReference is { } ownership) {
+                if (options.PackageOwnershipContent is not { } content) Fail("MMC_PACKAGE_REVISION_OWNERSHIP", "A new ownership reference requires its measured immutable bytes.");
+                var ownershipErrors = MmcPackageOwnershipCodec.Validate(options.PackageOwnershipContent!.Value, ownership, source.Origin.PackageSha256);
+                if (!ownershipErrors.IsEmpty) return new(null, null, ownershipErrors);
+            } else if (options.PackageOwnershipContent is not null) Fail("MMC_PACKAGE_REVISION_OWNERSHIP", "Ownership content is not referenced by the new package definition.");
             var previous = current.ArtifactLocks.Select(value => (value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes))
                 .Concat(current.PackageFileLocks.Select(value => (value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes)))
                 .ToDictionary(value => value.ArtifactKey, StringComparer.Ordinal);

@@ -33,6 +33,7 @@ public static partial class MmcPlanBinder {
             if (source.InstanceId != current.InstanceId || source.Generation != current.Generation || source.Origin != current.Origin ||
                 source.Layout != current.Layout || source.ParentInstanceId != current.ParentInstanceId || source.FormatProfile != current.FormatProfile ||
                 source.SourceBundle.PackageLocalScopeSha256 != current.SourceBundle.PackageLocalScopeSha256 ||
+                source.PackageOwnershipReference != current.PackageOwnershipReference ||
                 source.SchemaVersion != current.SchemaVersion || source.ManagementKind != current.ManagementKind || current.Generation == long.MaxValue || source.InstalledProjection is not null ||
                 !source.ArtifactInventory.IsEmpty || !source.ArtifactLocks.IsEmpty || !source.DerivedOutputs.IsEmpty ||
                 !source.PackageFileInventory.IsEmpty || !source.PackageFileLocks.IsEmpty || SourceEnvelopeFingerprint(source) == SourceEnvelopeFingerprint(current))

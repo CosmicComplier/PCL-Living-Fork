@@ -38,6 +38,7 @@ internal static class MmcInstanceHistoryFiles {
                 throw new IOException("History cannot omit a player-edited mapped resource: " + mapped.TargetRelativePath);
         }
         Add("PCL/InstanceDefinition.json", primary.Sha256);
+        if (definition.PackageOwnershipReference is { } ownership) Add(ownership.ObjectRelativePath, ownership.Sha256);
         foreach (var item in definition.SourceBundle.MetadataRecords) Add(item.ObjectRelativePath, item.ContentSha256);
         foreach (var item in definition.ComponentOverrides) if (item.PatchReference is { } patch) Add(patch.ObjectRelativePath, patch.Sha256);
         foreach (var item in definition.ArtifactInventory) {

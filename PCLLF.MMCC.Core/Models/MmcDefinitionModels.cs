@@ -46,6 +46,9 @@ public sealed record MmcInstanceDefinition(int SchemaVersion, string ManagementK
     public ImmutableArray<MmcDerivedOutputRecord> DerivedOutputs { get; init; } = [];
     public ImmutableArray<MmcPackageFileInventoryRecord> PackageFileInventory { get; init; } = [];
     public ImmutableArray<MmcPackageFileLockRecord> PackageFileLocks { get; init; } = [];
+    /// <summary>Immutable schema-2 update ownership, separate from its mutable host mirror.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MmcObjectReference? PackageOwnershipReference { get; init; }
 }
 public enum MmcDefinitionValidationMode { Draft, Published }
 public enum MmcDefinitionReadStatus { Valid, Invalid, Unsupported }

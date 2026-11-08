@@ -79,6 +79,7 @@ public static class MmcDefinitionCodec {
                 if (platform.VersionId is not null) Text(platform.VersionId, 256);
             }
             var sources = definition.SourceBundle;
+            if (definition.PackageOwnershipReference is { } ownership) MmcPackageOwnershipCodec.ValidateReference(ownership);
             CheckHash(sources.BundleSha256); CheckHash(sources.ResolutionFingerprint);
             if (sources.PackageLocalScopeSha256 is { } packageScope) {
                 CheckHash(packageScope);
@@ -234,7 +235,8 @@ public static class MmcDefinitionCodec {
                 "mmc-published-runtime-environment-v1",environment.OperatingSystem,environment.Architecture,
                 environment.JavaMajor.ToString(CultureInfo.InvariantCulture),environment.JavaBitness.ToString(CultureInfo.InvariantCulture),environment.OsVersion
             } : [])
-            .Concat(definition.SourceBundle.PackageLocalScopeSha256 is { } scope ? new[] { "mmc-measured-package-local-v1", scope } : []));
+            .Concat(definition.SourceBundle.PackageLocalScopeSha256 is { } scope ? new[] { "mmc-measured-package-local-v1", scope } : [])
+            .Concat(definition.PackageOwnershipReference is { } ownership ? new[] { "mmc-package-ownership-v1", ownership.Sha256, ownership.ObjectRelativePath } : []));
     }
 
     private static void ValidateEnvironmentJson(JsonElement root) {

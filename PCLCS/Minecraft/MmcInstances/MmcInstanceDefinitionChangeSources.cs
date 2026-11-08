@@ -61,7 +61,9 @@ internal static class MmcInstanceDefinitionChangeSources {
             current.Origin, new MmcSourceBundle(current.SourceBundle.RelativeRoot, bundle, resolved.Resolution.Profile!.SourceFingerprint, records.ToImmutable()) {
                 PackageLocalScopeSha256 = resolved.Resolution.Profile.Package.PackageLocalScopeSha256
             }, current.Layout,
-            storedOverrides.ToImmutable(), [], [], ParentInstanceId: current.ParentInstanceId, AuthorFileBaseline: baseline);
+            storedOverrides.ToImmutable(), [], [], ParentInstanceId: current.ParentInstanceId, AuthorFileBaseline: baseline) {
+                PackageOwnershipReference = current.PackageOwnershipReference
+            };
         return (source, objects.ToImmutable(), copies.DistinctBy(value => value.TargetRelativePath, StringComparer.Ordinal).ToImmutableArray());
     }
 

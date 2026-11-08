@@ -1,4 +1,5 @@
 using System.Text.Json;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 using PCLLF.MMCC.Core;
 
 internal static class MmcPackageLocalScopeTests {
@@ -23,7 +24,7 @@ internal static class MmcPackageLocalScopeTests {
     }
     private static void LegacyNull() {
         var package = Package(); var before = Resolve(package); var explicitNull = Resolve(package with { PackageLocalScopeSha256 = null });
-        Require(before.MainJar == explicitNull.MainJar && before.SourceFingerprint == explicitNull.SourceFingerprint &&
+        Require(before.MainJar.Key == explicitNull.MainJar.Key && before.MainJar.SourceRevision == explicitNull.MainJar.SourceRevision && before.SourceFingerprint == explicitNull.SourceFingerprint &&
             before.ProfileFingerprint == explicitNull.ProfileFingerprint && before.RuntimePlanFingerprint == explicitNull.RuntimePlanFingerprint,
             "An absent namespace changed historical compilation.");
         var source = new MmcSourceBundle("", new string('a', 64), new string('b', 64), []);
