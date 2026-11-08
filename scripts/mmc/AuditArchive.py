@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Read-only MMC ZIP inventory for P0 evidence; this is not a compatibility compiler.
+
+Only bounded manifests/cfg/patches are decompressed. No game file is extracted,
+command is executed, user directory is inspected, or network request is made.
+This independent LF host tool retains the repository's existing LICENCE.
+"""
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import zipfile
+
+MAX_ENTRIES = 100_000
+MAX_TOTAL_BYTES = 64 * 1024**3
+MAX_ENTRY_BYTES = 4 * 1024**3
+MAX_METADATA_BYTES = 16 * 1024**2
+MAX_METADATA_TOTAL = 128 * 1024**2
+MAX_COMPONENTS = 4096
+MAX_JSON_DEPTH = 128
+DEVICE = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", re.I)
+PATCH_FIELDS = {
+    "formatVersion", "uid", "fileId", "name", "version", "order", "releaseTime",
+    "mainClass", "mainJar", "minecraftArguments", "+jvmArgs", "+tweakers",
+    "assetIndex", "assets", "type", "libraries", "+libraries", "mavenFiles",
+    "compatibleJavaMajors", "compatibleJavaName", "requires", "conflicts",
+    "traits", "+traits", "jarMods", "+jarMods", "agents", "+agents", "volatile",
+}
+UNSUPPORTED_ACTIONS = {"jarMods", "+jarMods", "agents", "+agents"}
+KNOWN_TRAITS = {"FirstThreadOnMacOS", "texturepacks", "no-texturepacks"}
+
+
+class AuditError(ValueError):
+    """An archive cannot be safely or unambiguously inventoried."""
+
+
+@contextmanager
+def evidence_on_failure(report: dict):
+    try:
+        yield
+    except (AuditError, OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+        exc.audit_evidence = report
+        raise
+
+
+def entry_path(raw: str) -> tuple[str, bool]:
+    value = raw.replace("\\", "/")
+    directory = value.endswith("/")
+    value = value[:-1] if directory else value
+    parts = value.split("/")
+    if not value or value.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+        raise AuditError(f"Unsafe archive path: {raw!r}")
+    for part in parts:
+        if (part.endswith((" ", ".")) or DEVICE.match(part)
+                or any(ord(c) < 32 or c in ':<>"|?*' for c in part)):
+            raise AuditError(f"Unsafe Windows archive path: {raw!r}")
+    return "/".join(parts), directory
+
+
+def index_archive(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo], dict]:
+    entries = archive.infolist()
+    if len(entries) > MAX_ENTRIES:
+        raise AuditError("Archive exceeds entry count budget")
+    files: dict[str, zipfile.ZipInfo] = {}
+    roles: dict[str, tuple[str, str]] = {}
+    explicit: dict[str, str] = {}
+    directory_names: dict[str, set[str]] = {}
+    repeated_directories: list[str] = []
+    declared_bytes = 0
+    for info in entries:
+        path, directory = entry_path(info.orig_filename)
+        entry_role = "directory" if directory else "file"
+        old_explicit = explicit.get(path.casefold())
+        if old_explicit is not None:
+            if old_explicit != "directory" or entry_role != "directory":
+                raise AuditError(f"Duplicate or case-colliding file target: {path}")
+            repeated_directories.append(path)
+        explicit[path.casefold()] = entry_role
+        mode = info.external_attr >> 16
+        if stat.S_ISLNK(mode):
+            raise AuditError(f"Symbolic-link entry is unsupported: {path}")
+        if info.flag_bits & 1:
+            raise AuditError(f"Encrypted entry is unsupported: {path}")
+        if info.file_size > MAX_ENTRY_BYTES:
+            raise AuditError(f"Entry exceeds unpacked byte budget: {path}")
+        declared_bytes += info.file_size
+        if declared_bytes > MAX_TOTAL_BYTES:
+            raise AuditError("Archive exceeds declared unpacked total budget")
+        parts = path.split("/")
+        for count in range(1, len(parts) + 1):
+            current = "/".join(parts[:count])
+            role = "directory" if count < len(parts) or directory else "file"
+            old = roles.get(current.casefold())
+            if old is not None and old[1] != role:
+                raise AuditError(f"File/directory role collision: {current}")
+            if role == "directory":
+                directory_names.setdefault(current.casefold(), set()).add(current)
+            if old is None:
+                roles[current.casefold()] = (current, role)
+        if not directory:
+            files[path] = info
+    return files, {
+        "entryCount": len(entries), "fileCount": len(files),
+        "declaredUnpackedBytes": declared_bytes,
+        "compressedEntryBytes": sum(x.compress_size for x in entries),
+        "payloadCrcVerified": False,
+        "directoryAliases": [sorted(names) for _, names in sorted(directory_names.items()) if len(names) > 1],
+        "repeatedDirectoryEntries": repeated_directories,
+    }
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise AuditError(f"Duplicate JSON property: {key}")
+        result[key] = value
+    return result
+
+
+def parse_json(data: bytes, source: str) -> dict:
+    try:
+        result = json.loads(data.decode("utf-8-sig"), object_pairs_hook=_unique_object,
+                            parse_constant=lambda value: (_ for _ in ()).throw(AuditError(f"Non-finite JSON: {value}")))
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise AuditError(f"Invalid JSON in {source}: {exc}") from exc
+    if not isinstance(result, dict):
+        raise AuditError(f"Expected JSON object in {source}")
+    pending = [(result, 1)]
+    while pending:
+        value, depth = pending.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise AuditError(f"JSON nesting budget exceeded: {source}")
+        if isinstance(value, dict):
+            pending.extend((x, depth + 1) for x in value.values())
+        elif isinstance(value, list):
+            pending.extend((x, depth + 1) for x in value)
+    return result
+
+
+def _boolean(value: dict, key: str, source: str) -> bool:
+    item = value.get(key, False)
+    if not isinstance(item, bool):
+        raise AuditError(f"{source}: {key} must be a boolean")
+    return item
+
+
+def patch_summary(patch: dict, path: str, digest: str) -> dict:
+    uid = patch.get("uid", patch.get("fileId"))
+    if not isinstance(uid, str) or not uid:
+        raise AuditError(f"Patch has no uid/fileId: {path}")
+    if "uid" in patch and "fileId" in patch and patch["uid"] != patch["fileId"]:
+        raise AuditError(f"Conflicting uid/fileId: {path}")
+    majors = patch.get("compatibleJavaMajors", [])
+    if not isinstance(majors, list) or any(type(x) is not int or x < 1 for x in majors):
+        raise AuditError(f"Invalid compatibleJavaMajors: {path}")
+    libraries = []
+    for field in ("libraries", "+libraries", "mavenFiles"):
+        values = patch.get(field, [])
+        if not isinstance(values, list) or any(not isinstance(x, dict) for x in values):
+            raise AuditError(f"Invalid {field} array: {path}")
+        for lib in values:
+            libraries.append({"field": field, "name": lib.get("name"),
+                              "local": lib.get("MMC-hint") == "local",
+                              "filename": lib.get("MMC-filename"),
+                              "hasRules": "rules" in lib, "hasNatives": "natives" in lib})
+    traits = []
+    for field in ("traits", "+traits"):
+        values = patch.get(field, [])
+        if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
+            raise AuditError(f"Invalid {field}: {path}")
+        traits.extend(values)
+    jvm = patch.get("+jvmArgs", [])
+    if not isinstance(jvm, list) or any(not isinstance(x, str) for x in jvm):
+        raise AuditError(f"Invalid +jvmArgs: {path}")
+    return {
+        "path": path, "sha256": digest, "uid": uid, "version": patch.get("version"),
+        "formatVersion": patch.get("formatVersion"), "fields": list(patch),
+        "mainClass": patch.get("mainClass"), "mainJar": patch.get("mainJar"),
+        "compatibleJavaMajors": majors, "compatibleJavaName": patch.get("compatibleJavaName"),
+        "jvmArgumentCount": len(jvm), "traits": traits,
+        "libraries": libraries,
+        "unregisteredFields": sorted(set(patch) - PATCH_FIELDS),
+        "requiresUnimplementedExecutor": sorted(x for x in UNSUPPORTED_ACTIONS if patch.get(x)),
+        "unregisteredOrUnsupportedTraits": sorted(set(traits) - KNOWN_TRAITS),
+    }
+
+
+def audit_archive(source: Path, source_url: str | None = None) -> dict:
+    source = Path(source)
+    report = {
+        "schemaVersion": 1, "auditStatus": "rejected", "compatibilityStatus": "not-evaluated",
+        "source": {"fileName": source.name, "url": source_url, "completeLocalFile": True},
+        "scope": "Full local file SHA256 and bounded metadata inventory; no extraction, install, repair or game launch.",
+        "diagnostics": [],
+    }
+    with evidence_on_failure(report), source.open("rb") as stream:
+        before = os.fstat(stream.fileno())
+        report["source"].update(sizeBytes=before.st_size, sha256=hashlib.file_digest(stream, "sha256").hexdigest())
+        stream.seek(0)
+        with zipfile.ZipFile(stream) as archive:
+            files, counts = index_archive(archive)
+            report["archive"] = counts
+            roots = [x[:-len("mmc-pack.json")] for x in files if x.rsplit("/", 1)[-1] == "mmc-pack.json"]
+            if len(roots) != 1:
+                raise AuditError(f"Expected exactly one mmc-pack.json root, found {len(roots)}")
+            root = roots[0]
+            relative_files = {x[len(root):]: info for x, info in files.items() if x.startswith(root)}
+            for path in relative_files:
+                folded = path.casefold()
+                if folded == "pcl/instancedefinition.json" or folded.startswith(("pcl/mmcsource/", "pcl/mmcartifacts/", "pcl/mmctransactions/")):
+                    raise AuditError(f"Package contains reserved LF management metadata: {path}")
+            selected = [root + "mmc-pack.json"]
+            if root + "instance.cfg" in files:
+                selected.append(root + "instance.cfg")
+            selected += [x for x in files if x.startswith(root + "patches/") and x.endswith(".json")]
+            total_metadata = 0
+            metadata: dict[str, bytes] = {}
+            for path in selected:
+                info = files[path]
+                if info.file_size > MAX_METADATA_BYTES:
+                    raise AuditError(f"Metadata exceeds per-file budget: {path}")
+                total_metadata += info.file_size
+                if total_metadata > MAX_METADATA_TOTAL:
+                    raise AuditError("Metadata exceeds aggregate byte budget")
+                with archive.open(info) as content:
+                    data = content.read(MAX_METADATA_BYTES + 1)
+                    if len(data) != info.file_size or len(data) > MAX_METADATA_BYTES:
+                        raise AuditError(f"Metadata actual size mismatch or budget exceeded: {path}")
+                    metadata[path] = data
+            manifest = parse_json(metadata[root + "mmc-pack.json"], "mmc-pack.json")
+            if type(manifest.get("formatVersion")) is not int or manifest["formatVersion"] != 1:
+                raise AuditError("Unsupported mmc-pack formatVersion (expected integer 1)")
+            components = manifest.get("components")
+            if not isinstance(components, list) or not components or len(components) > MAX_COMPONENTS:
+                raise AuditError("Invalid or over-budget components array")
+            summaries = []
+            uids: set[str] = set()
+            for comp in components:
+                if not isinstance(comp, dict) or not isinstance(comp.get("uid"), str) or not comp["uid"]:
+                    raise AuditError("Component requires a nonempty uid")
+                if comp["uid"] in uids:
+                    raise AuditError(f"Duplicate component UID: {comp['uid']}")
+                uids.add(comp["uid"])
+                disabled = _boolean(comp, "disabled", comp["uid"])
+                important = _boolean(comp, "important", comp["uid"])
+                dependency = _boolean(comp, "dependencyOnly", comp["uid"])
+                summaries.append({"uid": comp["uid"], "version": comp.get("version"),
+                                  "cachedVersion": comp.get("cachedVersion"), "disabled": disabled,
+                                  "important": important, "dependencyOnly": dependency,
+                                  "effectiveEnabled": important or dependency or not disabled,
+                                  "declaredFields": list(comp)})
+            patches = []
+            patch_uids: set[str] = set()
+            for path, data in metadata.items():
+                if not path.startswith(root + "patches/"):
+                    continue
+                summary = patch_summary(parse_json(data, path), path[len(root):], hashlib.sha256(data).hexdigest())
+                if summary["uid"] in patch_uids:
+                    raise AuditError(f"Duplicate local patch UID: {summary['uid']}")
+                patch_uids.add(summary["uid"])
+                summary["referencedByManifest"] = summary["uid"] in uids
+                patches.append(summary)
+            trees = [name for name in ("minecraft", ".minecraft")
+                     if any(x.startswith(name + "/") for x in relative_files)
+                     or root + name + "/" in {x.filename for x in archive.infolist()}]
+            for name in ("minecraft", ".minecraft", "libraries", "patches"):
+                if name in relative_files:
+                    raise AuditError(f"File occupies required directory role: {name}")
+            report.update(
+                auditStatus="metadata-audited", instanceRoot=root.rstrip("/"),
+                gameRoot={"selected": "minecraft" if "minecraft" in trees else ".minecraft" if ".minecraft" in trees else "minecraft",
+                          "presentTrees": trees, "bothTreesPreserved": len(trees) == 2},
+                components=summaries, patches=patches,
+                metadata={"fileCount": len(metadata), "totalBytes": total_metadata,
+                          "digests": {x[len(root):]: hashlib.sha256(data).hexdigest() for x, data in metadata.items()}},
+                localLibraryFiles=[x for x in relative_files if x.startswith("libraries/")],
+                gameLibraryFiles=[x for x in relative_files if any(x.startswith(t + "/libraries/") for t in trees)],
+                remoteMetadataRequired=[x["uid"] for x in summaries if x["uid"] not in patch_uids],
+            )
+            cfg = metadata.get(root + "instance.cfg")
+            report["cfg"] = {"present": cfg is not None, "semanticsEvaluated": False}
+            if cfg is not None:
+                try:
+                    cfg.decode("utf-8-sig")
+                except UnicodeError as exc:
+                    raise AuditError(f"instance.cfg is not UTF-8: {exc}") from exc
+            report["diagnostics"].extend([
+                "Known field names are inventoried, not proof that an LF executor supports them.",
+                "Only selected metadata CRCs were read; payload CRCs, dependency resolution, cfg behavior and native JAR budgets remain unverified.",
+                "A local SHA256 identifies these bytes; it is not an upstream authenticity signature.",
+            ])
+            if counts["directoryAliases"] or counts["repeatedDirectoryEntries"]:
+                report["diagnostics"].append(
+                    "Directory aliases share logical directory nodes; original spellings are retained above. Any colliding file target or file/directory role was rejected.")
+        after = os.fstat(stream.fileno())
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise AuditError("Archive changed while it was audited")
+    return report
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("archive", type=Path)
+    parser.add_argument("--source-url", help="Provenance only; no network requests are made")
+    parser.add_argument("--output", type=Path, required=True, help="JSON destination; prefer ignored artifacts/")
+    args = parser.parse_args(argv)
+    if args.archive.resolve() == args.output.resolve():
+        parser.error("Report must not overwrite the input archive")
+    try:
+        report = audit_archive(args.archive, args.source_url)
+    except (AuditError, OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+        report = getattr(exc, "audit_evidence", {"schemaVersion": 1, "compatibilityStatus": "not-evaluated", "diagnostics": []})
+        report["auditStatus"] = "rejected"
+        report["diagnostics"].append(str(exc))
+        code = 1
+    else:
+        code = 0
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"auditStatus": report["auditStatus"], "compatibilityStatus": "not-evaluated",
+                      "output": str(args.output)}, ensure_ascii=False))
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

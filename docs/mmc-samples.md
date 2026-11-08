@@ -1,0 +1,67 @@
+# MMC P0 样本与离线审计
+
+记录日期：2026-11-08。本文是[实例设计](mmc-instance-design.md)的开发证据，**不是 MMC 导入、启动或修复验收通过声明**。本轮仅完成完整本地 ZIP 的 SHA256、中央目录与有界元数据读取；未运行 Prism、Java 或 Minecraft。
+
+## 固定输入与来源
+
+用户提供了 `D:\User\Downloads` 中两份 2.9.0 原包；审计只读打开这些文件，没有修改它们。[GTNH 官方发行历史](https://www.gtnewhorizons.com/version-history/)列出 2.9.0 于 2026-10-31 发布，并分别链接两种 MultiMC/Prism 客户端。下列字节长度与官方 HTTP 响应长度相同；SHA256 是本地完整文件的实测值，不是官方签名或官方发布的校验值。
+
+| 样本 | 完整文件字节数 | 本地完整文件 SHA256 |
+| --- | ---: | --- |
+| [Java 8 ZIP](https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_8.zip) | 732488324 | `ae94a01a5367065f71ac9b5150966182a5b55762c841749fcb3d603ab5ed78af` |
+| [Java 17–26 ZIP](https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_17-26.zip) | 747848389 | `6d0ebe7e6be18fb74b4fc920916cc5710e142a3f885072d324da05244d398b16` |
+
+| 观测 | Java 8 包 | Java 17–26 包 |
+| --- | ---: | ---: |
+| ZIP 条目 / 非目录文件 | 18148 / 17768 | 18157 / 17775 |
+| ZIP 声明解包总字节数 | 883235748 | 899495677 |
+| 已读取元数据文件 / 字节数 | 2 / 688 | 7 / 71947 |
+| 本地补丁 | 0 | 5 |
+| 实例根 | `GT New Horizons 2.9.0` | `GT New Horizons 2.9.0` |
+| 游戏根 | `.minecraft` | `.minecraft` |
+
+两包的条目数、单份与累计元数据体积均低于设计初始预算；这是中央目录预估与实际已读元数据的证据，不是全部 payload 解压、native JAR 输出量、运行视图峰值或磁盘空间验收。工具没有读取全部 payload 来校验每个 CRC。
+
+## 实际启动声明的差别
+
+Java 8 包只声明 `org.lwjgl:2.9.4-nightly-20150209`、`net.minecraft:1.7.10`、`net.minecraftforge:10.13.4.1614`，没有本地补丁。它需要取得并固定对应远端组件元数据后，才能确定完整入口、Java 策略和库；不能用文件名中的“Java 8”代替读取组件声明。
+
+现代包的五个组件均有本地补丁，作者顺序为 LWJGL3 → Minecraft → Early Classpath → Forge → launch args：
+
+| UID | 有效本地补丁版本 | 实测机制 |
+| --- | --- | --- |
+| `org.lwjgl3` | `3.4.3` | `libraries` 144 项，含 downloads/rules；与 `org.lwjgl` 冲突；`volatile` 为元数据提示 |
+| `net.minecraft` | `1.7.10` | `compatibleJavaMajors=[17,21,25,26]`，以及推荐运行时名、mainJar、assetIndex、游戏参数 |
+| `me.eigenraven.lwjgl3ify.forgepatches` | `3.0.42` | `libraries` 中本地早期 JAR 与 `+jvmArgs`；清单未提供 version，本地补丁提供版本 |
+| `net.minecraftforge` | `10.13.4.1614` | `com.gtnewhorizons.retrofuturabootstrap.Main` 与 `+tweakers` |
+| `me.eigenraven.lwjgl3ify.launchargs` | `3.0.42` | 再覆盖为 `com.gtnewhorizons.retrofuturabootstrap.MainStartOnFirstThread`；`FirstThreadOnMacOS` |
+
+本地 JAR 位于实例根的 `libraries/lwjgl3ify-3.0.42-forgePatches.jar`。这里没有游戏根 `.minecraft/libraries` 文件；两种角色的通用分离仍由自有测试覆盖。上述数据来自这次发行包，不以最新 lwjgl3ify 构建模板替代它。现代候选是四个离散主版本，不能扩展成 17～26 连续范围；本轮尚未实际选择或运行其中任何 Java。
+
+两份 cfg 都含 `InstanceType`、`JoinServerOnLaunch`、`OverrideCommands`、`OverrideConsole`、`OverrideGameTime`、`OverrideJavaArgs`、`OverrideJavaLocation`、`OverrideMemory`、`OverrideNativeWorkarounds`、`OverrideWindow`、`iconKey`、`name`、`notes`。没有 `ConfigVersion`；`OverrideCommands=false`，没有 PreLoad/PreLaunch/Wrapper/PostExit/Env 行。这次工具只记录 cfg 的存在和 UTF-8 字节，不充当 Qt cfg 行为解析器。
+
+## 目录别名暴露的通用输入策略
+
+两份真实包均有六个目录大小写别名组，且没有两个文件映射到相同的 Windows 目标路径。三个父目录别名分别是：
+
+- `Witchery++[WitcheryExtras]` / `Witchery++[witcheryextras]`。
+- `Blood Magic_ Alchemical Wizardry[alchemicalwizardryBooks]` / `Blood Magic_ Alchemical Wizardry[alchemicalwizardrybooks]`。
+- `Thaumcraft Mob Aspects[ThaumcraftMobAspects]` / `Thaumcraft Mob Aspects[thaumcraftmobaspects]`。
+
+它们都在 `.minecraft/config/txloader/load/` 下，另有三个对应的 `lang` 子目录组。原来“任何大小写差异都拒绝”的规则会误拒绝这两份包。审计器现在构造 Windows 目标树：纯目录别名允许共用逻辑节点，报告保留各原始名称；任意两个文件指向同一目标（即使字节相同）、文件占用目录/父路径、路径穿越及 Windows 特殊名仍拒绝。这是通用目标角色规则，没有整合包或模组名特判。
+
+## 可重复的本地工具
+
+工具[AuditArchive.py](../scripts/mmc/AuditArchive.py)仅使用 Python 标准库，不联网，不执行包内内容，不抽取游戏数据，不访问玩家目录。它读取完整文件计算 SHA256，建立一次 ZIP 索引，限制条目/声明体积与元数据实际读取体积，检查唯一根、重复文件目标、目录角色、链接和保留的 LF 管理路径，再输出组件、补丁字段、Java 声明和来源摘要。未知字段/执行器会列出，`compatibilityStatus` 始终为 `not-evaluated`。
+
+```powershell
+python -X utf8 scripts/mmc/AuditArchive.py 'D:\User\Downloads\GT_New_Horizons_2.9.0_Java_8.zip' --source-url https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_8.zip --output artifacts/mmc-baseline/java8.audit.json
+python -X utf8 scripts/mmc/AuditArchive.py 'D:\User\Downloads\GT_New_Horizons_2.9.0_Java_17-26.zip' --source-url https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_17-26.zip --output artifacts/mmc-baseline/java17-26.audit.json
+python -X utf8 scripts/tests/Test-MmcAudit.py
+```
+
+[离线回归](../scripts/tests/Test-MmcAudit.py)全部使用现场生成的自有微型 ZIP，覆盖缺 cfg/无目录条目/嵌套根/多根、两游戏树与两库角色、目录别名与文件冲突、路径穿越/链接/特殊名、保留管理路径、JSON 重复键与格式、组件状态、离散 Java、未知能力、预算，以及 CLI 不覆盖原包。原包、原始元数据和 JSON 证据放在 Git 已忽略的 `artifacts/mmc-baseline`，不作为 MPL Core 自有代码或 fixture 提交。工具为独立 LF 宿主工具，保留仓库现行许可；未移植上游实现。
+
+## 后续门槛
+
+P0 仍需固定 Java 8 包远端元数据、实际 Prism/OS/Java 版本与脱敏解析对照、正常和失败链的性能基线。P1/P2 的解析或编译测试不能替代 P3 的配置协调、事务、进程会话和库视图保护；P5 两种包的导入、主菜单、世界、退出、修复、再次启动全部未测。不得把本次 `metadata-audited` 解释为产品已支持 GTNH。
