@@ -25,6 +25,7 @@ internal sealed partial class MmcConfigurationState {
     internal Exception? LastSaveFailure;
     internal long sequence;
     private JObject snapshot;
+    private bool snapshotValid;
     private bool readsInvalid;
 
     internal MmcConfigurationState(string root, string logicalRoot) {
@@ -63,7 +64,11 @@ internal sealed partial class MmcConfigurationState {
         if (refresh) Reload();
         lock (Sync) {
             AssertContext(context, attachmentEpoch);
-            if (Patches.TryGetValue(key, out var patch)) { version = new(Epoch, patch.Sequence); present = !patch.Remove; return patch.Value?.DeepClone(); }
+            if (Patches.TryGetValue(key, out var patch) && patch.Context == context && !MmcConfigurationCoordinator.IsAlwaysReserved(key) &&
+                (context.Kind != MmcConfigurationContextKind.Managed || !MmcConfigurationCoordinator.IsStructuralKey(key))) {
+                version = new(Epoch, patch.Sequence); present = !patch.Remove; return patch.Value?.DeepClone();
+            }
+            if (!snapshotValid) throw new IOException("当前实例的设置快照尚未确认，请等待刷新后重试。");
             version = new(Epoch, 0);
             present = snapshot.TryGetValue(key, out var token); return token?.DeepClone();
         }
@@ -72,7 +77,7 @@ internal sealed partial class MmcConfigurationState {
     internal Dictionary<string, MmcConfigPatch> CapturePatches() { lock (Sync) return new(Patches, StringComparer.Ordinal); }
     internal void Publish(JObject disk, Dictionary<string, MmcConfigPatch>? applied = null) {
         lock (Sync) {
-            snapshot = (JObject)disk.DeepClone(); readsInvalid = false; Epoch++;
+            snapshot = (JObject)disk.DeepClone(); snapshotValid = true; readsInvalid = false; Epoch++;
             if (applied is not null) foreach (var pair in applied)
                 if (Patches.TryGetValue(pair.Key, out var current) && current.Sequence == pair.Value.Sequence) Patches.Remove(pair.Key);
             MmcConfigurationCoordinator.UnpinIfClean(this);
@@ -131,6 +136,10 @@ internal sealed partial class MmcConfigurationState {
             try { PublishObserved(MmcConfigurationCoordinator.ReadConfig(Root), MmcConfigurationCoordinator.ContextFor(Root, MmcConfigurationPaths.ReadManagement(InspectionRoot, Root))); InitializeIni(); }
             finally { Writer.Release(); }
         } finally { lease?.Dispose(); if (registered) EndOperation(); }
+    }
+    internal void EnsureIniSnapshot() {
+        bool refresh; lock (Sync) refresh = !IniSnapshotValid;
+        if (refresh) Reload();
     }
     private bool BeginOperation() {
         lock (Sync) { if (PauseCount != 0) return false; Inflight++; Drained.Reset(); return true; }

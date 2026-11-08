@@ -15,6 +15,7 @@ namespace PCLCS;
 public interface IInstanceConfigProvider : IConfigProvider, IDisposable {
     string VersionRoot { get; }
     MmcConfigurationContextStamp ContextStamp { get; }
+    string PreferenceCacheNamespace { get; }
     void AssertAttached();
     void EnsurePreferenceCacheInvalidator(Action invalidatePreferenceCache);
     void Save();
@@ -32,6 +33,7 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
     private bool disposed;
     public string VersionRoot => state.Root;
     public MmcConfigurationContextStamp ContextStamp { get; }
+    public string PreferenceCacheNamespace { get; }
     public long Epoch => state.Epoch;
     public Exception? LastSaveFailure => state.LastSaveFailure;
     /// <param name="invalidatePreferenceCache">Optional data-only callback: only clear thread-safe value caches; never UI, Settings.Get/Set, disk I/O or synchronous dispatch. Not called during construction.</param>
@@ -39,6 +41,7 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
         state = MmcConfigurationCoordinator.StateFor(versionRoot);
         ContextStamp = MmcConfigurationCoordinator.AttachProvider(state, MmcConfigurationPaths.LogicalRoot(versionRoot));
         lock (state.Sync) { state.ProviderCount++; attachmentEpoch = state.AttachmentEpoch; }
+        PreferenceCacheNamespace = MmcConfigurationCoordinator.CacheNamespace(ContextStamp, attachmentEpoch);
         cacheInvalidator = invalidatePreferenceCache;
         if (cacheInvalidator is not null) cacheRegistration = state.RegisterInvalidator(cacheInvalidator);
         InstanceConfigProviders.Register(this);

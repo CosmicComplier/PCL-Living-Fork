@@ -28,7 +28,11 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
 
     private TEntry Find(string key) {
         if (!entries().TryGetValue(key, out TEntry? entry)) throw new KeyNotFoundException("未找到设置项：" + key);
+        BindInstanceCache(entry);
         return entry;
+    }
+    private void BindInstanceCache(TEntry entry) {
+        if (entry.GetSourceCode() == LegacySettingSource.Instance && host.InstanceCacheKey is not null) entry.InstanceCacheKey = host.InstanceCacheKey;
     }
     private static object Coerce(object? value, Type type) => Conversion.CTypeDynamic(value, type)!;
     private static string? VbString(object? value) => Conversions.ToString(value);
@@ -58,7 +62,10 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
         host.ReadRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), RegistryValueName(entry), null) ?? defaultValue;
 
     public void SaveEntry(TEntry entry, TInstance? instance = null) {
-        if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
+        BindInstanceCache(entry);
+        if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) {
+            host.ValidateInstanceConfiguration?.Invoke(instance); host.ValidateInstanceSettingWrite?.Invoke(instance, entry.Key);
+        }
         string? value = VbString(entry.GetCache(instance));
         Log(null, $"保存设置：{entry.Key} {(entry.Encrypted || entry.Key == "Identify" ? "" : "= " + value)}{(instance is null ? "" : $"（实例：{host.InstancePath(instance)}）")}", LegacySettingsLogLevel.Trace);
         if (entry.Encrypted) {
@@ -91,16 +98,24 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     }
     public void SetCore(string key, object? value, TInstance? instance) {
         TEntry entry = Find(key);
+        bool changedCache = false;
         try {
-            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) {
+                host.ValidateInstanceConfiguration?.Invoke(instance); host.ValidateInstanceSettingWrite?.Invoke(instance, key);
+            }
             value = Coerce(value, entry.Type);
             if (entry.GetCache(instance) is null) Get(key, instance);
             if (VbEqual(entry.GetCache(instance), value)) return;
             entry.Set(value, instance);
+            changedCache = true;
             entry.Save(instance);
             // Persist before callbacks: VersionServerLogin and its peers read back here.
             entry.OnChanged?.Invoke(value);
-        } catch (Exception error) { Log(error, $"设置设置项时出错（{key}）", LegacySettingsLogLevel.Error); }
+        } catch (Exception error) {
+            if (changedCache && entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null && host.InstanceCacheKey is not null)
+                entry.ValueCache.TryRemove(entry.GetInstanceCacheKey(instance), out _);
+            Log(error, $"设置设置项时出错（{key}）", LegacySettingsLogLevel.Error);
+        }
     }
     public void SetSafe(string key, object? value, TInstance? instance = null) {
         TEntry entry = Find(key);
@@ -133,7 +148,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
                     case LegacySettingSource.Registry: gotValue = ReadRegistrySetting(entry, defaultValue); break;
                     case LegacySettingSource.Instance:
                         if (instance is null) throw new Exception($"读取版本设置 {key} 时未提供目标版本");
-                        gotValue = host.ReadIni(host.InstancePath(instance) + "PCL\\Setup.ini", key, defaultValue);
+                        gotValue = host.ReadInstanceIni is not null ? host.ReadInstanceIni(instance, key, defaultValue) : host.ReadIni(host.InstancePath(instance) + "PCL\\Setup.ini", key, defaultValue);
                         break;
                 }
             }
@@ -149,6 +164,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
             }
             entry.Set(Coerce(gotValue, entry.Type), instance);
         } catch (Exception error) {
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && host.InstanceCacheKey is not null) throw;
             Log(error, "读取设置失败：" + key, LegacySettingsLogLevel.Error, true);
             entry.Set(Coerce(entry.DefaultValue, entry.Type), instance);
         }
@@ -168,11 +184,15 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     }
     public void ResetCore(string key, TInstance? instance) {
         TEntry entry = Find(key);
+        bool changedCache = false;
         try {
-            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) {
+                host.ValidateInstanceConfiguration?.Invoke(instance); host.ValidateInstanceSettingWrite?.Invoke(instance, key);
+            }
             if (entry.GetCache(instance) is null) Get(key, instance);
             if (VbEqual(entry.GetCache(instance), entry.DefaultValue) && !(entry.GetSourceCode() == LegacySettingSource.Registry && IsCompatibleSetting(entry))) return;
             entry.Set(entry.DefaultValue!, instance);
+            changedCache = true;
             switch (entry.GetSourceCode()) {
                 case LegacySettingSource.Normal: host.DeleteIni("Setup", key); break;
                 case LegacySettingSource.Registry:
@@ -186,13 +206,16 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
             }
             entry.OnChanged?.Invoke(entry.DefaultValue!);
         } catch (Exception error) {
-            entry.ValueCache.Clear();
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null && host.InstanceCacheKey is not null) {
+                if (changedCache) entry.ValueCache.TryRemove(entry.GetInstanceCacheKey(instance), out _);
+            } else entry.ValueCache.Clear();
             Log(error, $"重置设置项时出错（{key}）", LegacySettingsLogLevel.Error);
         }
     }
     public string? GetDefault(string key) => VbString(entries()[key].DefaultValue);
     public bool HasSaved(string key, TInstance? instance = null) {
         TEntry entry = entries()[key];
+        BindInstanceCache(entry);
         if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
         switch (entry.GetSourceCode()) {
             case LegacySettingSource.Normal: return host.HasIni("Setup", key);
@@ -206,7 +229,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
                 }
             default:
                 if (instance is null) throw new Exception($"判断版本设置 {key} 是否存在时未提供目标版本");
-                return host.HasIni(host.InstancePath(instance) + "PCL\\Setup.ini", key);
+                return host.HasInstanceIni is not null ? host.HasInstanceIni(instance, key) : host.HasIni(host.InstancePath(instance) + "PCL\\Setup.ini", key);
         }
     }
 }

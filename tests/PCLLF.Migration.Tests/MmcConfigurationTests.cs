@@ -25,6 +25,9 @@ internal static class MmcConfigurationTests {
         yield return ("MMC configuration malformed input constructs a readonly error provider without overwriting bytes", MalformedConstructor);
         yield return ("MMC settings engine validates fixed identity before path caches and retains context at INI writes", SettingsContextBridge);
         yield return ("MMC projection repair requires a hash-bound published primary without relaxing normal edits", ProjectionRepair);
+        yield return ("MMC new identity reads and edits never adopt old JSON or INI pending overlays", PendingReadIsolation);
+        yield return ("MMC settings cache namespace survives controlled validation to identity handoff races", CacheIdentityBarriers);
+        yield return ("MMC managed layout rejects before cache mutation and before INI overlay", ImmediateLayoutFence);
         if (typeof(InstanceConfigProvider).Assembly.GetType("PCLCS.Configs") is not null)
             yield return ("MMC configuration actual JavaForced deserialization and PreviewGet Reset use the coordinated provider", ActualJavaReset);
     }
@@ -262,7 +265,6 @@ internal static class MmcConfigurationTests {
         string path = fixture.Root + Path.DirectorySeparatorChar, file = Path.Combine(fixture.Root, "PCL", "Setup.ini");
         File.WriteAllText(file, "VersionArgumentTitle:from-A\r\n");
         PreferenceEntry entry = new("VersionArgumentTitle"); int invalidations = 0;
-        Action invalidate = () => { entry.ValueCache.TryRemove(path, out _); invalidations++; };
         using var oldProvider = new InstanceConfigProvider(fixture.Root);
         Equal(0, invalidations);
         PreferenceOwner old = new(path, oldProvider);
@@ -273,7 +275,11 @@ internal static class MmcConfigurationTests {
             ReadIni = (address, key, fallback) => LegacyBaseOperations.ReadIni(address, key, fallback, cache),
             WriteIni = (_, _, _) => throw new Exception("Instance context was lost before writing."),
             DeleteIni = (_, _) => throw new Exception("Instance context was lost before resetting."),
-            ValidateInstanceConfiguration = owner => { owner.Config.EnsurePreferenceCacheInvalidator(invalidate); owner.Config.AssertAttached(); },
+            InstanceCacheKey = owner => owner.Path + owner.Config.PreferenceCacheNamespace,
+            ValidateInstanceConfiguration = owner => { owner.Config.EnsurePreferenceCacheInvalidator(() => { entry.ValueCache.TryRemove(owner.Path + owner.Config.PreferenceCacheNamespace, out _); invalidations++; }); owner.Config.AssertAttached(); },
+            ValidateInstanceSettingWrite = (owner, key) => MmcIniConfiguration.ValidatePreferenceWrite(owner.Config, key),
+            ReadInstanceIni = (owner, key, fallback) => MmcIniConfiguration.WithInstanceContext<string?>(owner.Config, () => LegacyBaseOperations.ReadIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, fallback, cache)),
+            HasInstanceIni = (owner, key) => MmcIniConfiguration.WithInstanceContext<bool>(owner.Config, () => LegacyBaseOperations.HasIniKey(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, cache)),
             WriteInstanceIni = (owner, key, value) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, value, cache)),
             DeleteInstanceIni = (owner, key) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, null, cache)),
             Log = (_, _, _, _) => { }
@@ -341,11 +347,113 @@ internal static class MmcConfigurationTests {
         }
     }
     private sealed record PreferenceOwner(string Path, IInstanceConfigProvider Config);
-    private sealed class PreferenceEntry(string key) : LegacySettingData<PreferenceOwner>(key, "", false, null, (error, _) => throw error) {
+    private sealed class PreferenceEntry(string key, object? fallback = null) : LegacySettingData<PreferenceOwner>(key, fallback ?? "", false, null, (error, _) => throw error) {
         public Action<PreferenceOwner?> SaveAction = null!;
         public override LegacySettingSource GetSourceCode() => LegacySettingSource.Instance;
         protected override string GetInstancePath(PreferenceOwner owner) => owner.Path;
         public override void Save(PreferenceOwner? owner = null) => SaveAction(owner);
+    }
+    private sealed class PreferenceHarness {
+        public readonly PreferenceEntry Entry;
+        public readonly LegacySettingsHost<PreferenceOwner> Host;
+        public readonly LegacySettingsEngine<PreferenceOwner, PreferenceEntry, LegacyAccountMigrationPlan> Engine;
+        public PreferenceHarness(string key, object? fallback = null) {
+            Entry = new(key, fallback);
+            var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, string>>();
+            Host = new() {
+                InstancePath = owner => owner.Path, Identify = () => "synthetic", RegistryFolder = () => "unused",
+                InstanceCacheKey = owner => owner.Path + owner.Config.PreferenceCacheNamespace,
+                ValidateInstanceConfiguration = owner => {
+                    owner.Config.EnsurePreferenceCacheInvalidator(() => Entry.ValueCache.TryRemove(owner.Path + owner.Config.PreferenceCacheNamespace, out _));
+                    owner.Config.AssertAttached();
+                },
+                ValidateInstanceSettingWrite = (owner, name) => MmcIniConfiguration.ValidatePreferenceWrite(owner.Config, name),
+                ReadInstanceIni = (owner, name, value) => MmcIniConfiguration.WithInstanceContext<string?>(owner.Config, () => LegacyBaseOperations.ReadIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), name, value, cache)),
+                HasInstanceIni = (owner, name) => MmcIniConfiguration.WithInstanceContext<bool>(owner.Config, () => LegacyBaseOperations.HasIniKey(Path.Combine(owner.Path, "PCL", "Setup.ini"), name, cache)),
+                WriteInstanceIni = (owner, name, value) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), name, value, cache)),
+                DeleteInstanceIni = (owner, name) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), name, null, cache)),
+                Log = (_, _, _, _) => { }
+            };
+            Dictionary<string, PreferenceEntry> entries = new() { [key] = Entry };
+            Engine = new(() => entries, () => new object(), () => new(), Host); Entry.SaveAction = owner => Engine.SaveEntry(Entry, owner);
+        }
+    }
+    private static void PendingReadIsolation() {
+        using Fixture fixture = new(); fixture.Install(); using var old = new InstanceConfigProvider(fixture.Root);
+        var iniCache = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, string>>();
+        string file = Path.Combine(fixture.Root, "PCL", "Setup.ini"); InstanceConfigProvider? fresh = null;
+        using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
+        using (var gate = fixture.Lease()) {
+            old.Set("carry", "A", false); old.Set("onlyA", "A", false); old.Remove("onlyB");
+            MmcIniConfiguration.WithInstanceContext(old, () => { LegacyBaseOperations.WriteIni(file, "CustomInfo", "A", iniCache); LegacyBaseOperations.WriteIni(file, "onlyA", "A", iniCache); });
+            Directory.Delete(fixture.Root, true); fixture.RecreateManaged(Guid.NewGuid());
+            JObject config = fixture.Config(); config["carry"] = "B"; config["onlyB"] = "keep";
+            File.WriteAllText(Path.Combine(fixture.Root, "PCL", "config.json"), config.ToString()); File.WriteAllText(file, "CustomInfo:B\r\n");
+            byte[] before = File.ReadAllBytes(Path.Combine(fixture.Root, "PCL", "config.json"));
+            fresh = new(fixture.Root); Equal("B", fresh.Read("carry", "", false)); Equal(true, fresh.HasValue("onlyB")); Equal(false, fresh.HasValue("onlyA"));
+            PreferenceHarness settings = new("CustomInfo"); PreferenceOwner current = new(fixture.Root + Path.DirectorySeparatorChar, fresh);
+            Equal("B", settings.Engine.Get("CustomInfo", current)); Equal(true, settings.Engine.HasSaved("CustomInfo", current));
+            Equal(false, MmcIniConfiguration.WithInstanceContext<bool>(fresh, () => LegacyBaseOperations.HasIniKey(file, "onlyA", iniCache)));
+            new DynamicConfigEntry<string>("carry", "").Edit(value => value + "!", fresh);
+            Equal("B!", fresh.Read("carry", "", false)); Equal(true, before.SequenceEqual(File.ReadAllBytes(Path.Combine(fixture.Root, "PCL", "config.json"))));
+        }
+        using (fresh) fresh!.Save(); Equal("B!", fixture.Config().Value<string>("carry")); Equal(false, fixture.Config().ContainsKey("onlyA"));
+        // The old writer can be the first observer of B, with the same generation and no INI patch.
+        // Its JSON flush must invalidate/refresh the INI snapshot rather than leaving A visible.
+        using Fixture observed = new(); observed.Install(); string observedIni = Path.Combine(observed.Root, "PCL", "Setup.ini");
+        File.WriteAllText(observedIni, "CustomInfo:A\r\n"); using var oldObserver = new InstanceConfigProvider(observed.Root);
+        PreferenceHarness observedSettings = new("CustomInfo");
+        Equal("A", observedSettings.Engine.Get("CustomInfo", new PreferenceOwner(observed.Root + Path.DirectorySeparatorChar, oldObserver)));
+        using (var quiet = MmcConfigurationCoordinator.Quiesce(observed.Root))
+        using (var gate = observed.Lease()) {
+            oldObserver.Set("old-only-json", "A", false);
+            Directory.Delete(observed.Root, true); observed.RecreateManaged(Guid.NewGuid()); File.WriteAllText(observedIni, "CustomInfo:B\r\n");
+        }
+        try { oldObserver.Save(); } catch (IOException) { }
+        using var newObserver = new InstanceConfigProvider(observed.Root);
+        var observedOwner = new PreferenceOwner(observed.Root + Path.DirectorySeparatorChar, newObserver);
+        Equal("B", observedSettings.Engine.Get("CustomInfo", observedOwner)); Equal(true, observedSettings.Engine.HasSaved("CustomInfo", observedOwner));
+        Equal(false, observed.Config().ContainsKey("old-only-json"));
+    }
+    private static void CacheIdentityBarriers() {
+        foreach (string operation in new[] { "Set", "Get", "Reset" }) {
+            using Fixture fixture = new(); fixture.Install(); string path = fixture.Root + Path.DirectorySeparatorChar, file = Path.Combine(fixture.Root, "PCL", "Setup.ini");
+            File.WriteAllText(file, "VersionArgumentTitle:A\r\n"); using var old = new InstanceConfigProvider(fixture.Root); PreferenceOwner prior = new(path, old);
+            PreferenceHarness settings = new("VersionArgumentTitle", "default");
+            if (operation != "Get") Equal("A", settings.Engine.Get(settings.Entry.Key, prior));
+            using ManualResetEventSlim reached = new(), proceed = new(); int calls = 0; int target = operation == "Get" ? 2 : 3;
+            settings.Host.InstanceCacheKey = owner => {
+                string key = owner.Path + owner.Config.PreferenceCacheNamespace;
+                if (ReferenceEquals(owner, prior) && Interlocked.Increment(ref calls) == target) { reached.Set(); if (!proceed.Wait(10000)) throw new Exception("Cache handoff barrier timed out."); }
+                return key;
+            };
+            Task actor = Task.Run(() => { if (operation == "Set") settings.Engine.Set(settings.Entry.Key, "late-A", prior); else if (operation == "Reset") settings.Engine.Reset(settings.Entry.Key, prior); else settings.Engine.Get(settings.Entry.Key, prior); });
+            InstanceConfigProvider? currentProvider = null;
+            try {
+                if (!reached.Wait(5000)) throw new Exception("Old actor did not reach the pre-cache-write barrier.");
+                using var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root); using var gate = fixture.Lease();
+                Directory.Delete(fixture.Root, true); fixture.RecreateManaged(Guid.NewGuid()); File.WriteAllText(file, "VersionArgumentTitle:B\r\n");
+                currentProvider = new(fixture.Root); PreferenceOwner current = new(path, currentProvider);
+                Equal("B", settings.Engine.Get(settings.Entry.Key, current));
+                proceed.Set(); if (!actor.Wait(5000)) throw new Exception("Old cache actor failed to finish.");
+                Equal("B", settings.Entry.GetCache(current)); Equal("B", LegacyBaseOperations.ParseIni(File.ReadAllText(file))[settings.Entry.Key]);
+                Equal("B", settings.Engine.Get(settings.Entry.Key, current));
+            } finally { proceed.Set(); actor.Wait(10000); currentProvider?.Dispose(); }
+        }
+    }
+    private static void ImmediateLayoutFence() {
+        foreach (bool managed in new[] { true, false }) {
+            using Fixture fixture = new(); if (managed) fixture.Install(); string file = Path.Combine(fixture.Root, "PCL", "Setup.ini");
+            File.WriteAllText(file, "VersionArgumentIndieV2:True\r\n"); using var provider = new InstanceConfigProvider(fixture.Root);
+            PreferenceOwner owner = new(fixture.Root + Path.DirectorySeparatorChar, provider); PreferenceHarness settings = new("VersionArgumentIndieV2", false);
+            Equal(true, settings.Engine.Get(settings.Entry.Key, owner));
+            settings.Engine.Set(settings.Entry.Key, false, owner); settings.Engine.Reset(settings.Entry.Key, owner);
+            if (managed) {
+                bool rejected = false; try { MmcConfigurationCoordinator.StateFor(fixture.Root).EnqueueIni(settings.Entry.Key, "False", provider.ContextStamp); } catch (IOException) { rejected = true; }
+                Equal(true, rejected); Equal(true, settings.Entry.GetCache(owner)); Equal(true, settings.Engine.Get(settings.Entry.Key, owner));
+                Equal("True", LegacyBaseOperations.ParseIni(File.ReadAllText(file))[settings.Entry.Key]);
+            } else { Equal(false, settings.Engine.Get(settings.Entry.Key, owner)); }
+        }
     }
     private static void RunActualJavaReset(InstanceConfigProvider provider, string root) {
         // Each invocation is a fresh controlled process. Bind global Java entries to a private profile

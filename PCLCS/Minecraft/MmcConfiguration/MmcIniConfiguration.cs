@@ -12,12 +12,37 @@ namespace PCLCS;
 internal sealed record MmcIniPatch(long Sequence, string? Value, MmcConfigurationContextStamp Context);
 public static class MmcIniConfiguration {
     [ThreadStatic] private static MmcConfigurationContextStamp? writeContext;
+    [ThreadStatic] private static string? contextNamespace;
+    [ThreadStatic] private static string? contextRoot;
     /// <summary>Carry an immutable instance identity across the synchronous legacy path-only writer; do not await inside the callback.</summary>
     public static void WithInstanceContext(IInstanceConfigProvider provider, Action write) {
         ArgumentNullException.ThrowIfNull(provider); ArgumentNullException.ThrowIfNull(write);
         provider.AssertAttached();
-        var previous = writeContext; writeContext = provider.ContextStamp;
-        try { write(); } finally { writeContext = previous; }
+        var previous = writeContext; var previousNamespace = contextNamespace; var previousRoot = contextRoot;
+        writeContext = provider.ContextStamp; contextNamespace = provider.PreferenceCacheNamespace; contextRoot = provider.VersionRoot;
+        try { write(); } finally { writeContext = previous; contextNamespace = previousNamespace; contextRoot = previousRoot; }
+    }
+    public static T WithInstanceContext<T>(IInstanceConfigProvider provider, Func<T> read) {
+        T result = default!;
+        WithInstanceContext(provider, () => {
+            var state = MmcConfigurationCoordinator.StateFor(provider.VersionRoot);
+            state.EnsureIniSnapshot();
+            lock (state.Sync) { AssertReadWriteContext(state); if (!state.IniSnapshotValid) throw new IOException("当前实例的 INI 快照尚未确认。"); }
+            result = read();
+            lock (state.Sync) { AssertReadWriteContext(state); if (!state.IniSnapshotValid) throw new IOException("当前实例的 INI 快照尚未确认。"); }
+        });
+        return result;
+    }
+    public static void ValidatePreferenceWrite(IInstanceConfigProvider provider, string key) {
+        provider.AssertAttached();
+        if (AlwaysReserved(key) || provider.ContextStamp.Kind == MmcConfigurationContextKind.Managed && IsStructural(key))
+            throw new IOException("布局或实例身份设置只能通过有代数约束的实例维护事务修改。");
+    }
+    private static void AssertReadWriteContext(MmcConfigurationState state) {
+        if (writeContext is null) return;
+        state.AssertContext(writeContext);
+        if (contextRoot != state.Root || contextNamespace != MmcConfigurationCoordinator.CacheNamespace(writeContext, state.AttachmentEpoch))
+            throw new IOException("实例上下文已失效，不能访问同路径的新实例。");
     }
     private static MmcConfigurationContextStamp ContextForWrite(MmcConfigurationState state, string logicalRoot) {
         if (writeContext is not null) return writeContext;
@@ -42,7 +67,7 @@ public static class MmcIniConfiguration {
         ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache, out MmcAdmissionLease? admission) {
         admission = null; if (!TryRoot(file, out string root)) return false;
         if (AlwaysReserved(key)) throw new IOException("实例身份设置只能通过实例维护事务修改。");
-        var state = MmcConfigurationCoordinator.StateFor(root); state.RegisterIniCache(cache);
+        var state = MmcConfigurationCoordinator.StateFor(root); state.RegisterIniCache(cache, file);
         var context = ContextForWrite(state, root);
         bool queue;
         lock (state.Sync) queue = !state.KnownLegacyWritable || state.PauseCount != 0;
@@ -63,7 +88,7 @@ public static class MmcIniConfiguration {
             catch { admission?.Dispose(); admission = null; throw; }
         }
         admission?.Dispose(); admission = null;
-        state.EnqueueIni(key, value, context); return true;
+        lock (state.Sync) { AssertReadWriteContext(state); state.EnqueueIni(key, value, context); } return true;
     }
     internal static MmcAdmissionLease? AdmitSynchronousUpdate(string file, string key) {
         if (!TryRoot(file, out string root)) return null;
@@ -73,6 +98,7 @@ public static class MmcIniConfiguration {
             MmcConfigurationCoordinator.AssertExistingVersionRoot(state.Root);
             var management = MmcConfigurationPaths.ReadManagement(root, state.Root);
             MmcConfigurationCoordinator.AssertPreferenceWritable(management);
+            lock (state.Sync) AssertReadWriteContext(state);
             if (ContextForWrite(state, root) != MmcConfigurationCoordinator.ContextFor(state.Root, management)) throw new IOException("INI 写入缺少当前实例的身份上下文。");
             if (AlwaysReserved(key) || management.State != MmcManagementState.Legacy && IsStructural(key))
                 throw new IOException("布局或实例身份设置只能通过有代数约束的实例维护事务修改。");
@@ -82,11 +108,15 @@ public static class MmcIniConfiguration {
     internal static bool TryContent(string file, ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache,
         out ConcurrentDictionary<string, string>? content) {
         content = null; if (!TryRoot(file, out string root)) return false;
-        var state = MmcConfigurationCoordinator.StateFor(root); state.RegisterIniCache(cache);
+        var state = MmcConfigurationCoordinator.StateFor(root); state.RegisterIniCache(cache, file); state.EnsureIniSnapshot();
         lock (state.Sync) {
-            if (state.KnownLegacyWritable && state.PauseCount == 0 && state.IniPatches.Count == 0) return false;
+            AssertReadWriteContext(state);
+            if (!state.IniSnapshotValid) throw new IOException("当前实例的 INI 快照尚未确认，请等待刷新后重试。");
+            if (writeContext is null && state.KnownLegacyWritable && state.PauseCount == 0 && state.IniPatches.Count == 0) return false;
             content = LegacyBaseOperations.ParseIni(state.IniSnapshot);
-            foreach (var patch in state.IniPatches) { if (patch.Value.Value is null) content.TryRemove(patch.Key, out _); else content[patch.Key] = patch.Value.Value; }
+            foreach (var patch in state.IniPatches.Where(pair => pair.Value.Context == state.Context && (state.Context.Kind != MmcConfigurationContextKind.Managed || !IsStructural(pair.Key)))) {
+                if (patch.Value.Value is null) content.TryRemove(patch.Key, out _); else content[patch.Key] = patch.Value.Value;
+            }
             return true;
         }
     }
@@ -115,8 +145,10 @@ public static class MmcIniConfiguration {
 internal sealed partial class MmcConfigurationState {
     internal readonly Dictionary<string, MmcIniPatch> IniPatches = new(StringComparer.Ordinal);
     private readonly List<WeakReference<Action>> invalidators = [];
-    private readonly List<WeakReference<ConcurrentDictionary<string, ConcurrentDictionary<string, string>>>> iniCaches = [];
+    private sealed record IniCacheRegistration(WeakReference<ConcurrentDictionary<string, ConcurrentDictionary<string, string>>> Cache, string Path);
+    private readonly List<IniCacheRegistration> iniCaches = [];
     internal string IniSnapshot = "";
+    internal bool IniSnapshotValid;
     internal bool KnownLegacyWritable;
     internal long? LastManagementGeneration;
     private bool consumerInvalidationPending;
@@ -142,14 +174,22 @@ internal sealed partial class MmcConfigurationState {
         if (pending) InvalidatePreferenceConsumers();
     }
     internal void InitializeIni() => PublishIni(MmcIniConfiguration.ReadIni(Root));
-    internal void RegisterIniCache(ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
-        lock (Sync) { if (!iniCaches.Any(weak => weak.TryGetTarget(out var target) && ReferenceEquals(target, cache))) iniCaches.Add(new(cache)); }
+    internal void RegisterIniCache(ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache, string path) {
+        lock (Sync) {
+            iniCaches.RemoveAll(registration => !registration.Cache.TryGetTarget(out _));
+            if (!iniCaches.Any(registration => registration.Path == path && registration.Cache.TryGetTarget(out var target) && ReferenceEquals(target, cache))) iniCaches.Add(new(new(cache), path));
+        }
+    }
+    private void ClearRegisteredIniCaches() {
+        foreach (var registration in iniCaches) if (registration.Cache.TryGetTarget(out var cache)) cache.TryRemove(registration.Path, out _);
     }
     internal void EnqueueIni(string key, string? value, MmcConfigurationContextStamp context) {
         if (key.Contains(':')) throw new ArgumentException("ini 键名中不能包含冒号", nameof(key));
         key = key.ReplaceLineEndings(""); value = value?.ReplaceLineEndings("");
         lock (Sync) {
             AssertContext(context);
+            if (context.Kind == MmcConfigurationContextKind.Managed && MmcIniConfiguration.IsStructural(key))
+                throw new IOException("布局或实例身份设置只能通过有代数约束的实例维护事务修改。");
             IniPatches[key] = new(++sequence, value, context);
             MmcConfigurationCoordinator.PinPending(this);
             if (PauseCount == 0) Timer.Change(500, Timeout.Infinite);
@@ -165,18 +205,21 @@ internal sealed partial class MmcConfigurationState {
     }
     internal void PublishIni(string text, Dictionary<string, MmcIniPatch>? applied = null, bool notify = true) {
         lock (Sync) {
-            IniSnapshot = text; Epoch++;
+            IniSnapshot = text; IniSnapshotValid = true; Epoch++;
             if (applied is not null) foreach (var pair in applied)
                 if (IniPatches.TryGetValue(pair.Key, out var current) && current.Sequence == pair.Value.Sequence) IniPatches.Remove(pair.Key);
-            string file = Path.Combine(Root, "PCL", "Setup.ini");
-            foreach (var weak in iniCaches) if (weak.TryGetTarget(out var cache)) cache[file] = LegacyBaseOperations.ParseIni(text);
+            foreach (var registration in iniCaches) if (registration.Cache.TryGetTarget(out var cache)) cache[registration.Path] = LegacyBaseOperations.ParseIni(text);
             MmcConfigurationCoordinator.UnpinIfClean(this);
             if (!notify) consumerInvalidationPending = true;
         }
         if (notify) InvalidatePreferenceConsumers();
     }
     internal bool FlushIni(Dictionary<string, MmcIniPatch> pending, MmcManagementResult management, MmcConfigurationContextStamp context) {
-        if (pending.Count == 0) return false;
+        if (pending.Count == 0) {
+            bool refresh; lock (Sync) refresh = !IniSnapshotValid;
+            if (refresh) PublishIni(MmcIniConfiguration.ReadIni(Root), notify: false);
+            return false;
+        }
         var rejected = pending.Where(p => MmcIniConfiguration.IsStructural(p.Key) &&
             (management.State != MmcManagementState.Legacy || p.Key is not ("VersionArgumentIndie" or "VersionArgumentIndieV2")) || p.Value.Context != context)
             .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);

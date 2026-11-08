@@ -14,6 +14,9 @@ public sealed record MmcConfigurationContextStamp(MmcConfigurationContextKind Ki
 }
 
 public static partial class MmcConfigurationCoordinator {
+    internal static string CacheNamespace(MmcConfigurationContextStamp context, long attachmentEpoch) =>
+        context.Kind == MmcConfigurationContextKind.Unmanaged && attachmentEpoch == 0 ? "" :
+            "\0LF-instance:" + context.Kind + ":" + context.InstanceId.ToString("N") + ":" + attachmentEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture);
     internal static MmcConfigurationContextStamp ContextFor(string root, MmcManagementResult management) {
         if (!Directory.Exists(root)) return MmcConfigurationContextStamp.Unresolved;
         if (management is { State: MmcManagementState.Legacy, ObservationComplete: true }) return MmcConfigurationContextStamp.Unmanaged;
@@ -66,7 +69,14 @@ internal sealed partial class MmcConfigurationState {
     internal void ObserveContext(MmcConfigurationContextStamp context) {
         if (context.Kind == MmcConfigurationContextKind.Unresolved) return;
         lock (Sync) {
-            if (Context != context) { Context = context; Epoch++; }
+            if (Context != context) {
+                Reject(Patches.Where(pair => pair.Value.Context != context).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+                RejectIni(IniPatches.Where(pair => pair.Value.Context != context).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+                Context = context; Epoch++; snapshot = []; snapshotValid = false; readsInvalid = true;
+                IniSnapshot = ""; IniSnapshotValid = false; LastManagementGeneration = null;
+                KnownLegacyWritable = context.Kind == MmcConfigurationContextKind.Unmanaged;
+                consumerInvalidationPending = true; ClearRegisteredIniCaches();
+            }
         }
     }
     internal void AssertContext(MmcConfigurationContextStamp context, long? attachmentEpoch = null) {
