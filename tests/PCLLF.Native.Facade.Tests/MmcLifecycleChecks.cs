@@ -34,7 +34,7 @@ internal static class MmcLifecycleChecks {
         CheckOrdinary(root,game,managed);
         InstanceConfigProviders.FlushAndDisposeWithin(root);
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS mmc-lifecycle: real managed import, six damaged/residual/unknown states, public clone/migration/history/update/component/delete refusal, UI/background dispatch before tasks, loose metadata/custom ordinary root/junction preservation. Guards do not claim P4 implementation.");
+        Console.WriteLine("PASS mmc-lifecycle: real managed import/prepare/repair, six damaged/residual/unknown states, public clone/migration/history/update/component/delete refusal, UI/background dispatch before tasks, loose metadata/custom ordinary root/junction preservation. Guards do not claim P4 implementation.");
     }
 
     private static void CheckRefused(string path) {
@@ -83,8 +83,14 @@ internal static class MmcLifecycleChecks {
         var overall=new InstanceOverallPageController<ModMinecraft.McInstance,ModMinecraft.McInstance.McInstanceState,ModMinecraft.McInstanceCardType,Grid,object>(new(),host,_=>{},()=>0);
         overall.Rename(); overall.Script(); overall.Delete();
         var isolation=new ComboBox(); isolation.Items.Add("isolated"); isolation.Items.Add("global"); isolation.SelectedIndex=0;
-        var settingsHost=new InstanceSettingsHost<ModMinecraft.McInstance> { Instance=()=>instance,Animation=()=>0,Set=(_,_,_)=>writes++,ErrorAlert=Rejected };
-        var settings=new InstanceSettingsController<ModMinecraft.McInstance,ModMinecraft.McInstance.McInstanceState,ModMinecraft.McInstanceCardType,Grid,Grid>(new(){Isolation=isolation},settingsHost,null!);
+        var settingsHost=new InstanceSettingsHost<ModMinecraft.McInstance> {
+            Instance=()=>instance,Animation=()=>0,Set=(_,_,_)=>writes++,ErrorAlert=Rejected,
+            Boolean=(_,_)=>true,Integer=(_,_)=>0,RefreshSettings=()=>{},Error=(error,_)=>throw new IOException("Controlled settings reload failed.",error)
+        };
+        var settingsView=new InstanceSettingsView<Grid,Grid>{Isolation=isolation,Login=new ComboBox(),NideControls=[null!],SetLoginLast=_=>{}};
+        var settings=new InstanceSettingsController<ModMinecraft.McInstance,ModMinecraft.McInstance.McInstanceState,ModMinecraft.McInstanceCardType,Grid,Grid>(settingsView,settingsHost,null!);
+        settings.Reload();
+        Native.Check(!isolation.IsEnabled && isolation.ToolTip is string text && text.Contains("MMC",StringComparison.Ordinal) && ToolTipService.GetShowOnDisabled(isolation),"Disabled MMC isolation control lost its visible refusal reason.");
         settings.IsolationChanged(isolation,new SelectionChangedEventArgs(System.Windows.Controls.Primitives.Selector.SelectionChangedEvent,new object[]{isolation.Items[0]},new object[]{isolation.Items[1]}));
         settings.Reset(); Native.Check(alerts==5 && writes==0,"MMC UI reached name/script/delete/isolation/reset mutation delegates.");
         var restore=new Stack<Action>();
@@ -169,7 +175,13 @@ internal static class MmcLifecycleChecks {
         var backend=new MmcInstanceBackend<MmcArtifactDownloadSpec>(metadata,new(Path.Combine(root,"cache","libraries"),Path.Combine(root,"cache","assets"),Path.Combine(root,"cache","sources")),spec=>spec,
             async(files,token)=>{foreach(var file in files){Native.Check(file.Urls.SequenceEqual(new[]{"https://fixture.invalid/index"}),"Unexpected fixture download.");await File.WriteAllBytesAsync(file.DownloadPath,index,token);}});
         var imported=backend.ImportAsync(new(archive,version,"managed",new("windows","x86_64",8))).GetAwaiter().GetResult();
-        Native.Check(imported.Status==MmcInstanceBackendStatus.Succeeded,"Lifecycle fixture import failed: "+imported.Failure);return version;
+        Native.Check(imported.Status==MmcInstanceBackendStatus.Succeeded,"Lifecycle fixture import failed: "+imported.Failure);
+        var environment=new PCLLF.MMCC.Core.MmcRuntimeEnvironment("windows","x86_64",8);
+        var prepared=backend.PrepareLaunchAsync(new(version,environment,imported.Definition!.InstanceId,imported.Definition.Generation)).GetAwaiter().GetResult();
+        Native.Check(prepared.Status==MmcInstanceBackendStatus.Succeeded && prepared.Snapshot is not null && !prepared.Repaired,"Legacy capability guards blocked dedicated MMC launch preparation: "+prepared.Failure);
+        var repaired=backend.RepairAsync(new(version,environment,imported.Definition.InstanceId){ExpectedGeneration=imported.Definition.Generation}).GetAwaiter().GetResult();
+        Native.Check(repaired.Status==MmcInstanceBackendStatus.Succeeded,"Legacy capability guards blocked dedicated MMC repair: "+repaired.Failure);
+        return version;
     }
     private sealed class NoNetwork:HttpMessageHandler { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)=>throw new IOException("Lifecycle fixtures cannot access network."); }
     private static void Put(string root,string relative,string value){string path=Path.Combine(root,relative.Replace('/',Path.DirectorySeparatorChar));Directory.CreateDirectory(Path.GetDirectoryName(path)!);File.WriteAllText(path,value,new UTF8Encoding(false));}

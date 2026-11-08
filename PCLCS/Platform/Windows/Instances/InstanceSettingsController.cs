@@ -26,7 +26,8 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
             _ = host.Instance().PathIndie;
             var isolation = MmcInstanceCapabilities.LegacyOperation(host.Instance().PathVersion,"切换版本隔离");
             view.Isolation.IsEnabled = isolation.Allowed;
-            if (!isolation.Allowed) view.Isolation.ToolTip = isolation.RefusalReason;
+            view.Isolation.ToolTip = isolation.RefusalReason;
+            ToolTipService.SetShowOnDisabled(view.Isolation,!isolation.Allowed);
             view.Isolation.SelectedIndex = host.Boolean("VersionArgumentIndieV2",host.Instance()) ? 0 : 1; UpdateJavaList();
             view.Login.SelectedIndex = host.Integer("VersionServerLogin",host.Instance()); view.SetLoginLast(view.Login.SelectedIndex); UpdateServerLoginUi();
             if (host.Integer("VersionAdvanceAssets",host.Instance()) == 2) { host.Info("已迁移老版本的关闭文件校验设置"); host.Reset("VersionAdvanceAssets",host.Instance()); host.Set("VersionAdvanceAssetsV2",true,host.Instance()); }
