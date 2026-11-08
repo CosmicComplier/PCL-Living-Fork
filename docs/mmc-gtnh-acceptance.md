@@ -53,7 +53,7 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 | 正常退出 | 两轮 Java 退出码均为 0；两次 `Exited.record` 已归档，mutable 临时目录清理、Java pin 释放均为 true |
 | 修复 | 在实际退出及收尾后执行专用后端，`repair-2.json` 记录同 ID、generation 2 成功 |
 | 再次启动与原世界 | 用户重开 `New World`；第二轮日志记录同名世界加载、本地玩家加入及保存，随后正常退出，Watcher 为 Ended |
-| 现代 Java 包 | 导入及最终制品核对已通过；下节记录其启动失败，尚未完成游戏验收 |
+| 现代 Java 包 | 已使用 Java 21 完成同样的实机闭环；见下节的失败修正与最终证据 |
 
 当前证据根是集成工作树的
 `artifacts/mmc-gtnh-launch-acceptance/20261108-114527-a1eae77059834dd2a49c48c63c816948/`，
@@ -67,7 +67,7 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 原中断证据位于子工作树 `mmc-core-parsing` 的
 `artifacts/mmc-gtnh-launch-acceptance/20261108-113335-9cf8bf9390c541a18df05bb8cfc544a7/`。
 
-## 现代 Java 21 的实测缺口
+## 现代 Java 21 的失败修正与闭环
 
 第一轮在创建 Java 进程前被旧 Forge Java 上限拦截。只读对照确认包内 Minecraft 原始声明的 Guava 15
 已由 Forge 的 Guava 17 正常替代，而完整启动链证明误要求被替代的旧 JAR 仍在最终 classpath。
@@ -77,10 +77,25 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 第二轮真实 Java 21 和 RFB 已启动，但 LWJGL3 加载 SDL3 时退出：错误为 Windows `206`，
 实际 session/extract 路径超过原生加载器可接受长度。该轮 Java 返回 0，但 Watcher 为 Crashed、
 未进入主菜单，因此明确计为失败；退出后的会话、临时目录和 pin 已正常收尾，宿主也已收到 finish。
-没有通过挪动样本目录或改变包内容把失败计为成功，通用短 mutable/native 目录修复正在独立子分支实现。
+没有通过挪动样本目录或改变包内容把失败计为成功，随后实现了通用短 mutable/native 目录修复。
 机制对照 [LWJGL 3.4.3 WindowsLibrary](https://github.com/LWJGL/lwjgl3/blob/3.4.3/modules/lwjgl/core/src/main/java/org/lwjgl/system/windows/WindowsLibrary.java)。
 
 证据分别保留于集成工作树：
 
 - `artifacts/mmc-gtnh-launch-acceptance/20261108-121713-e67c536f106f420ebb26c4b08bda10b9/`：旧约束拦截、无游戏进程。
 - `artifacts/mmc-gtnh-launch-acceptance/20261108-122816-1a0c2367ad6b45d9a511f137e217e977/`：实际 RFB/native 加载失败、Watcher/退出与清理记录。
+
+短目录按实例与会话隔离，收据只持有已知布局和 host authority 指纹，不接受自报删除根；
+默认位置由当前用户的 LocalAppData 计算，验收采用已验证 GUID 私有 profile 的授权短目录。
+旧 v1 inside 布局继续可读，启动前、失败放弃、已验证退出和宿主异常恢复使用同一精确 binding。
+真实 Java21/LWJGL 探针核对原 JAR 与 SDL3 字节不变：308 字符路径报 206，生产 owned 短路径 119 字符加载成功。
+
+最终实机证据在集成工作树：
+`artifacts/mmc-gtnh-launch-acceptance/20261108-131033-5770e0aaaac3405b8229b14de1e737a1/`。
+用户手动确认首轮主菜单和新世界，随后专用修复发布同 ID 的 generation 2，第二轮日志记录再次加载
+`New World` 并由同一离线玩家加入。两轮正常退出码均为 0，Watcher 均为 Ended，
+两次 receipt 归档、短 mutable 清理及 pin 释放均成功，最终验收宿主退出码也为 0。
+`modern-java21-actual-closed-loop.json` 汇总上述事实与实际 mutable binding。
+
+本次明确通过的实包 Java 组合是 Java8 发行包＋Java8，以及现代发行包＋Java21。
+现代包声明的 Java17/25/26 尚未作实包游戏验收，Prism 实际差分、全平台、完整性能矩阵也未据此宣告通过。
