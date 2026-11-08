@@ -106,7 +106,7 @@ public static partial class MmcConfigurationCoordinator {
     }
 }
 
-public sealed class MmcConfigurationQuiescence : IDisposable {
+public sealed partial class MmcConfigurationQuiescence : IDisposable {
     internal readonly MmcConfigurationState State;
     private readonly string logicalRoot;
     private bool disposed;
@@ -133,10 +133,11 @@ public sealed partial class MmcConfigurationWriteScope : IDisposable {
     private readonly string? oldConfigHash;
     private readonly JObject config;
     private readonly Dictionary<string, MmcConfigPatch> accepted;
+    private readonly string? repairPrimaryHash;
     private bool disposed;
     public JObject ConfigSnapshot => (JObject)config.DeepClone();
-    internal MmcConfigurationWriteScope(MmcConfigurationState state, MmcAdmissionLease lease, long generation, bool adoptUnmanagedPreferences) {
-        this.state = state; this.lease = lease; this.generation = generation;
+    internal MmcConfigurationWriteScope(MmcConfigurationState state, MmcAdmissionLease lease, long generation, bool adoptUnmanagedPreferences, string? repairPrimaryHash = null) {
+        this.state = state; this.lease = lease; this.generation = generation; this.repairPrimaryHash = repairPrimaryHash;
         if (generation < 0) throw new ArgumentOutOfRangeException(nameof(generation));
         MmcFileTransactions.AssertNoPending(lease); MmcSessions.AssertNoActive(lease);
         var paths = MmcInstancePaths.Resolve(state.Root);
@@ -144,8 +145,14 @@ public sealed partial class MmcConfigurationWriteScope : IDisposable {
         if (generation == 0) {
             if (MmcInstancePaths.Attributes(definitionPath) is not null) throw new IOException("初始发布目标已有定义。");
         } else {
-            var definition = MmcManagementProbe.Read(state.Root).Envelope;
-            if (definition is null || definition.InstanceId != lease.InstanceId || definition.Generation != generation) throw new IOException("结构设置的 ExpectedGeneration 已过期或定义尚不可验证。");
+            if (repairPrimaryHash is not null) {
+                if (MmcManagementProbe.Read(state.Root).State == MmcManagementState.ManagedUnsupported) throw new IOException("未知管理记录格式，禁止按旧格式重建投影。");
+                ValidateRepairPrimary(definitionPath, repairPrimaryHash, lease.InstanceId, generation);
+            }
+            else {
+                var definition = MmcManagementProbe.Read(state.Root).Envelope;
+                if (definition is null || definition.InstanceId != lease.InstanceId || definition.Generation != generation) throw new IOException("结构设置的 ExpectedGeneration 已过期或定义尚不可验证。");
+            }
         }
         oldConfigHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/config.json"));
         config = MmcConfigurationCoordinator.ReadConfig(state.Root);
@@ -165,6 +172,7 @@ public sealed partial class MmcConfigurationWriteScope : IDisposable {
         Action<MmcTransactionCheckpoint, int>? checkpoint = null) {
         ObjectDisposedException.ThrowIf(disposed, this); lease.AssertHeld();
         if (request.ExpectedGeneration != generation || request.InstanceId != lease.InstanceId) throw new IOException("结构设置事务与 ExpectedGeneration 不一致。");
+        ValidateRepairPublication(request);
         if (request.Mutations.Any(m => string.Equals(m.RelativePath, "PCL/config.json", StringComparison.OrdinalIgnoreCase))) throw new IOException("配置内容只能由当前设置协调作用域合成。");
         if (request.Mutations.Any(m => string.Equals(m.RelativePath, "PCL/Setup.ini", StringComparison.OrdinalIgnoreCase))) throw new IOException("INI 设置只能由当前设置协调作用域按键合成。");
         byte[] bytes = MmcConfigurationCoordinator.ConfigBytes(config);

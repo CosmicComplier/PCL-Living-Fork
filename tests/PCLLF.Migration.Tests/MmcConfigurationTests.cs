@@ -5,6 +5,7 @@ using System.Text;
 using MeloongCore;
 using Newtonsoft.Json.Linq;
 using PCLCS;
+using PCLLF.MMCC.Core;
 
 internal static class MmcConfigurationTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
@@ -23,6 +24,7 @@ internal static class MmcConfigurationTests {
         yield return ("MMC configuration trusts ordinary root junctions but rejects linked configuration descendants", OrdinaryRootJunction);
         yield return ("MMC configuration malformed input constructs a readonly error provider without overwriting bytes", MalformedConstructor);
         yield return ("MMC settings engine validates fixed identity before path caches and retains context at INI writes", SettingsContextBridge);
+        yield return ("MMC projection repair requires a hash-bound published primary without relaxing normal edits", ProjectionRepair);
         if (typeof(InstanceConfigProvider).Assembly.GetType("PCLCS.Configs") is not null)
             yield return ("MMC configuration actual JavaForced deserialization and PreviewGet Reset use the coordinated provider", ActualJavaReset);
     }
@@ -293,6 +295,51 @@ internal static class MmcConfigurationTests {
         using (freshProvider) freshProvider!.Save();
         Equal("saved-B", LegacyBaseOperations.ParseIni(File.ReadAllText(file))[entry.Key]);
     }
+    private static void ProjectionRepair() {
+        foreach (bool removeConfigHint in new[] { false, true }) {
+            using Fixture fixture = new();
+            fixture.Install();
+            var published = MmcDefinitionTests.Published(MmcDefinitionTests.Draft() with { InstanceId = fixture.Id });
+            byte[] original = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(published)); File.WriteAllBytes(fixture.DefinitionFile, original);
+            if (removeConfigHint) File.WriteAllText(Path.Combine(fixture.Root, "PCL", "config.json"), "{\"unknown\":\"kept\"}");
+            else File.Delete(Path.Combine(fixture.Root, "sample.json"));
+            using var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root); using var lease = fixture.Lease();
+            bool defaultRejected = false; try { using var invalid = quiet.OpenStructuralWrite(lease, 1); } catch (IOException) { defaultRejected = true; }
+            Equal(true, defaultRejected);
+            string expectedHash = Convert.ToHexString(SHA256.HashData(original)).ToLowerInvariant();
+            using var repair = quiet.OpenProjectionRepair(lease, 1, expectedHash);
+            repair.SetConfig("MinecraftInstallManifest", new JObject { ["pcllfManagement"] = fixture.Hint(2) });
+            byte[] updated = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(MmcDefinitionTests.Published(published with { Generation = 2 })));
+            byte[] version = Encoding.UTF8.GetBytes(new JObject { ["pcllfManagement"] = fixture.Hint(2) }.ToString());
+            var request = new MmcFileTransactionRequest(fixture.Id, 1, 2, [
+                new("PCL/InstanceDefinition.json", expectedHash, updated, Convert.ToHexString(SHA256.HashData(updated)).ToLowerInvariant()),
+                new("sample.json", removeConfigHint ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(fixture.Root, "sample.json")))).ToLowerInvariant() : null, version, Convert.ToHexString(SHA256.HashData(version)).ToLowerInvariant())]);
+            Equal(MmcTransactionOutcome.Committed, repair.Execute(request).Outcome);
+            Equal(MmcManagementState.ManagedMmc, MmcManagementProbe.Read(fixture.Root).State);
+            Equal("kept", fixture.Config().Value<string>("unknown"));
+        }
+        foreach (string failure in new[] { "hash", "unsupported", "damaged", "identity", "generation", "draft", "future-hint" }) {
+            using Fixture fixture = new(); fixture.Install();
+            var primary = MmcDefinitionTests.Published(MmcDefinitionTests.Draft() with { InstanceId = failure == "identity" ? Guid.NewGuid() : fixture.Id, Generation = failure == "generation" ? 2 : 1 });
+            string text = MmcDefinitionCodec.Serialize(primary);
+            if (failure == "unsupported") text = text.Replace("\"schemaVersion\":1", "\"schemaVersion\":2", StringComparison.Ordinal);
+            if (failure == "damaged") text = "{";
+            if (failure == "draft") {
+                var options = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+                options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+                text = System.Text.Json.JsonSerializer.Serialize(primary with { InstalledProjection = null }, options);
+            }
+            byte[] bytes = Encoding.UTF8.GetBytes(text); File.WriteAllBytes(fixture.DefinitionFile, bytes); File.Delete(Path.Combine(fixture.Root, "sample.json"));
+            string expected = failure == "hash" ? new string('0', 64) : Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            if (failure == "future-hint") {
+                JObject config = fixture.Config(); config["MinecraftInstallManifest"]!["pcllfManagement"]!["schemaVersion"] = 99;
+                File.WriteAllText(Path.Combine(fixture.Root, "PCL", "config.json"), config.ToString());
+            }
+            using var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root); using var lease = fixture.Lease();
+            bool rejected = false; try { using var repair = quiet.OpenProjectionRepair(lease, 1, expected); } catch (IOException) { rejected = true; }
+            Equal(true, rejected); Equal(false, File.Exists(Path.Combine(fixture.Root, "sample.json"))); Equal(text, File.ReadAllText(fixture.DefinitionFile));
+        }
+    }
     private sealed record PreferenceOwner(string Path, IInstanceConfigProvider Config);
     private sealed class PreferenceEntry(string key) : LegacySettingData<PreferenceOwner>(key, "", false, null, (error, _) => throw error) {
         public Action<PreferenceOwner?> SaveAction = null!;
@@ -340,6 +387,7 @@ internal static class MmcConfigurationTests {
         public string DefinitionFile => Path.Combine(Root, "PCL", "InstanceDefinition.json");
         public string Ready => Path.Combine(Scope, "ready"); public string Go => Path.Combine(Scope, "go");
         private readonly Guid id = Guid.NewGuid();
+        public Guid Id => id;
         public Fixture() { Directory.CreateDirectory(Path.Combine(Root, "PCL")); File.WriteAllText(Path.Combine(Root, "PCL", "config.json"), "{\"unknown\":\"kept\"}"); }
         public JObject Config() => JObject.Parse(File.ReadAllText(Path.Combine(Root, "PCL", "config.json")));
         public JObject Hint(long generation) => new() { ["schemaVersion"] = 1, ["managementKind"] = "Mmc", ["instanceId"] = id.ToString("D"), ["generation"] = generation };
