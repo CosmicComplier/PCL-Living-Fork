@@ -17,6 +17,7 @@ public sealed class MmcArchiveSource : IDisposable {
     private readonly FileStream source;
     private readonly ZipArchive archive;
     private readonly IReadOnlyDictionary<string, ZipArchiveEntry> entries;
+    private readonly IReadOnlyDictionary<string, ZipArchiveEntry> archiveFiles;
     private readonly SemaphoreSlim readGate = new(1, 1);
     private readonly CancellationTokenSource closing = new();
     private readonly object lifetime = new();
@@ -35,6 +36,8 @@ public sealed class MmcArchiveSource : IDisposable {
         ImmutableArray<MmcDiagnostic> diagnostics, ImmutableArray<MmcArchiveMetadata> metadata) {
         OriginalPath = path; PackageSha256 = digest; this.source = source; this.archive = archive;
         this.entries = entries; Package = package; Diagnostics = diagnostics; Metadata = metadata;
+        archiveFiles = archive.Entries.Where(entry => !entry.FullName.EndsWith('/') && !entry.FullName.EndsWith('\\'))
+            .ToDictionary(entry => entry.FullName.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase);
         Files = entries.Select(item => new MmcArchiveFile(item.Key, item.Value.Length, item.Value.Crc32)).ToImmutableArray();
         ArchiveEntries = archive.Entries.Select(entry => new MmcArchiveEntryObservation(entry.FullName.Replace('\\', '/'),
             entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'), entry.Length, entry.Crc32)).ToImmutableArray();
@@ -52,6 +55,15 @@ public sealed class MmcArchiveSource : IDisposable {
 
     /// <summary>Shared ZIP seek/read state is leased until the returned stream is disposed.</summary>
     public async ValueTask<Stream> OpenFileAsync(string relativePath, CancellationToken token = default) {
+        return await OpenLeasedAsync(relativePath, entries, token).ConfigureAwait(false);
+    }
+
+    /// <summary>Read a member of the already-inspected complete ZIP index, including outer opaque docs; never authorizes a live target.</summary>
+    public async ValueTask<Stream> OpenArchiveFileAsync(string archiveRelativePath, CancellationToken token = default) {
+        return await OpenLeasedAsync(archiveRelativePath, archiveFiles, token).ConfigureAwait(false);
+    }
+
+    private async ValueTask<Stream> OpenLeasedAsync(string relativePath, IReadOnlyDictionary<string, ZipArchiveEntry> index, CancellationToken token) {
         using CancellationTokenSource wait = CancellationTokenSource.CreateLinkedTokenSource(token, closing.Token);
         try { await readGate.WaitAsync(wait.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (closing.IsCancellationRequested) { throw new ObjectDisposedException(nameof(MmcArchiveSource)); }
@@ -59,14 +71,14 @@ public sealed class MmcArchiveSource : IDisposable {
             try {
                 ObjectDisposedException.ThrowIf(disposed, this);
                 token.ThrowIfCancellationRequested();
-                return OpenLeased(relativePath);
+                return OpenLeased(relativePath, index);
             } catch { readGate.Release(); throw; }
         }
     }
 
-    private Stream OpenLeased(string relativePath) {
+    private Stream OpenLeased(string relativePath, IReadOnlyDictionary<string, ZipArchiveEntry>? index = null) {
         MmcArtifactIo.Relative(relativePath);
-        if (!entries.TryGetValue(relativePath.Replace('\\', '/'), out ZipArchiveEntry? entry))
+        if (!(index ?? entries).TryGetValue(relativePath.Replace('\\', '/'), out ZipArchiveEntry? entry))
             throw new FileNotFoundException("Declared file is absent from the fixed package source.", relativePath);
         Stream stream = entry.Open();
         activeRead = true;

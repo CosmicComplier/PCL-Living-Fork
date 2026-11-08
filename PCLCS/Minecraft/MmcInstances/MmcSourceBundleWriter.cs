@@ -41,6 +41,17 @@ public sealed class MmcPreparedSourceBundle : IDisposable {
         Stage(relative, content, hash);
         return new(hash, relative, fileCount);
     }
+    /// <summary>Keep opaque/foreign/root-external originals without importing their settings or giving them execution authority.</summary>
+    public void StageOpaqueOriginals(MmcPreparedPackageFiles files) {
+        HashSet<string> seen = mutations.Select(m => m.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files.Files.Where(file => file.TargetRelativePath is null && file.Role != MmcPackageFileRole.LocalLibrary && file.StagedPath is not null)) {
+            string relative = "PCL/MmcSource/" + Bundle.BundleSha256 + "/package-files/" + file.Sha256;
+            if (!seen.Add(relative)) continue;
+            string? old = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, relative));
+            if (old is not null) { if (old != file.Sha256) throw new IOException("Opaque package source was changed."); continue; }
+            mutations.Add(new(relative, null, null, file.Sha256, Path.GetRelativePath(paths.InstanceRoot, file.StagedPath!).Replace('\\', '/')));
+        }
+    }
     public void Dispose() => workspace.Dispose();
 }
 

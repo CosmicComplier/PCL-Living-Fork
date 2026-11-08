@@ -1,12 +1,14 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
+using PCLLF.MMCC.Core;
 
 namespace PCLCS;
 
 // Original LF host implementation, under the repository LICENCE.
 public enum MmcPackageFileRole { Metadata, Game, LocalLibrary, InstanceExtra, ForeignLauncherMetadata }
 public sealed record MmcPackageFileObservation(string RelativePath, MmcPackageFileRole Role,
-    string Sha256, string Sha1, long SizeBytes, uint Crc32, string? StagedPath);
+    string Sha256, string Sha1, long SizeBytes, uint Crc32, string? StagedPath,
+    string? ArchiveRelativePath = null, string? TargetRelativePath = null);
 
 /// <summary>Fixed original package bytes and staged initial-import data; never writes an existing player file.</summary>
 public sealed class MmcPreparedPackageFiles : IDisposable {
@@ -38,26 +40,29 @@ public static class MmcPackageFileStager {
             Dictionary<string, MmcArtifactSource> libraries = new(StringComparer.OrdinalIgnoreCase);
             var rawMetadata = source.Metadata.ToDictionary(m => m.RelativePath, StringComparer.OrdinalIgnoreCase);
             MmcArtifactIo io = new(new(), progress);
-            foreach (MmcArchiveFile file in source.Files) {
+            foreach (MmcArchiveEntryObservation file in source.ArchiveEntries.Where(entry => !entry.IsDirectory)) {
                 cancellationToken.ThrowIfCancellationRequested();
-                MmcPackageFileRole role = Role(file.RelativePath, source.Package.GameRootLeaf);
-                if (rawMetadata.TryGetValue(file.RelativePath, out var metadata)) {
-                    files.Add(new(file.RelativePath, MmcPackageFileRole.Metadata, metadata.Sha256,
-                        Convert.ToHexStringLower(SHA1.HashData(metadata.Bytes.AsSpan())), file.SizeBytes, file.Crc32, null));
+                bool inside = file.Path.StartsWith(source.Package.RelativeRoot, StringComparison.OrdinalIgnoreCase);
+                string relative = inside ? file.Path[source.Package.RelativeRoot.Length..] : file.Path;
+                var classified = MmcPackageFileBaselineCodec.Classify(source.Package.RelativeRoot, file.Path);
+                var role = Enum.Parse<MmcPackageFileRole>(classified.Role.ToString());
+                if (inside && rawMetadata.TryGetValue(relative, out var metadata)) {
+                    files.Add(new(relative, MmcPackageFileRole.Metadata, metadata.Sha256,
+                        Convert.ToHexStringLower(SHA1.HashData(metadata.Bytes.AsSpan())), file.SizeBytes, file.Crc32, null, file.Path));
                     continue;
                 }
                 string staged = workspace.NewFile();
-                await using Stream input = await source.OpenFileAsync(file.RelativePath, cancellationToken).ConfigureAwait(false);
-                var observed = await io.ExtractAsync(input, staged, file.RelativePath, file.SizeBytes, file.Crc32,
+                await using Stream input = await source.OpenArchiveFileAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                var observed = await io.ExtractAsync(input, staged, file.Path, file.SizeBytes, file.Crc32,
                     4L * 1024 * 1024 * 1024, cancellationToken, "package-extract").ConfigureAwait(false);
-                files.Add(new(file.RelativePath, role, observed.Sha256, observed.Sha1, observed.Size, file.Crc32, staged));
+                files.Add(new(relative, role, observed.Sha256, observed.Sha1, observed.Size, file.Crc32, staged, file.Path, classified.TargetRelativePath));
                 if (role == MmcPackageFileRole.LocalLibrary) {
-                    libraries.Add(file.RelativePath["libraries/".Length..], new(workspace.Root, staged));
-                } else if (role != MmcPackageFileRole.ForeignLauncherMetadata) {
-                    string target = paths.ResolveRelative(MmcPathRole.Instance, file.RelativePath);
+                    libraries.Add(classified.TargetRelativePath!["libraries/".Length..], new(workspace.Root, staged));
+                } else if (classified.TargetRelativePath is { } targetRelative) {
+                    string target = paths.ResolveRelative(MmcPathRole.Instance, targetRelative);
                     if (MmcInstancePaths.Attributes(target) is not null)
-                        throw new IOException("Initial import target already exists; preserving existing player data: " + file.RelativePath);
-                    mutations.Add(new(file.RelativePath, null, null, observed.Sha256,
+                        throw new IOException("Initial import target already exists; preserving existing player data: " + targetRelative);
+                    mutations.Add(new(targetRelative, null, null, observed.Sha256,
                         Path.GetRelativePath(paths.InstanceRoot, staged).Replace('\\', '/')));
                 }
             }
@@ -65,10 +70,4 @@ public static class MmcPackageFileStager {
         } catch { workspace.Dispose(); throw; }
     }
 
-    private static MmcPackageFileRole Role(string relative, string gameRoot) {
-        if (relative.StartsWith("libraries/", StringComparison.OrdinalIgnoreCase)) return MmcPackageFileRole.LocalLibrary;
-        if (relative.StartsWith("PCL/", StringComparison.OrdinalIgnoreCase)) return MmcPackageFileRole.ForeignLauncherMetadata;
-        if (relative.StartsWith(gameRoot + "/", StringComparison.OrdinalIgnoreCase)) return MmcPackageFileRole.Game;
-        return MmcPackageFileRole.InstanceExtra;
-    }
 }

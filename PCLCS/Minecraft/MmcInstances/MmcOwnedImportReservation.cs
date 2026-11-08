@@ -1,0 +1,85 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Runtime.InteropServices;
+using System.ComponentModel;
+using PCLLF.MMCC.Core;
+using JsonSerializer = System.Text.Json.JsonSerializer;
+
+namespace PCLCS;
+
+// Original LF host implementation, under the repository LICENCE.
+/// <summary>A private sibling root. Failure never recursively removes a version root; its pending ownership survives.</summary>
+public sealed class MmcOwnedImportReservation {
+    private readonly byte[] marker, ignore;
+    public string FinalRoot { get; }
+    public string TemporaryRoot { get; }
+    public Guid InstanceId { get; }
+    public string InstanceName => Path.GetFileName(FinalRoot);
+    private readonly string packageSha256;
+    private MmcOwnedImportReservation(string finalRoot, string temporaryRoot, Guid id, string packageSha256, byte[] marker, byte[] ignore) {
+        FinalRoot = finalRoot; TemporaryRoot = temporaryRoot; InstanceId = id; this.packageSha256 = packageSha256; this.marker = marker; this.ignore = ignore;
+    }
+    public static MmcOwnedImportReservation Create(string finalRoot, Guid instanceId, string packageSha256) {
+        if (instanceId == Guid.Empty || !MmcDurableFiles.IsHash(packageSha256)) throw new ArgumentException("New import needs an identity and package digest.");
+        string target = MmcCanonicalPaths.ForAdmission(MmcInstancePaths.ValidateVersionRoot(finalRoot));
+        using var gate = MmcAdmissionGate.Acquire(target, instanceId, TimeSpan.Zero);
+        if (MmcInstancePaths.Attributes(target) is not null) throw new IOException("Existing instance target is preserved; choose a new name.");
+        string parent = Path.GetDirectoryName(target)!; MmcArtifactIo.Directory(parent);
+        string root = Path.Combine(parent, ".pcllf-mmc-import-" + Guid.NewGuid().ToString("N"));
+        MmcInstancePaths.ValidateVersionRoot(root);
+        if (MmcInstancePaths.Attributes(root) is not null) throw new IOException("Private import reservation unexpectedly exists.");
+        CreateExclusiveDirectory(root); Directory.CreateDirectory(Path.Combine(root, "PCL"));
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(new { SchemaVersion = 1, InstanceId = instanceId, PackageSha256 = packageSha256, FinalRoot = target, TemporaryRoot = root });
+        byte[] ignore = Encoding.UTF8.GetBytes("PCLLF.MmcImport/v1\n" + instanceId.ToString("D") + "\n" + packageSha256);
+        MmcDurableFiles.WriteNew(Path.Combine(root, "PCL", "MmcImportPending.json"), marker); MmcDurableFiles.WriteNew(Path.Combine(root, ".pclignore"), ignore);
+        return new(target, root, instanceId, packageSha256, marker, ignore);
+    }
+    /// <summary>Call only after all preparation workspaces have been consumed and disposed.</summary>
+    public MmcInstancePaths Publish(string gameRootLeaf) {
+        using var quiet = MmcConfigurationCoordinator.Quiesce(TemporaryRoot);
+        List<MmcAdmissionLease> gates = [];
+        try {
+            foreach (string root in new[] { TemporaryRoot, FinalRoot }.Order(StringComparer.OrdinalIgnoreCase)) gates.Add(MmcAdmissionGate.Acquire(root, InstanceId, TimeSpan.Zero));
+            VerifyMarker(TemporaryRoot);
+            if (MmcInstancePaths.Attributes(FinalRoot) is not null) throw new IOException("The final name was claimed by another instance; preserving both roots.");
+            var paths = MmcInstancePaths.Resolve(TemporaryRoot, gameRootLeaf);
+            var primary = MmcSavedSourceStore.ReadPrimary(paths);
+            if (primary.Definition.InstanceId != InstanceId || primary.Definition.Generation != 1 || primary.Definition.Origin.PackageSha256 != packageSha256)
+                throw new IOException("The private import definition does not belong to its reservation.");
+            var ownGate = gates.Single(gate => gate.VersionRoot.Equals(TemporaryRoot, StringComparison.OrdinalIgnoreCase));
+            MmcFileTransactions.AssertNoPending(ownGate); MmcSessions.AssertNoActive(ownGate);
+            // The only permitted pending observation here is this already hash-verified reservation.
+            // Real transaction/session stores have just been checked independently under both gates.
+            var observation = MmcManagementProbe.CaptureAtPhysicalRoot(TemporaryRoot, InstanceName) with { HasPendingTransaction = false };
+            var ownership = MmcManagementReader.Evaluate(observation);
+            if (ownership.State != MmcManagementState.ManagedMmc || ownership.Envelope?.InstanceId != InstanceId) throw new IOException("Private import projections are not ready for publication.");
+            string staging = paths.ResolveRelative(MmcPathRole.Runtime, ".staging");
+            if (Directory.Exists(staging)) {
+                if (Directory.EnumerateFileSystemEntries(staging).Any()) throw new IOException("Prepared workspaces remain; refusing to move active absolute paths.");
+                Directory.Delete(staging, false);
+            }
+            // Both absolute roots are strict children of this same verified versions parent. This is
+            // an atomic no-overwrite sibling rename, not a recursive cleanup of player directories.
+            if (Path.GetDirectoryName(TemporaryRoot) != Path.GetDirectoryName(FinalRoot)) throw new IOException("Import publication must stay under its reserved parent.");
+            Directory.Move(TemporaryRoot, FinalRoot); VerifyMarker(FinalRoot);
+            File.Delete(Path.Combine(FinalRoot, ".pclignore")); File.Delete(Path.Combine(FinalRoot, "PCL", "MmcImportPending.json"));
+            return MmcInstancePaths.Resolve(FinalRoot, gameRootLeaf);
+        } finally { for (int i = gates.Count - 1; i >= 0; i--) gates[i].Dispose(); }
+    }
+    private void VerifyMarker(string root) {
+        var paths = MmcInstancePaths.Resolve(root);
+        if (MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcImportPending.json")) != Convert.ToHexStringLower(SHA256.HashData(marker)) ||
+            MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, ".pclignore")) != Convert.ToHexStringLower(SHA256.HashData(ignore)))
+            throw new IOException("Import ownership markers changed; preserving the directory for recovery.");
+    }
+    private static void CreateExclusiveDirectory(string path) {
+        // Directory.CreateDirectory adopts an existing directory and is not an ownership primitive.
+        bool created = OperatingSystem.IsWindows() ? CreateDirectoryW(path, IntPtr.Zero) : Mkdir(path, 448) == 0;
+        if (!created) throw new IOException("Private import directory could not be exclusively created.", new Win32Exception(Marshal.GetLastWin32Error()));
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateDirectoryW(string path, IntPtr securityAttributes);
+    [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)]
+    private static extern int Mkdir([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
+}
