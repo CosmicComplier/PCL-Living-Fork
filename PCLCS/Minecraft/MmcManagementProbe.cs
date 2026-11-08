@@ -36,7 +36,7 @@ public static class MmcManagementProbe {
         MmcManagementDocument configHint = ReadHint(Path.Combine(pcl, "config.json"), true);
         MmcManagementDocument versionHint = ReadHint(Path.Combine(root, logicalVersionName + ".json"), false);
         bool sources = false, pending = false, complete = true;
-        foreach (string pendingName in new[] { "MmcImportPending.json", "MmcLifecyclePending.json" }) try {
+        foreach (string pendingName in new[] { "MmcImportPending.json", "MmcLifecyclePending.json", "MmcLegacyAdoptionPending.json" }) try {
             string import = Path.Combine(pcl, pendingName);
             MmcInstancePaths.EnsureNoLinks(pcl);
             if (MmcInstancePaths.Attributes(import) is not null) { sources = true; pending = true; }

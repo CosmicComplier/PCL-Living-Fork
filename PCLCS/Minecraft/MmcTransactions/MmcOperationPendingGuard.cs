@@ -5,7 +5,7 @@ namespace PCLCS;
 // Original LF host implementation; governed by the repository LICENCE.
 /// <summary>Fresh outer-operation checks. An exact owner permit never bypasses a real file transaction or another operation marker.</summary>
 public static class MmcOperationPendingGuard {
-    private static readonly string[] Markers = ["PCL/MmcImportPending.json", "PCL/MmcLifecyclePending.json"];
+    private static readonly string[] Markers = ["PCL/MmcImportPending.json", "PCL/MmcLifecyclePending.json", "PCL/MmcLegacyAdoptionPending.json"];
     public static void AssertNoForeignPending(MmcAdmissionLease lease) {
         lease.AssertHeld(); var paths = MmcInstancePaths.Resolve(lease.VersionRoot);
         MmcPendingOperationPermit.AssertRequiredMarkers(lease);

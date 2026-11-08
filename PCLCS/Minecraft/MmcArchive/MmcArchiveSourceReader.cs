@@ -157,6 +157,7 @@ public static class MmcArchiveSourceReader {
             if (archive.Entries.Count != expectedCount) throw new InvalidDataException("Archive index changed after bounded preflight.");
             MmcArchiveEntry[] descriptors = archive.Entries.Select(entry => new MmcArchiveEntry(
                 entry.FullName.Replace('\\', '/'), entry.Length, DirectoryEntry(entry))).ToArray();
+            MmcLegacyAdoptionCapabilities.RefusePrivateRecoveryArchive(descriptors.Select(entry => entry.Path));
             MmcArchiveInspection inspection = MmcPackageReader.InspectArchive(descriptors, limits);
             if (inspection.HasErrors || inspection.RelativeRoot is null)
                 throw new InvalidDataException(Describe(inspection.Diagnostics));
