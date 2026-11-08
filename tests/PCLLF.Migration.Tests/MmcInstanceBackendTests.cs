@@ -11,6 +11,8 @@ internal static class MmcInstanceBackendTests {
     internal static IEnumerable<(string Name, Action Run)> VariantCases() {
         yield return ("MMC explicitly adopts a declared Java variant offline and retains adopted bytes and player data", AdoptJavaVariant);
         yield return ("MMC variant adoption rejects stale authority, undeclared Java and predecision cancellation", VariantRefusals);
+        yield return ("MMC repeated variant adoption retains the selected digest across preparation boundaries", SameVariantDigest);
+        yield return ("MMC repeated variant adoption requires explicit repair for incomplete projections", SameVariantIncomplete);
         yield return ("MMC launch preparation and repair reuse adopted asset originals after every global cache is removed", AssetInputRecovery);
     }
     internal static IEnumerable<(string Name, Action Run)> Cases() {
@@ -339,6 +341,44 @@ internal static class MmcInstanceBackendTests {
         }, cancellation.Token);
         Equal(MmcInstanceBackendStatus.Cancelled, canceled.Status);
         Equal(primary.Sha256, MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256);
+    }
+
+    private static void SameVariantDigest() => SameVariantDigestAsync().GetAwaiter().GetResult();
+    private static async Task SameVariantDigestAsync() {
+        using Fixture fixture = new(multiJava: true);
+        var backend = fixture.Backend();
+        var imported = await backend.ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        string primaryPath = Path.Combine(fixture.VersionRoot, "PCL", "InstanceDefinition.json");
+        foreach (string mutationPhase in new[] { "loading-immutable-sources", "preparing-existing-launch" }) {
+            var selected = MmcSavedSourceStore.ReadPrimary(imported.Paths!);
+            bool mutated = false;
+            var result = await backend.AdoptVariantAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8),
+                selected.Definition.InstanceId, selected.Definition.Generation, selected.Sha256), progress: new BackendProgress(value => {
+                    if (value.Phase == mutationPhase && !mutated) { mutated = true; File.AppendAllText(primaryPath, " "); }
+                }));
+            Equal(true, mutated); Equal(MmcInstanceBackendStatus.NeedsRecovery, result.Status);
+            var after = MmcSavedSourceStore.ReadPrimary(imported.Paths!);
+            Equal(selected.Definition.Generation, after.Definition.Generation); Equal(false, selected.Sha256 == after.Sha256);
+            Equal(true, File.ReadAllText(primaryPath).EndsWith(' '));
+        }
+    }
+
+    private static void SameVariantIncomplete() => SameVariantIncompleteAsync().GetAwaiter().GetResult();
+    private static async Task SameVariantIncompleteAsync() {
+        using Fixture fixture = new(multiJava: true);
+        var backend = fixture.Backend();
+        var imported = await backend.ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        var selected = MmcSavedSourceStore.ReadPrimary(imported.Paths!);
+        string projection = Path.Combine(fixture.VersionRoot, "fixture.json"); File.Delete(projection);
+        int checkpoints = 0;
+        var result = await backend.AdoptVariantAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8),
+            selected.Definition.InstanceId, selected.Definition.Generation, selected.Sha256) {
+                TransactionCheckpoint = (_, _) => checkpoints++
+            });
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, result.Status); Equal(0, checkpoints);
+        Equal(selected.Sha256, MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256); Equal(false, File.Exists(projection));
     }
 
     private static void AssetInputRecovery() => AssetInputRecoveryAsync().GetAwaiter().GetResult();

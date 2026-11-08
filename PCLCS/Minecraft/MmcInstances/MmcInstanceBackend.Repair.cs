@@ -53,7 +53,11 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 if (compiled.JavaPolicy.Kind != MmcJavaPolicyKind.DeclaredCandidates || !compiled.JavaPolicy.Allows(request.Environment.JavaMajor))
                     throw new IOException("Variant adoption requires an explicit compatible Java declaration in the preserved package.");
                 if (sameVariant) {
-                    var existing = await PrepareLaunchAsync(new(paths.InstanceRoot, request.Environment, definition.InstanceId, definition.Generation), cancellationToken, progress).ConfigureAwait(false);
+                    // An already-adopted variant is a read-only validation. Missing inputs need a
+                    // separate repair; retain the caller's exact selection across this handoff.
+                    var existing = await PrepareLaunchAsync(new(paths.InstanceRoot, request.Environment, definition.InstanceId, definition.Generation, RepairIncomplete: false) {
+                        ExpectedPrimarySha256 = request.ExpectedPrimarySha256
+                    }, cancellationToken, progress).ConfigureAwait(false);
                     return new(existing.Status, existing.Snapshot?.Definition, existing.Snapshot?.BoundPlan, existing.Snapshot?.Paths,
                         existing.Snapshot?.PackageConfiguration, paths.InstanceRoot, existing.Diagnostics, existing.Failure);
                 }

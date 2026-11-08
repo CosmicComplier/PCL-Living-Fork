@@ -13,10 +13,13 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
         try {
             ArgumentNullException.ThrowIfNull(request);
             if (request.ExpectedInstanceId == Guid.Empty || request.ExpectedGeneration < 1) throw new ArgumentException("A fixed instance identity and valid optional generation are required.");
+            if (request.ExpectedPrimarySha256 is { } selectedHash && !MmcDurableFiles.IsHash(selectedHash))
+                throw new ArgumentException("The selected definition digest must be a SHA256 value.");
             var firstPaths = MmcInstancePaths.Resolve(request.VersionRoot);
             var primary = MmcSavedSourceStore.ReadPrimary(firstPaths);
-            if (primary.Definition.InstanceId != request.ExpectedInstanceId || request.ExpectedGeneration is { } generation && primary.Definition.Generation != generation)
-                throw new IOException("The selected instance identity or generation changed before launch preparation.");
+            if (primary.Definition.InstanceId != request.ExpectedInstanceId || request.ExpectedGeneration is { } generation && primary.Definition.Generation != generation ||
+                request.ExpectedPrimarySha256 is { } expectedHash && primary.Sha256 != expectedHash)
+                throw new IOException("The selected instance identity, generation or definition changed before launch preparation.");
             for (int attempt = 0; attempt < 2; attempt++) {
                 var definition = primary.Definition;
                 var paths = MmcInstancePaths.Resolve(request.VersionRoot, definition.Layout.GameRootLeaf);
