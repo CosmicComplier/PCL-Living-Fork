@@ -15,6 +15,8 @@ internal static class MmcConfigurationTests {
         yield return ("MMC configuration rollback invalidates snapshots without consuming pending preferences", RollbackEpoch);
         yield return ("MMC configuration admission reload and paused inflight writer follow one lock order", LockOrder);
         yield return ("MMC configuration typed values preserve Set and repeated Read reference identity", TypedIdentity);
+        yield return ("MMC INI preserves ordinary synchronous writes and queues busy or managed writes with structural fencing", IniAdmission);
+        yield return ("MMC INI pending queue survives without an instance provider and flushes at owned shutdown", IniWithoutProvider);
     }
     internal static bool TryRunChild(string[] args, out int exitCode) {
         exitCode = 0;
@@ -127,6 +129,50 @@ internal static class MmcConfigurationTests {
         provider.Save(); List<string>? read = provider.Read<List<string>>("typed", null, false);
         Equal(true, ReferenceEquals(read, provider.Read<List<string>>("typed", null, false)));
         provider.DiscardCache(); Equal(false, ReferenceEquals(read, provider.Read<List<string>>("typed", null, false)));
+    }
+    private static void IniAdmission() {
+        using Fixture fixture = new(); var state = MmcConfigurationCoordinator.StateFor(fixture.Root); int invalidations = 0;
+        using var provider = new InstanceConfigProvider(fixture.Root, () => { Equal(false, Monitor.IsEntered(state.Sync)); Interlocked.Increment(ref invalidations); });
+        Equal(0, invalidations);
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, string>>();
+        string file = Path.Combine(fixture.Root, "PCL", "Setup.ini"); File.WriteAllText(file, "Unknown:kept\r\n");
+        LegacyBaseOperations.WriteIni(file, "CustomInfo", "ordinary-sync", cache);
+        Equal("ordinary-sync", LegacyBaseOperations.ParseIni(File.ReadAllText(file))["CustomInfo"]);
+        using (var gate = fixture.Lease()) {
+            Task queued = Task.Run(() => LegacyBaseOperations.WriteIni(file, "CustomInfo", "busy-queued", cache));
+            Equal(true, queued.Wait(300));
+            Equal("busy-queued", LegacyBaseOperations.ReadIni(file, "CustomInfo", "", cache));
+            Equal("ordinary-sync", LegacyBaseOperations.ParseIni(File.ReadAllText(file))["CustomInfo"]);
+        }
+        provider.Save(); Equal("busy-queued", LegacyBaseOperations.ParseIni(File.ReadAllText(file))["CustomInfo"]);
+        using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
+        using (var lease = fixture.Lease())
+        using (var scope = quiet.OpenStructuralWrite(lease, 0)) {
+            scope.SetConfig("MinecraftInstallManifest", new JObject { ["pcllfManagement"] = fixture.Hint(1) });
+            scope.SetIni("VersionArgumentIndieV2", "True"); scope.SetIni("CustomInfo", "pack");
+            Equal(MmcTransactionOutcome.Committed, scope.Execute(fixture.Publish(0)).Outcome);
+        }
+        LegacyBaseOperations.WriteIni(file, "CustomInfo", "next-launch", cache);
+        LegacyBaseOperations.WriteIni(file, "VersionArgumentIndieV2", "False", cache);
+        try { provider.Save(); } catch (IOException) { }
+        var saved = LegacyBaseOperations.ParseIni(File.ReadAllText(file));
+        Equal("True", saved["VersionArgumentIndieV2"]); Equal("next-launch", saved["CustomInfo"]); Equal("kept", saved["Unknown"]);
+        bool rejected = false;
+        try { LegacyBaseOperations.UpdateIniValue(file, "VersionArgumentIndieV2", _ => "False", cache); } catch (IOException) { rejected = true; }
+        Equal(true, rejected);
+        Equal(true, invalidations > 0);
+    }
+    private static void IniWithoutProvider() {
+        using Fixture fixture = new();
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, string>>();
+        string file = Path.Combine(fixture.Root, "PCL", "Setup.ini"); File.WriteAllText(file, "Unknown:keep\r\n");
+        using (var gate = fixture.Lease()) {
+            Task queued = Task.Run(() => LegacyBaseOperations.WriteIni(file, "CustomInfo", "providerless", cache));
+            Equal(true, queued.Wait(300));
+            GC.Collect(); GC.WaitForPendingFinalizers();
+        }
+        InstanceConfigProviders.SaveAll();
+        var saved = LegacyBaseOperations.ParseIni(File.ReadAllText(file)); Equal("providerless", saved["CustomInfo"]); Equal("keep", saved["Unknown"]);
     }
     private static Process StartChild(string mode, Fixture fixture) {
         string executable = Environment.ProcessPath!; ProcessStartInfo start = new(executable) { UseShellExecute = false, CreateNoWindow = true };

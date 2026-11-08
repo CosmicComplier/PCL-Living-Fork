@@ -23,13 +23,18 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
     private sealed record TypedValue(MmcConfigValueVersion Version, object? Value);
     private readonly ConcurrentDictionary<string, TypedValue> typedValues = new(StringComparer.Ordinal);
     private readonly MmcConfigurationState state;
+    private Action? cacheInvalidator;
+    private readonly IDisposable? cacheRegistration;
     private bool disposed;
     public string VersionRoot => state.Root;
     public long Epoch => state.Epoch;
     public Exception? LastSaveFailure => state.LastSaveFailure;
-    public InstanceConfigProvider(string versionRoot) {
+    /// <param name="invalidatePreferenceCache">Optional data-only callback: only clear thread-safe value caches; never UI, Settings.Get/Set, disk I/O or synchronous dispatch. Not called during construction.</param>
+    public InstanceConfigProvider(string versionRoot, Action? invalidatePreferenceCache = null) {
         state = MmcConfigurationCoordinator.StateFor(versionRoot);
         lock (state.Sync) state.ProviderCount++;
+        cacheInvalidator = invalidatePreferenceCache;
+        if (cacheInvalidator is not null) cacheRegistration = state.RegisterInvalidator(cacheInvalidator);
         InstanceConfigProviders.Register(this);
     }
     public void Set<T>(string key, T? value, bool encrypted) {
@@ -63,6 +68,7 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
         lock (state.Sync) { if (disposed) return; disposed = true; }
         try { state.Flush(CancellationToken.None); }
         catch { lock (state.Sync) disposed = false; throw; }
+        cacheRegistration?.Dispose(); cacheInvalidator = null;
         lock (state.Sync) {
             state.ProviderCount--;
             if (state.ProviderCount == 0) state.Timer.Change(Timeout.Infinite, Timeout.Infinite);
@@ -75,6 +81,7 @@ public static class InstanceConfigProviders {
     internal static void Register(InstanceConfigProvider provider) => providers.Add(new(provider));
     public static void SaveAll() {
         List<Exception> errors = [];
+        try { MmcConfigurationCoordinator.FlushPending(); } catch (Exception error) { errors.Add(error); }
         foreach (var weak in providers)
             if (weak.TryGetTarget(out var provider)) {
                 try { provider.Save(); } catch (ObjectDisposedException) { } catch (Exception error) { errors.Add(error); }
@@ -83,12 +90,13 @@ public static class InstanceConfigProviders {
     }
     /// <summary>Fixture/owned-root shutdown hook; no provider under an unrelated root is flushed or disposed.</summary>
     public static void FlushAndDisposeWithin(string ownedRoot) {
-        string prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(ownedRoot)) + Path.DirectorySeparatorChar;
+        string prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(ownedRoot));
         List<Exception> errors = [];
         foreach (var weak in providers) {
-            if (!weak.TryGetTarget(out var provider) || !provider.VersionRoot.StartsWith(prefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) continue;
+            if (!weak.TryGetTarget(out var provider) || !MmcConfigurationCoordinator.Within(prefix, provider.VersionRoot)) continue;
             try { provider.Dispose(); } catch (Exception error) { errors.Add(error); }
         }
+        try { MmcConfigurationCoordinator.FlushPending(prefix); } catch (Exception error) { errors.Add(error); }
         if (errors.Count != 0) throw new AggregateException("独立目录的实例配置收尾失败。", errors);
     }
 }

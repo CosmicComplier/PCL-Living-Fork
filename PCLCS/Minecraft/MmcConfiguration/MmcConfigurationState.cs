@@ -10,7 +10,7 @@ namespace PCLCS;
 // Original LF host implementation; repository LICENCE applies.
 internal sealed record MmcConfigPatch(long Sequence, JToken? Value, bool Remove);
 internal readonly record struct MmcConfigValueVersion(long Epoch, long PatchSequence);
-internal sealed class MmcConfigurationState {
+internal sealed partial class MmcConfigurationState {
     internal readonly string Root;
     internal readonly object Sync = new();
     internal readonly SemaphoreSlim Writer = new(1, 1);
@@ -22,13 +22,21 @@ internal sealed class MmcConfigurationState {
     internal int PauseCount, ProviderCount, Inflight;
     internal long Epoch;
     internal Exception? LastSaveFailure;
-    private long sequence;
+    internal long sequence;
     private JObject snapshot;
     private bool readsInvalid;
 
     internal MmcConfigurationState(string root) {
         Root = root;
-        using (var lease = MmcConfigurationCoordinator.PreferenceLease(root, CancellationToken.None)) snapshot = MmcConfigurationCoordinator.ReadConfig(root);
+        snapshot = [];
+        using (var lease = MmcConfigurationCoordinator.TryPreferenceLease(root)) {
+            if (lease is null) readsInvalid = true;
+            else {
+                snapshot = MmcConfigurationCoordinator.ReadConfig(root);
+                InitializeIni();
+                KnownLegacyWritable = MmcManagementProbe.Read(root) is { State: MmcManagementState.Legacy, ObservationComplete: true };
+            }
+        }
         Timer = new(static value => {
             if (value is WeakReference<MmcConfigurationState> weak && weak.TryGetTarget(out var state)) state.AutoFlush();
         }, new WeakReference<MmcConfigurationState>(this), Timeout.Infinite, Timeout.Infinite);
@@ -37,6 +45,7 @@ internal sealed class MmcConfigurationState {
         if (string.IsNullOrEmpty(key)) throw new ArgumentException("配置键不能为空。", nameof(key));
         lock (Sync) {
             Patches[key] = new(++sequence, value?.DeepClone(), remove);
+            MmcConfigurationCoordinator.PinPending(this);
             if (PauseCount == 0) Timer.Change(500, Timeout.Infinite);
             return new(Epoch, sequence);
         }
@@ -58,17 +67,19 @@ internal sealed class MmcConfigurationState {
             snapshot = (JObject)disk.DeepClone(); readsInvalid = false; Epoch++;
             if (applied is not null) foreach (var pair in applied)
                 if (Patches.TryGetValue(pair.Key, out var current) && current.Sequence == pair.Value.Sequence) Patches.Remove(pair.Key);
+            MmcConfigurationCoordinator.UnpinIfClean(this);
         }
     }
     internal void Reject(Dictionary<string, MmcConfigPatch> rejected) {
         lock (Sync) foreach (var pair in rejected) {
             if (Patches.TryGetValue(pair.Key, out var current) && current.Sequence == pair.Value.Sequence) Patches.Remove(pair.Key);
             RejectedKeys.Add(pair.Key);
+            MmcConfigurationCoordinator.UnpinIfClean(this);
         }
     }
     internal void Flush(CancellationToken token) {
         while (true) {
-            lock (Sync) { if (Patches.Count == 0) return; }
+            lock (Sync) { if (Patches.Count == 0 && IniPatches.Count == 0) return; }
             Resumed.Wait(token);
             if (!BeginOperation()) continue;
             try {
@@ -81,10 +92,11 @@ internal sealed class MmcConfigurationState {
         }
     }
     private void FlushUnderWriter(CancellationToken token) {
-        var pending = CapturePatches(); if (pending.Count == 0) return;
+        var pending = CapturePatches(); var iniPending = CaptureIniPatches(); if (pending.Count == 0 && iniPending.Count == 0) return;
         try {
             var management = MmcManagementProbe.Read(Root);
             MmcConfigurationCoordinator.AssertPreferenceWritable(management);
+            lock (Sync) KnownLegacyWritable = management.State == MmcManagementState.Legacy;
             JObject current = MmcConfigurationCoordinator.ReadConfig(Root);
             var rejected = pending.Where(p => MmcConfigurationCoordinator.IsAlwaysReserved(p.Key) ||
                 management.State != MmcManagementState.Legacy && MmcConfigurationCoordinator.IsStructuralKey(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
@@ -93,7 +105,8 @@ internal sealed class MmcConfigurationState {
             MmcConfigurationCoordinator.Apply(current, pending);
             if (pending.Count != 0) MmcConfigurationCoordinator.WritePreferenceConfig(Root, current);
             Publish(current, pending); LastSaveFailure = null;
-            if (rejected.Count != 0) throw new IOException("拒绝过期或未授权的实例结构配置修改。请通过实例维护流程修改。");
+            bool iniRejected = FlushIni(iniPending, management);
+            if (rejected.Count != 0 || iniRejected) throw new IOException("拒绝过期或未授权的实例结构配置修改。请通过实例维护流程修改。");
         } catch (Exception error) { LastSaveFailure = error; throw; }
     }
     private void Reload() {
@@ -105,7 +118,7 @@ internal sealed class MmcConfigurationState {
         try {
             lease ??= MmcConfigurationCoordinator.PreferenceLease(Root, CancellationToken.None);
             Writer.Wait();
-            try { Publish(MmcConfigurationCoordinator.ReadConfig(Root)); }
+            try { Publish(MmcConfigurationCoordinator.ReadConfig(Root)); InitializeIni(); }
             finally { Writer.Release(); }
         } finally { lease?.Dispose(); if (registered) EndOperation(); }
     }

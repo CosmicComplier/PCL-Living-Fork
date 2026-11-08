@@ -15,7 +15,24 @@ public static class MmcConfigurationCoordinator {
     // This is only a path-gate admission identity before reading disk, never an instance identity.
     private static readonly Guid PreferenceAdmissionIdentity = new("649a06b5-2b88-4f56-9abd-139c4d39cdf9");
     private static readonly ConcurrentDictionary<string, WeakReference<MmcConfigurationState>> states = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, MmcConfigurationState> pendingStates = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     internal static Action<string, string>? OperationObserver;
+    internal static void PinPending(MmcConfigurationState state) => pendingStates[state.Root] = state;
+    internal static void UnpinIfClean(MmcConfigurationState state) {
+        if (state.Patches.Count == 0 && state.IniPatches.Count == 0)
+            ((ICollection<KeyValuePair<string, MmcConfigurationState>>)pendingStates).Remove(new(state.Root, state));
+    }
+    internal static void FlushPending(string? ownedRoot = null) {
+        string? prefix = ownedRoot is null ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(ownedRoot));
+        List<Exception> errors = [];
+        foreach (var state in pendingStates.Values) {
+            if (prefix is not null && !Within(prefix, state.Root)) continue;
+            try { state.Flush(CancellationToken.None); } catch (Exception error) { errors.Add(error); }
+        }
+        if (errors.Count != 0) throw new AggregateException("实例待写入设置尚未全部落盘。", errors);
+    }
+    internal static bool Within(string root, string path) => string.Equals(root, path, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
+        path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     private static readonly HashSet<string> structural = new(StringComparer.Ordinal) {
         "MinecraftInstallManifest", "pcllfManagement", "instanceId", "generation", "managementKind", "schemaVersion", "formatProfile", "layout",
         "sourceBundle", "artifactInventory", "artifactLocks", "installedProjection", "componentOverrides"
@@ -91,13 +108,13 @@ public sealed class MmcConfigurationQuiescence : IDisposable {
     public void Dispose() {
         if (disposed) return; disposed = true;
         lock (State.Sync) {
-            if (--State.PauseCount == 0) { State.Resumed.Set(); if (State.Patches.Count != 0) State.Timer.Change(1, Timeout.Infinite); }
+            if (--State.PauseCount == 0) { State.Resumed.Set(); if (State.Patches.Count != 0 || State.IniPatches.Count != 0) State.Timer.Change(1, Timeout.Infinite); }
         }
     }
 }
 
 /// <summary>Scoped key merge feeding the file transaction; never recursively calls public Save.</summary>
-public sealed class MmcConfigurationWriteScope : IDisposable {
+public sealed partial class MmcConfigurationWriteScope : IDisposable {
     private readonly MmcConfigurationState state;
     private readonly MmcAdmissionLease lease;
     private readonly long generation;
@@ -124,6 +141,7 @@ public sealed class MmcConfigurationWriteScope : IDisposable {
         var rejected = accepted.Where(p => MmcConfigurationCoordinator.IsStructuralKey(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         foreach (string key in rejected.Keys) accepted.Remove(key);
         state.Reject(rejected); MmcConfigurationCoordinator.Apply(config, accepted);
+        InitializeIniScope();
     }
     public void SetConfig<T>(string key, T? value) {
         ObjectDisposedException.ThrowIf(disposed, this); lease.AssertHeld(); config[key] = value is null ? JValue.CreateNull() : JToken.FromObject(value);
@@ -134,11 +152,12 @@ public sealed class MmcConfigurationWriteScope : IDisposable {
         ObjectDisposedException.ThrowIf(disposed, this); lease.AssertHeld();
         if (request.ExpectedGeneration != generation || request.InstanceId != lease.InstanceId) throw new IOException("结构设置事务与 ExpectedGeneration 不一致。");
         if (request.Mutations.Any(m => string.Equals(m.RelativePath, "PCL/config.json", StringComparison.OrdinalIgnoreCase))) throw new IOException("配置内容只能由当前设置协调作用域合成。");
+        if (request.Mutations.Any(m => string.Equals(m.RelativePath, "PCL/Setup.ini", StringComparison.OrdinalIgnoreCase))) throw new IOException("INI 设置只能由当前设置协调作用域按键合成。");
         byte[] bytes = MmcConfigurationCoordinator.ConfigBytes(config);
-        var mutations = request.Mutations.Concat([new MmcFileMutation("PCL/config.json", oldConfigHash, bytes, MmcDurableFiles.Hash(bytes))]).ToArray();
+        var mutations = request.Mutations.Concat([new MmcFileMutation("PCL/config.json", oldConfigHash, bytes, MmcDurableFiles.Hash(bytes))]).Concat(BuildIniMutation()).ToArray();
         MmcTransactionResult result = MmcFileTransactions.Execute(lease, request with { Mutations = mutations }, cancellationToken, checkpoint);
-        if (result.Outcome == MmcTransactionOutcome.Committed) state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root), accepted);
-        else if (result.Outcome == MmcTransactionOutcome.Aborted) state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root));
+        if (result.Outcome == MmcTransactionOutcome.Committed) { state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root), accepted); PublishIniScope(true); }
+        else if (result.Outcome == MmcTransactionOutcome.Aborted) { state.Publish(MmcConfigurationCoordinator.ReadConfig(state.Root)); PublishIniScope(false); }
         else state.InvalidateReads();
         return result;
     }
