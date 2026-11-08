@@ -18,14 +18,19 @@ internal static class MmcLaunchChecks {
     internal const string Group = "mmc-launch-replay";
     private const string ChildSwitch = "--mmc-launch-replay-child", Receipt = "mmc-launch-replay.done";
     private static Scope? retained;
-    internal static void Run(FixtureEnvironment environment) {
-        if (!Environment.GetCommandLineArgs().Contains(ChildSwitch, StringComparer.Ordinal)) { RunChild(); return; }
+    internal static void Run(FixtureEnvironment environment) => RunCore(environment, false);
+    internal static void RunVariants(FixtureEnvironment environment) => RunCore(environment, true);
+    private static void RunCore(FixtureEnvironment environment, bool variants) {
+        if (!Environment.GetCommandLineArgs().Contains(ChildSwitch, StringComparer.Ordinal)) { RunChild(variants ? "mmc-variant-launch" : Group); return; }
         try {
-            ModpackUpdateCleanup.VerifyIsolatedChild(); retained = new(environment);
-            retained.Run(); environment.AssertNoForbiddenIo();
+            ModpackUpdateCleanup.VerifyIsolatedChild(); retained = new(environment, variants);
+            if (variants) retained.RunVariants(); else retained.Run();
+            environment.AssertNoForbiddenIo();
             Native.Check(System.Windows.Application.Current.Windows.Count == 0, "MMC replay opened a window.");
             File.WriteAllText(Path.Combine(environment.Root, Receipt), MainHash());
-            Console.WriteLine("PASS mmc-launch-replay: actual Main executor, Java8 wrapper, exact argv/cwd, pre-storage secret/frame redaction, twice-start generation, Start/Wait cancellation, typed receipts, actual exit/pin/mutable cleanup. Self-authored JVM only; no Minecraft acceptance.");
+            Console.WriteLine(variants
+                ? "PASS mmc-variant-launch: actual Main declines without mutation, explicitly adopts Java17 once, launches twice without another generation or prompt; self-authored JVM only."
+                : "PASS mmc-launch-replay: actual Main executor, Java8 wrapper, exact argv/cwd, pre-storage secret/frame redaction, twice-start generation, Start/Wait cancellation, typed receipts, actual exit/pin/mutable cleanup. Self-authored JVM only; no Minecraft acceptance.");
             Console.Out.Flush(); Console.Error.Flush(); using ManualResetEventSlim keepGuards = new(); keepGuards.Wait();
         } catch (Exception error) {
             retained?.StopOwnedChildren();
@@ -42,7 +47,7 @@ internal static class MmcLaunchChecks {
         private readonly ConcurrentQueue<Exception> asyncErrors = new();
         private readonly ConcurrentDictionary<Guid, Process> children = new();
         private readonly ConcurrentQueue<string> diagnostics = new();
-        private readonly string root, game, version, java8, javac, control;
+        private readonly string root, game, version, java8, java17, javac, control;
         private readonly string secret = "owned-synthetic-access-" + Guid.NewGuid().ToString("N");
         private readonly MmcJavaPinStore pins;
         private ModMinecraft.McInstance instance = null!;
@@ -82,11 +87,11 @@ internal static class MmcLaunchChecks {
                 }
             }
             """;
-        internal Scope(FixtureEnvironment environment) {
+        internal Scope(FixtureEnvironment environment, bool variants = false) {
             this.environment = environment; tasks = new(environment);
             root = Path.Combine(tasks.Root, Group); game = Path.Combine(root, "minecraft"); version = Path.Combine(game, "versions", "controlled-mmc"); control = Path.Combine(root, "control");
             Directory.CreateDirectory(root); Directory.CreateDirectory(game);
-            java8 = Tool("PCLLF_MMC_TEST_JAVA8"); string java17 = Tool("PCLLF_MMC_TEST_JAVA17"); javac = Path.Combine(Path.GetDirectoryName(java17)!, "javac.exe");
+            java8 = Tool("PCLLF_MMC_TEST_JAVA8"); java17 = Tool("PCLLF_MMC_TEST_JAVA17"); javac = Path.Combine(Path.GetDirectoryName(java17)!, "javac.exe");
             Native.Check(File.Exists(javac), "PCLLF_MMC_TEST_JAVA17 must identify a JDK with javac.exe.");
             ConfigProviders.Default = new JsonConfigProvider(Path.Combine(root, "private-config.json"));
             Configs.JavaList.Set(new ConcurrentList<Java>([new(Path.GetDirectoryName(java8)!)])); Configs.JavaConfigVersion.Set(Versions.JavaConfigVersion);
@@ -96,7 +101,7 @@ internal static class MmcLaunchChecks {
                 Native.Check(children.TryAdd(id, process), "MMC executor reused a typed session identity.");
                 currentSession = id; Interlocked.Increment(ref starts);
                 Native.Check(File.Exists(Path.Combine(version, "PCL", "MmcSessions", id.ToString("N"), "Running.record")), "Process observer ran before genuine Running registration.");
-                bool blocked = false; try { using var maintenance = pins.EnterMaintenance(Path.GetDirectoryName(Path.GetDirectoryName(java8)!)!, TimeSpan.Zero); } catch (IOException) { blocked = true; }
+                bool blocked = false; try { using var maintenance = pins.EnterMaintenance(Path.GetDirectoryName(Path.GetDirectoryName(process.StartInfo.FileName)!)!, TimeSpan.Zero); } catch (IOException) { blocked = true; }
                 Native.Check(blocked, "Running Java is not protected by a genuine durable pin.");
                 if (cancelAtSpawn) plan.Cancel();
             }));
@@ -114,7 +119,10 @@ internal static class MmcLaunchChecks {
                 Add(zip, "pack/mmc-pack.json", Encoding.UTF8.GetBytes("""{"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.7.10"}]}"""));
                 Add(zip, "pack/instance.cfg", Encoding.UTF8.GetBytes("name=Controlled MMC\nOverrideMemory=true\nMinMemAlloc=128\nMaxMemAlloc=256\nOverrideWindow=true\nMinecraftWinWidth=854\nMinecraftWinHeight=480\n"));
                 string patch = $$"""{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Main","libraries":[],"mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"assetIndex":{"id":"owned","url":"{{server.Url("/index")}}","sha1":"{{Convert.ToHexStringLower(SHA1.HashData(assets))}}","size":{{assets.Length}}},"compatibleJavaMajors":[8]}""";
+                if (variants) patch = patch.Replace("\"compatibleJavaMajors\":[8]", "\"compatibleJavaMajors\":[8,17]")
+                    .Replace("\"libraries\":[]", "\"libraries\":[{\"name\":\"fixture:bootstrap:1\",\"MMC-hint\":\"local\",\"MMC-filename\":\"bootstrap.jar\"}]");
                 Add(zip, "pack/patches/net.minecraft.json", Encoding.UTF8.GetBytes(patch)); Add(zip, "pack/libraries/fixture.jar", jar);
+                if (variants) Add(zip, "pack/libraries/bootstrap.jar", jar);
                 Add(zip, "pack/minecraft/options.txt", Encoding.UTF8.GetBytes("lang:en_us\n"));
             }
             var metadata = new MmcMetadataStore(Path.Combine(game, "PCL", "MmcCache", "metadata"), new Uri(server.Url("/metadata/")), client);
@@ -139,13 +147,30 @@ internal static class MmcLaunchChecks {
             Native.Check(asyncErrors.IsEmpty, "Watcher background primitive failed: " + string.Join(";", asyncErrors));
             InstanceConfigProviders.FlushAndDisposeWithin(root); server.Dispose(); client.Dispose(); environment.AssertNoForbiddenIo();
         }
+        internal void RunVariants() {
+            Configs.JavaList.Set(new ConcurrentList<Java>([new(Path.GetDirectoryName(java8)!), new(Path.GetDirectoryName(java17)!)]));
+            MmcLaunchPreferences.SetForcedJava(instance, new Java(Path.GetDirectoryName(java17)!)); instance.Config.Save();
+            string primary = Path.Combine(version, "PCL", "InstanceDefinition.json"); byte[] original = File.ReadAllBytes(primary);
+            int confirmations = 0;
+            Native.Property(typeof(MmcLaunch), "ConfirmVariantAdoption").SetValue(null, new Func<ModMinecraft.McInstance, MmcLaunchJavaSelection, bool>((_, target) => {
+                confirmations++; Native.Check(target.RuntimeJava.Major == 17 && target.RequiresVariantAdoption, "Confirmation did not describe the actual target Java."); return false;
+            }));
+            Launch("declined", false, false, expectNoProcess: true);
+            Native.Check(confirmations == 1 && starts == 0 && original.SequenceEqual(File.ReadAllBytes(primary)), "Declining adoption changed the published instance or created a process.");
+            Native.Property(typeof(MmcLaunch), "ConfirmVariantAdoption").SetValue(null, new Func<ModMinecraft.McInstance, MmcLaunchJavaSelection, bool>((_, _) => { confirmations++; return true; }));
+            Launch("adopted17", false, false, expectedGeneration: 2);
+            Launch("existing17", false, false, expectedGeneration: 2);
+            Native.Check(confirmations == 2 && starts == 2, "Existing adopted Java prompted again or did not launch twice.");
+            Until(() => watcherThreads.All(thread => !thread.IsAlive), "variant watcher threads to exit");
+            InstanceConfigProviders.FlushAndDisposeWithin(root); server.Dispose(); client.Dispose(); environment.AssertNoForbiddenIo();
+        }
         internal void StopOwnedChildren() {
             foreach (Process process in children.Values) {
                 try { if (!process.HasExited) process.Kill(true); process.WaitForExit(5000); }
                 catch (InvalidOperationException) { }
             }
         }
-        private void Launch(string name, bool startCancel, bool waitCancel) {
+        private void Launch(string name, bool startCancel, bool waitCancel, long expectedGeneration = 1, bool expectNoProcess = false) {
             string run = control + "-" + name; cancelAtSpawn = startCancel; currentSession = Guid.Empty;
             ModLaunch.McLaunchProcess = null!; ModLaunch.McLaunchWatcher = null!;
             List<string> expected = [run, secret, "", "中文 空格", "C:\\中文 tail\\", "repeat", "repeat"];
@@ -155,6 +180,10 @@ internal static class MmcLaunchChecks {
             var operation = (LegacyLaunchOperation)Native.Static("PCL.ModLaunch", "CreateLaunchCombo", "Owned MMC replay " + name, steps)!;
             int previouslyStopped = Volatile.Read(ref stoppedNotifications);
             plan = (ModLoader.LoaderCombo<object>)operation.Source; ModLaunch.McLaunchLoaderReal = plan; ModLoader.LoaderTaskbar.Add(plan); operation.Start();
+            if (expectNoProcess) {
+                Until(() => plan.State != ModBase.LoadState.Loading, "declined variant finishes without a child");
+                Native.Check(plan.State == ModBase.LoadState.Canceled && currentSession == Guid.Empty, "Declined adoption was not canceled before process creation."); return;
+            }
             Until(() => currentSession != Guid.Empty && ModLaunch.McLaunchWatcher is not null || plan.State == ModBase.LoadState.Failed, "actual Main MMC child and watcher");
             if (plan.State == ModBase.LoadState.Failed) throw new IOException("MMC executor failed: " + plan.Error);
             Process child = children[currentSession]; Guid id = currentSession;
@@ -182,11 +211,11 @@ internal static class MmcLaunchChecks {
             string history=Path.Combine(version,"PCL","MmcSessionHistory",id.ToString("N"));
             Native.Check(File.Exists(Path.Combine(history,"Launching.record")) && File.Exists(Path.Combine(history,"Running.record")) && File.Exists(Path.Combine(history,"Exited.record")),"Confirmed exit did not archive all typed session records.");
             var receipt=ReadRecord<MmcSessionReceipt>(Path.Combine(history,"Launching.record")); var registration=ReadRecord<MmcSessionProcessRegistration>(Path.Combine(history,"Running.record"));
-            Native.Check(receipt.SessionId==id && registration.SessionId==id && registration.ProcessId==child.Id && receipt.DefinitionGeneration==1,"Runtime/session/process identities drifted.");
+            Native.Check(receipt.SessionId==id && registration.SessionId==id && registration.ProcessId==child.Id && receipt.DefinitionGeneration==expectedGeneration,"Runtime/session/process identities drifted.");
             Native.Check(!Directory.Exists(Path.Combine(version,"PCL","MmcRuntime","sessions",id.ToString("N"))),"Actual exit left a live mutable native/temp tree.");
             Native.Check(!Directory.EnumerateFiles(Path.Combine(root,"java-pins"),"*.json",SearchOption.AllDirectories).Any(),"Verified exit retained an active durable Java pin.");
-            using (pins.EnterMaintenance(Path.GetDirectoryName(Path.GetDirectoryName(java8)!)!,TimeSpan.Zero)) { }
-            Native.Check(MmcInstanceInspector.Read(version).Definition!.Generation==1,"Launch altered the adopted generation.");
+            using (pins.EnterMaintenance(Path.GetDirectoryName(Path.GetDirectoryName(child.StartInfo.FileName)!)!,TimeSpan.Zero)) { }
+            Native.Check(MmcInstanceInspector.Read(version).Definition!.Generation==expectedGeneration,"Launch altered the adopted generation.");
         }
         private void InstallWatcherBoundaries() {
             var host=(WatcherHost)Native.Field(typeof(ModWatcher),"Host").GetValue(null)!;
@@ -230,7 +259,7 @@ internal static class MmcLaunchChecks {
     private static void Add(ZipArchive zip,string path,byte[] value){using var output=zip.CreateEntry(path).Open();output.Write(value);}
     private static T ReadRecord<T>(string path){byte[] bytes=File.ReadAllBytes(path);int first=Array.IndexOf(bytes,(byte)'\n'),second=Array.IndexOf(bytes,(byte)'\n',first+1);Native.Check(first>0&&second>first,"Owned session record header invalid.");byte[] content=bytes[(second+1)..];Native.Check(Encoding.ASCII.GetString(bytes[(first+1)..second])==Convert.ToHexStringLower(SHA256.HashData(content)),"Owned session record digest invalid.");return System.Text.Json.JsonSerializer.Deserialize<T>(content)!;}
     private static string MainHash()=>Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Native.Main.Location)));
-    private static void RunChild() {
+    private static void RunChild(string group) {
         ModpackUpdateCleanup.VerifyIsolatedChild();
         string root = Path.Combine(Path.GetTempPath(), "PclNativeFacade-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root); Program.ValidateRoot(root);
@@ -241,7 +270,7 @@ internal static class MmcLaunchChecks {
             var start = new ProcessStartInfo(Path.Combine(output, Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().Location) + ".exe")) {
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = root
             };
-            foreach (string arg in new[] { "--groups", Group, ChildSwitch, "--isolated", "--fixture", root }) start.ArgumentList.Add(arg);
+            foreach (string arg in new[] { "--groups", group, ChildSwitch, "--isolated", "--fixture", root }) start.ArgumentList.Add(arg);
             child = Process.Start(start) ?? throw new IOException("Owned replay child did not start.");
             stdout = child.StandardOutput.ReadToEndAsync(); stderr = child.StandardError.ReadToEndAsync();
             string receipt = Path.Combine(root, Receipt); var timer = Stopwatch.StartNew();

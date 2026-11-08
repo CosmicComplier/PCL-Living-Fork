@@ -26,6 +26,7 @@ internal static class Program
         ["backup-resources"] = BackupResourceChecks.Run,
         ["instance-clone"] = CloneNativeChecks.Run,
         ["modpack-update"] = ModpackUpdateChecks.Run,
+        ["modpack-update-origins"] = ModpackUpdateChecks.RunOrigins,
         ["environment-history"] = EnvironmentHistoryChecks.Run,
         ["local-features"] = LocalFeatureChecks.Run,
         ["launch-dependencies"] = LaunchDependencyChecks.Run,
@@ -54,6 +55,7 @@ internal static class Program
     // Requires explicit locally installed JDKs; keep these out of the normal CI/default registry.
     private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
         ["mmc-launch-replay"] = MmcLaunchChecks.Run,
+        ["mmc-variant-launch"] = MmcLaunchChecks.RunVariants,
         ["mmc-launch-java"] = environment => {
             foreach (var check in MmcLaunchJavaChecks.Cases()) { check.Run(); Console.WriteLine("PASS " + check.Name); }
             environment.AssertNoForbiddenIo();
