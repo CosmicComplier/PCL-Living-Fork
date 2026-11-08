@@ -73,7 +73,27 @@ public sealed partial class MmcOwnedImportReservation {
             // Both absolute roots are strict children of this same verified versions parent. This is
             // an atomic no-overwrite sibling rename, not a recursive cleanup of player directories.
             if (Path.GetDirectoryName(TemporaryRoot) != Path.GetDirectoryName(FinalRoot)) throw new IOException("Import publication must stay under its reserved parent.");
-            Directory.Move(TemporaryRoot, FinalRoot); VerifyMarker(FinalRoot);
+            for (int attempt = 0; ; attempt++) {
+                lock (quiet.State.Sync) {
+                    if (quiet.State.PauseCount == 0 || quiet.State.Inflight != 0) throw new IOException("Import publication requires drained configuration writers.");
+                }
+                VerifyMarker(TemporaryRoot);
+                MmcFileTransactions.AssertNoPending(ownGate); MmcSessions.AssertNoActive(ownGate);
+                MmcInstancePaths.EnsureNoLinks(TemporaryRoot); MmcInstancePaths.EnsureNoLinks(FinalRoot);
+                if (MmcInstancePaths.Attributes(FinalRoot) is not null) throw new IOException("The final name was claimed while publication was waiting; preserving both roots.");
+                if (MmcSavedSourceStore.ReadPrimary(paths).Sha256 != primary.Sha256) throw new IOException("Private import authority changed while publication was waiting.");
+                if (attempt != 0) VerifyInitialPayload(paths, primary.Definition, progress);
+                try { Directory.Move(TemporaryRoot, FinalRoot); break; }
+                catch (Exception error) when (OperatingSystem.IsWindows() && attempt < 3 &&
+                    error is IOException or UnauthorizedAccessException && (error.HResult & 0xffff) is 5 or 32 or 33) {
+                    // A short-lived reader can deny rename even after our own producers drained.
+                    // Keep both gates/ownership; retry only this no-overwrite move and revalidate
+                    // its exact authority and payload before every subsequent attempt.
+                    progress?.Report(new("publication-sharing-wait"));
+                    Thread.Sleep(100 * (attempt + 1));
+                }
+            }
+            VerifyMarker(FinalRoot);
             File.Delete(Path.Combine(FinalRoot, ".pclignore")); File.Delete(Path.Combine(FinalRoot, "PCL", "MmcImportPending.json"));
             return MmcInstancePaths.Resolve(FinalRoot, gameRootLeaf);
         } finally { for (int i = gates.Count - 1; i >= 0; i--) gates[i].Dispose(); }

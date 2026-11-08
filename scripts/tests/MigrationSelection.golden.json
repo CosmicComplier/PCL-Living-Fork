@@ -154,7 +154,8 @@
         "mmc-clone",
         "mmc-lifecycle",
         "mmc-history",
-        "mmc-definition-change"
+        "mmc-definition-change",
+        "mmc-import-publication"
       ],
       "windows_scripts": [],
       "world_checks": false,
@@ -284,7 +285,7 @@
     },
     "mmc-backend-tests": {
       "full": false, "product_build": false, "migration_run": true,
-      "groups": ["mmc-backend", "mmc-variants"], "windows_scripts": [],
+      "groups": ["mmc-backend", "mmc-variants", "mmc-import-publication"], "windows_scripts": [],
       "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
     },
     "mmc-clone-tests": {
@@ -361,7 +362,8 @@
         "mmc-clone",
         "mmc-lifecycle",
         "mmc-history",
-        "mmc-definition-change"
+        "mmc-definition-change",
+        "mmc-import-publication"
       ],
       "windows_scripts": [
         "Test-Release",

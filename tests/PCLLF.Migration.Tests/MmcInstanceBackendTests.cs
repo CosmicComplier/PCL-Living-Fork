@@ -8,6 +8,40 @@ using PCLCS;
 using PCLLF.MMCC.Core;
 
 internal static class MmcInstanceBackendTests {
+    internal static IEnumerable<(string Name, Action Run)> PublicationCases() {
+        yield return ("MMC import publication waits for a transient reader and retains its exact private identity", () => PublicationReader("release"));
+        yield return ("MMC import publication retry preserves a newly claimed destination", () => PublicationReader("claimed"));
+        yield return ("MMC import publication retry refuses changed primary bytes", () => PublicationReader("changed"));
+        yield return ("MMC import publication leaves a persistently locked private root recoverable", () => PublicationReader("held"));
+    }
+    private static void PublicationReader(string mode) {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This test requires actual Windows directory sharing behavior.");
+        using Fixture fixture = new(); FileStream? reader = null; string? privateRoot = null; int waits = 0;
+        try {
+            var result = fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)),
+                progress: new BackendProgress(value => {
+                    if (value.Phase == "private-payload-verify" && value.CompletedBytes == value.TotalBytes && privateRoot is null) {
+                        privateRoot = Directory.EnumerateDirectories(Path.GetDirectoryName(fixture.VersionRoot)!, ".pcllf-mmc-import-*").Single();
+                        reader = new FileStream(Path.Combine(privateRoot, "minecraft", "config", "example.cfg"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                    }
+                    if (value.Phase == "publication-sharing-wait" && waits++ == 0) {
+                        if (mode != "held") { reader!.Dispose(); reader = null; }
+                        if (mode == "claimed") { Directory.CreateDirectory(fixture.VersionRoot); File.WriteAllText(Path.Combine(fixture.VersionRoot, "foreign.txt"), "keep foreign destination"); }
+                        if (mode == "changed") File.AppendAllText(Path.Combine(privateRoot!, "PCL", "InstanceDefinition.json"), " ");
+                    }
+                })).GetAwaiter().GetResult();
+            if (mode == "release") {
+                if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception("Publication failed with a temporary reader: " + result.Failure);
+                Equal(true, waits >= 1); Equal(false, Directory.Exists(privateRoot)); Equal("player config", File.ReadAllText(Path.Combine(fixture.VersionRoot, "minecraft", "config", "example.cfg")));
+                Equal(result.Definition!.InstanceId, MmcSavedSourceStore.ReadPrimary(result.Paths!).Definition.InstanceId);
+            } else {
+                Equal(MmcInstanceBackendStatus.NeedsRecovery, result.Status); Equal(true, waits >= 1); Equal(true, Directory.Exists(privateRoot));
+                Equal(true, File.Exists(Path.Combine(privateRoot!, "PCL", "MmcImportPending.json")));
+                if (mode == "claimed") Equal("keep foreign destination", File.ReadAllText(Path.Combine(fixture.VersionRoot, "foreign.txt")));
+                else { Equal(false, Directory.Exists(fixture.VersionRoot)); if (mode == "changed") Equal(true, File.ReadAllText(Path.Combine(privateRoot!, "PCL", "InstanceDefinition.json")).EndsWith(' ')); }
+            }
+        } finally { reader?.Dispose(); }
+    }
     internal static IEnumerable<(string Name, Action Run)> VariantCases() {
         yield return ("MMC explicitly adopts a declared Java variant offline and retains adopted bytes and player data", AdoptJavaVariant);
         yield return ("MMC variant adoption rejects stale authority, undeclared Java and predecision cancellation", VariantRefusals);
