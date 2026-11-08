@@ -127,8 +127,7 @@ internal static class MmcGtnhAcceptance {
         private readonly ConcurrentBag<Thread> networkWorkers = new();
         private readonly Java[] installed;
         private readonly object progressGate = new();
-        private readonly Dictionary<string, long> lastBytes = new(StringComparer.Ordinal);
-        private DateTime lastReport = DateTime.MinValue;
+        private readonly Dictionary<string, (long Completed, long Total, DateTime Reported)> progressByPhase = new(StringComparer.Ordinal);
         private MmcInstanceBackendResult? result;
         private ModLoader.LoaderCombo<string>? loader;
         private string packageDigest = "";
@@ -216,9 +215,13 @@ internal static class MmcGtnhAcceptance {
         }
         private void Report(MmcInstanceBackendProgress value) {
             lock (progressGate) {
-                lastBytes.TryGetValue(value.Phase, out long before);
-                if (value.CompletedBytes - before < 16L * 1024 * 1024 && DateTime.UtcNow - lastReport < TimeSpan.FromSeconds(2)) return;
-                lastBytes[value.Phase] = value.CompletedBytes; lastReport = DateTime.UtcNow;
+                DateTime now = DateTime.UtcNow;
+                if (progressByPhase.TryGetValue(value.Phase, out var before)) {
+                    // An unchanged downloader counter is not evidence of new transfer progress.
+                    if (value.CompletedBytes == before.Completed && value.TotalBytes == before.Total) return;
+                    if (value.CompletedBytes - before.Completed < 16L * 1024 * 1024 && now - before.Reported < TimeSpan.FromSeconds(2)) return;
+                }
+                progressByPhase[value.Phase] = (value.CompletedBytes, value.TotalBytes, now);
                 Console.WriteLine("BYTES " + value.Phase + " " + value.CompletedBytes + "/" + (value.TotalBytes == 0 ? "unknown" : value.TotalBytes));
             }
         }
