@@ -11,6 +11,7 @@ internal static class MmcInstanceBackendTests {
     internal static IEnumerable<(string Name, Action Run)> VariantCases() {
         yield return ("MMC explicitly adopts a declared Java variant offline and retains adopted bytes and player data", AdoptJavaVariant);
         yield return ("MMC variant adoption rejects stale authority, undeclared Java and predecision cancellation", VariantRefusals);
+        yield return ("MMC launch preparation and repair reuse adopted asset originals after every global cache is removed", AssetInputRecovery);
     }
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC import preparation measures the full archive and keeps opaque docs outside live settings", SourcePreparation);
@@ -340,6 +341,26 @@ internal static class MmcInstanceBackendTests {
         Equal(primary.Sha256, MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256);
     }
 
+    private static void AssetInputRecovery() => AssetInputRecoveryAsync().GetAwaiter().GetResult();
+    private static async Task AssetInputRecoveryAsync() {
+        using Fixture fixture = new(withAssetObject: true);
+        var imported = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        Equal(2, fixture.Downloads);
+        var asset = imported.Definition!.DerivedOutputs.Single(value => value.Kind == MmcDerivedOutputKind.AssetObject);
+        Equal("owned original asset", File.ReadAllText(imported.Paths!.ResolveRelative(MmcPathRole.Instance, asset.RecoveryObjectRelativePath!)));
+        File.Delete(fixture.Archive); Directory.Delete(fixture.CacheRoot, true);
+        var offline = fixture.Backend(offline: true);
+        var complete = await offline.PrepareLaunchAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8), imported.Definition.InstanceId, 1));
+        if (complete.Snapshot is null) throw new Exception(complete.Failure);
+        Equal(false, complete.Repaired); Equal(1L, complete.Snapshot.Definition.Generation);
+        File.Delete(imported.Paths.ResolveRelative(MmcPathRole.Instance, asset.TargetRelativePath));
+        var repaired = await offline.PrepareLaunchAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8), imported.Definition.InstanceId, 1));
+        if (repaired.Snapshot is null) throw new Exception(repaired.Failure);
+        Equal(true, repaired.Repaired); Equal(2L, repaired.Snapshot.Definition.Generation); Equal(2, fixture.Downloads);
+        Equal("owned original asset", File.ReadAllText(imported.Paths.ResolveRelative(MmcPathRole.Instance, asset.TargetRelativePath)));
+    }
+
     private sealed class Fixture : IDisposable {
         public string Scope { get; } = Path.Combine(Path.GetTempPath(), "pcllf-mmc-backend-" + Guid.NewGuid().ToString("N"));
         public string Archive => Path.Combine(Scope, "fixture.zip");
@@ -347,8 +368,11 @@ internal static class MmcInstanceBackendTests {
         public string CacheRoot => Path.Combine(Scope, "cache");
         public int Downloads;
         private readonly List<HttpClient> clients = [];
-        private static readonly byte[] AssetIndex = Encoding.UTF8.GetBytes("{\"objects\":{}}");
-        public Fixture(int tinyFiles = 0, bool multiJava = false) {
+        private static readonly byte[] AssetObject = Encoding.UTF8.GetBytes("owned original asset");
+        private readonly byte[] AssetIndex;
+        public Fixture(int tinyFiles = 0, bool multiJava = false, bool withAssetObject = false) {
+            string assetSha1 = Convert.ToHexStringLower(SHA1.HashData(AssetObject));
+            AssetIndex = Encoding.UTF8.GetBytes(withAssetObject ? "{\"objects\":{\"fixture/asset.txt\":{\"hash\":\"" + assetSha1 + "\",\"size\":" + AssetObject.Length + "}}}" : "{\"objects\":{}}");
             Directory.CreateDirectory(Scope);
             using var zip = ZipFile.Open(Archive, ZipArchiveMode.Create);
             Add(zip, "README.txt", "opaque outer documentation");
@@ -372,8 +396,11 @@ internal static class MmcInstanceBackendTests {
                 async (batch, token) => {
                     if (offline) throw new IOException("Controlled offline fixture refused a download.");
                     foreach (var item in batch) {
-                        if (!item.Urls.Contains("https://fixture.invalid/assets.json")) throw new Exception("Unexpected controlled download source.");
-                        await File.WriteAllBytesAsync(item.DownloadPath, AssetIndex, token); Downloads++;
+                        string assetHash = Convert.ToHexStringLower(SHA1.HashData(AssetObject));
+                        byte[] content = item.Urls.Contains("https://fixture.invalid/assets.json") ? AssetIndex :
+                            item.Urls.Contains("https://resources.download.minecraft.net/" + assetHash[..2] + "/" + assetHash) ? AssetObject :
+                            throw new Exception("Unexpected controlled download source.");
+                        await File.WriteAllBytesAsync(item.DownloadPath, content, token); Downloads++;
                         afterDownload?.Invoke();
                     }
                 });
