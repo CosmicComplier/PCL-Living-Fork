@@ -29,6 +29,8 @@ internal static class MmcArtifactTests {
         yield return ("MMC assets enforce metadata object and aggregate byte budgets", () => Run(AssetBudgets));
         yield return ("MMC materialization observations are measured even without declared SHA1", () => Run(ObservedDigests));
         yield return ("MMC native hot views verify trusted facts without extracting unchanged jars", () => Run(NativeHotCache));
+        yield return ("MMC prepared adapter binds actual initial native and asset observations", () => Run(BindingAdapterInitial));
+        yield return ("MMC prepared adapter repairs from published authority without losing locks", () => Run(BindingAdapterRepair));
     }
 
     private static void Run(Func<Task> action) => action().GetAwaiter().GetResult();
@@ -343,6 +345,95 @@ internal static class MmcArtifactTests {
         Equal(false, repaired.NativeCacheReused);
         Equal(true, repaired.StagedMutations.Any(x => x.TargetRelativePath.EndsWith("/natives/same.dll", StringComparison.Ordinal)));
         Equal(Hash([1, 2, 3]), repaired.NativeFiles.Single().Sha256);
+    }
+
+    private static async Task BindingAdapterInitial() {
+        using var binding = new BindingFixture(native: true, assets: true);
+        using var prepared = await new MmcArtifactMaterializer().PrepareAsync(binding.Request(), binding.Files.Access());
+        var input = MmcArtifactBindingAdapter.Create(binding.Request(), binding.Plan, prepared);
+        Equal(true, input.NativeCompletion?.Complete == true);
+        Equal(1, input.AssetIndexes.Length);
+        Equal(true, input.DerivedOutputs.Any(x => x.Kind == MmcDerivedOutputKind.NativeFile));
+        Equal(true, input.DerivedOutputs.Any(x => x.Kind == MmcDerivedOutputKind.AssetObject));
+        Equal(true, input.DerivedOutputs.Any(x => x.Kind == MmcDerivedOutputKind.AssetVirtualFile));
+        var bound = MmcPlanBinder.Bind(binding.Definition, binding.Plan, input.Facts,
+            input.ApplyTo(new(1, 1, MmcBindingIntent.InitialImport, Hash(Encoding.UTF8.GetBytes("projection")), 1)),
+            derivedOutputs: input.DerivedOutputs, assetIndexes: input.AssetIndexes);
+        if (bound.HasErrors) throw new Exception(string.Join("; ", bound.Diagnostics.Select(x => x.Code + ": " + x.Message)));
+        Equal(MmcDefinitionReadStatus.Valid, MmcDefinitionCodec.Read(MmcDefinitionCodec.Serialize(bound.Definition!)).Status);
+        Equal(true, input.Facts.All(x => x.ObservedSha1 is not null));
+    }
+
+    private static async Task BindingAdapterRepair() {
+        using var binding = new BindingFixture(native: true, assets: true);
+        MmcInstanceDefinition published;
+        ImmutableArray<MmcArtifactLock> locks;
+        using (var prepared = await new MmcArtifactMaterializer().PrepareAsync(binding.Request(), binding.Files.Access())) {
+            locks = prepared.AdoptedLocks;
+            var inputs = MmcArtifactBindingAdapter.Create(binding.Request(), binding.Plan, prepared);
+            var result = MmcPlanBinder.Bind(binding.Definition, binding.Plan, inputs.Facts,
+                inputs.ApplyTo(new(1, 1, MmcBindingIntent.InitialImport, Hash(Encoding.UTF8.GetBytes("projection")), 1)),
+                derivedOutputs: inputs.DerivedOutputs, assetIndexes: inputs.AssetIndexes);
+            if (result.HasErrors) throw new Exception(string.Join("; ", result.Diagnostics.Select(x => x.Code + ": " + x.Message)));
+            published = result.Definition!;
+        }
+        binding.Files.ClearSources();
+        var request = binding.Request() with { Intent = MmcArtifactIntent.RepairExisting, ExistingLocks = locks };
+        using var repaired = await new MmcArtifactMaterializer().PrepareAsync(request);
+        var input = MmcArtifactBindingAdapter.Create(request, binding.Plan, repaired);
+        var rebound = MmcPlanBinder.Bind(published, binding.Plan, input.Facts,
+            input.ApplyTo(new(1, 1, MmcBindingIntent.RepairExisting, Hash(Encoding.UTF8.GetBytes("projection")), 1)),
+            derivedOutputs: input.DerivedOutputs, assetIndexes: input.AssetIndexes, publishedBaseline: published);
+        if (rebound.HasErrors) throw new Exception(string.Join("; ", rebound.Diagnostics.Select(x => x.Code + ": " + x.Message)));
+        Equal(published.ArtifactLocks.Length, rebound.Definition!.ArtifactLocks.Length);
+        Equal(published.DerivedOutputs.Length, rebound.Definition.DerivedOutputs.Length);
+    }
+
+    private sealed class BindingFixture : IDisposable {
+        internal Fixture Files { get; } = new();
+        internal MmcCompiledProfile Plan { get; }
+        internal MmcInstanceDefinition Definition { get; }
+        internal BindingFixture(bool native = false, bool assets = false) {
+            byte[] main = [7, 8], library = [1, 2], nativeBytes = Jar(("META-INF/notice", [0]), ("fixture.dll", [3, 4]));
+            byte[] assetBytes = [4, 5, 6];
+            byte[] indexBytes = IndexJson(new Dictionary<string, byte[]> { ["sound/fixture.ogg"] = assetBytes }, virtualAssets: true);
+            object Download(byte[] bytes, string name) => new { url = "https://example.invalid/" + name, sha1 = Convert.ToHexStringLower(SHA1.HashData(bytes)), size = bytes.Length };
+            var libraries = new List<object> { new { name = "fixture:library:1", downloads = new { artifact = Download(library, "library.jar") } } };
+            if (native) libraries.Add(new {
+                name = "fixture:native:1", natives = new { windows = "natives-windows-${arch}" },
+                downloads = new { classifiers = new Dictionary<string, object> { ["natives-windows-64"] = Download(nativeBytes, "native.jar") } },
+                extract = new { exclude = new[] { "META-INF/" } }
+            });
+            var patch = new Dictionary<string, object?> {
+                ["formatVersion"] = 1, ["uid"] = "net.minecraft", ["version"] = "1", ["mainClass"] = "fixture.Main",
+                ["mainJar"] = new { name = "fixture:main:1:client", downloads = new { artifact = Download(main, "client.jar") } },
+                ["libraries"] = libraries
+            };
+            if (assets) patch["assetIndex"] = new { id = "fixture", url = "https://example.invalid/fixture.json", sha1 = Convert.ToHexStringLower(SHA1.HashData(indexBytes)), size = indexBytes.Length };
+            string manifest = "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"}]}";
+            string component = JsonSerializer.Serialize(patch);
+            var metadata = new Dictionary<string, string> { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = component };
+            var parsed = MmcPackageReader.Parse(new(metadata.Select(x => new MmcArchiveEntry(x.Key, Encoding.UTF8.GetByteCount(x.Value))).ToArray(), metadata));
+            var resolution = MmcComponentResolver.Resolve(parsed.Package!, []);
+            if (!resolution.IsComplete) throw new Exception(string.Join("; ", resolution.Diagnostics.Select(x => x.Message)));
+            var result = MmcProfileCompiler.Compile(resolution.Profile!, new("windows", "x86_64", 17));
+            if (result.HasErrors) throw new Exception(string.Join("; ", result.Diagnostics.Select(x => x.Message)));
+            Plan = result.Profile!;
+            foreach (var artifact in Plan.Classpath.Concat(Plan.NativeArtifacts).Concat(Plan.DownloadOnlyArtifacts).Concat(Plan.AuxiliaryArtifacts))
+                Files.Source(artifact.Key, artifact.Role switch { MmcArtifactRole.MainJar => main, MmcArtifactRole.Native => nativeBytes, MmcArtifactRole.AssetIndex => indexBytes, _ => library });
+            if (assets) Files.AssetSource(assetBytes);
+            string bundle = Hash(Encoding.UTF8.GetBytes(manifest + component)), prefix = "PCL/MmcSource/" + bundle + "/";
+            var records = new[] {
+                new MmcSourceMetadataRecord("mmc-pack.json", Hash(Encoding.UTF8.GetBytes(manifest)), prefix + "mmc-pack.json", MmcSourceRecordKind.Manifest),
+                new MmcSourceMetadataRecord("patches/net.minecraft.json", Hash(Encoding.UTF8.GetBytes(component)), prefix + "patches/net.minecraft.json",
+                    MmcSourceRecordKind.Component, "net.minecraft", "1", MmcComponentSourceKind.PackageLocal)
+            };
+            Definition = new(1, "Mmc", "prism-v1", Guid.NewGuid(), 1, new(bundle, "self-authored-binding-fixture"),
+                new("", bundle, resolution.Profile!.SourceFingerprint, records.ToImmutableArray()), new("minecraft"), [], [], []);
+        }
+        internal MmcArtifactRequest Request() => Files.Request(Plan.Classpath.Concat(Plan.NativeArtifacts).Concat(Plan.DownloadOnlyArtifacts).Concat(Plan.AuxiliaryArtifacts).ToImmutableArray())
+            with { LogicalContext = Plan.RuntimePlanFingerprint, Assets = Plan.Assets.Artifact is null ? null : Plan.Assets };
+        public void Dispose() => Files.Dispose();
     }
 
     private static byte[] IndexJson(Dictionary<string, byte[]> files, bool virtualAssets = false, bool mapToResources = false) =>
