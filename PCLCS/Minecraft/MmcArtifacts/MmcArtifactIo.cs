@@ -155,24 +155,26 @@ internal sealed class MmcArtifactIo {
         return (digest, size, digest1);
     }
 
-    internal async Task<(string Sha256, long Size)> ExtractAsync(Stream input, string target, string key,
-        long expectedSize, uint expectedCrc32, long maximum, CancellationToken token) {
+    internal async Task<(string Sha256, long Size, string Sha1)> ExtractAsync(Stream input, string target, string key,
+        long expectedSize, uint expectedCrc32, long maximum, CancellationToken token, string phase = "native-extract") {
         MmcInstancePaths.EnsureNoLinks(target); Directory(Path.GetDirectoryName(target)!);
         await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, true);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
         byte[] buffer = new byte[131072]; long size = 0; uint crc = uint.MaxValue;
         int read;
         while ((read = await input.ReadAsync(buffer, token).ConfigureAwait(false)) != 0) {
             size = checked(size + read); copied = checked(copied + read);
             if (size > maximum || size > expectedSize || copied > limits.MaxCopiedBytes) throw new IOException("Native actual output budget or declared size exceeded.");
             hash.AppendData(buffer, 0, read);
+            sha1.AppendData(buffer, 0, read);
             for (int index = 0; index < read; index++) crc = CrcTable[(crc ^ buffer[index]) & 255] ^ (crc >> 8);
             await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
-            progress?.Report(new("native-extract", key, copied));
+            progress?.Report(new(phase, key, copied));
         }
         if (size != expectedSize || ~crc != expectedCrc32) throw new IOException("Native actual output differs from its declared size or CRC32.");
         await output.FlushAsync(token).ConfigureAwait(false); output.Flush(true);
-        return (Convert.ToHexStringLower(hash.GetHashAndReset()), size);
+        return (Convert.ToHexStringLower(hash.GetHashAndReset()), size, Convert.ToHexStringLower(sha1.GetHashAndReset()));
     }
 
     private static uint[] BuildCrcTable() {

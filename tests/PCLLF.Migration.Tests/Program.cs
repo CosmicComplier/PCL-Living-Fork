@@ -12,6 +12,9 @@ internal static class Program {
 
     private static int Main(string[] args) {
         if (LegacyJavaTests.TryRunChild(args, out int javaExitCode)) return javaExitCode;
+        if (MmcTransactionTests.TryRunChild(args, out int mmcTransactionExitCode)) return mmcTransactionExitCode;
+        if (MmcSessionTests.TryRunChild(args, out int mmcSessionExitCode)) return mmcSessionExitCode;
+        if (MmcConfigurationTests.TryRunChild(args, out int mmcConfigurationExitCode)) return mmcConfigurationExitCode;
         // Factories keep unselected groups from constructing or enumerating cases.
         // Canonical order matches the original all-tests runner; aliases only
         // select groups, so overlapping/repeated selectors cannot duplicate cases.
@@ -46,7 +49,14 @@ internal static class Program {
             ("legacy-java", LegacyJavaTests.Cases),
             ("foundation", LegacyFoundationTests.Cases),
             ("mmc-profile", () => MmcProfileTests.Cases()
-                .Concat(MmcManagementTests.Cases()).Concat(MmcInstancePathsTests.Cases()))
+                .Concat(MmcResolutionTests.Cases()).Concat(MmcCompilationTests.Cases())
+                .Concat(MmcManagementTests.Cases()).Concat(MmcInstancePathsTests.Cases())),
+            ("mmc-metadata", MmcMetadataTests.Cases),
+            ("mmc-transactions", () => MmcTransactionTests.Cases().Concat(MmcSessionTests.Cases())),
+            ("mmc-artifacts", MmcArtifactTests.Cases),
+            ("mmc-configuration", MmcConfigurationTests.Cases),
+            ("mmc-archive", () => MmcArchiveInspectionTests.Cases().Concat(MmcPackagePreservationTests.Cases()).Concat(MmcArchiveTests.Cases())),
+            ("mmc-definition", () => MmcDefinitionTests.Cases().Concat(MmcLaunchAuthorityTests.Cases()).Concat(MmcProjectionTests.Cases()))
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

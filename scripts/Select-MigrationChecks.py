@@ -45,7 +45,7 @@ def documentation_only(paths: list[str]) -> bool:
     return bool(paths) and all(is_documentation_path(name) for name in paths)
 
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -271,7 +271,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         elif name.startswith("PCLLF.MMCC.Core/"):
             # The pure Core is a genuine managed product dependency. Keep its
             # own rule group and the real modern Main graph in validation.
-            include(("mmc-profile",), (), build=False)
+            include(("mmc-profile", "mmc-definition"), (), build=False)
             native = True
         elif name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
             inventory = True
@@ -296,8 +296,20 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(GROUPS, (), build=False)
         elif name.startswith("tests/PCLLF.Migration.Tests/"):
             stem = leaf.removesuffix("Tests.cs")
-            if stem in {"MmcProfile", "MmcManagement", "MmcInstancePaths"}:
+            if stem in {"MmcProfile", "MmcResolution", "MmcCompilation", "MmcManagement", "MmcInstancePaths"}:
                 include(("mmc-profile",), (), build=False)
+            elif stem == "MmcMetadata":
+                include(("mmc-metadata",), (), build=False)
+            elif stem in {"MmcTransaction", "MmcSession"}:
+                include(("mmc-transactions",), (), build=False)
+            elif stem == "MmcArtifact":
+                include(("mmc-artifacts",), (), build=False)
+            elif stem == "MmcConfiguration":
+                include(("mmc-configuration",), (), build=False)
+            elif stem in {"MmcArchive", "MmcArchiveInspection", "MmcPackagePreservation"}:
+                include(("mmc-archive",), (), build=False)
+            elif stem in {"MmcDefinition", "MmcLaunchAuthority", "MmcProjection"}:
+                include(("mmc-definition",), (), build=False)
             elif stem.startswith("WorldMetadata"):
                 include(("world-metadata",), (), build=False)
             elif stem == "LocalGameData":
@@ -378,7 +390,21 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         elif name in RESOURCE_IMAGE_PATHS:
             include(RESOURCE_GROUPS, RESOURCE_IMAGE_CHECKS)
         elif name.startswith("PCLCS/Minecraft/") and leaf.endswith(".cs"):
-            if leaf.startswith(("MmcManagement", "MmcInstancePaths")):
+            if name.startswith("PCLCS/Minecraft/MmcMetadata/"):
+                include(("mmc-metadata",), (), build=False)
+            elif name.startswith("PCLCS/Minecraft/MmcTransactions/"):
+                include(("mmc-transactions",), (), build=False)
+            elif name in {"PCLCS/Minecraft/MmcArtifacts/MmcNativeArchive.cs", "PCLCS/Minecraft/MmcArtifacts/MmcArtifactIo.cs"}:
+                include(("mmc-artifacts", "mmc-archive"), (), build=False)
+            elif name.startswith("PCLCS/Minecraft/MmcArtifacts/"):
+                include(("mmc-artifacts",), (), build=False)
+            elif name.startswith("PCLCS/Minecraft/MmcConfiguration/"):
+                include(("mmc-configuration",), (), build=False)
+            elif name.startswith("PCLCS/Minecraft/MmcArchive/"):
+                include(("mmc-archive",), (), build=False)
+            elif name.startswith("PCLCS/Minecraft/MmcInstances/"):
+                include(("mmc-archive",) if leaf == "MmcPackageFileStager.cs" else ("mmc-definition",), (), build=False)
+            elif leaf.startswith(("MmcManagement", "MmcInstancePaths")):
                 include(("mmc-profile",), (), build=False)
             elif leaf.startswith("InstanceResourceOnline"):
                 include(RESOURCE_GROUPS, RESOURCE_ONLINE_CHECKS)

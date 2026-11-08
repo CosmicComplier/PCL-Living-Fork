@@ -108,9 +108,35 @@ def main() -> int:
         ("tests/PCLLF.Migration.Tests/MmcManagementTests.cs", False),
         ("tests/PCLLF.Migration.Tests/MmcInstancePathsTests.cs", False),
     ):
-        expect(cli([path]), "mmc-profile-tests", native, "MMC Core and host foundations: " + path, [path])
+        expect(cli([path]), "mmc-core-tests" if path.startswith("PCLLF.MMCC.Core/") else "mmc-profile-tests", native,
+               "MMC Core and host foundations: " + path, [path])
     expect(cli(["PCLCS/Minecraft/MmcFutureInstaller.cs"]), "complete", True,
            "future MMC mutation keeps conservative fallback", ["PCLCS/Minecraft/MmcFutureInstaller.cs"])
+    for path, scope, native in (
+        ("PCLCS/Minecraft/MmcMetadata/MmcMetadataStore.cs", "mmc-metadata-tests", True),
+        ("PCLCS/Minecraft/MmcMetadata/MmcMetadataResolution.cs", "mmc-metadata-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcMetadataTests.cs", "mmc-metadata-tests", False),
+        ("PCLCS/Minecraft/MmcTransactions/MmcFileTransactions.cs", "mmc-transaction-tests", True),
+        ("PCLCS/Minecraft/MmcTransactions/MmcSessions.cs", "mmc-transaction-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcTransactionTests.cs", "mmc-transaction-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcSessionTests.cs", "mmc-transaction-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcResolutionTests.cs", "mmc-profile-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcCompilationTests.cs", "mmc-profile-tests", False),
+        ("PCLCS/Minecraft/MmcArtifacts/MmcArtifactMaterializer.cs", "mmc-artifact-tests", True),
+        ("PCLCS/Minecraft/MmcArtifacts/MmcNativeArchive.cs", "mmc-native-source-tests", True),
+        ("PCLCS/Minecraft/MmcArtifacts/MmcArtifactIo.cs", "mmc-native-source-tests", True),
+        ("PCLCS/Minecraft/MmcConfiguration/MmcConfigurationCoordinator.cs", "mmc-configuration-tests", True),
+        ("PCLCS/Minecraft/MmcArchive/MmcArchiveSourceReader.cs", "mmc-archive-tests", True),
+        ("PCLCS/Minecraft/MmcInstances/MmcVersionProjection.cs", "mmc-definition-tests", True),
+        ("PCLCS/Minecraft/MmcInstances/MmcPackageFileStager.cs", "mmc-archive-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcArtifactTests.cs", "mmc-artifact-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcConfigurationTests.cs", "mmc-configuration-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcArchiveTests.cs", "mmc-archive-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcPackagePreservationTests.cs", "mmc-archive-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcDefinitionTests.cs", "mmc-definition-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcLaunchAuthorityTests.cs", "mmc-definition-tests", False),
+    ):
+        expect(cli([path]), scope, native, "MMC bounded stage routing: " + path, [path])
     registry_source = (repo / "tests/PCLLF.Migration.Tests/Program.cs").read_text(encoding="utf-8")
     registry_block = re.search(r'\bgroups\s*=\s*\[(.*?)\];', registry_source, re.DOTALL)
     require(registry_block is not None, "Production migration test group registration is missing.")

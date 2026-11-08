@@ -107,6 +107,12 @@
     <ProjectReference Include="../../PCLLF.MMCC.Core/PCLLF.MMCC.Core.csproj" />
     <Compile Include="../../PCLCS/Minecraft/MmcManagement*.cs" Link="Production/%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/MmcInstancePaths*.cs" Link="Production/%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcMetadata/**/*.cs" Link="Production/MmcMetadata/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcTransactions/**/*.cs" Link="Production/MmcTransactions/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcArtifacts/**/*.cs" Link="Production/MmcArtifacts/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcConfiguration/**/*.cs" Link="Production/MmcConfiguration/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcArchive/**/*.cs" Link="Production/MmcArchive/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcInstances/**/*.cs" Link="Production/MmcInstances/%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Match modern/PCLCS exactly: the .NET 10 product uses this fixed modern
          asset. The original LF DLL stays the independent CLR4 oracle input. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

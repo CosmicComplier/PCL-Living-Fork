@@ -141,7 +141,13 @@
         "validation-loaders",
         "legacy-java",
         "foundation",
-        "mmc-profile"
+        "mmc-profile",
+        "mmc-metadata",
+        "mmc-transactions",
+        "mmc-artifacts",
+        "mmc-configuration",
+        "mmc-archive",
+        "mmc-definition"
       ],
       "windows_scripts": [],
       "world_checks": false,
@@ -212,6 +218,58 @@
       "oracle": false,
       "inventory": false
     },
+    "mmc-metadata-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": ["mmc-metadata"],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "mmc-transaction-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": ["mmc-transactions"],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
+    "mmc-core-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-profile", "mmc-definition"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-artifact-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-artifacts"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-configuration-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-configuration"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-archive-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-archive"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-native-source-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-artifacts", "mmc-archive"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-definition-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-definition"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
     "no-checks": {
       "full": false,
       "product_build": false,
@@ -248,7 +306,13 @@
         "validation-loaders",
         "legacy-java",
         "foundation",
-        "mmc-profile"
+        "mmc-profile",
+        "mmc-metadata",
+        "mmc-transactions",
+        "mmc-artifacts",
+        "mmc-configuration",
+        "mmc-archive",
+        "mmc-definition"
       ],
       "windows_scripts": [
         "Test-Release",

@@ -1,6 +1,6 @@
 # MMC metadata core
 
-本目录是按 [实例兼容设计](../docs/mmc-instance-design.md) 独立编写的首个 P1 切片，使用 C# / `net10.0`。它接受宿主提供的条目描述与已解码的 UTF-8 元数据；不打开 ZIP、读取本机路径、联网、探测 Java、读取设置或账号、执行命令。没有 PCLCS、Main、WPF 或第三方包依赖。
+本目录是按 [实例兼容设计](../docs/mmc-instance-design.md) 独立编写的 P1 读取与 P2 逻辑编译核心，使用 C# / `net10.0`。它接受宿主提供的条目描述与已解码的 UTF-8 元数据；不打开 ZIP、读取本机路径、联网、探测 Java、读取设置或账号、执行命令。没有 PCLCS、Main、WPF 或第三方包依赖。
 
 调用 `MmcPackageReader.Parse(MmcPackageInput, MmcReadLimits?)`，取得不可变 `MmcParseResult`、来源摘要、原组件顺序、保留的字段、缺失元数据请求与结构化诊断。`Package != null` 仍可能伴随错误，调用者必须检查 `HasErrors`。**解析成功不表示已经形成可安装/可执行的配置。** 此版本没有安装/启动授权 API。
 
@@ -18,7 +18,9 @@ cfg 只支持明确的 scalar 子集，未宣称完整 Qt/QSettings：没有 Con
 
 活动 PreLoad / PreLaunch / Wrapper / PostExit、Env，以及尚未适配的 NativeWorkarounds / GameTime 覆盖拒绝。活动命令的旧别名 `OverrideLaunchCmd` 只在新键缺失时生效；非活动值保留。宿主继承行为仍必须由后续预览检查，不可因为源 cfg 没有命令就跳过宿主有效设置验证。
 
-尚未实现：远端元数据获取与回传续解、推荐索引选版、缺失依赖插入/自动重选、完整字段合成与 Maven 版本比较、Java 策略求值、制品/原生库物化、持久 InstanceDefinition、事务、会话、安装、启动或修复。传回的 `MissingMetadata` 是请求数据，不能仅据它为空而宣称启动链完整。实际 GTNH 实机验收继续留在后续阶段。
+`MmcComponentResolver.Resolve` 根据固定来源的元数据快照返回缺失批次，宿主取得内容后再次调用；支持推荐索引、依赖插入和有边界的自动依赖重选。`MmcProfileCompiler.Compile` 生成带来源的入口、参数、Java 策略与逻辑制品计划，保持作者顺序和本地覆盖。logging 是独立辅助制品，主 JAR 位于普通 classpath 之后，下载专用制品不混入 classpath；平台/native 与 Java 候选按显式兼容配置计算。
+
+Core 本身仍不执行远端获取、制品/原生库物化、文件事务、会话、安装、启动或修复。逻辑编译结果须由宿主校验路径、物化摘要并通过事务与会话门禁后使用，不能仅据 `MissingMetadata` 为空或编译通过宣称游戏已可运行。实际 GTNH 实机验收继续留在后续阶段。
 
 ## 机制依据与独立实现
 

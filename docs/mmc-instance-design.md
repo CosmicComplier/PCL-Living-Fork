@@ -313,7 +313,7 @@ Core 拥有 InstanceDefinition、组件、制品、计划等领域类型及其�
 | OverrideEnv / Env 及相应全局继承 | R2 的活动非空环境映射首期同样为 UnsupportedRequired；没有覆盖时按宿主既有基础进程环境执行，但不能把源中的活动自定义 Env 当描述字段忽略 |
 | OverrideConsole、ShowConsole、AutoCloseConsole、ShowConsoleOnError | 能映射的展示偏好由宿主处理；不改变组件计划。无等价的展示选项给明确差异诊断 |
 
-未来启用命令能力前，必须冻结各阶段（资料加载前/启动前/Java包装/进程退出后）、GameRoot 工作目录、INST_DIR/INST_MC_DIR 变量、子进程所有权、取消收尾、允许的派生输出及执行后重新验证规则。PreLaunch 可能改变制品，执行后不能继续沿用旧指纹；cfg WrapperCommand 与 ForgeWrapper/PCL JavaWrapper 是不同能力。此处首期拒绝活动扩展是明确范围，不表示对应功能已实现。
+未来启用命令能力前，必须冻结各阶段（资料加载前/启动前/Java包装/进程退出后）、GameRoot 工作目录、INST_DIR/INST_MC_DIR 变量、子进程所有权、取消收尾、允许的派生输出及执行后重新验证规则。PreLaunch 可能改变制品，执行后不能继续沿用旧指纹；cfg WrapperCommand 与 ForgeWrapper/PCL JavaWrapper 是不同能力。此处首期拒绝活动扩展是阶段范围，不表示整体goal排除这些后续兼容能力。
 
 ## 8. Java、Bootstrap 与 LWJGL
 
