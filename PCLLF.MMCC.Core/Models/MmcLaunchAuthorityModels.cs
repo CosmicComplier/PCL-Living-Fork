@@ -11,6 +11,7 @@ public sealed record MmcJarClassObservation(string ArtifactKey, string ArtifactS
 /// <summary>Non-sensitive host launch-chain identities; no account, path or complete command is persisted in the proof.</summary>
 public sealed record MmcHostLaunchChain(string JavaIdentitySha256, string WrapperIdentitySha256,
     string NonSensitiveArgumentFingerprint) {
+    /// <summary>Host/user JVM tokens in their actual position before the component JVM tokens.</summary>
     public ImmutableArray<string> AdditionalJvmArguments { get; init; } = [];
     public ImmutableArray<string> AdditionalRequiredClasses { get; init; } = [];
 }

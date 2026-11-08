@@ -18,6 +18,7 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC aggregate launch proof follows a bound higher-version library replacement without requiring the obsolete JAR", SupersededLibraryAuthority);
         yield return ("MMC aggregate proof independently requires raw final game tweakers and every ordered absence observation", RawGameTweakerAuthority);
         yield return ("MMC aggregate proof includes host extra required classes without weakening plan requirements", HostClassAuthority);
+        yield return ("MMC aggregate proof uses actual user-before-component JVM system-loader precedence", SystemLoaderPrecedence);
         yield return ("MMC binder preserves published baseline authority across explicit candidate drafts", PublishedAuthority);
         yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
         yield return ("MMC binder follows virtual-first asset layout without unrequested resource writes", BothAssetLayouts);
@@ -345,6 +346,20 @@ internal static class MmcLaunchAuthorityTests {
         Require(noExtra.HasAuthority&&noExtra.Proof!.ProofFingerprint!=proof.Proof!.ProofFingerprint,"Additional class facts did not affect the authority fingerprint.");
         Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,host,ClassMatrix(fixture,"fixture.Main","fixture.HostExtra")).HasAuthority,"Host classes replaced the independent plan requirements.");
         Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host()with{AdditionalRequiredClasses=Enumerable.Range(0,257).Select(index=>"fixture.TooMany"+index).ToImmutableArray()},all).HasAuthority,"Unbounded host class set was accepted.");
+    }
+    private static void SystemLoaderPrecedence() {
+        var fixture = Create(declaredJava: true, lateEntrypoint: true);
+        var bound = Good(Bind(fixture));
+        var host = Host() with { AdditionalJvmArguments = ["-Djava.system.class.loader=fixture.OverriddenUserLoader"] };
+        var proof = MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, host, ClassObservations(fixture));
+        Require(proof.HasAuthority && proof.Proof!.ClassBindings.Any(value => value.ClassName == "fixture.Loader") &&
+            !proof.Proof.ClassBindings.Any(value => value.ClassName == "fixture.OverriddenUserLoader"), "Core required a superseded user loader rather than the actual final component loader.");
+        var onlyUser = Create(declaredJava: true); var userBound = Good(Bind(onlyUser));
+        var userHost = Host() with { AdditionalJvmArguments = ["-Djava.system.class.loader=fixture.UserLoader"] };
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(userBound.Definition!, userBound.Plan!, onlyUser.Sources, userHost, ClassObservations(onlyUser)).HasAuthority,
+            "An effective user loader escaped the required class matrix.");
+        Require(MmcLaunchAuthorityEvaluator.Evaluate(userBound.Definition!, userBound.Plan!, onlyUser.Sources, userHost,
+            ClassMatrix(onlyUser, "fixture.Main", "fixture.UserLoader")).HasAuthority, "A valid effective user loader was not bound.");
     }
     private static void PublishedAuthority() {
         var fixture = Create();

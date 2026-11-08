@@ -23,7 +23,9 @@ public static class MmcLaunchAuthorityEvaluator {
             if (plan.Environment.JavaMajor < 1 || plan.JavaPolicy.Kind != MmcJavaPolicyKind.DeclaredCandidates || plan.JavaPolicy.AllowedMajors.IsEmpty || !plan.JavaPolicy.Allows(plan.Environment.JavaMajor))
                 Reject("Explicit compatible Java candidates and a compatible selected Java identity are required.");
             if (host.AdditionalJvmArguments.IsDefault || host.AdditionalRequiredClasses.IsDefault || host.AdditionalRequiredClasses.Length>MmcLaunchClassRequirements.MaximumClasses || classObservations.Count > limits.MaxArchiveEntries) Reject("Launch observation budget/shape is invalid.");
-            string[] jvm = plan.JvmArguments.Select(a => a.Value).Concat(host.AdditionalJvmArguments).ToArray();
+            // Match the runtime's actual user -> component order, including last-wins
+            // system-loader properties. A superseded user loader is not executed.
+            string[] jvm = host.AdditionalJvmArguments.Concat(plan.JvmArguments.Select(a => a.Value)).ToArray();
             if (jvm.Any(a => a is null || a.Contains('\0') || IsUnboundExecutionInput(a))) Reject("Agent, bootclasspath, module or classpath replacement inputs need a separate bound executor proof.");
             var required=MmcLaunchClassRequirements.Collect(plan.MainClass,jvm,plan.GameArguments.Select(value=>value.Value),plan.Tweakers,host.AdditionalRequiredClasses);
             var locks = definition.ArtifactLocks.ToDictionary(l => l.ArtifactKey, StringComparer.OrdinalIgnoreCase);
