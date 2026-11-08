@@ -51,6 +51,7 @@ internal static class MmcInstanceExportMetadata {
             download["sha1"]=bytes.Sha1; download["size"]=bytes.SizeBytes;
         }
         ValidateNativeGameContract(profile,current);
+        ValidateAccountTemplates(current.GameArguments.Select(argument=>argument.Value).ToArray());
         bool overlay=!prefs.ExtraGame.IsEmpty||prefs.Fullscreen;
         if(overlay) {
             // Structured tweaks remain critical Authority inputs. Do not fold them into raw args
@@ -110,12 +111,26 @@ internal static class MmcInstanceExportMetadata {
             !expected.DownloadOnlyArtifacts.Select(Artifact).SequenceEqual(actual.DownloadOnlyArtifacts.Select(Artifact))||!expected.AuxiliaryArtifacts.Select(Artifact).SequenceEqual(actual.AuxiliaryArtifacts.Select(Artifact)))
             throw new InvalidDataException("Portable MMC projection changed the effective launch contract; refusing export.");
     }
+    private static void ValidateAccountTemplates(string[] arguments) {
+        var fields=new HashSet<string>(new[]{"--username","--uuid","--accessToken","--session","--userProperties","--clientId","--xuid"},StringComparer.OrdinalIgnoreCase);
+        for(int index=0;index<arguments.Length;index++) {
+            string token=arguments[index];int separator=token.IndexOf('=');string key=separator<0?token:token[..separator];
+            if(!fields.Contains(key))continue;
+            string value=separator<0?(++index<arguments.Length?arguments[index]:""):token[(separator+1)..];
+            if(!System.Text.RegularExpressions.Regex.IsMatch(value,@"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$"))throw new InvalidDataException("Literal account/session data cannot be exported in a component game argument.");
+        }
+    }
+    private static bool CredentialQuery(string query) {
+        var privateNames=new HashSet<string>(new[]{"token","access_token","auth","key","api_key","apikey","authorization","password","signature","sig","X-Amz-Credential","X-Amz-Signature","X-Goog-Credential","X-Goog-Signature"},StringComparer.OrdinalIgnoreCase);
+        foreach(string part in query.TrimStart('?').Split('&',StringSplitOptions.RemoveEmptyEntries)) if(privateNames.Contains(Uri.UnescapeDataString(part.Split('=')[0])))return true;
+        return false;
+    }
     private static void CheckPortableMetadata(JsonNode? node,string? key=null) {
         if(node is JsonObject obj) foreach(var pair in obj) CheckPortableMetadata(pair.Value,pair.Key);
         else if(node is JsonArray array) foreach(var item in array) CheckPortableMetadata(item,key);
         else if(node is JsonValue scalar&&scalar.TryGetValue<string>(out string? text)) {
             if(key is "url" or "absoluteUrl" or "MMC-absoluteUrl") {
-                if(!Uri.TryCreate(text,UriKind.Absolute,out var uri)||uri.Scheme is not ("http" or "https")||uri.UserInfo.Length!=0||uri.Query.Length!=0)
+                if(!Uri.TryCreate(text,UriKind.Absolute,out var uri)||uri.Scheme is not ("http" or "https")||uri.UserInfo.Length!=0||CredentialQuery(uri.Query))
                     throw new InvalidDataException("A metadata URL is machine-specific or carries a query credential; it is not portable.");
             } else if(key is "minecraftArguments" or "+jvmArgs") MmcInstanceExportPreferences.PortableArguments([text]);
         }

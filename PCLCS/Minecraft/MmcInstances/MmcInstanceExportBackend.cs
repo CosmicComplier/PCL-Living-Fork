@@ -31,7 +31,7 @@ public sealed class MmcInstanceExportBackend {
             if(request.ExpectedPreviewFingerprint is not null&&request.ExpectedPreviewFingerprint!=preview.Fingerprint)throw new IOException("Export source/options/preferences changed since preview.");
             request.Checkpoint?.Invoke(MmcInstanceExportCheckpoint.SnapshotPrepared,-1);
             if(!write)return new(MmcInstanceExportStatus.Completed,Preview:preview);
-            string id=Guid.NewGuid().ToString("N");partial=Path.Combine(Path.GetDirectoryName(target)!,"."+Path.GetFileName(target)+".mmc-export-"+id+".partial");
+            string id=Guid.NewGuid().ToString("N");partial=Path.Combine(Path.GetDirectoryName(target)!,".pcllf-mmc-export-"+id+".partial");
             MmcDurableFiles.WriteNew(partial+".owner.json",JsonSerializer.SerializeToUtf8Bytes(new{Protocol="PCLLF.MmcExportWorkingFile/v1",OperationId=id,TargetFile=Path.GetFileName(target),PreviewFingerprint=preview.Fingerprint}));
             Write(snapshot,partial,request,token,progress);
             // Read the completed ZIP through the production bounded input reader. This is not
