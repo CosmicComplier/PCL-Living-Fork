@@ -17,6 +17,7 @@ internal static class MmcInstanceBackendTests {
         yield return ("MMC private payload placement binds measured files and preserves canceled or conflicting private roots", PrivatePayload);
         yield return ("MMC initial import publishes thousands of tiny files without journal body copies", BulkPayloadImport);
         yield return ("MMC initial private payload cancellation and post-decision corruption never publish a final root", BulkPayloadFailure);
+        yield return ("MMC post-decision payload verification completes publication despite cancellation", BulkPayloadPostDecisionCancel);
     }
     private static void SourcePreparation() => SourcePreparationAsync().GetAwaiter().GetResult();
     private static async Task SourcePreparationAsync() {
@@ -107,6 +108,24 @@ internal static class MmcInstanceBackendTests {
         Console.WriteLine($"INFO private import {tinyFiles + 3} payload files/{movedBytes} bytes: {elapsed.ElapsedMilliseconds} ms; journal {journal.Mutations.Length} mutations/{bodyCopies.Length} new objects; zero bulk body copies.");
     }
     private static void BulkPayloadFailure() => BulkPayloadFailureAsync().GetAwaiter().GetResult();
+    private static void BulkPayloadPostDecisionCancel() => BulkPayloadPostDecisionCancelAsync().GetAwaiter().GetResult();
+    private static async Task BulkPayloadPostDecisionCancelAsync() {
+        using Fixture fixture = new(8); using CancellationTokenSource cancel = new();
+        bool decided = false, canceledDuringVerification = false; int verified = 0;
+        var result = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)) {
+            TransactionCheckpoint = (phase, _) => { if (phase == MmcTransactionCheckpoint.CommitDecided) decided = true; }
+        }, cancel.Token, new BackendProgress(value => {
+            if (value.Phase != "private-payload-verify") return;
+            Equal(true, decided); verified++;
+            if (!canceledDuringVerification) { canceledDuringVerification = true; cancel.Cancel(); }
+        }));
+        if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(result.Failure);
+        Equal(true, canceledDuringVerification); Equal(true, cancel.IsCancellationRequested); Equal(11, verified);
+        Equal(MmcInstanceBackendStatus.Succeeded, result.Status); Equal(fixture.VersionRoot, result.WorkingRoot); Equal(true, Directory.Exists(fixture.VersionRoot));
+        Equal(false, File.Exists(Path.Combine(fixture.VersionRoot, "PCL", "MmcImportPending.json")));
+        Equal(1L, MmcSavedSourceStore.ReadPrimary(result.Paths!).Definition.Generation);
+        for (int index = 0; index < 8; index++) Equal("bulk body " + index, File.ReadAllText(Path.Combine(result.Paths!.GameRoot, "config", "bulk", index.ToString("D5") + ".cfg")));
+    }
     private static async Task BulkPayloadFailureAsync() {
         foreach (string mode in new[] { "cancel", "corrupt" }) {
             using Fixture fixture = new(32); using CancellationTokenSource cancel = new();

@@ -101,6 +101,9 @@ public sealed partial class MmcOwnedImportReservation {
     }
 
     private void VerifyInitialPayload(MmcInstancePaths paths, MmcInstanceDefinition definition, IProgress<MmcInstanceBackendProgress>? progress = null) {
+        // This runs after the single structural CommitDecided marker. Cancellation may no longer
+        // turn a completed decision into an aborted import: finish verification/publication, or
+        // report a genuine recovery error while preserving the pending private root.
         if (!payloadPlaced || payloadManifest is not { } manifest || payloadManifestHash is null || manifest.SchemaVersion != 1 ||
             manifest.InstanceId != InstanceId || manifest.PackageSha256 != packageSha256 || manifest.TemporaryRoot != TemporaryRoot ||
             manifest.FinalRoot != FinalRoot || manifest.GameRootLeaf != paths.GameRootLeaf || definition.AuthorFileBaseline?.ContentSha256 != manifest.BaselineSha256)
