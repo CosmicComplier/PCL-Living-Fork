@@ -114,8 +114,10 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
         owner.CoreFiles = new ConcurrentQueue<TFile>(MeloongCore.Extensions.EnumerableExtensions.DistinctBy(owner.CoreFiles, file => PathUtils.ForCompare(file.LocalPath).Lower()));
         lock (owner.CoreRecord.FileRemainLock)
             owner.CoreRecord.FileRemain = checked(owner.CoreRecord.FileRemain + owner.CoreFiles.Count(file => NetCode(file.State) != 5));
+        IDisposable? startWork = owner.CoreRecord.IoWork.Enter()!;
+        try {
         owner.State = LoadStateValue(1);
-        Host.RunNewThread(() =>
+        RunDownloadWorker(owner, () =>
         {
             try
             {
@@ -185,7 +187,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
                         int size = checked(baseSize + (i < remainder ? 1 : 0));
                         List<TFile> threadFiles = filesToCheck.GetRange(index, size);
                         index = checked(index + size);
-                        Host.RunNewThread(() => CheckExistingFiles(owner, threadFiles, folders), $"下载 文件复制 {owner.Uuid}/{Host.NewUuid()}", ThreadPriority.Normal);
+                        RunDownloadWorker(owner, () => CheckExistingFiles(owner, threadFiles, folders), $"下载 文件复制 {owner.Uuid}/{Host.NewUuid()}", ThreadPriority.Normal);
                     }
                 }
             }
@@ -193,7 +195,9 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
             {
                 OnDownloadFail(owner, new List<Exception> { new Exception("下载初始化失败", error) });
             }
-        }, "L/下载 " + owner.Uuid, ThreadPriority.Normal);
+        }, "L/下载 " + owner.Uuid, ThreadPriority.Normal, startWork);
+        startWork = null;
+        } finally { startWork?.Dispose(); }
     }
 
     public void CheckExistingFiles(TDownload owner, List<TFile> files, List<string> folders)
@@ -210,6 +214,8 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
 
             foreach (TFile file in files)
             {
+                using IDisposable? io = file.EnterCopyIo();
+                if (io is null) continue;
                 string? target = CheckExistingFile(owner, folders, versionFolders, file);
                 Logger.Trace(() => $"本地文件匹配：{file.LocalName} → {target ?? "无匹配"}，当前状态 {file.State}");
                 if (NetCode(file.State) >= 0)
@@ -230,7 +236,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
 
                 lock (owner.LockState)
                 {
-                    file.State = NetStateValue(0);
+                    if (!file.IoWork.IsSealed) file.State = NetStateValue(0);
                     file.IsCopy = false;
                 }
             }
@@ -243,7 +249,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
 
     public string? CheckExistingFile(TDownload owner, List<string> folders, List<string> versionFolders, TFile file)
     {
-        if (file.Check.Check(file.LocalPath)is null)
+        if ((!FileUtils.Exists(file.LocalPath) || FileUtils.GetInfo(file.LocalPath).Length <= file.MaximumSizeBytes) && file.Check.Check(file.LocalPath)is null)
             return file.LocalPath;
         if (Host.BooleanSetting("SystemDebugSkipCopy"))
             return null;
@@ -277,6 +283,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
         bool CheckCandidate(string candidate, FileChecker checker)
         {
             long length = sizes.GetOrAdd(candidate, path => FileUtils.Exists(path) ? FileUtils.GetInfo(path).Length : -1);
+            if (length > file.MaximumSizeBytes) return false;
             if (checker.ActualSize != length)
                 return false;
             return checker.Check(candidate)is null;
@@ -371,7 +378,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
             {
                 if (NetCode(file.State) != 6)
                     continue;
-                if (file.Sources.All(source => source.Ex.IsCanceled() || source.Ex is TimeoutException))
+                if (file.Sources.All(source => source.Ex is not null && (source.Ex.IsCanceled() || source.Ex is TimeoutException)))
                     continue;
                 string detail = string.Join("\r\n", file.Sources.Select(source => $"{(source.Ex is null ? "无错误信息。" : source.Ex.GetDisplay(false))}（{source.Url}）"));
                 owner.Error = new Exception("文件下载失败：" + file.LocalPath + "\r\n各下载源的错误如下：\r\n" + detail, owner.Error);

@@ -142,6 +142,17 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
     public string LocalName = null !;
     public TNetState State = (TNetState)Enum.ToObject(typeof(TNetState), -1);
     public List<Exception> Ex = new List<Exception>();
+    internal readonly LegacyNetworkIoCounter IoWork = new();
+    public int ActiveIoProducerCount => IoWork.Active;
+    /// <summary>Passive phase observation inside the transfer I/O lease; subscriber failures do not change merge policy.</summary>
+    public event Action? MergeStarting;
+    private long maximumSizeBytes = long.MaxValue;
+    /// <summary>Optional caller bound; ordinary downloads retain their existing unlimited default.</summary>
+    public long MaximumSizeBytes {
+        get => Interlocked.Read(ref maximumSizeBytes);
+        set { if (value < 0) throw new ArgumentOutOfRangeException(nameof(value)); Interlocked.Exchange(ref maximumSizeBytes, value); }
+    }
+    internal IDisposable? EnterCopyIo() { lock (LockState) return IoWork.Enter(); }
     public TThread Threads = null !;
     public long FileSize = -2;
     public bool IsUnknownSize = false;
@@ -295,6 +306,8 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
     {
         checked
         {
+            IDisposable? pendingIo = null;
+            bool pendingThreadCount = false;
             try
             {
                 long StartPosition;
@@ -413,7 +426,12 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                 }
 
                 // 开始线程
+                lock (LockState) {
+                    if (N(State) >= 4 || !Tasks.Any() || (pendingIo = IoWork.Enter()) is null) return null !;
+                    ThreadInfo.IoLease = pendingIo;
+                }
                 Host.IncrementThreadCount();
+                pendingThreadCount = true;
                 lock (LockSource)
                 {
                     if (!HasAvailableSource(false))
@@ -421,10 +439,14 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                 }
 
                 Th.Start(ThreadInfo);
+                pendingIo = null; // the started transfer releases after cleanup and Merge
+                pendingThreadCount = false;
                 return ThreadInfo;
             }
             catch (Exception ex)
             {
+                pendingIo?.Dispose();
+                if (pendingThreadCount) Host.DecrementThreadCount();
                 Fail(new Exception($"尝试开始下载线程失败（{LocalName}）", ex));
                 return null !;
             }
@@ -480,6 +502,10 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                     Logger.Trace(() => $"{LocalName}：重定向至 {Response.RequestMessage!.RequestUri!}");
                 // 文件大小校验
                 ContentLength = Response.Content.Headers.ContentLength.GetValueOrDefault(-1);
+                if (Th.IsFirstThread && ContentLength > MaximumSizeBytes) {
+                    Fail(new IOException("文件超过调用方允许的最大大小。"));
+                    goto SourceBreak;
+                }
                 if (ContentLength < 0L)
                 {
                     if (FileSize > 1L)
@@ -583,6 +609,10 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                     while (NetTaskSpeedLimitHigh > 0L && NetTaskSpeedLimitLeft <= 0L)
                         System.Threading.Thread.Sleep(16);
                     int RealDataCount = (int)(IsUnknownSize ? HttpDataCount : Math.Min(HttpDataCount, Th.DownloadUndone));
+                    if (RealDataCount > MaximumSizeBytes - Interlocked.Read(ref DownloadDone)) {
+                        Fail(new IOException("文件实际下载内容超过调用方允许的最大大小。"));
+                        goto SourceBreak;
+                    }
                     if (NetTaskSpeedLimitHigh > 0L)
                         Host.AddSpeedLimitLeft(-RealDataCount);
                     long DeltaTime = Host.Clock() - Th.LastReceiveTime;
@@ -670,6 +700,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
             }
             finally
             {
+                try {
                 // 释放资源
                 HttpRequest?.Dispose();
                 Response?.Dispose();
@@ -682,6 +713,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                 // 合并
                 if ((FileSize >= 0L && DownloadDone >= FileSize || FileSize == -1 && ReachedEnd && N(Th.State) == 5) && N(State) < 4 && N(Th.State) != 6)
                     Merge(Th);
+                } finally { Th.IoLease?.Dispose(); }
             }
         }
     }
@@ -751,14 +783,14 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
 
                         Reset();
                         lock (LockState)
-                            State = NV(0);
+                            if (!IoWork.IsSealed) State = NV(0);
                     }
                     else if (HasAvailableSource() && IsMergeFailure)
                     {
                         // 合并失败且单个源失败：继续下一个源
                         Reset();
                         lock (LockState)
-                            State = NV(0);
+                            if (!IoWork.IsSealed) State = NV(0);
                     }
                     else
                     {
@@ -825,6 +857,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
             int RetryCount = 0;
             try
             {
+                try { MergeStarting?.Invoke(); } catch (Exception observer) { Logger.Warn(observer, "下载合并阶段观察回调失败"); }
                 while (true)
                 {
                     try
@@ -971,6 +1004,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                 // 凉凉
                 Logger.Info($"{LocalName}：已失败，当前状态 {State}");
                 State = NV(6);
+                IoWork.Seal();
                 lease = DetachManagerCount();
             }
 
@@ -996,6 +1030,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                     return;
                 Logger.Info($"{LocalName}：已中断，当前状态 {State}");
                 State = NV(6);
+                IoWork.Seal();
                 lease = DetachManagerCount();
             }
 
@@ -1038,6 +1073,7 @@ public abstract class LegacyNetFile<TSource, TThread, TFile, TDownload, TManager
                 if (N(State) >= 5)
                     return;
                 State = NV(5);
+                IoWork.Seal();
                 lease = DetachManagerCount();
             }
 

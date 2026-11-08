@@ -285,7 +285,7 @@ public abstract class LegacyNetManager<TSource, TThread, TFile, TDownload, TMana
                 {
                     TFile File = inputFile;
                     TFile? OngoingFile = null;
-                    if (AllFiles.TryGetValue(File.LocalPath, out OngoingFile) && N(OngoingFile.State) < 5)
+                    if (AllFiles.TryGetValue(File.LocalPath, out OngoingFile) && N(OngoingFile.State) < 5 && !OngoingFile.IoWork.IsSealed)
                     {
                         // 该文件正在被另一个任务下载
                         Logger.Trace(() => $"{File.LocalName}：无需开始，该文件已在下载中，目标 {File.LocalPath}");
