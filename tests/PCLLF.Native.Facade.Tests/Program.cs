@@ -54,6 +54,7 @@ internal static class Program
     {
         try
         {
+            if (MmcGtnhAcceptance.TryRun(args, out int gtnhExit)) return gtnhExit;
             if (!OperatingSystem.IsWindows())
                 throw new PlatformNotSupportedException("This host requires a real Windows .NET10/WPF runtime.");
             if (args.SequenceEqual(new[] { "--list-groups" }, StringComparer.Ordinal))
