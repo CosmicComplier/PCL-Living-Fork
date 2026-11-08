@@ -106,8 +106,14 @@ public static class MmcInstanceLifecycleCatalog {
                 return Entry(MmcLifecycleCatalogState.Conflict, "实例内容与原操作记录不一致；不会替换这些内容。");
             if (!decided && (targetOwned || sourceHash is not null && sourceHash == intent.TargetPrimarySha256))
                 return Entry(MmcLifecycleCatalogState.Conflict, "移动后的内容缺少可验证的提交决定，已保留现场。");
-            if (restored) return sourceHash == intent.SourcePrimarySha256 && !targetExists
-                ? Entry(MmcLifecycleCatalogState.Completed, "已恢复到原来的版本目录。") : Entry(MmcLifecycleCatalogState.Conflict, "恢复后的实例位置或内容已变化；所有目录均已保留。");
+            if (restored) {
+                if (sourceHash != intent.SourcePrimarySha256 || targetExists)
+                    return Entry(MmcLifecycleCatalogState.Conflict, "恢复后的实例位置或内容已变化；所有目录均已保留。");
+                if (sourceOwned) return Entry(MmcLifecycleCatalogState.Incomplete, "实例已移回原位置，尚需完成恢复收尾。", recover: true);
+                if (MmcInstancePaths.Attributes(Path.Combine(intent.SourceRoot, MmcInstanceLifecycleJournal.MarkerRelative.Replace('/', Path.DirectorySeparatorChar))) is not null)
+                    return Entry(MmcLifecycleCatalogState.Conflict, "原位置存在其它操作标记，不能代为清理；内容已保留。");
+                return Entry(MmcLifecycleCatalogState.Completed, "已恢复到原来的版本目录。");
+            }
             if (sourceExists && targetExists || sourceOwned && targetOwned)
                 return Entry(MmcLifecycleCatalogState.Conflict, "原位置与目标位置同时有内容；不会覆盖任何实例。");
             if (restoreDecided) return sourceOwned || targetOwned

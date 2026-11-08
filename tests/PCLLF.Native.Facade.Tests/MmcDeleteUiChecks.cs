@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Reflection;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -16,6 +17,13 @@ namespace PCLLF.Native.Facade.Tests;
 internal static class MmcDeleteUiChecks {
     internal static void Run(FixtureEnvironment environment) => RunChecks(environment, false);
     internal static void RunAdmission(FixtureEnvironment environment) => RunChecks(environment, true);
+    internal static void RunRestoreFinalization(FixtureEnvironment environment) {
+        using FileTaskScope files = new(environment);
+        using var scope = new Scope(files);
+        scope.RestoreFinalization();
+        InstanceConfigProviders.FlushAndDisposeWithin(files.Root); environment.AssertNoForbiddenIo();
+        Console.WriteLine("PASS mmc-restore-finalization: actual locked-marker failure after durable restore completion remains actionable; foreign marker/changed primary denied; actual Main recovery clears only its marker and preserves identity/world bytes with offline launch preparation.");
+    }
     private static void RunChecks(FixtureEnvironment environment, bool admission) {
         using FileTaskScope files = new(environment);
         using var scope = new Scope(files);
@@ -196,6 +204,58 @@ internal static class MmcDeleteUiChecks {
             var fresh = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single(entry => entry.CanRestore);
             Native.Static("PCL.MmcDeleteUi", "StartCatalogAction", fresh, true); Wait(before);
             Native.Check(Current.State == ModBase.LoadState.Finished && Directory.Exists(instance.PathVersion) && !results.Single().Quarantined, "Decided recovery did not remain restorable.");
+        }
+        internal void RestoreFinalization() {
+            var instance = Import(); var source = MmcInstanceInspector.Read(instance.PathVersion); string root = source.Paths!.InstanceRoot;
+            string world = Path.Combine(root, "minecraft", "saves", "player-world", "level.dat");
+            string worldSha = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(world)));
+            var backend = new MmcInstanceLifecycleBackend();
+            var deleted = backend.DeleteAsync(new(root, source.Definition!.InstanceId, source.Definition.Generation, source.PrimarySha256!)).GetAwaiter().GetResult();
+            Native.Check(deleted.Status == MmcInstanceBackendStatus.Succeeded && deleted.Quarantined, "Restore-finalization prerequisite deletion failed.");
+            string marker = Path.Combine(root, "PCL", "MmcLifecyclePending.json"); FileStream? lockedMarker = null;
+            MmcInstanceLifecycleResult restored;
+            try {
+                restored = backend.RestoreDeletedAsync(deleted.OperationDirectory!, checkpoint: (phase, _) => {
+                    if (phase == MmcLifecycleCheckpoint.DirectoryMoved) lockedMarker = new(marker, FileMode.Open, FileAccess.Read, FileShare.Read);
+                }).GetAwaiter().GetResult();
+            } finally { lockedMarker?.Dispose(); }
+            Native.Check(restored.Status == MmcInstanceBackendStatus.NeedsRecovery && File.Exists(Path.Combine(deleted.OperationDirectory!, "restored.record")) && File.Exists(marker),
+                "The real file lock did not interrupt exactly after CompleteRestore and before ClearPending.");
+            Native.Check(MmcManagementProbe.Read(root).State == MmcManagementState.PendingTransaction, "A residue marker stopped blocking launch before recovery.");
+            var preview = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single();
+            Native.Check(preview.State == MmcLifecycleCatalogState.Incomplete && preview.CanRecover && !preview.CanRestore && preview.InstanceId == source.Definition.InstanceId,
+                "Completed restoration with its exact owned residue lost the UI recovery action.");
+            byte[] markerBytes = File.ReadAllBytes(marker); File.WriteAllText(marker, "{foreign-marker}");
+            var foreign = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single();
+            Native.Check(foreign.State == MmcLifecycleCatalogState.Conflict && !foreign.CanRecover && !foreign.CanRestore, "Foreign residue acquired recovery authority.");
+            File.WriteAllBytes(marker, markerBytes);
+            string primaryPath = Path.Combine(root, "PCL", "InstanceDefinition.json"); byte[] primaryBytes = File.ReadAllBytes(primaryPath); File.AppendAllText(primaryPath, " ");
+            var changed = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single();
+            Native.Check(changed.State == MmcLifecycleCatalogState.Conflict && !changed.CanRecover && !changed.CanRestore, "Changed primary bytes acquired restored-marker recovery authority.");
+            var foreignDefinition = source.Definition with { InstanceId = Guid.NewGuid() };
+            foreignDefinition = foreignDefinition with { InstalledProjection = foreignDefinition.InstalledProjection! with {
+                BoundFingerprint = PCLLF.MMCC.Core.MmcDefinitionCodec.ComputeBoundFingerprint(foreignDefinition)
+            } };
+            File.WriteAllText(primaryPath, PCLLF.MMCC.Core.MmcDefinitionCodec.Serialize(foreignDefinition), new UTF8Encoding(false));
+            var differentIdentity = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single();
+            Native.Check(!differentIdentity.CanRecover && !differentIdentity.CanRestore, "A different valid primary identity acquired restored-marker recovery authority.");
+            File.WriteAllBytes(primaryPath, primaryBytes);
+            int before = tasks.Count; Native.Static("PCL.MmcDeleteUi", "StartCatalogAction", preview, false); Wait(before);
+            var current = MmcInstanceInspector.Read(root);
+            Native.Check(Current.State == ModBase.LoadState.Finished && results.Single().Status == MmcInstanceBackendStatus.Succeeded && !File.Exists(marker) &&
+                current.IsConsistent && current.Definition!.InstanceId == source.Definition.InstanceId && current.Definition.Generation == source.Definition.Generation && current.PrimarySha256 == source.PrimarySha256 &&
+                Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(world))) == worldSha, "Actual Main finalization changed source identity/world bytes or retained its marker.");
+            var completed = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single();
+            Native.Check(completed.State == MmcLifecycleCatalogState.Completed && !completed.CanRecover && !completed.CanRestore, "Clean restoration remained pending in its catalog.");
+            using HttpClient client = new(new NoNetwork()); string cache = Path.Combine(Path.GetDirectoryName(ModMinecraft.McFolderSelected)!, "finalization-cache");
+            var metadata = new MmcMetadataStore(Path.Combine(cache, "metadata"), new Uri("https://fixture.invalid/metadata/"), client);
+            var launch = new MmcInstanceBackend<MmcArtifactDownloadSpec>(metadata, new(Path.Combine(cache, "libraries"), Path.Combine(cache, "assets"), Path.Combine(cache, "sources")), value => value,
+                (files, _) => files.IsEmpty ? Task.CompletedTask : throw new IOException("Finalized restoration must prepare from its existing locked originals offline."));
+            var prepared = launch.PrepareLaunchAsync(new(root, source.Definition.InstalledProjection!.RuntimeEnvironment!, source.Definition.InstanceId, source.Definition.Generation)).GetAwaiter().GetResult();
+            Native.Check(prepared.Status == MmcInstanceBackendStatus.Succeeded && prepared.Snapshot is not null && !prepared.Repaired, "Finalized restoration did not pass real offline launch preparation: " + prepared.Failure);
+        }
+        private sealed class NoNetwork : HttpMessageHandler {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => throw new IOException("Restore-finalization acceptance cannot use network.");
         }
         private static string Record<T>(string path, T value) => (string)typeof(MmcSessions).Assembly.GetType("PCLCS.MmcDurableFiles")!.GetMethod("WriteRecord", BindingFlags.NonPublic | BindingFlags.Static)!.MakeGenericMethod(typeof(T)).Invoke(null, [path, value])!;
         private static string HashTree(string root) => string.Join("|", Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal).Select(file => Path.GetRelativePath(root, file) + ":" + Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)))));
