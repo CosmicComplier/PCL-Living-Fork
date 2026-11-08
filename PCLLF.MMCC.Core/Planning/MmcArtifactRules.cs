@@ -23,7 +23,7 @@ internal static partial class MmcArtifactRules {
         environment.Architecture is "x86" or "x86_64" && target == environment.OperatingSystem;
 
     internal static MmcArtifactReference? Library(JsonElement declaration, MmcResolvedComponent component,
-        MmcArtifactRole role, MmcRuntimeEnvironment environment, MmcFieldSource source, List<MmcDiagnostic> diagnostics) {
+        MmcArtifactRole role, MmcRuntimeEnvironment environment, MmcFieldSource source, List<MmcDiagnostic> diagnostics, string? packageLocalScopeSha256 = null) {
         string name = Text(declaration, "name") ?? throw new MmcInputException("MMC_LIBRARY", source.Source, "Library coordinate missing.");
         var coordinate = Coordinate(name, source.Source);
         if (declaration.TryGetProperty("rules", out var rules)) {
@@ -91,8 +91,13 @@ internal static partial class MmcArtifactRules {
             ? excluded.EnumerateArray().Select(e => e.GetString()!).ToImmutableArray() : [];
         foreach (string exclude in excludes) if (exclude.StartsWith('/') || exclude.Split('/').Any(x => x == "..") || exclude.Contains('\\'))
             throw new MmcInputException("MMC_NATIVE_EXTRACT", source.Source, "Unsafe extraction exclusion path.");
-        string key = MmcFingerprint.Of([component.Uid, role.ToString(), scope.ToString(), coordinate.Name, relative,
-            nativeClassifier, component.Patch.ContentSha256, environment.OperatingSystem + "-" + environment.Architecture]);
+        IEnumerable<string?> keyInputs = [component.Uid, role.ToString(), scope.ToString(), coordinate.Name, relative,
+            nativeClassifier, component.Patch.ContentSha256, environment.OperatingSystem + "-" + environment.Architecture];
+        if (scope == MmcArtifactScope.InstanceLocal && component.SourceKind == MmcComponentSourceKind.PackageLocal && packageLocalScopeSha256 is { } originScope) {
+            MmcDefinitionCodec.CheckHash(originScope);
+            keyInputs = keyInputs.Concat(["mmc-measured-package-local-v1", originScope]);
+        }
+        string key = MmcFingerprint.Of(keyInputs);
         return new(key, component.Uid, component.Patch.ContentSha256, role, scope, coordinate, relative, urls, sha1, sha256,
             size, nativeClassifier, excludes, source);
     }

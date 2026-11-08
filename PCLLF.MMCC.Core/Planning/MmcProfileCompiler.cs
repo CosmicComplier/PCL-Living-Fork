@@ -88,7 +88,7 @@ public static class MmcProfileCompiler {
                 foreach (string field in new[] { "libraries", "+libraries", "mavenFiles" }) if (fields.TryGetValue(field, out var libraries)) {
                     foreach (var library in libraries.EnumerateArray()) {
                         MmcArtifactRole role = field == "mavenFiles" ? MmcArtifactRole.DownloadOnly : MmcArtifactRole.Classpath;
-                        var artifact = MmcArtifactRules.Library(library, component, role, environment, Source(component, field), diagnostics);
+                        var artifact = MmcArtifactRules.Library(library, component, role, environment, Source(component, field), diagnostics, resolved.Package.PackageLocalScopeSha256);
                         if (artifact is null) continue;
                         if (artifact.Role == MmcArtifactRole.DownloadOnly) maven.Add(artifact);
                         else {
@@ -101,7 +101,7 @@ public static class MmcProfileCompiler {
                     }
                 }
                 if (fields.TryGetValue("mainJar", out var jar) && jar.ValueKind != JsonValueKind.Null) {
-                    mainJar = MmcArtifactRules.Library(jar, component, MmcArtifactRole.MainJar, environment, Source(component, "mainJar"), diagnostics)
+                    mainJar = MmcArtifactRules.Library(jar, component, MmcArtifactRole.MainJar, environment, Source(component, "mainJar"), diagnostics, resolved.Package.PackageLocalScopeSha256)
                         ?? throw new MmcInputException("MMC_MAIN_JAR", component.Patch.Source, "Final main JAR does not apply to this runtime.");
                 }
                 if (fields.TryGetValue("logging", out var log)) {

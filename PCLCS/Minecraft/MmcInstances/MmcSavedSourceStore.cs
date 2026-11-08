@@ -76,7 +76,8 @@ public static class MmcSavedSourceStore {
             }
             overrides.Add(new(value.Uid, value.Enabled, value.Version, patch));
         }
-        var resolution = MmcComponentResolver.Resolve(parsed.Package, adopted, overrides);
+        var package = parsed.Package with { PackageLocalScopeSha256 = definition.SourceBundle.PackageLocalScopeSha256 };
+        var resolution = MmcComponentResolver.Resolve(package, adopted, overrides);
         if (!resolution.IsComplete || resolution.Profile is null || resolution.Profile.SourceFingerprint != definition.SourceBundle.ResolutionFingerprint)
             throw new InvalidDataException("Saved component resolution differs from the published source fingerprint; no latest metadata fallback is allowed.");
         // Opaque originals are not settings and cannot become execution inputs. They remain exportable
@@ -88,7 +89,7 @@ public static class MmcSavedSourceStore {
             var observed = await MmcArtifactIo.HashAsync(paths.ResolveRelative(MmcPathRole.Instance, relative), 4L * 1024 * 1024 * 1024, cancellationToken, file.Sha1).ConfigureAwait(false);
             if (observed.Sha256 != file.Sha256 || observed.Size != file.SizeBytes) throw new InvalidDataException("Opaque original source is damaged.");
         }
-        return new(parsed.Package, new(resolution, adopted.ToImmutable()), baseline, baselineInput);
+        return new(package, new(resolution, adopted.ToImmutable()), baseline, baselineInput);
     }
 
     internal static byte[] ReadBounded(MmcInstancePaths paths, string relative, int maximumBytes) {

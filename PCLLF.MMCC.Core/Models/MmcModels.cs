@@ -58,6 +58,8 @@ public sealed record MmcPackage(
     ImmutableArray<MmcMetadataRequest> MissingMetadata,
     ImmutableArray<MmcArchiveEntry> ArchiveEntries, long MetadataUtf8ByteCount = 0) {
     public ImmutableArray<MmcOpaquePackageMetadata> PackageMetadata { get; init; } = [];
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackageLocalScopeSha256 { get; init; }
 }
 
 /// <summary>Read diagnostics only. HasErrors=false is neither a complete semantic profile nor install/launch authorization.</summary>

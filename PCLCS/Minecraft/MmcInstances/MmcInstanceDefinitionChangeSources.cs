@@ -58,7 +58,9 @@ internal static class MmcInstanceDefinitionChangeSources {
             !current.SourceBundle.MetadataRecords.Any(record => current.SourceBundle.RelativeRoot + record.RelativePath == value.RelativePath)))
             copies.Add(new(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSource/" + current.SourceBundle.BundleSha256 + "/package-files/" + file.Sha256), prefix + "package-files/" + file.Sha256, file.Sha256, file.SizeBytes));
         var source = new MmcInstanceDefinition(current.SchemaVersion, current.ManagementKind, current.FormatProfile, current.InstanceId, current.Generation,
-            current.Origin, new(current.SourceBundle.RelativeRoot, bundle, resolved.Resolution.Profile!.SourceFingerprint, records.ToImmutable()), current.Layout,
+            current.Origin, new MmcSourceBundle(current.SourceBundle.RelativeRoot, bundle, resolved.Resolution.Profile!.SourceFingerprint, records.ToImmutable()) {
+                PackageLocalScopeSha256 = resolved.Resolution.Profile.Package.PackageLocalScopeSha256
+            }, current.Layout,
             storedOverrides.ToImmutable(), [], [], ParentInstanceId: current.ParentInstanceId, AuthorFileBaseline: baseline);
         return (source, objects.ToImmutable(), copies.DistinctBy(value => value.TargetRelativePath, StringComparer.Ordinal).ToImmutableArray());
     }

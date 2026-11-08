@@ -13,7 +13,11 @@ public sealed record MmcSourceMetadataRecord(string RelativePath, string Content
     MmcSourceRecordKind Kind, string? Uid = null, string? Version = null,
     MmcComponentSourceKind? ComponentSourceKind = null, string? SourceIdentity = null);
 public sealed record MmcSourceBundle(string RelativeRoot, string BundleSha256, string ResolutionFingerprint,
-    ImmutableArray<MmcSourceMetadataRecord> MetadataRecords);
+    ImmutableArray<MmcSourceMetadataRecord> MetadataRecords) {
+    /// <summary>Measured author-package namespace for package-local library keys. Null preserves the historical key protocol.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackageLocalScopeSha256 { get; init; }
+}
 public sealed record MmcObjectReference(string Sha256, string ObjectRelativePath);
 public sealed record MmcStoredComponentOverride(string Uid, bool? Enabled = null, string? Version = null,
     MmcObjectReference? PatchReference = null);

@@ -80,6 +80,10 @@ public static class MmcDefinitionCodec {
             }
             var sources = definition.SourceBundle;
             CheckHash(sources.BundleSha256); CheckHash(sources.ResolutionFingerprint);
+            if (sources.PackageLocalScopeSha256 is { } packageScope) {
+                CheckHash(packageScope);
+                if (!SameHash(packageScope, definition.Origin.PackageSha256)) MmcJson.Fail("definition", "Measured local-library scope must equal its original package SHA256.");
+            }
             Text(sources.RelativeRoot);
             if (sources.RelativeRoot.Length != 0) {
                 if (!sources.RelativeRoot.EndsWith('/') || sources.RelativeRoot.EndsWith("//", StringComparison.Ordinal)) MmcJson.Fail("definition", "Source root must be an archive-relative directory prefix.");
@@ -229,7 +233,8 @@ public static class MmcDefinitionCodec {
             .Concat(projection.RuntimeEnvironment is { } environment ? new[] {
                 "mmc-published-runtime-environment-v1",environment.OperatingSystem,environment.Architecture,
                 environment.JavaMajor.ToString(CultureInfo.InvariantCulture),environment.JavaBitness.ToString(CultureInfo.InvariantCulture),environment.OsVersion
-            } : []));
+            } : [])
+            .Concat(definition.SourceBundle.PackageLocalScopeSha256 is { } scope ? new[] { "mmc-measured-package-local-v1", scope } : []));
     }
 
     private static void ValidateEnvironmentJson(JsonElement root) {

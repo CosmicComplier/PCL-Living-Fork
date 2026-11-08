@@ -301,7 +301,8 @@ public static partial class MmcPlanBinder {
         definition.Layout.GameRootLeaf, definition.Layout.LayoutVersion.ToString(), definition.ParentInstanceId?.ToString("D"), definition.AuthorFileBaseline?.ContentSha256,
         definition.AuthorFileBaseline?.ObjectRelativePath, definition.AuthorFileBaseline?.EntryCount.ToString() }
         .Concat(definition.SourceBundle.MetadataRecords.OrderBy(r => r.RelativePath, StringComparer.Ordinal).ThenBy(r => r.Kind).SelectMany(r => new[] { r.RelativePath, r.ContentSha256, r.ObjectRelativePath, r.Kind.ToString(), r.Uid, r.Version, r.ComponentSourceKind?.ToString(), r.SourceIdentity }))
-        .Concat(definition.ComponentOverrides.OrderBy(o => o.Uid, StringComparer.Ordinal).SelectMany(o => new[] { o.Uid, o.Enabled?.ToString(), o.Version, o.PatchReference?.Sha256, o.PatchReference?.ObjectRelativePath })));
+        .Concat(definition.ComponentOverrides.OrderBy(o => o.Uid, StringComparer.Ordinal).SelectMany(o => new[] { o.Uid, o.Enabled?.ToString(), o.Version, o.PatchReference?.Sha256, o.PatchReference?.ObjectRelativePath }))
+        .Concat(definition.SourceBundle.PackageLocalScopeSha256 is { } scope ? new[] { "mmc-measured-package-local-v1", scope } : []));
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void Fail(string code, string message) => throw new MmcInputException(code, "binding", message);
 }

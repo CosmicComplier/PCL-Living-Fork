@@ -32,6 +32,7 @@ public static partial class MmcPlanBinder {
                 Fail("MMC_REVISION_HISTORY", "A complete fixed undo environment for the current publication is required.");
             if (source.InstanceId != current.InstanceId || source.Generation != current.Generation || source.Origin != current.Origin ||
                 source.Layout != current.Layout || source.ParentInstanceId != current.ParentInstanceId || source.FormatProfile != current.FormatProfile ||
+                source.SourceBundle.PackageLocalScopeSha256 != current.SourceBundle.PackageLocalScopeSha256 ||
                 source.SchemaVersion != current.SchemaVersion || source.ManagementKind != current.ManagementKind || current.Generation == long.MaxValue || source.InstalledProjection is not null ||
                 !source.ArtifactInventory.IsEmpty || !source.ArtifactLocks.IsEmpty || !source.DerivedOutputs.IsEmpty ||
                 !source.PackageFileInventory.IsEmpty || !source.PackageFileLocks.IsEmpty || SourceEnvelopeFingerprint(source) == SourceEnvelopeFingerprint(current))

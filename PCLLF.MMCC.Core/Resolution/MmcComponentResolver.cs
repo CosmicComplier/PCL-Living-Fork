@@ -27,6 +27,7 @@ public static class MmcComponentResolver {
         List<MmcDiagnostic> diagnostics = [];
         List<MmcMetadataRequest> requests = [];
         try {
+            if (package.PackageLocalScopeSha256 is { } localScope) MmcDefinitionCodec.CheckHash(localScope);
             if (limits.MaxComponents < 1 || limits.MaxDependencyEdges < 1 || limits.MaxDepth is < 1 or > 256 || limits.MaxMetadataBytes < 1 || limits.MaxTotalMetadataBytes < 1)
                 throw new ArgumentOutOfRangeException(nameof(limits));
             if (package.Components.Length > limits.MaxComponents || snapshots.Count > limits.MaxComponents * 4L || (overrides?.Count ?? 0) > limits.MaxComponents || (recommendations?.Count ?? 0) > limits.MaxComponents)
@@ -165,7 +166,8 @@ public static class MmcComponentResolver {
                 var actualRecommendations = adoptedRecommendations.Where(r => nodes.TryGetValue(r.Uid, out var node) && node.Version == r.Version).Distinct().ToImmutableArray();
                 string fingerprint = MmcFingerprint.Of(new[] { "mmc-prism-v1-resolver-1", package.ManifestSha256 }
                     .Concat(components.SelectMany(c => new[] { c.Uid, c.Version, c.Enabled.ToString(), c.SourceKind.ToString(), c.Patch.Source, c.Patch.ContentSha256 }))
-                    .Concat(actualRecommendations.SelectMany(r => new[] { r.Uid, r.Version, r.Source, r.IndexSha256 })));
+                    .Concat(actualRecommendations.SelectMany(r => new[] { r.Uid, r.Version, r.Source, r.IndexSha256 }))
+                    .Concat(package.PackageLocalScopeSha256 is { } scope ? new[] { "mmc-measured-package-local-v1", scope } : []));
                 return Finish(new("prism-v1", fingerprint, package, components, actualRecommendations));
             }
             throw new MmcInputException("MMC_RESOLUTION", "resolution", "Resolution did not converge within the component budget.");
