@@ -106,7 +106,7 @@ internal static class MmcManagementTests {
     private static void Budget() => Equal(MmcManagementState.ManagedMmcRepairRequired,
         Evaluate(Snapshot() with { Definition = new(true, new string(' ', MmcManagementReader.MaximumDocumentBytes + 1)) }).State);
     private static void ReservedStoreRemnants() {
-        foreach (string store in new[] { "MmcSource", "MmcOverrides", "MmcArtifacts", "MmcRuntime", "MmcTransactionHistory", "MmcSessions", "MmcSessionHistory", "MmcLifecycle", "MmcHistory", "MmcDefinitionChanges" }) {
+        foreach (string store in new[] { "MmcSource", "MmcOverrides", "MmcArtifacts", "MmcRuntime", "MmcTransactionHistory", "MmcSessions", "MmcSessionHistory", "MmcLifecycle", "MmcHistory", "MmcDefinitionChanges", "MmcPackageUpdateReceipts" }) {
             using Fixture fixture = new();
             string path = Path.Combine(fixture.Pcl, store);
             Directory.CreateDirectory(path);
