@@ -47,12 +47,15 @@ internal static class MmcGtnhLaunchAcceptance {
             "Prior launch evidence belongs to another instance or session.");
         var pins=new MmcJavaPinStore(Path.Combine(report,"java-pins"));
         using var admission=MmcAdmissionGate.Acquire(imported.InstanceRoot,imported.InstanceId,TimeSpan.Zero);
-        var result=MmcSessions.Reconcile(admission,receipt.SessionId,new MmcSessionProcessInspector(),pins.ReleaseVerified);
+        var authority=OwnedMutableAuthority(o.GetProperty("Fixture").GetString()!);
+        var result=MmcSessions.Reconcile(admission,receipt.SessionId,new MmcSessionProcessInspector(),pins.ReleaseVerified,authority);
         Write(report,"reconciled-after-host-exit.json",new{Nonce=nonce,receipt.SessionId,Result=result,Keep=true});
         Native.Check(result.Observation==MmcSessionObservation.ProvenExited,"Prior process exit cannot be proved; all receipts and pins remain protected: "+result.Diagnostic);
         Console.WriteLine("PASS owned prior session exit reconciled using actual process identities; no game was killed or restarted.");
         return 0;
     }
+    private static MmcMutableRuntimeAuthority OwnedMutableAuthority(string fixture)=>(MmcMutableRuntimeAuthority)
+        Native.Call(typeof(MmcMutableRuntimeAuthority),"ForOwnedFixture",null,fixture)!;
 
     private static int RunParent(string[] args) {
         string original=Full(Required(args,"--case-root")); var imported=VerifyOwnership(original);
@@ -204,6 +207,8 @@ internal static class MmcGtnhLaunchAcceptance {
             Native.Check(ReferenceEquals(Configs.JavaList.Provider,ConfigProviders.Default),"Game acceptance captured an external Java profile.");
             Configs.JavaList.Set(new ConcurrentList<Java>([new(Path.GetDirectoryName(java)!)]));Configs.JavaConfigVersion.Set(Versions.JavaConfigVersion);
             Native.Property(typeof(MmcLaunch),"JavaPins").SetValue(null,new Func<MmcJavaPinStore>(()=>new(Path.Combine(report,"java-pins"))));
+            var mutableAuthority=OwnedMutableAuthority(fixture);
+            Native.Property(typeof(MmcLaunch),"MutableRuntimeAuthorityFactory").SetValue(null,new Func<MmcMutableRuntimeAuthority>(()=>mutableAuthority));
             Native.Property(typeof(MmcLaunch),"ConfirmVariantAdoption").SetValue(null,new Func<ModMinecraft.McInstance,MmcLaunchJavaSelection,bool>((_,_)=>throw new IOException("Acceptance requires its already-published environment, without adopting another Java variant.")));
             var network=(LegacyNetworkHost<ModNet.NetFile,ModNet.LoaderDownload,ModNet.NetManagerClass,ModLoader.LoaderBase>)Native.Field(typeof(ModNet),"NativeHost").GetValue(null)!;
             network.SignCdn=_=>throw new IOException("Real-game acceptance cannot redownload launcher inputs; preserve the published instance for recovery.");
@@ -237,6 +242,16 @@ internal static class MmcGtnhLaunchAcceptance {
             var host=(WatcherHost)Native.Field(typeof(ModWatcher),"Host").GetValue(null)!;
             // Keep ALL HWND enumeration/class/title/visibility/PID APIs genuine for this acceptance.
             host.LaunchLog=(text,_)=>observations.Enqueue(text);host.RefreshShutdownButton=()=>{};host.RestoreLauncher=()=>{};host.EndProgram=()=>{};host.CrashHint=()=>{};host.FeedbackInfo=()=>{};
+            var analyzer=host.CreateCrashAnalyzer;
+            host.CreateCrashAnalyzer=selected=>new RetainedCrashOutput(analyzer(selected),report,nonce);
+        }
+        private sealed class RetainedCrashOutput(ILegacyCrashAnalyzer inner,string root,string nonce):ILegacyCrashAnalyzer {
+            public void Collect(string game,IList<string>? log=null)=>inner.Collect(game,log);
+            public bool Prepare()=>inner.Prepare();
+            public void Analyze()=>inner.Analyze();
+            public void Output(bool manual,List<string>? files=null)=>Write(root,"crash-analysis-without-dialog.json",new {
+                Status="ProductCrashAnalysisCompleted_PresentationSuppressed",Nonce=nonce,Keep=true
+            });
         }
         private void StartGame() {
             var current=MmcInstanceInspector.Read(imported.InstanceRoot);Native.Check(current.IsConsistent&&current.Definition!.InstanceId==imported.InstanceId&&current.Definition.Generation==generation&&Hash(Path.Combine(imported.InstanceRoot,"PCL","InstanceDefinition.json"))==definitionSha,"Authorized owned definition changed before this launch.");
