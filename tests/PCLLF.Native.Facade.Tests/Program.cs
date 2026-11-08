@@ -41,6 +41,7 @@ internal static class Program
         ["mmc-import-contract"] = MmcImportChecks.Run,
         ["mmc-download"] = MmcDownloadChecks.Run,
         ["mmc-java-maintenance"] = MmcJavaMaintenanceChecks.Run,
+        ["mmc-managed-import"] = MmcManagedImportChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
