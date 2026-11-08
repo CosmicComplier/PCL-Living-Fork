@@ -40,6 +40,7 @@ internal static class Program
         ["resource-updates"] = ResourceUpdateChecks.Run,
         ["mmc-import-contract"] = MmcImportChecks.Run,
         ["mmc-download"] = MmcDownloadChecks.Run,
+        ["mmc-java-maintenance"] = MmcJavaMaintenanceChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,

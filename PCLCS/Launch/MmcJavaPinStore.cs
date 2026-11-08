@@ -47,6 +47,22 @@ public sealed class MmcJavaPinStore {
         } catch { gate.Dispose(); throw; }
     }
 
+    /// <summary>Read-only revalidation at maintenance I/O; the caller must retain its maintenance lease.</summary>
+    public static void ValidateMaintenanceTarget(string javaHome) {
+        string home = NormalizeHome(javaHome);
+        if (!Directory.Exists(home)) return;
+        Stack<string> directories = new(); directories.Push(home);
+        int entries = 0;
+        while (directories.TryPop(out string? directory)) {
+            MmcInstancePaths.EnsureNoLinks(directory);
+            foreach (string path in Directory.EnumerateFileSystemEntries(directory)) {
+                if (++entries > 65_536) throw new IOException("Java maintenance target exceeds its entry budget.");
+                MmcInstancePaths.EnsureNoLinks(path);
+                if ((File.GetAttributes(path) & FileAttributes.Directory) != 0) directories.Push(path);
+            }
+        }
+    }
+
     /// <summary>Only the session reconciler may call this after positive exit proof.</summary>
     public void ReleaseVerified(MmcSessionReceipt receipt) {
         ArgumentNullException.ThrowIfNull(receipt);
@@ -98,7 +114,9 @@ public sealed class MmcJavaPinStore {
     }
     private static string NormalizeHome(string home) {
         if (!Path.IsPathFullyQualified(home)) throw new IOException("Java home must be absolute.");
-        string full = MmcCanonicalPaths.ForTrustedRoot(Path.GetFullPath(home));
+        string input = Path.GetFullPath(home);
+        MmcInstancePaths.EnsureNoLinks(input);
+        string full = MmcCanonicalPaths.ForTrustedRoot(input);
         MmcInstancePaths.EnsureNoLinks(full); return full;
     }
     private static bool SamePath(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b),

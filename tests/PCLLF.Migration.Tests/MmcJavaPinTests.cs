@@ -6,6 +6,7 @@ internal static class MmcJavaPinTests {
         yield return ("MMC Java durable pin survives disposal and requires a matching verified receipt", DurablePin);
         yield return ("MMC Java maintenance excludes pin acquisition and honors cancellation", Maintenance);
         yield return ("MMC Java corrupted pin is preserved and blocks launcher maintenance", Corruption);
+        yield return ("MMC Java maintenance rejects descendant links before writes or cleanup", MaintenanceLinks);
     }
     private static void DurablePin() {
         using Fixture f = new();
@@ -32,6 +33,26 @@ internal static class MmcJavaPinTests {
         Throws<IOException>(pin.CompleteVerifiedExit);
         Throws<IOException>(() => f.Store.EnterMaintenance(f.Home, TimeSpan.Zero));
         if (File.ReadAllText(path) != "{}") throw new Exception("Unconfirmed pin was silently deleted.");
+    }
+    private static void MaintenanceLinks() {
+        using Fixture f = new();
+        string outside = Path.Combine(f.Pins, "outside"), link = Path.Combine(f.Home, "linked");
+        Directory.CreateDirectory(outside); File.WriteAllText(Path.Combine(outside, "keep.txt"), "keep");
+        if (OperatingSystem.IsWindows()) {
+            string script = "New-Item -ItemType Junction -Path '" + link.Replace("'", "''") + "' -Target '" + outside.Replace("'", "''") + "' -ErrorAction Stop | Out-Null";
+            var start = new System.Diagnostics.ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
+            start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-EncodedCommand");
+            start.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(script)));
+            using var process = System.Diagnostics.Process.Start(start) ?? throw new Exception("Junction fixture did not start.");
+            if (!process.WaitForExit(15000)) { process.Kill(true); throw new Exception("Junction fixture timed out."); }
+            if (process.ExitCode != 0) throw new Exception("Junction fixture creation failed.");
+        } else Directory.CreateSymbolicLink(link, outside);
+        try {
+            using var maintenance = f.Store.EnterMaintenance(f.Home, TimeSpan.Zero);
+            Throws<IOException>(() => MmcJavaPinStore.ValidateMaintenanceTarget(f.Home));
+            Throws<IOException>(() => f.Store.EnterMaintenance(link, TimeSpan.Zero));
+            if (File.ReadAllText(Path.Combine(outside, "keep.txt")) != "keep") throw new Exception("Link target was changed.");
+        } finally { Directory.Delete(link, false); }
     }
     private static void Throws<T>(Action action) where T : Exception {
         try { action(); } catch (T) { return; }

@@ -58,7 +58,7 @@ public sealed class LegacyJavaDownloadPlan {
     public string BaseDirectory = null!;
     public List<LegacyJavaDownloadFile> Files = [];
 
-    /// <summary>Called by the original loader on its Failed or Canceled transition.</summary>
+    /// <summary>Cleanup after download writers have drained and while the Java maintenance lease is held.</summary>
     public void Incomplete() {
         Logger.Warn($"由于 Java 下载未完成，清理未下载完成的 Java 文件夹：{BaseDirectory}");
         DirectoryUtils.Delete(BaseDirectory);
