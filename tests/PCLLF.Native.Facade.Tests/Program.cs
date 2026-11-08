@@ -39,6 +39,7 @@ internal static class Program
         ["map-install-recycle"] = MapInstallChecks.Run,
         ["resource-updates"] = ResourceUpdateChecks.Run,
         ["mmc-import-contract"] = MmcImportChecks.Run,
+        ["mmc-download"] = MmcDownloadChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
