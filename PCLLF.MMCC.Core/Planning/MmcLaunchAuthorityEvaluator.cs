@@ -38,6 +38,7 @@ public static class MmcLaunchAuthorityEvaluator {
             var locks = definition.ArtifactLocks.ToDictionary(l => l.ArtifactKey, StringComparer.OrdinalIgnoreCase);
             var activeLocks = boundPlan.ActiveArtifactLocks.ToDictionary(l => l.ArtifactKey, StringComparer.OrdinalIgnoreCase);
             foreach (var artifact in plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).DistinctBy(a => a.Key)) {
+                if (artifact.PackageFileOrigin is not null) Reject("Package-private preserved originals are not component execution authority.");
                 if (!activeLocks.TryGetValue(artifact.Key, out var active) || !locks.TryGetValue(artifact.Key, out var expected) || active != expected || !MmcDefinitionCodec.SameHash(expected.SourceRevision, artifact.SourceRevision)) Reject("All execution inputs must remain under the bound definition's exact adopted locks.");
             }
             Dictionary<string, MmcJarClassObservation> observations = new(StringComparer.OrdinalIgnoreCase);

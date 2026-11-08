@@ -19,7 +19,10 @@ public sealed record MmcMavenCoordinate(string Group, string Artifact, string Ve
 public sealed record MmcArtifactReference(string Key, string ComponentUid, string SourceRevision,
     MmcArtifactRole Role, MmcArtifactScope Scope, MmcMavenCoordinate? Coordinate,
     string RelativePath, ImmutableArray<string> DownloadUrls, string? Sha1, string? Sha256, long? Size,
-    string? NativeClassifier, ImmutableArray<string> ExtractExcludes, MmcFieldSource Provenance);
+    string? NativeClassifier, ImmutableArray<string> ExtractExcludes, MmcFieldSource Provenance) {
+    /// <summary>Preservation-only input without a component UID; never belongs in a compiled execution plan.</summary>
+    public MmcPackageFileOrigin? PackageFileOrigin { get; init; }
+}
 /// <summary>Source inventory includes inactive declarations; it is never an execution list.</summary>
 public sealed record MmcArtifactDeclaration(string ComponentUid, bool Enabled, MmcArtifactRole Role,
     JsonElement Declaration, MmcFieldSource Provenance);

@@ -22,6 +22,8 @@ public static class MmcProfileFingerprints {
             if (artifact.Coordinate is { } coordinate) { Text("coordinate"); Text(coordinate.Group); Text(coordinate.Artifact); Text(coordinate.Version); Text(coordinate.Classifier); Text(coordinate.Extension); }
             else Text(null);
             Text(artifact.RelativePath); Strings(artifact.DownloadUrls); Text(artifact.Sha1); Text(artifact.Sha256);
+            if (artifact.PackageFileOrigin is { } origin) { Text("package-file-origin"); Text(origin.PackageSha256); Text(origin.BaselineSha256); Text(origin.SourceRelativePath); }
+            else Text(null);
             Text(artifact.Size?.ToString(CultureInfo.InvariantCulture)); Text(artifact.NativeClassifier); Strings(artifact.ExtractExcludes); Source(artifact.Provenance);
         }
         void Artifacts(ImmutableArray<MmcArtifactReference> artifacts) { if (artifacts.IsDefault) throw new ArgumentException("Absent artifact array."); Integer(artifacts.Length); foreach (var artifact in artifacts) Artifact(artifact); }

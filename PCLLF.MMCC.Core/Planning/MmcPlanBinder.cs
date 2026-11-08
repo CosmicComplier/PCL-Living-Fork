@@ -148,6 +148,7 @@ public static class MmcPlanBinder {
         if (plan.Classpath.IsDefaultOrEmpty || plan.Classpath[^1].Key != plan.MainJar.Key || plan.Classpath[^1].Role != MmcArtifactRole.MainJar) Fail("MMC_BIND_PLAN", "The final classpath must end with the selected main JAR.");
         Dictionary<string, MmcArtifactReference> result = new(StringComparer.OrdinalIgnoreCase);
         foreach (var artifact in plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).Append(plan.MainJar)) {
+            if (artifact.PackageFileOrigin is not null) Fail("MMC_BIND_PLAN", "Opaque package originals cannot enter an active compiled execution/download plan.");
             MmcDefinitionCodec.CheckHash(artifact.Key); MmcDefinitionCodec.CheckHash(artifact.SourceRevision);
             if (result.TryGetValue(artifact.Key, out var old)) {
                 if (old.Role != artifact.Role || old.Scope != artifact.Scope || old.ComponentUid != artifact.ComponentUid || old.SourceRevision != artifact.SourceRevision || old.RelativePath != artifact.RelativePath || old.Coordinate != artifact.Coordinate ||
