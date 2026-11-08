@@ -54,8 +54,8 @@ public static class MmcManagementProbe {
                 complete = false;
             }
         }
-        try {
-            string payload = Path.Combine(pcl, "MmcImportPayload.json");
+        foreach (string receiptName in new[] { "MmcImportPayload.json", "MmcClonePrepared.json" }) try {
+            string payload = Path.Combine(pcl, receiptName);
             MmcInstancePaths.EnsureNoLinks(pcl);
             FileAttributes? attributes = MmcInstancePaths.Attributes(payload);
             sources |= attributes is not null;

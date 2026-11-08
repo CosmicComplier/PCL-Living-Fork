@@ -120,14 +120,16 @@ internal static class MmcManagementTests {
         }
     }
     private static void PayloadRemnant() {
+        foreach (string receiptName in new[] { "MmcImportPayload.json", "MmcClonePrepared.json" }) {
         using Fixture fixture = new();
         Directory.CreateDirectory(fixture.Pcl);
-        string path = Path.Combine(fixture.Pcl, "MmcImportPayload.json");
+        string path = Path.Combine(fixture.Pcl, receiptName);
         File.WriteAllText(path, "damaged payload record");
         Equal(false, MmcManagementProbe.Read(fixture.Root).CanUseLegacyBackend);
         File.Delete(path); Directory.CreateDirectory(path);
         var wrongRole = MmcManagementProbe.Read(fixture.Root);
         Equal(false, wrongRole.CanUseLegacyBackend); Equal(false, wrongRole.ObservationComplete);
+        }
     }
     private static void ReadOnlyProbe() {
         using Fixture fixture = new();
