@@ -140,6 +140,14 @@ namespace PCL
             return global::PCL.ModJava.Service.GetJavaRequirement(Instance);
         }
 
+        public static (global::MeloongCore.ValueRange<global::System.Version> Range, global::System.String RecommendedComponent) GetManagedJavaRequirement(
+            global::PCL.ModMinecraft.McInstance Instance, global::PCLLF.MMCC.Core.MmcLaunchAuthorityResult Authority)
+        {
+            return global::PCL.ModJava.Service.GetManagedJavaRequirement(Instance,
+                Authority?.Retires("net.minecraft", global::PCLLF.MMCC.Core.MmcRetiredHeuristicKind.BuiltinMinecraftJavaInference) == true,
+                Authority?.Retires("net.minecraftforge", global::PCLLF.MMCC.Core.MmcRetiredHeuristicKind.BuiltinForgeJavaInference) == true);
+        }
+
         public static global::PCLCS.Java SelectOrDownloadJava(global::MeloongCore.OneOf<global::MeloongCore.ValueRange<global::System.Version>, global::PCL.ModMinecraft.McInstance> Target, global::System.Boolean TryFixOrHint, global::System.Threading.CancellationToken c = default(global::System.Threading.CancellationToken), global::MeloongCore.ProgressProvider p = null)
         {
             return global::PCL.ModJava.Service.SelectOrDownloadJava(Target, TryFixOrHint, c, p);
