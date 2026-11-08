@@ -22,6 +22,7 @@ internal static class MmcManagementTests {
         yield return ("MMC management disk probe observes pending entries and orphan sources", PendingAndSourceProbe);
         yield return ("MMC management reserved override artifact and runtime remnants prevent legacy fallback", ReservedStoreRemnants);
         yield return ("MMC management private import payload remnants remain positive ownership evidence", PayloadRemnant);
+        yield return ("MMC empty transaction stores cannot clear import or lifecycle pending ownership", OuterPending);
         yield return ("MMC management disk probe duplicate hints remain positive ownership evidence", DuplicateHints);
         yield return ("MMC management disk probe rejects malformed UTF8 reserved files", InvalidUtf8);
     }
@@ -129,6 +130,16 @@ internal static class MmcManagementTests {
         File.Delete(path); Directory.CreateDirectory(path);
         var wrongRole = MmcManagementProbe.Read(fixture.Root);
         Equal(false, wrongRole.CanUseLegacyBackend); Equal(false, wrongRole.ObservationComplete);
+        }
+    }
+    private static void OuterPending() {
+        foreach (string marker in new[] { "MmcImportPending.json", "MmcLifecyclePending.json" }) {
+            using Fixture fixture = new(); fixture.Install();
+            Directory.CreateDirectory(Path.Combine(fixture.Pcl, "MmcTransactions"));
+            Equal(MmcManagementState.ManagedMmc, MmcManagementProbe.Read(fixture.Root).State);
+            File.WriteAllText(Path.Combine(fixture.Pcl, marker), "unknown or interrupted operation");
+            var result = MmcManagementProbe.Read(fixture.Root);
+            Equal(MmcManagementState.PendingTransaction, result.State); Equal(false, result.CanUseLegacyBackend);
         }
     }
     private static void ReadOnlyProbe() {

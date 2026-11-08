@@ -15,7 +15,7 @@ namespace PCLCS;
 public static class MmcManagementProbe {
     // These are LF-owned stores, not loose MMC package metadata. Even derived
     // runtime leftovers remain ownership evidence when the definition is lost.
-    private static readonly string[] ReservedStores = ["MmcSource", "MmcOverrides", "MmcArtifacts", "MmcRuntime", "MmcTransactionHistory", "MmcSessions", "MmcSessionHistory"];
+    private static readonly string[] ReservedStores = ["MmcSource", "MmcOverrides", "MmcArtifacts", "MmcRuntime", "MmcTransactionHistory", "MmcSessions", "MmcSessionHistory", "MmcLifecycle"];
     public static MmcManagementResult Read(string versionRoot) => MmcManagementReader.Evaluate(Capture(versionRoot));
 
     public static MmcManagementSnapshot Capture(string versionRoot) {
@@ -36,8 +36,8 @@ public static class MmcManagementProbe {
         MmcManagementDocument configHint = ReadHint(Path.Combine(pcl, "config.json"), true);
         MmcManagementDocument versionHint = ReadHint(Path.Combine(root, logicalVersionName + ".json"), false);
         bool sources = false, pending = false, complete = true;
-        try {
-            string import = Path.Combine(pcl, "MmcImportPending.json");
+        foreach (string pendingName in new[] { "MmcImportPending.json", "MmcLifecyclePending.json" }) try {
+            string import = Path.Combine(pcl, pendingName);
             MmcInstancePaths.EnsureNoLinks(pcl);
             if (MmcInstancePaths.Attributes(import) is not null) { sources = true; pending = true; }
             MmcInstancePaths.EnsureNoLinks(import);
@@ -66,13 +66,13 @@ public static class MmcManagementProbe {
             string transactions = Path.Combine(pcl, "MmcTransactions");
             MmcInstancePaths.EnsureNoLinks(pcl);
             FileAttributes? attributes = MmcInstancePaths.Attributes(transactions);
-            if (attributes is not null) { sources = true; pending = true; }
+            if (attributes is not null) sources = true;
             MmcInstancePaths.EnsureNoLinks(transactions);
             if (attributes is not null) {
                 sources = true;
                 // A future recovery service may recognize finalized journals. Until then every retained
                 // entry is deliberately pending; this probe never interprets an unknown journal as done.
-                pending = (attributes.Value & FileAttributes.Directory) == 0 || Directory.EnumerateFileSystemEntries(transactions).Any();
+                pending |= (attributes.Value & FileAttributes.Directory) == 0 || Directory.EnumerateFileSystemEntries(transactions).Any();
             }
         } catch (Exception ex) when (IsObservationFailure(ex)) { complete = false; }
         return new(definition, configHint, versionHint, sources, pending, complete);
