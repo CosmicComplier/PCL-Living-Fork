@@ -81,7 +81,7 @@ namespace PCL
                 ReadString = new Func<global::System.String, global::PCL.ModMinecraft.McInstance, global::System.String>((Key, Instance) => global::PCL.Settings.Get<string>(Key, Instance: Instance)),
                 ReadInteger = new Func<global::System.String, global::PCL.ModMinecraft.McInstance, global::System.Int32>((Key, Instance) => global::PCL.Settings.Get<int>(Key, Instance: Instance)),
                 WriteInteger = new Action<global::System.String, global::System.Int32, global::PCL.ModMinecraft.McInstance>((Key, Value, Instance) => global::PCL.Settings.Set(Key, Value, Instance: Instance)),
-                Config = new Func<global::PCL.ModMinecraft.McInstance, global::MeloongCore.JsonConfigProvider>(Instance => Instance.Config),
+                Config = new Func<global::PCL.ModMinecraft.McInstance, global::MeloongCore.IConfigProvider>(Instance => Instance.Config),
                 Version = new Func<global::PCL.ModMinecraft.McInstance, global::PCLCS.McVersion>(Instance => Instance.Version),
                 VersionPath = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Instance => Instance.PathVersion),
                 InstanceName = new Func<global::PCL.ModMinecraft.McInstance, global::System.String>(Instance => Instance.Name),

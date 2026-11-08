@@ -118,6 +118,8 @@ internal sealed partial class MmcConfigurationState {
     private readonly List<WeakReference<ConcurrentDictionary<string, ConcurrentDictionary<string, string>>>> iniCaches = [];
     internal string IniSnapshot = "";
     internal bool KnownLegacyWritable;
+    internal long? LastManagementGeneration;
+    private bool consumerInvalidationPending;
     internal IDisposable RegisterInvalidator(Action callback) {
         WeakReference<Action> weak = new(callback); lock (Sync) invalidators.Add(weak);
         return new CacheSubscription(this, weak);
@@ -127,9 +129,13 @@ internal sealed partial class MmcConfigurationState {
     }
     private void InvalidatePreferenceConsumers() {
         Action[] callbacks;
-        lock (Sync) callbacks = invalidators.Select(weak => weak.TryGetTarget(out var callback) ? callback : null).Where(callback => callback is not null).Cast<Action>().ToArray();
+        lock (Sync) { consumerInvalidationPending = false; callbacks = invalidators.Select(weak => weak.TryGetTarget(out var callback) ? callback : null).Where(callback => callback is not null).Cast<Action>().ToArray(); }
         // This contract only permits ConcurrentDictionary cache removal. It never raises UI events.
         foreach (Action callback in callbacks) callback();
+    }
+    internal void NotifyPendingInvalidations() {
+        bool pending; lock (Sync) pending = consumerInvalidationPending;
+        if (pending) InvalidatePreferenceConsumers();
     }
     internal void InitializeIni() => PublishIni(MmcIniConfiguration.ReadIni(Root));
     internal void RegisterIniCache(ConcurrentDictionary<string, ConcurrentDictionary<string, string>> cache) {
@@ -153,7 +159,7 @@ internal sealed partial class MmcConfigurationState {
             MmcConfigurationCoordinator.UnpinIfClean(this);
         }
     }
-    internal void PublishIni(string text, Dictionary<string, MmcIniPatch>? applied = null) {
+    internal void PublishIni(string text, Dictionary<string, MmcIniPatch>? applied = null, bool notify = true) {
         lock (Sync) {
             IniSnapshot = text; Epoch++;
             if (applied is not null) foreach (var pair in applied)
@@ -161,8 +167,9 @@ internal sealed partial class MmcConfigurationState {
             string file = Path.Combine(Root, "PCL", "Setup.ini");
             foreach (var weak in iniCaches) if (weak.TryGetTarget(out var cache)) cache[file] = LegacyBaseOperations.ParseIni(text);
             MmcConfigurationCoordinator.UnpinIfClean(this);
+            if (!notify) consumerInvalidationPending = true;
         }
-        InvalidatePreferenceConsumers();
+        if (notify) InvalidatePreferenceConsumers();
     }
     internal bool FlushIni(Dictionary<string, MmcIniPatch> pending, MmcManagementResult management, MmcConfigurationContextStamp context) {
         if (pending.Count == 0) return false;

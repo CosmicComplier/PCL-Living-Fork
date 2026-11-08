@@ -11,7 +11,8 @@ internal static class MmcConfigurationPaths {
     internal static string Target(string physicalRoot, string relative) {
         string root = LogicalRoot(physicalRoot);
         string target = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
-        if (!target.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) throw new IOException("配置路径超出受信任实例根。");
+        string prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
+        if (!target.StartsWith(prefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) throw new IOException("配置路径超出受信任实例根。");
         string? current = target;
         while (current is not null && !string.Equals(current, root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) {
             var attributes = MmcInstancePaths.Attributes(current);

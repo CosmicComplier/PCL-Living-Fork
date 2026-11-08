@@ -58,6 +58,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
         host.ReadRegistry("HKEY_CURRENT_USER\\Software\\" + RegistryFolderFor(entry), RegistryValueName(entry), null) ?? defaultValue;
 
     public void SaveEntry(TEntry entry, TInstance? instance = null) {
+        if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
         string? value = VbString(entry.GetCache(instance));
         Log(null, $"保存设置：{entry.Key} {(entry.Encrypted || entry.Key == "Identify" ? "" : "= " + value)}{(instance is null ? "" : $"（实例：{host.InstancePath(instance)}）")}", LegacySettingsLogLevel.Trace);
         if (entry.Encrypted) {
@@ -74,7 +75,8 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
                 break;
             case LegacySettingSource.Instance:
                 if (instance is null) throw new Exception($"保存版本独立设置 {entry.Key} 时未提供目标版本");
-                host.WriteIni(host.InstancePath(instance) + "PCL\\Setup.ini", entry.Key, value);
+                if (host.WriteInstanceIni is not null) host.WriteInstanceIni(instance, entry.Key, value);
+                else host.WriteIni(host.InstancePath(instance) + "PCL\\Setup.ini", entry.Key, value);
                 break;
         }
     }
@@ -90,6 +92,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     public void SetCore(string key, object? value, TInstance? instance) {
         TEntry entry = Find(key);
         try {
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
             value = Coerce(value, entry.Type);
             if (entry.GetCache(instance) is null) Get(key, instance);
             if (VbEqual(entry.GetCache(instance), value)) return;
@@ -112,6 +115,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     }
     public object? GetCore(string key, TInstance? instance, Func<TEntry, string?>? readRaw = null, string? deviceIdentify = null) {
         TEntry entry = Find(key);
+        if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
         object? value = entry.GetCache(instance);
         if (value is not null && !IsAccountSetting(entry)) return value;
         if (forcedSettings.TryGetValue(key, out object? forcedSetting)) {
@@ -165,6 +169,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     public void ResetCore(string key, TInstance? instance) {
         TEntry entry = Find(key);
         try {
+            if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
             if (entry.GetCache(instance) is null) Get(key, instance);
             if (VbEqual(entry.GetCache(instance), entry.DefaultValue) && !(entry.GetSourceCode() == LegacySettingSource.Registry && IsCompatibleSetting(entry))) return;
             entry.Set(entry.DefaultValue!, instance);
@@ -175,7 +180,8 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
                     break;
                 case LegacySettingSource.Instance:
                     if (instance is null) throw new Exception($"重置版本设置 {key} 时未提供目标版本");
-                    host.DeleteIni(host.InstancePath(instance) + "PCL\\Setup.ini", key);
+                    if (host.DeleteInstanceIni is not null) host.DeleteInstanceIni(instance, key);
+                    else host.DeleteIni(host.InstancePath(instance) + "PCL\\Setup.ini", key);
                     break;
             }
             entry.OnChanged?.Invoke(entry.DefaultValue!);
@@ -187,6 +193,7 @@ public sealed partial class LegacySettingsEngine<TInstance, TEntry, TPlan>
     public string? GetDefault(string key) => VbString(entries()[key].DefaultValue);
     public bool HasSaved(string key, TInstance? instance = null) {
         TEntry entry = entries()[key];
+        if (entry.GetSourceCode() == LegacySettingSource.Instance && instance is not null) host.ValidateInstanceConfiguration?.Invoke(instance);
         switch (entry.GetSourceCode()) {
             case LegacySettingSource.Normal: return host.HasIni("Setup", key);
             case LegacySettingSource.Registry:

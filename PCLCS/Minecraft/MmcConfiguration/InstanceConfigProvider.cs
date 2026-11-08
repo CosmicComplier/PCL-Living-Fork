@@ -45,13 +45,18 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
     public void Set<T>(string key, T? value, bool encrypted) {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (encrypted && value is not null) throw new NotImplementedException("加密需要改为使用识别码，现在尚未实现。");
+        AssertAttached();
         JToken token = value is null ? JValue.CreateNull() : JToken.FromObject(value);
-        lock (state.Sync) { AssertAttached(); typedValues[key] = new(state.Enqueue(key, token, remove: false, ContextStamp), value); }
+        lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch); typedValues[key] = new(state.Enqueue(key, token, remove: false, ContextStamp), value); }
     }
-    public void Remove(string key) { lock (state.Sync) { AssertAttached(); state.Enqueue(key, null, remove: true, ContextStamp); typedValues.TryRemove(key, out _); } }
-    public void AssertAttached() { lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch); } }
+    public void Remove(string key) { AssertAttached(); lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch); state.Enqueue(key, null, remove: true, ContextStamp); typedValues.TryRemove(key, out _); } }
+    public void AssertAttached() {
+        lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch); }
+        state.NotifyPendingInvalidations();
+    }
     public T? Read<T>(string key, T? defaultValue, bool encrypted) {
         ObjectDisposedException.ThrowIf(disposed, this);
+        AssertAttached();
         JToken? token = state.Read(key, ContextStamp, attachmentEpoch, out bool present, out var version);
         if (!present) return defaultValue;
         if (typedValues.TryGetValue(key, out var cached) && cached.Version == version) return (T?)cached.Value;
@@ -63,7 +68,7 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
             typedValues[key] = new(version, value); return value;
         } catch (CryptographicException) { Remove(key); return defaultValue; }
     }
-    public bool HasValue(string key) { ObjectDisposedException.ThrowIf(disposed, this); state.Read(key, ContextStamp, attachmentEpoch, out bool present, out _); return present; }
+    public bool HasValue(string key) { AssertAttached(); state.Read(key, ContextStamp, attachmentEpoch, out bool present, out _); return present; }
     public void DiscardCache() { ObjectDisposedException.ThrowIf(disposed, this); typedValues.Clear(); state.InvalidateReads(); }
     public void Save() { ObjectDisposedException.ThrowIf(disposed, this); state.Flush(CancellationToken.None); }
     public Task FlushAsync(CancellationToken cancellationToken = default) {

@@ -23,9 +23,15 @@ public static partial class MmcConfigurationCoordinator {
     internal static MmcConfigurationContextStamp AttachProvider(MmcConfigurationState state, string logicalRoot) {
         using var admission = TryPreferenceLease(state.Root);
         try {
-            var context = ContextFor(state.Root, MmcConfigurationPaths.ReadManagement(logicalRoot, state.Root));
+            var management = MmcConfigurationPaths.ReadManagement(logicalRoot, state.Root);
+            var context = ContextFor(state.Root, management); bool refreshPreferences;
+            lock (state.Sync) refreshPreferences = context != state.Context || management.Envelope?.Generation != state.LastManagementGeneration;
             if (context.Kind != MmcConfigurationContextKind.Unresolved) { lock (state.Sync) state.InspectionRoot = logicalRoot; }
-            if (admission is not null && Directory.Exists(state.Root)) state.PublishObserved(ReadConfig(state.Root), context, reattach: true);
+            if (admission is not null && Directory.Exists(state.Root)) {
+                state.PublishObserved(ReadConfig(state.Root), context, reattach: true);
+                if (refreshPreferences && context.Kind != MmcConfigurationContextKind.Unresolved) state.PublishIni(MmcIniConfiguration.ReadIni(state.Root), notify: false);
+                lock (state.Sync) state.LastManagementGeneration = management.Envelope?.Generation;
+            }
             else state.ObserveContext(context);
             return context;
         } catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException) {

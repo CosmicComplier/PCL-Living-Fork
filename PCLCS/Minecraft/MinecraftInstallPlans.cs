@@ -81,7 +81,7 @@ public sealed partial class MinecraftInstallEngine<TLoader, TNetFile, TInstance,
             if (forgeVersion is not null && forgeVersion.StartsWithF("1.") && forgeVersion.Contains("-")) versions[ModLoaders.Forge] = forgeVersion.AfterLast("-");
             if (neoVersion is not null && neoVersion.StartsWithF("1.20.1-")) versions[ModLoaders.NeoForge] = neoVersion.Replace("1.20.1-", "");
             McComponents target = new(request.Components.MinecraftVersion, versions, request.Components.OptiFineEntry, request.Components.FabricApiVersion, request.Components.OptiFabricVersion);
-            JsonConfigProvider config = host.NewInstance(versionFolder).Config;
+            IInstanceConfigProvider config = host.NewInstance(versionFolder).Config;
             Configs.McInstallManifest.Set(new McInstallManifest(Versions.McInstallManifestVersion, target, DateTime.UtcNow, managed), config); config.Save();
         }, show: false));
         if (!request.IsIntermediateOutput) loaders.Add(Task<int, int>("删除忽略标识", _ => FileUtils.Delete(versionFolder + ".pclignore"), show: false));

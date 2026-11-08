@@ -22,6 +22,9 @@ internal static class MmcConfigurationTests {
         yield return ("MMC configuration ordinary full temporary roots retain writable preference behavior", OrdinaryTemporaryRoot);
         yield return ("MMC configuration trusts ordinary root junctions but rejects linked configuration descendants", OrdinaryRootJunction);
         yield return ("MMC configuration malformed input constructs a readonly error provider without overwriting bytes", MalformedConstructor);
+        yield return ("MMC settings engine validates fixed identity before path caches and retains context at INI writes", SettingsContextBridge);
+        if (typeof(InstanceConfigProvider).Assembly.GetType("PCLCS.Configs") is not null)
+            yield return ("MMC configuration actual JavaForced deserialization and PreviewGet Reset use the coordinated provider", ActualJavaReset);
     }
     internal static bool TryRunChild(string[] args, out int exitCode) {
         exitCode = 0;
@@ -29,6 +32,7 @@ internal static class MmcConfigurationTests {
         try {
             if (args.Length != 5) throw new Exception("Invalid controlled config child.");
             using var provider = new InstanceConfigProvider(args[2]);
+            if (args[1] == "java-reset") { RunActualJavaReset(provider, args[2]); return true; }
             if (args[1] == "lockorder") { RunLockOrder(provider, args[2]); return true; }
             if (args[1] == "rebase") { provider.Set("childPreference", "B", false); provider.Save(); return true; }
             using (MmcConfigurationCoordinator.Quiesce(args[2])) {
@@ -239,6 +243,72 @@ internal static class MmcConfigurationTests {
         using var provider = new InstanceConfigProvider(fixture.Root); Equal(true, provider.LastSaveFailure is not null);
         bool rejected = false; try { provider.Set("bad", "must-not-write", false); provider.Save(); } catch (IOException) { rejected = true; }
         Equal(true, rejected); Equal("{", File.ReadAllText(file));
+    }
+    private static void ActualJavaReset() {
+        using Fixture fixture = new(); using Process child = StartChild("java-reset", fixture); WaitChild(child);
+    }
+    private static void SettingsContextBridge() {
+        using Fixture fixture = new(); fixture.Install();
+        string path = fixture.Root + Path.DirectorySeparatorChar, file = Path.Combine(fixture.Root, "PCL", "Setup.ini");
+        File.WriteAllText(file, "VersionArgumentTitle:from-A\r\n");
+        PreferenceEntry entry = new("VersionArgumentTitle"); int invalidations = 0;
+        Action invalidate = () => { entry.ValueCache.TryRemove(path, out _); invalidations++; };
+        using var oldProvider = new InstanceConfigProvider(fixture.Root, invalidate);
+        Equal(0, invalidations);
+        PreferenceOwner old = new(path, oldProvider);
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, string>>();
+        Dictionary<string, PreferenceEntry> entries = new() { [entry.Key] = entry };
+        var host = new LegacySettingsHost<PreferenceOwner> {
+            InstancePath = owner => owner.Path, Identify = () => "synthetic", RegistryFolder = () => "unused",
+            ReadIni = (address, key, fallback) => LegacyBaseOperations.ReadIni(address, key, fallback, cache),
+            WriteIni = (_, _, _) => throw new Exception("Instance context was lost before writing."),
+            DeleteIni = (_, _) => throw new Exception("Instance context was lost before resetting."),
+            ValidateInstanceConfiguration = owner => owner.Config.AssertAttached(),
+            WriteInstanceIni = (owner, key, value) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, value, cache)),
+            DeleteInstanceIni = (owner, key) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, null, cache)),
+            Log = (_, _, _, _) => { }
+        };
+        var engine = new LegacySettingsEngine<PreferenceOwner, PreferenceEntry, LegacyAccountMigrationPlan>(() => entries, () => new object(), () => new(), host);
+        entry.SaveAction = owner => engine.SaveEntry(entry, owner);
+        Equal("from-A", engine.Get(entry.Key, old));
+        InstanceConfigProvider? freshProvider = null;
+        using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
+        using (var gate = fixture.Lease()) {
+            Directory.Delete(fixture.Root, true); fixture.RecreateManaged(Guid.NewGuid()); File.WriteAllText(file, "VersionArgumentTitle:from-B\r\n");
+            int beforeConstruction = invalidations; freshProvider = new(fixture.Root, invalidate);
+            Equal(beforeConstruction, invalidations); // No callback against a half-constructed model.
+            PreferenceOwner current = new(path, freshProvider);
+            Equal("from-B", engine.Get(entry.Key, current));
+            engine.Set(entry.Key, "saved-B", current); engine.Set(entry.Key, "stale-A", old);
+            Equal("saved-B", entry.GetCache(current));
+        }
+        using (freshProvider) freshProvider!.Save();
+        Equal("saved-B", LegacyBaseOperations.ParseIni(File.ReadAllText(file))[entry.Key]);
+    }
+    private sealed record PreferenceOwner(string Path, IInstanceConfigProvider Config);
+    private sealed class PreferenceEntry(string key) : LegacySettingData<PreferenceOwner>(key, "", false, null, (error, _) => throw error) {
+        public Action<PreferenceOwner?> SaveAction = null!;
+        public override LegacySettingSource GetSourceCode() => LegacySettingSource.Instance;
+        protected override string GetInstancePath(PreferenceOwner owner) => owner.Path;
+        public override void Save(PreferenceOwner? owner = null) => SaveAction(owner);
+    }
+    private static void RunActualJavaReset(InstanceConfigProvider provider, string root) {
+        // Each invocation is a fresh controlled process. Bind global Java entries to a private profile
+        // before their type initializer runs, and verify the binding before touching any value.
+        string globalPath = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(root))!, "isolated-java-config.json");
+        var isolated = new JsonConfigProvider(globalPath); ConfigProviders.Default = isolated;
+        Type configuration = typeof(InstanceConfigProvider).Assembly.GetType("PCLCS.Configs") ?? throw new Exception("Actual Java config class is required.");
+        object javaList = configuration.GetField("JavaList")!.GetValue(null)!;
+        Equal(true, ReferenceEquals(isolated, javaList.GetType().GetProperty("Provider")!.GetValue(javaList)));
+        object empty = Activator.CreateInstance(javaList.GetType().GenericTypeArguments[0])!;
+        javaList.GetType().GetMethod("Set")!.Invoke(javaList, [empty]);
+        Type java = typeof(InstanceConfigProvider).Assembly.GetType("PCLCS.Java") ?? throw new Exception("Actual Java model is required.");
+        object invalid = Activator.CreateInstance(java, [Path.Combine(root, "missing-java"), new Version(17, 0, 0, 0)])!;
+        object forced = configuration.GetField("JavaForced")!.GetValue(null)!;
+        forced.GetType().GetMethod("Set")!.Invoke(forced, [invalid, provider]); provider.Save(); provider.DiscardCache();
+        Equal<object?>(null, forced.GetType().GetMethod("Get")!.Invoke(forced, [provider])); provider.Save(); isolated.Save();
+        JObject disk = JObject.Parse(File.ReadAllText(Path.Combine(root, "PCL", "config.json")));
+        Equal(false, disk.ContainsKey("InstanceForcedJava")); Equal("kept", disk.Value<string>("unknown"));
     }
     private static void CreateJunction(string path, string target) {
         string command = "New-Item -ItemType Junction -Path '" + path.Replace("'", "''") + "' -Target '" + target.Replace("'", "''") + "' -ErrorAction Stop | Out-Null";

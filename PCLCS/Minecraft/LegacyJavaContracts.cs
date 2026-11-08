@@ -11,7 +11,7 @@ public sealed class LegacyJavaHost<TInstance> where TInstance : class {
     public Func<string, TInstance?, string> ReadString = null!;
     public Func<string, TInstance, int> ReadInteger = null!;
     public Action<string, int, TInstance> WriteInteger = null!;
-    public Func<TInstance, JsonConfigProvider> Config = null!;
+    public Func<TInstance, IConfigProvider> Config = null!;
     public Func<TInstance, McVersion> Version = null!;
     public Func<TInstance, string> VersionPath = null!;
     public Func<TInstance, string> InstanceName = null!;

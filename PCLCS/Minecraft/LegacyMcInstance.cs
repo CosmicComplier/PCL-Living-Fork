@@ -232,7 +232,7 @@ public partial class LegacyMcInstance<TSelf, TState, TCard>
         }
     }
     private string? inheritName;
-    public JsonConfigProvider Config;
+    public IInstanceConfigProvider Config;
     public void ResetSettingsCache() {
         host.ClearIniCache(PathIndie + "options.txt");
         host.ClearIniCache(PathVersion + "PCL\\Setup.ini");
@@ -246,7 +246,11 @@ public partial class LegacyMcInstance<TSelf, TState, TCard>
         nameOrFullPath = PathUtils.RemoveExtendedPrefix(nameOrFullPath);
         // A full path did not initialize ModMinecraft's module/loader fields in LF. Keep its platform host lazy.
         PathVersion = PathUtils.AddSlashSuffix((nameOrFullPath.Contains(":") ? "" : host.SelectedFolder() + "versions\\") + nameOrFullPath);
-        Config = new JsonConfigProvider(Path.Combine(PathVersion, "PCL\\config.json"));
+        int configReady = 0;
+        Config = new InstanceConfigProvider(PathVersion, () => {
+            if (Volatile.Read(ref configReady) == 1) host.ClearInstanceSettingsCache(Self);
+        });
+        Volatile.Write(ref configReady, 1);
     }
     public override bool Equals(object? obj) => obj is TSelf instance && PathUtils.IsSame(PathVersion, instance.PathVersion);
     public override int GetHashCode() => base.GetHashCode();

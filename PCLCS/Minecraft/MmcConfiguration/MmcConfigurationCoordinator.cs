@@ -16,7 +16,7 @@ public static partial class MmcConfigurationCoordinator {
     private static readonly Guid PreferenceAdmissionIdentity = new("649a06b5-2b88-4f56-9abd-139c4d39cdf9");
     private static readonly ConcurrentDictionary<string, WeakReference<MmcConfigurationState>> states = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, MmcConfigurationState> pendingStates = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-    internal static Action<string, string>? OperationObserver;
+    internal static Action<string, string>? OperationObserver { get; set; }
     internal static void PinPending(MmcConfigurationState state) => pendingStates[state.Root] = state;
     internal static void UnpinIfClean(MmcConfigurationState state) {
         if (state.Patches.Count == 0 && state.IniPatches.Count == 0)
@@ -32,7 +32,7 @@ public static partial class MmcConfigurationCoordinator {
         if (errors.Count != 0) throw new AggregateException("实例待写入设置尚未全部落盘。", errors);
     }
     internal static bool Within(string root, string path) => string.Equals(root, path, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
-        path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        path.StartsWith(Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     private static readonly HashSet<string> structural = new(StringComparer.Ordinal) {
         "MinecraftInstallManifest", "pcllfManagement", "instanceId", "generation", "managementKind", "schemaVersion", "formatProfile", "layout",
         "sourceBundle", "artifactInventory", "artifactLocks", "installedProjection", "componentOverrides"

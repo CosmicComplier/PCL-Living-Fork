@@ -75,6 +75,11 @@ public sealed class LegacySettingsHost<TInstance> where TInstance : class {
     public Func<string, string, string?, string?> ReadIni = null!;
     public Action<string, string, string?> WriteIni = null!;
     public Action<string, string> DeleteIni = null!;
+    // Instance-specific hosts retain immutable configuration identity at the path-only INI boundary.
+    // Validation is data-only; global/account storage and legacy test hosts keep their existing path.
+    public Action<TInstance>? ValidateInstanceConfiguration;
+    public Action<TInstance, string, string?>? WriteInstanceIni;
+    public Action<TInstance, string>? DeleteInstanceIni;
     public Func<string, string, bool> HasIni = null!;
     public Func<string, string, string?, string?> ReadRegistry = null!;
     public Action<string, string, string?> WriteRegistry = null!;

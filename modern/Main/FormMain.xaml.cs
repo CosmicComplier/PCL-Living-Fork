@@ -387,7 +387,7 @@ namespace PCL
             MarkEnding = () => ModBase.IsProgramEnding = true,
             DisableAnimations = () => ModAnimation.AniControlEnabled = checked(ModAnimation.AniControlEnabled + 1),
             Feedback = () => ModMain.FeedbackInfo(), OpenLog = () => ModBase.StartProcess(Paths.Base + "PCL\\Log1.txt"),
-            SaveAll = () => ConfigUtils.SaveAll(), FlushLog = () => Logger.Instance.Flush(), Kill = () => Process.GetCurrentProcess().Kill(),
+            SaveAll = () => { try { InstanceConfigProviders.SaveAll(); } finally { ConfigUtils.SaveAll(); } }, FlushLog = () => Logger.Instance.Flush(), Kill = () => Process.GetCurrentProcess().Kill(),
             LogShown = () => IsLogShown, WriteLogShown = value => IsLogShown = value, IssuesUrl = () => ModBase.LauncherIssuesUrl,
             Exit = value => Environment.Exit(value), DescribeCode = value => ((ModBase.ProcessReturnValues)value).ToString()
         };
