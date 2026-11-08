@@ -8,6 +8,7 @@ namespace PCLCS;
 public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnull {
     public async Task<MmcInstanceBackendResult> RepairAsync(MmcInstanceRepairRequest request, CancellationToken cancellationToken = default,
         IProgress<MmcInstanceBackendProgress>? progress = null) {
+        string? requestedRoot = request?.VersionRoot;
         try {
             ArgumentNullException.ThrowIfNull(request); cancellationToken.ThrowIfCancellationRequested();
             var initialPaths = MmcInstancePaths.Resolve(request.VersionRoot);
@@ -28,14 +29,14 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             if (compiled.ProfileFingerprint != definition.InstalledProjection!.ProfileFingerprint) throw new IOException("Recompiled source identity differs from the published profile.");
             var locks = definition.ArtifactLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))
                 .Concat(definition.PackageFileLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))).ToImmutableArray();
-            var preserved = MmcPackageFilePreservation.CreateLibraryArtifacts(saved.Baseline);
+            var preserved = PreservedArtifacts(saved.Baseline, compiled);
             var artifactRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, ActiveArtifacts(compiled), preserved, locks,
                 MmcArtifactIntent.RepairExisting, compiled.Assets);
             // All transport/preparation stays outside admission. Only already-locked bytes can satisfy repair.
             var fetched = await prefetch.PrefetchAsync(compiled, artifactRequest, cancellationToken).ConfigureAwait(false);
             using var prepared = await materializer.PrepareAsync(artifactRequest, fetched.CreateAccess(), cancellationToken, ArtifactProgress(progress)).ConfigureAwait(false);
             using var localTargets = new MmcArtifactWorkspace(paths);
-            var localRepairs = await RepairPreservedTargetsAsync(paths, definition, prepared, localTargets, cancellationToken).ConfigureAwait(false);
+            var localRepairs = await RepairPreservedTargetsAsync(paths, definition, compiled, prepared, localTargets, cancellationToken).ConfigureAwait(false);
             var observations = MmcArtifactBindingAdapter.Create(artifactRequest, compiled, prepared);
             long generation = checked(definition.Generation + 1);
             string name = Path.GetFileName(paths.InstanceRoot);
@@ -61,16 +62,17 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 return new(cancellationToken.IsCancellationRequested ? MmcInstanceBackendStatus.Cancelled : MmcInstanceBackendStatus.NeedsRecovery, WorkingRoot: paths.InstanceRoot, Failure: result.Diagnostic);
             progress?.Report(new("completed"));
             return new(MmcInstanceBackendStatus.Succeeded, bound.Definition, bound.Plan, paths, saved.PackageConfiguration, paths.InstanceRoot, []);
-        } catch (OperationCanceledException error) { return new(MmcInstanceBackendStatus.Cancelled, WorkingRoot: request.VersionRoot, Failure: error.Message); }
-        catch (Exception error) when (IsExpectedFailure(error)) { return new(MmcInstanceBackendStatus.NeedsRecovery, WorkingRoot: request.VersionRoot, Failure: error.Message); }
+        } catch (OperationCanceledException error) { return new(MmcInstanceBackendStatus.Cancelled, WorkingRoot: requestedRoot, Failure: error.Message); }
+        catch (Exception error) when (IsExpectedFailure(error)) { return new(MmcInstanceBackendStatus.NeedsRecovery, WorkingRoot: requestedRoot, Failure: error.Message); }
     }
 
     private static async Task<ImmutableArray<MmcFileMutation>> RepairPreservedTargetsAsync(MmcInstancePaths paths, MmcInstanceDefinition definition,
-        MmcPreparedArtifacts prepared, MmcArtifactWorkspace workspace, CancellationToken token) {
+        MmcCompiledProfile compiled, MmcPreparedArtifacts prepared, MmcArtifactWorkspace workspace, CancellationToken token) {
         var result = ImmutableArray.CreateBuilder<MmcFileMutation>(); var io = new MmcArtifactIo(new(), null);
         var already = prepared.StagedMutations.Select(value => value.TargetRelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var declared = DeclaredLocalTargets(compiled);
         foreach (var value in definition.PackageFileLocks) {
-            token.ThrowIfCancellationRequested(); if (already.Contains(value.TargetRelativePath)) continue;
+            token.ThrowIfCancellationRequested(); if (already.Contains(value.TargetRelativePath) || declared.Contains(value.TargetRelativePath)) continue;
             string target = paths.ResolveRelative(MmcPathRole.Instance, value.TargetRelativePath); string? old = MmcDurableFiles.Observe(target);
             if (old == value.AdoptedSha256) continue;
             string source = OriginalInput(paths, prepared, value.RecoveryObjectRelativePath);

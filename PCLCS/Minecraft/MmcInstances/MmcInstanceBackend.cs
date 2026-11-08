@@ -38,7 +38,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 byte[] baselineBytes = MmcPackageFileBaselineCodec.Serialize(CreateBaseline(source, packageFiles));
                 var baselineReference = sources.StageAuthorBaseline(baselineBytes, packageFiles.Files.Length); sources.StageOpaqueOriginals(packageFiles);
                 var baseline = RequireBaseline(baselineBytes, baselineReference, source.PackageSha256, source.Package.RelativeRoot);
-                var preserved = MmcPackageFilePreservation.CreateLibraryArtifacts(baseline);
+                var preserved = PreservedArtifacts(baseline, compiled);
                 var artifactsRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, ActiveArtifacts(compiled), preserved, [],
                     MmcArtifactIntent.AdoptDeclaredVariant, compiled.Assets);
                 var fetched = await prefetch.PrefetchAsync(compiled, artifactsRequest, cancellationToken).ConfigureAwait(false);
@@ -55,7 +55,8 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 RequireBinding(bound);
                 byte[] definition = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition!));
                 var mutations = new List<MmcFileMutation>(packageFiles.InitialGameMutations);
-                foreach (var file in packageFiles.Files.Where(file => file.Role == MmcPackageFileRole.LocalLibrary))
+                var declaredLocal = DeclaredLocalTargets(compiled);
+                foreach (var file in packageFiles.Files.Where(file => file.Role == MmcPackageFileRole.LocalLibrary && !declaredLocal.Contains(file.TargetRelativePath!)))
                     mutations.Add(new(file.TargetRelativePath!, null, null, file.Sha256, Path.GetRelativePath(paths.InstanceRoot, file.StagedPath!).Replace('\\', '/')));
                 mutations.AddRange(sources.Mutations); mutations.AddRange(ArtifactMutations(prepared));
                 mutations.Add(new(request.InstanceName + ".json", null, projection, Hash(projection)));
@@ -91,6 +92,12 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
     }
     private static ImmutableArray<MmcArtifactReference> ActiveArtifacts(MmcCompiledProfile profile) => profile.Classpath.Concat(profile.NativeArtifacts)
         .Concat(profile.DownloadOnlyArtifacts).Concat(profile.AuxiliaryArtifacts).GroupBy(value => value.Key, StringComparer.Ordinal).Select(group => group.First()).ToImmutableArray();
+    private static HashSet<string> DeclaredLocalTargets(MmcCompiledProfile profile) => ActiveArtifacts(profile).Where(value => value.Scope == MmcArtifactScope.InstanceLocal)
+        .Select(value => "libraries/" + value.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private static ImmutableArray<MmcArtifactReference> PreservedArtifacts(MmcValidatedPackageBaseline baseline, MmcCompiledProfile profile) {
+        var declared = DeclaredLocalTargets(profile);
+        return MmcPackageFilePreservation.CreateLibraryArtifacts(baseline).Where(value => !declared.Contains("libraries/" + value.RelativePath)).ToImmutableArray();
+    }
     private static byte[] RenderProjection(string name, Guid id, long generation, MmcCompiledProfile compiled, MmcPreparedArtifacts prepared, MmcInstancePaths paths) =>
         MmcVersionProjection.Render(name, id, generation, compiled, prepared.OrderedBindings.ToDictionary(value => value.Artifact.Key, value => value.TargetRelativePath),
             prepared.NativeDirectory is null ? null : Relative(paths, prepared.NativeDirectory),
@@ -158,7 +165,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
         MmcInstancePaths.ValidateVersionRoot(root);
         if (name != Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)))) throw new ArgumentException("Instance name must match its selected final directory.");
     }
-    private static string? WorkingRoot(MmcOwnedImportReservation? reservation) => reservation is null ? null : Directory.Exists(reservation.TemporaryRoot) ? reservation.TemporaryRoot : reservation.FinalRoot;
+    private static string? WorkingRoot(MmcOwnedImportReservation? reservation) => reservation?.RecoveryRoot;
     private static bool IsExpectedFailure(Exception value) => value is IOException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException or System.Net.Http.HttpRequestException or AggregateException;
     private static IProgress<MmcArtifactProgress> ArtifactProgress(IProgress<MmcInstanceBackendProgress>? progress) => new CallbackProgress<MmcArtifactProgress>(value => progress?.Report(new(value.Phase, value.CompletedBytes)));
     private sealed class CallbackProgress<T>(Action<T> report) : IProgress<T> { public void Report(T value) => report(value); }

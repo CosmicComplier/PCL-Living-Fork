@@ -49,7 +49,7 @@ internal static class MmcInstanceBackendTests {
         var paths = imported.Paths!;
         Equal("launcher library", File.ReadAllText(Path.Combine(paths.LocalLibraryRoot, "fixture.jar")));
         Equal("different game library", File.ReadAllText(Path.Combine(paths.GameRoot, "libraries", "fixture.jar")));
-        Equal(2, imported.Definition!.PackageFileLocks.Length); Equal(1, fixture.Downloads);
+        Equal(1, imported.Definition!.PackageFileLocks.Length); Equal("libraries/unreferenced.jar", imported.Definition.PackageFileLocks[0].TargetRelativePath); Equal(1, fixture.Downloads);
         Equal(false, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPending.json")));
         JObject settings = JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "config.json")));
         Equal(false, settings.ContainsKey("foreign-player-pref"));
@@ -90,6 +90,12 @@ internal static class MmcInstanceBackendTests {
             Equal(MmcInstanceBackendStatus.Cancelled, (await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)), cancellation.Token)).Status);
             Equal(false, Directory.Exists(fixture.VersionRoot));
         }
+        using (Fixture fixture = new()) {
+            using CancellationTokenSource cancellation = new();
+            var cancelled = await fixture.Backend(afterDownload: cancellation.Cancel).ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)), cancellation.Token);
+            Equal(MmcInstanceBackendStatus.Cancelled, cancelled.Status); Equal(false, Directory.Exists(fixture.VersionRoot));
+            Equal(true, File.Exists(Path.Combine(cancelled.WorkingRoot!, "PCL", "MmcImportPending.json")));
+        }
     }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}."); }
     private sealed class Fixture : IDisposable {
@@ -114,7 +120,7 @@ internal static class MmcInstanceBackendTests {
             Add(zip, "pack/PCL/config.json", "{\"foreign-player-pref\":\"must-not-import\"}");
         }
         private static void Add(ZipArchive zip, string path, string content) { using var output = new StreamWriter(zip.CreateEntry(path).Open(), new UTF8Encoding(false)); output.Write(content); }
-        public MmcInstanceBackend<MmcArtifactDownloadSpec> Backend(bool offline = false) {
+        public MmcInstanceBackend<MmcArtifactDownloadSpec> Backend(bool offline = false, Action? afterDownload = null) {
             HttpClient client = new(new NoNetwork()); clients.Add(client);
             MmcMetadataStore metadata = new(Path.Combine(CacheRoot, "metadata"), new Uri("https://metadata.invalid/"), client);
             return new(metadata, new(Path.Combine(CacheRoot, "libraries"), Path.Combine(CacheRoot, "assets"), Path.Combine(CacheRoot, "sources")), value => value,
@@ -123,6 +129,7 @@ internal static class MmcInstanceBackendTests {
                     foreach (var item in batch) {
                         if (!item.Urls.Contains("https://fixture.invalid/assets.json")) throw new Exception("Unexpected controlled download source.");
                         await File.WriteAllBytesAsync(item.DownloadPath, AssetIndex, token); Downloads++;
+                        afterDownload?.Invoke();
                     }
                 });
         }

@@ -16,6 +16,15 @@ public sealed class MmcOwnedImportReservation {
     public string TemporaryRoot { get; }
     public Guid InstanceId { get; }
     public string InstanceName => Path.GetFileName(FinalRoot);
+    public string? RecoveryRoot {
+        get {
+            if (Directory.Exists(TemporaryRoot)) return TemporaryRoot;
+            if (Directory.Exists(FinalRoot)) {
+                try { VerifyMarker(FinalRoot); return FinalRoot; } catch (IOException) { }
+            }
+            return null;
+        }
+    }
     private readonly string packageSha256;
     private MmcOwnedImportReservation(string finalRoot, string temporaryRoot, Guid id, string packageSha256, byte[] marker, byte[] ignore) {
         FinalRoot = finalRoot; TemporaryRoot = temporaryRoot; InstanceId = id; this.packageSha256 = packageSha256; this.marker = marker; this.ignore = ignore;
