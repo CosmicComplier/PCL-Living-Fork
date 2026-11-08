@@ -15,6 +15,7 @@ internal static class MmcRuntimeLaunchTests {
         yield return ("MMC runtime macros distinguish Minecraft version instance name session and owned paths", MacrosAndPrivacy);
         yield return ("MMC runtime refuses unbound execution variables account overrides Java conflicts and changed inputs", Refusals);
         yield return ("MMC classpath inspector preserves shadow order and resolves Java multi-release entries", ClasspathAndMultiRelease);
+        yield return ("MMC deep 92-JAR launch preserves early system-loader classpath and bounded compressed transport", LongArguments);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();
@@ -39,7 +40,7 @@ public final class Probe {
   public static void main(String[] args) {
     for (String arg : args) System.out.println("MARG:" + Base64.getEncoder().encodeToString(arg.getBytes(StandardCharsets.UTF_8)));
     System.out.println("MMODE:__MODE__");
-    for (String key : new String[]{"fixture.value","java.class.path","user.dir","java.io.tmpdir","oolloo.jlw.tmpdir","org.lwjgl.system.SharedLibraryExtractPath","java.specification.version"})
+    for (String key : new String[]{"fixture.value","fixture.loaderStartupCp","java.class.path","user.dir","java.io.tmpdir","oolloo.jlw.tmpdir","org.lwjgl.system.SharedLibraryExtractPath","java.specification.version"})
       System.out.println("MPROP:" + key + ":" + Base64.getEncoder().encodeToString(System.getProperty(key, "").getBytes(StandardCharsets.UTF_8)));
     System.out.println("MLOADER:" + ClassLoader.getSystemClassLoader().getClass().getName());
   }
@@ -51,6 +52,9 @@ public final class Probe {
         string root = Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests", "compile-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         string javac = Environment.GetEnvironmentVariable("PCLLF_MMC_TEST_JAVAC") ?? Path.Combine(Path.GetDirectoryName(Java17)!, OperatingSystem.IsWindows() ? "javac.exe" : "javac");
         Require(File.Exists(javac), "Explicit Java17 fixture compiler is missing.");
+        string bridgeSource = Path.Combine(root, "ArgvBridge.java"); File.WriteAllText(bridgeSource, MmcRuntimeBridgeTransport.JavaSource, new UTF8Encoding(false));
+        RunTool(javac, ["--release", "8", "-encoding", "UTF-8", "-g:none", "-d", root, bridgeSource]);
+        Require(Hash(File.ReadAllBytes(Path.Combine(root, "pcllf", "mmc", "runtime", "ArgvBridge.class"))) == MmcRuntimeBridgeTransport.ClassSha256, "Reviewed bridge source differs from embedded Java8 bytecode.");
         byte[] CompileProbe(string mode, int release) {
             string folder = Path.Combine(root, mode); Directory.CreateDirectory(Path.Combine(folder, "fixture"));
             string source = Path.Combine(folder, "fixture", "Probe.java"); File.WriteAllText(source, ProbeSource.Replace("__MODE__", mode, StringComparison.Ordinal), new UTF8Encoding(false));
@@ -58,7 +62,19 @@ public final class Probe {
             return File.ReadAllBytes(Path.Combine(folder, "fixture", "Probe.class"));
         }
         byte[] first = CompileProbe("first", 8), second = CompileProbe("second", 8), main = CompileProbe("main", 8), mr = CompileProbe("mr17", 17);
-        string loaderSource = Path.Combine(root, "TestLoader.java"); File.WriteAllText(loaderSource, "package fixture; public final class TestLoader extends ClassLoader { public TestLoader(ClassLoader parent) { super(parent); } }", new UTF8Encoding(false));
+        string loaderSource = Path.Combine(root, "TestLoader.java"); File.WriteAllText(loaderSource, """
+package fixture;
+public final class TestLoader extends ClassLoader {
+  public TestLoader(ClassLoader parent) {
+    super(parent);
+    System.setProperty("fixture.loaderStartupCp", System.getProperty("java.class.path"));
+    int count = Integer.parseInt(System.getProperty("fixture.requireJarCount", "0"));
+    for (int i = 0; i < count; i++)
+      if (parent.getResource("fixture/probe-library-" + (i < 10 ? "00" : i < 100 ? "0" : "") + i + ".marker") == null)
+        throw new IllegalStateException("Missing startup classpath JAR " + i);
+  }
+}
+""", new UTF8Encoding(false));
         string tweakSource = Path.Combine(root, "Tweak.java"); File.WriteAllText(tweakSource, "package fixture; public final class Tweak {}", new UTF8Encoding(false));
         RunTool(javac, ["--release", "8", "-g:none", "-d", root, loaderSource, tweakSource]);
         byte[] loader = File.ReadAllBytes(Path.Combine(root, "fixture", "TestLoader.class")), tweak = File.ReadAllBytes(Path.Combine(root, "fixture", "Tweak.class"));
@@ -89,21 +105,30 @@ public final class Probe {
         internal string Root { get; }
         internal MmcRuntimeLaunchRequest Request { get; }
         internal Fixture(int javaMajor = 17, bool multiRelease = false, bool loader = true, string? unknownArgument = null, MmcRuntimeWrapperMode wrapperMode = MmcRuntimeWrapperMode.JavaWrapper,
-            bool unmarkedVersions = false, bool laterTooNew = false, bool firstTooNew = false) {
+            bool unmarkedVersions = false, bool laterTooNew = false, bool firstTooNew = false, bool longClasspath = false) {
             Root = Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests", "run-" + Guid.NewGuid().ToString("N"));
-            string instance = Path.Combine(Root, "versions", "实例 space"); Directory.CreateDirectory(Path.Combine(instance, "minecraft"));
+            string instance = Path.Combine(Root, "versions", "实例 space");
+            if (longClasspath) instance = Path.Combine(Root, "versions", "deep-" + new string('d', Math.Max(1, 139 - Root.Length - "\\versions\\deep-\\minecraft".Length)));
+            Directory.CreateDirectory(Path.Combine(instance, "minecraft"));
             var paths = MmcInstancePaths.Resolve(instance, "minecraft"); string view = new('f', 64);
             byte[] first = unmarkedVersions ? Compiled.Value.UnmarkedVersions : multiRelease ? Compiled.Value.MultiRelease : Compiled.Value.First;
             if (firstTooNew) first = WithClassVersion(first, 99);
             byte[] second = laterTooNew ? WithClassVersion(Compiled.Value.Second, 99) : Compiled.Value.Second;
             byte[] main = laterTooNew ? WithClassVersion(Compiled.Value.Main, 99) : Compiled.Value.Main;
             var jarBytes = new Dictionary<string, byte[]> { ["first"] = first, ["second"] = second, ["main"] = main };
+            List<string> libraries = ["first", "second"];
+            if (longClasspath) {
+                libraries = Enumerable.Range(0, 91).Select(i => i == 0 ? "first" : "dependency-" + i.ToString("D3") + "-" + new string('x', 24)).ToList();
+                for (int i = 0; i < libraries.Count; i++) jarBytes[libraries[i]] = WithFile(i == 0 ? first : second, "fixture/probe-library-" + i.ToString("D3") + ".marker", Encoding.UTF8.GetBytes(i.ToString()));
+                jarBytes["main"] = main = WithFile(main, "fixture/probe-library-091.marker", Encoding.UTF8.GetBytes("91"));
+            }
             object Library(string name, byte[] bytes) => new { name, downloads = new { artifact = new { url = "https://example.invalid/" + name.Replace(':', '-'), sha1 = Convert.ToHexStringLower(SHA1.HashData(bytes)), sha256 = Hash(bytes), size = bytes.Length } } };
             string game = "--username ${auth_player_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --session ${auth_session} --userType ${user_type} --userProperties ${user_properties} --profile ${profile_name} --mc ${version_name} --type ${version_type} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --libraries ${library_directory} --primary ${primary_jar} --width ${resolution_width} --height ${resolution_height} --value '' --trail 'tail\\' --中文 '中文 path'";
+            if (longClasspath) game += " --cpEquivalent ${classpath}";
             if (unknownArgument is not null) game += " " + unknownArgument;
             string patch = JsonSerializer.Serialize(new Dictionary<string, object?> {
                 ["uid"] = "net.minecraft", ["version"] = "1.7.10", ["type"] = "release", ["mainClass"] = "fixture.Probe", ["mainJar"] = Library("fixture:main:1:client", main),
-                ["libraries"] = new[] { Library("fixture:first:1", first), Library("fixture:second:1", second) },
+                ["libraries"] = libraries.Select(name => Library("fixture:" + name + ":1", jarBytes[name])).ToArray(),
                 ["minecraftArguments"] = game, ["compatibleJavaMajors"] = new[] { 8, 17, 21, 24, 26 },
                 ["+jvmArgs"] = loader ? new[] { "-Djava.system.class.loader=fixture.TestLoader" } : [], ["+tweakers"] = loader ? new[] { "fixture.Tweak" } : []
             });
@@ -133,7 +158,7 @@ public final class Probe {
             File.WriteAllBytes(wrapper, Compiled.Value.Wrapper); byte[] bridgeBytes = MmcRuntimeBridgeTransport.CreateJarBytes(); File.WriteAllBytes(bridge, bridgeBytes);
             string java = javaMajor switch { 8 => Java8, 17 => Java17, 21 => Java21, _ => throw new ArgumentOutOfRangeException(nameof(javaMajor)) }; string javaHash = Hash(File.ReadAllBytes(java));
             var settings = new MmcRuntimeSettingsSnapshot("Instance Display", "PCLLF", "test", 16, 64, 640, 360, Guid.NewGuid()) {
-                WrapperMode = wrapperMode, UserJvmTokens = ["-Dfixture.value=regex\\\\d+ trailing\\"], ExtraGameTokens = ["", "中文 supplementary 😀", "double\\\\slashes", "trailing\\", "quoted\"value"], AppendResolutionArguments = false
+                WrapperMode = wrapperMode, UserJvmTokens = longClasspath ? ["-Dfixture.value=regex\\\\d+ trailing\\", "-Dfixture.requireJarCount=92"] : ["-Dfixture.value=regex\\\\d+ trailing\\"], ExtraGameTokens = ["", "中文 supplementary 😀", "double\\\\slashes", "trailing\\", "quoted\"value"], AppendResolutionArguments = false
             };
             Request = new(bound.Definition!, bound.Plan!, paths, targets.ToImmutableArray(), new(java, javaHash, javaHash, javaMajor, "amd64", 64), settings,
                 new("PlayerOne", new string('1', 32), "synthetic-secret-token-one", "token:synthetic-secret-token-one:uuid", "legacy", "{\"synthetic\":\"property\"}"),
@@ -157,7 +182,7 @@ public final class Probe {
         var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
         if (!process.WaitForExit(30000)) { process.Kill(true); throw new Exception("Controlled Java runtime timeout."); }
         Task.WaitAll(stdout, stderr);
-        Require(process.ExitCode == 0, "Controlled Java runtime failed: " + plan.Redact(stderr.Result));
+        Require(process.ExitCode == 0, "Controlled synthetic Java runtime failed (exit " + process.ExitCode + "): " + plan.Redact(stderr.Result + "\n" + stdout.Result));
         var arguments = ImmutableArray.CreateBuilder<string>(); Dictionary<string, string> properties = new(); string mode = "", loader = "";
         foreach (string line in stdout.Result.Replace("\r\n", "\n").Split('\n')) {
             if (line.StartsWith("MARG:", StringComparison.Ordinal)) arguments.Add(Encoding.UTF8.GetString(Convert.FromBase64String(line[5..])));
@@ -179,7 +204,7 @@ public final class Probe {
             Require(observed.Properties["user.dir"].Equals(fixture.Request.Paths.GameRoot, StringComparison.OrdinalIgnoreCase), "Actual process working directory is not GameRoot.");
             foreach (string property in new[] { "java.io.tmpdir", "oolloo.jlw.tmpdir", "org.lwjgl.system.SharedLibraryExtractPath" }) Require(observed.Properties[property].StartsWith(plan.MutableDirectories.SessionRoot.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase), "Native/Wrapper extraction escaped the per-session mutable root.");
             var separator = observed.Properties["java.class.path"].Split(';');
-            Require(separator.TakeLast(plan.OrderedGameClasspath.Length).SequenceEqual(plan.OrderedGameClasspath.Select(p => p.Replace('\\', '/'))), "Game classpath order/mainJar tail changed behind Wrapper prefix.");
+            Require(separator.TakeLast(plan.OrderedGameClasspath.Length).SequenceEqual(plan.OrderedGameClasspath.Select(p => Path.GetRelativePath(fixture.Request.Paths.GameRoot, p).Replace('\\', '/'))), "Game classpath order/mainJar tail changed behind Wrapper prefix.");
             MmcRuntimeLaunchBuilder.RevalidateFilesAsync(plan).GetAwaiter().GetResult();
         }
     }
@@ -201,6 +226,7 @@ public final class Probe {
             Expect("MMC_RUNTIME_UNBOUND_INPUT", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = ["@unbound.args"] } }).GetAwaiter().GetResult());
             Expect("MMC_RUNTIME_UNBOUND_INPUT", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = ["-javaagent:unbound.jar"] } }).GetAwaiter().GetResult());
             Expect("MMC_RUNTIME_JAVA", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Account = new("Player", "uuid", "token", "session", "legacy", "{}", javaConstraints: [new("account", MaximumMajor: 8)]) }).GetAwaiter().GetResult());
+            Expect("MMC_RUNTIME_WORKING_DIRECTORY", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = ["-Duser.dir=C:/different-root"] } }).GetAwaiter().GetResult());
             string shadow = Path.Combine(Path.GetDirectoryName(fixture.Request.Wrapper!.ActualPath)!, "shadow.jar"); File.WriteAllBytes(shadow, Compiled.Value.First);
             Expect("MMC_CLASSPATH_SUPPORT_SHADOW", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Wrapper = new(shadow, Hash(Compiled.Value.First), Compiled.Value.First.Length) }).GetAwaiter().GetResult());
             string jar = fixture.Request.Targets[0].ActualPath; File.AppendAllText(jar, "tamper");
@@ -261,6 +287,97 @@ public final class Probe {
             Task.WaitAll(stdout, stderr);
             Require(process.ExitCode != 0 && stderr.Result.Contains("UnsupportedClassVersionError", StringComparison.Ordinal), "Effective first-winner rejection did not match actual JVM behavior.");
         }
+    }
+    private static void LongArguments() {
+        Require(MmcRuntimeWindowsCommandLine.LengthIncludingTerminator("java.exe", []) == 11, "Windows executable quote/NUL budget changed.");
+        (string Argument, long Length)[] quoting = [("", 14), ("a b", 17), ("a\nb", 17), ("a\"b", 18), ("a\\\"b", 20), ("a \\", 18), ("😀", 14)];
+        foreach (var sample in quoting) Require(MmcRuntimeWindowsCommandLine.LengthIncludingTerminator("java.exe", [sample.Argument]) == sample.Length, "Windows CRT argument quoting length changed.");
+        MmcRuntimeWindowsCommandLine.Validate("java.exe", [new string('x', 32755)]);
+        Expect("MMC_RUNTIME_COMMAND_LENGTH", () => MmcRuntimeWindowsCommandLine.Validate("java.exe", [new string('x', 32756)]));
+        string probeExecutable = Environment.ProcessPath ?? throw new Exception("Native command-line probe executable missing.");
+        VerifyActualCommandLength(probeExecutable, ["--command-line-probe", .. quoting.Select(sample => sample.Argument)]);
+        int remaining = checked(32767 - (int)MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(probeExecutable, ["--command-line-probe"]) - 1);
+        VerifyActualCommandLength(probeExecutable, ["--command-line-probe", new string('x', remaining)]);
+        foreach (int major in new[] { 8, 17, 21 }) {
+            using Fixture fixture = new(major, longClasspath: true);
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
+            Require(plan.OrderedGameClasspath.Length == 92 && fixture.Request.Paths.GameRoot.Length >= 139, "Deep GTNH-scale synthetic fixture was shortened.");
+            Require(Path.GetFileName(plan.OrderedGameClasspath[^1]) == "main-1-client.jar", "Bound mainJar is no longer last in the game CP.");
+            string absolute = string.Join(';', new[] { fixture.Request.Wrapper!.ActualPath, fixture.Request.Bridge!.ActualPath }.Concat(plan.OrderedGameClasspath).Select(p => p.Replace('\\', '/')));
+            long originalCpFrameLowerBound = absolute.Length + ((Encoding.UTF8.GetByteCount(absolute) + 2L) / 3) * 4;
+            Require(originalCpFrameLowerBound > 32767, "Synthetic fixture does not reproduce the old duplicated-CP command-line overflow.");
+            var start = plan.CreateStartInfo();
+            long length = MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(start.FileName, start.ArgumentList);
+            Require(length <= 32767, "Deep GTNH-scale command line exceeds actual Windows quote/NUL limit.");
+            var observed = Run(plan);
+            Require(observed.Properties["java.specification.version"] == (major == 8 ? "1.8" : major.ToString()), "Deep fixture did not use the requested actual Java major.");
+            Require(observed.Mode == "first" && observed.Loader == "fixture.TestLoader", "Deep CP lost shadow order or custom system loader.");
+            Require(observed.Properties["fixture.loaderStartupCp"] == observed.Properties["java.class.path"], "Custom loader did not see the final game CP at VM initialization.");
+            string[] vmCp = observed.Properties["java.class.path"].Split(';');
+            Require(vmCp.All(p => !Path.IsPathRooted(p)), "Transport classpath still repeats the absolute GameRoot.");
+            var resolved = vmCp.Select(p => Path.GetFullPath(p, fixture.Request.Paths.GameRoot)).ToArray();
+            Require(resolved.TakeLast(92).SequenceEqual(plan.OrderedGameClasspath, StringComparer.OrdinalIgnoreCase), "Relative CP changed the exact bound actual files or order.");
+            Require(Flag(observed, "--cpEquivalent") == string.Join(';', vmCp.TakeLast(92)), "Game classpath macro differs from the VM game CP.");
+            Require(observed.Arguments.TakeLast(5).SequenceEqual(fixture.Request.Settings.ExtraGameTokens), "Compressed frame lost empty/Unicode/slash/quote arguments.");
+            Require(observed.Properties["user.dir"].Equals(fixture.Request.Paths.GameRoot, StringComparison.OrdinalIgnoreCase), "Relative CP root is not bound to GameRoot.");
+            string frame = start.ArgumentList[^1];
+            Require(plan.RedactedArguments[^1] == "[sensitive argv frame]" && plan.Redact(frame) == "[redacted]", "Compressed sensitive frame escaped whole-frame redaction.");
+            Require(!string.Join('|', plan.RedactedArguments).Contains(fixture.Request.Account.AccessToken, StringComparison.Ordinal), "Deep launch leaked live token in log-safe arguments.");
+            var inspection = MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult();
+            Require(inspection.EffectiveClasses.Single(c => c.ClassName == "fixture.Probe").ClasspathPosition == 0, "Deep CP observation differs from executed shadow order.");
+            fixture.RemoveMutable(plan);
+            var second = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Account = new("Second Player", new string('2', 32), "another-synthetic-token", "another-session", "msa", "{\"other\":\"account\"}") }).GetAwaiter().GetResult();
+            Require(second.NonSensitiveArgumentFingerprint == plan.NonSensitiveArgumentFingerprint && second.RuntimeInputFingerprint == plan.RuntimeInputFingerprint, "Compressed account switch changed non-sensitive fingerprints.");
+            Console.WriteLine("  Java " + major + ": 92 JARs, GameRoot " + fixture.Request.Paths.GameRoot.Length + " UTF-16 units, old CP/frame lower bound " + originalCpFrameLowerBound + ", actual command " + length + " including NUL.");
+        }
+        foreach (int major in new[] { 8, 17, 21 }) using (Fixture fixture = new(major)) {
+            var sameDirectory = fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = fixture.Request.Settings.UserJvmTokens.Add("-Duser.dir=" + fixture.Request.Paths.GameRoot.Replace('\\', '/')) } };
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(sameDirectory).GetAwaiter().GetResult();
+            Require(Run(plan).Properties["user.dir"] == fixture.Request.Paths.GameRoot, "Equivalent approved user.dir was not restored to canonical GameRoot.");
+            byte[] oversized = new byte[MmcRuntimeBridgeTransport.MaximumFrameBytes + 1];
+            using MemoryStream compressed = new(); using (var stream = new ZLibStream(compressed, CompressionLevel.SmallestSize, true)) stream.Write(oversized);
+            using MemoryStream envelope = new(); WriteInt(envelope, 0x4d4d4333); WriteInt(envelope, oversized.Length); envelope.Write(compressed.ToArray());
+            Require(BridgeFails(fixture, UrlBase64(envelope.ToArray())), "Compressed frame exceeding the decoded budget was accepted.");
+            envelope.SetLength(0); WriteInt(envelope, 0x4d4d4333); WriteInt(envelope, 1); envelope.Write(compressed.ToArray());
+            Require(BridgeFails(fixture, UrlBase64(envelope.ToArray())), "Compressed expansion beyond its declared/bounded length was accepted.");
+            string[] limit = [new string('a', 262144), new string('b', 262144), new string('c', 262144), new string('d', 262099)];
+            string maximum = MmcRuntimeBridgeTransport.Encode("fixture.Probe", limit);
+            Require(maximum.Length < 4096, "Highly compressible maximum-size sensitive frame was not compressed.");
+            Require(!BridgeFails(fixture, maximum), "Exact maximum decoded frame did not pass Java8-compatible bridge decoding.");
+            byte[] encoded = Convert.FromBase64String(maximum.Replace('-', '+').Replace('_', '/') + new string('=', (4 - maximum.Length % 4) % 4));
+            Require(BridgeFails(fixture, UrlBase64(encoded[..^1])), "Truncated zlib frame was accepted.");
+            Require(BridgeFails(fixture, UrlBase64(encoded.Concat(new byte[] { 0 }).ToArray())), "Trailing compressed data was accepted.");
+            ExpectArgument(() => MmcRuntimeBridgeTransport.Encode("fixture.Probe", limit.Append("x").ToArray()));
+            ExpectArgument(() => MmcRuntimeBridgeTransport.Encode("fixture.Probe", [new string('x', MmcRuntimeBridgeTransport.MaximumStringBytes + 1)]));
+        }
+    }
+    private static void VerifyActualCommandLength(string executable, string[] arguments) {
+        ProcessStartInfo start = new(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (string argument in arguments) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start) ?? throw new Exception("Native command-line probe did not start.");
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(30000)) { process.Kill(true); throw new Exception("Native command-line probe timeout."); }
+        Task.WaitAll(output, errors);
+        Require(process.ExitCode == 0 && long.TryParse(output.Result.Trim(), out long observed) && observed == MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(executable, arguments), "Predicted Windows command length differs from the actual child GetCommandLineW representation. Expected " + MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(executable, arguments) + ", observed " + output.Result.Trim() + "; " + errors.Result);
+    }
+    private static bool BridgeFails(Fixture fixture, string frame) {
+        ProcessStartInfo start = new(fixture.Request.Java.ExecutablePath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (string value in new[] { "-cp", fixture.Request.Bridge!.ActualPath + ";" + fixture.Request.Targets[0].ActualPath, MmcRuntimeBridgeTransport.EntryPoint, frame }) start.ArgumentList.Add(value);
+        using var process = Process.Start(start) ?? throw new Exception("Controlled bridge decoder did not start.");
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(30000)) { process.Kill(true); throw new Exception("Controlled decoder timeout."); }
+        Task.WaitAll(output, errors);
+        return process.ExitCode != 0;
+    }
+    private static void WriteInt(Stream output, int value) { Span<byte> bytes = stackalloc byte[4]; System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes, value); output.Write(bytes); }
+    private static string UrlBase64(byte[] bytes) => Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    private static void ExpectArgument(Action operation) { try { operation(); } catch (ArgumentException) { return; } throw new Exception("Expected bounded transport argument refusal."); }
+    private static byte[] WithFile(byte[] originalJar, string name, byte[] contents) {
+        Dictionary<string, byte[]> files = new(StringComparer.Ordinal);
+        using (var input = new MemoryStream(originalJar)) using (var jar = new ZipArchive(input, ZipArchiveMode.Read)) foreach (var entry in jar.Entries) {
+            using var body = entry.Open(); using var copy = new MemoryStream(); body.CopyTo(copy); files.Add(entry.FullName, copy.ToArray());
+        }
+        files.Add(name, contents); return Jar(files);
     }
     private static byte[] WithClassVersion(byte[] originalJar, ushort major) {
         Dictionary<string, byte[]> files = new(StringComparer.Ordinal);
