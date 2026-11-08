@@ -11,6 +11,8 @@ public sealed record MmcInstanceImportRequest(string ArchivePath, string Version
 public sealed record MmcInstanceRepairRequest(string VersionRoot, MmcRuntimeEnvironment Environment, Guid? ExpectedInstanceId = null,
     bool AllowRebuildDivergedProjection = false) {
     public Action<MmcTransactionCheckpoint, int>? TransactionCheckpoint { get; init; }
+    public long? ExpectedGeneration { get; init; }
+    public string? ExpectedPrimarySha256 { get; init; }
 }
 public sealed record MmcInstanceBackendProgress(string Phase, long CompletedBytes = 0, long TotalBytes = 0);
 public sealed record MmcInstanceBackendResult(MmcInstanceBackendStatus Status, MmcInstanceDefinition? Definition = null,

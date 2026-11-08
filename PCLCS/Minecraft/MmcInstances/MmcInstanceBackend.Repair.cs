@@ -14,6 +14,9 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             var initialPaths = MmcInstancePaths.Resolve(request.VersionRoot);
             var primary = MmcSavedSourceStore.ReadPrimary(initialPaths); var definition = primary.Definition;
             if (request.ExpectedInstanceId is { } expectedId && expectedId != definition.InstanceId) throw new IOException("The selected instance identity changed.");
+            if (request.ExpectedGeneration is { } expectedGeneration && definition.Generation != expectedGeneration ||
+                request.ExpectedPrimarySha256 is { } expectedHash && primary.Sha256 != expectedHash)
+                throw new IOException("The selected instance generation/definition changed before repair.");
             var paths = MmcInstancePaths.Resolve(request.VersionRoot, definition.Layout.GameRootLeaf);
             using (var readGate = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken)) {
                 MmcFileTransactions.AssertNoPending(readGate); MmcSessions.AssertNoActive(readGate);
@@ -93,9 +96,12 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
     }
     private static void VerifySourceRecords(MmcInstancePaths paths, MmcInstanceDefinition definition) {
         foreach (var value in definition.SourceBundle.MetadataRecords)
-            if (MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, value.ObjectRelativePath)) != value.ContentSha256)
+            if (Hash(MmcSavedSourceStore.ReadBounded(paths, value.ObjectRelativePath, 16 * 1024 * 1024)) != value.ContentSha256)
                 throw new IOException("Saved source changed before publication.");
-        if (definition.AuthorFileBaseline is not { } baseline || MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, baseline.ObjectRelativePath)) != baseline.ContentSha256)
+        foreach (var source in definition.ComponentOverrides.Select(value => value.PatchReference).OfType<MmcObjectReference>())
+            if (Hash(MmcSavedSourceStore.ReadBounded(paths, source.ObjectRelativePath, 16 * 1024 * 1024)) != source.Sha256)
+                throw new IOException("Saved component override changed before publication.");
+        if (definition.AuthorFileBaseline is not { } baseline || Hash(MmcSavedSourceStore.ReadBounded(paths, baseline.ObjectRelativePath, 64 * 1024 * 1024)) != baseline.ContentSha256)
             throw new IOException("Measured author baseline changed before publication.");
     }
 }

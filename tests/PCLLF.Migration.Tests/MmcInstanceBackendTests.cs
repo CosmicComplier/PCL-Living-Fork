@@ -12,6 +12,8 @@ internal static class MmcInstanceBackendTests {
         yield return ("MMC import preparation measures the full archive and keeps opaque docs outside live settings", SourcePreparation);
         yield return ("MMC backend imports real files and repairs offline after original ZIP deletion without touching player data", ImportRepair);
         yield return ("MMC backend rejects damaged authority and retains interrupted import ownership", FailureIsolation);
+        yield return ("MMC launch preparation keeps complete generations and repairs only missing managed inputs offline", LaunchPreparation);
+        yield return ("MMC launch preparation rejects stale identity, new variants and damaged support without adopting bytes", LaunchRefusals);
     }
     private static void SourcePreparation() => SourcePreparationAsync().GetAwaiter().GetResult();
     private static async Task SourcePreparationAsync() {
@@ -70,6 +72,65 @@ internal static class MmcInstanceBackendTests {
         Equal("keep", JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "config.json"))).Value<string>("unknown-personal-pref"));
     }
     private static void FailureIsolation() => FailureIsolationAsync().GetAwaiter().GetResult();
+    private static void LaunchPreparation() => LaunchPreparationAsync().GetAwaiter().GetResult();
+    private static async Task LaunchPreparationAsync() {
+        using Fixture fixture = new();
+        var imported = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        Guid id = imported.Definition!.InstanceId;
+        File.Delete(fixture.Archive); Directory.Delete(fixture.CacheRoot, true);
+        var backend = fixture.Backend(offline: true);
+        var request = new MmcInstancePrepareLaunchRequest(fixture.VersionRoot, new("windows", "x86_64", 8), id, 1);
+        string primary = Path.Combine(fixture.VersionRoot, "PCL", "InstanceDefinition.json"); byte[] before = File.ReadAllBytes(primary);
+        var ready = await backend.PrepareLaunchAsync(request);
+        if (ready.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(ready.Failure);
+        Equal(false, ready.Repaired); Equal(1L, ready.Snapshot!.Definition.Generation); Equal(true, before.SequenceEqual(File.ReadAllBytes(primary)));
+        Equal(imported.BoundPlan!.BoundFingerprint, ready.Snapshot.BoundPlan.BoundFingerprint);
+        Equal(true, ready.Snapshot.Targets.All(value => File.Exists(value.ActualPath)));
+        Equal(true, ready.Snapshot.PackageConfiguration.Values.ContainsKey("JvmArgs"));
+        using (var lease = MmcAdmissionGate.Acquire(fixture.VersionRoot, id, TimeSpan.Zero))
+            MmcInstanceBackend<MmcArtifactDownloadSpec>.ValidatePreparedLaunch(lease, ready.Snapshot);
+        byte[] supportBytes = Encoding.UTF8.GetBytes("owned reviewed support"); string digest = Convert.ToHexStringLower(SHA256.HashData(supportBytes));
+        var support = await MmcInstanceBackend<MmcArtifactDownloadSpec>.PrepareLaunchSupportAsync(ready.Snapshot, [new("wrapper.jar", supportBytes, digest)]);
+        Equal(digest, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(support[0].ActualPath))));
+        Equal(true, before.SequenceEqual(File.ReadAllBytes(primary)));
+        File.Delete(Path.Combine(fixture.VersionRoot, "fixture.json"));
+        foreach (var target in ready.Snapshot.Targets) File.Delete(target.ActualPath);
+        var missing = await backend.PrepareLaunchAsync(request with { RepairIncomplete = false });
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, missing.Status); Equal(false, missing.Repaired);
+        var repaired = await backend.PrepareLaunchAsync(request);
+        if (repaired.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(repaired.Failure);
+        Equal(true, repaired.Repaired); Equal(2L, repaired.Snapshot!.Definition.Generation); Equal(1, fixture.Downloads);
+        var stable = await backend.PrepareLaunchAsync(request with { ExpectedGeneration = 2 });
+        if (stable.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(stable.Failure);
+        Equal(false, stable.Repaired); Equal(2L, stable.Snapshot!.Definition.Generation);
+        using var staleLease = MmcAdmissionGate.Acquire(fixture.VersionRoot, id, TimeSpan.Zero);
+        bool refused = false; try { MmcInstanceBackend<MmcArtifactDownloadSpec>.ValidatePreparedLaunch(staleLease, ready.Snapshot); } catch (IOException) { refused = true; }
+        Equal(true, refused);
+    }
+    private static void LaunchRefusals() => LaunchRefusalsAsync().GetAwaiter().GetResult();
+    private static async Task LaunchRefusalsAsync() {
+        using Fixture fixture = new();
+        var imported = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        Guid id = imported.Definition!.InstanceId; var backend = fixture.Backend(offline: true);
+        var request = new MmcInstancePrepareLaunchRequest(fixture.VersionRoot, new("windows", "x86_64", 8), id, 1);
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, (await backend.PrepareLaunchAsync(request with { ExpectedInstanceId = Guid.NewGuid() })).Status);
+        var variant = await backend.PrepareLaunchAsync(request with { Environment = new("windows", "arm64", 8) });
+        Equal(MmcInstanceBackendStatus.Rejected, variant.Status); Equal("MMC_INSTANCE_VARIANT_REQUIRED", variant.Diagnostics.Single().Code);
+        var ready = await backend.PrepareLaunchAsync(request);
+        if (ready.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(ready.Failure);
+        byte[] bytes = Encoding.UTF8.GetBytes("reviewed bridge"); string digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
+        var inputs = new[] { new MmcInstanceLaunchSupportInput("bridge.jar", bytes, digest) };
+        var support = await MmcInstanceBackend<MmcArtifactDownloadSpec>.PrepareLaunchSupportAsync(ready.Snapshot!, inputs);
+        File.WriteAllText(support[0].ActualPath, "external bytes");
+        bool refused = false; try { await MmcInstanceBackend<MmcArtifactDownloadSpec>.PrepareLaunchSupportAsync(ready.Snapshot!, inputs); } catch (IOException) { refused = true; }
+        Equal(true, refused); Equal("external bytes", File.ReadAllText(support[0].ActualPath));
+        string active = ready.Snapshot!.Targets.First().ActualPath; File.WriteAllText(active, "changed after preparation");
+        using var lease = MmcAdmissionGate.Acquire(fixture.VersionRoot, id, TimeSpan.Zero);
+        refused = false; try { MmcInstanceBackend<MmcArtifactDownloadSpec>.ValidatePreparedLaunch(lease, ready.Snapshot); } catch (IOException) { refused = true; }
+        Equal(true, refused); Equal(1L, MmcSavedSourceStore.ReadPrimary(ready.Snapshot.Paths).Definition.Generation);
+    }
     private static async Task FailureIsolationAsync() {
         using (Fixture fixture = new()) {
             var imported = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
