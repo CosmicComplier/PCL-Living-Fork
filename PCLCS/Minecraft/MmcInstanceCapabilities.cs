@@ -32,11 +32,17 @@ public static class MmcInstanceCapabilities {
 
     /// <summary>Protect direct old file helpers when the destination is below a versions instance.</summary>
     public static void RequireLegacyContainingInstance(string path, string operation) {
-        string? current = Path.GetFullPath(path);
+        string absolute = Path.GetFullPath(path);
+        var attributes = MmcInstancePaths.Attributes(absolute);
+        // Existing ordinary root junctions remain supported, while an alias to a descendant
+        // of a managed instance must not hide the actual owning versions directory.
+        string? current = attributes is not null && (attributes.Value & FileAttributes.Directory) == 0
+            ? Path.Combine(MmcConfigurationPaths.PhysicalRoot(Path.GetDirectoryName(absolute)!),Path.GetFileName(absolute))
+            : MmcConfigurationPaths.PhysicalRoot(absolute);
         while (!string.IsNullOrEmpty(current)) {
             string? parent = Path.GetDirectoryName(current);
             if (parent is not null && string.Equals(Path.GetFileName(parent), "versions", StringComparison.OrdinalIgnoreCase)) {
-                RequireLegacy(current, operation); return;
+                RequireLegacy(current, operation);
             }
             current = parent;
         }
@@ -45,6 +51,7 @@ public static class MmcInstanceCapabilities {
     /// <summary>Old whole-folder destructive operations cannot discard any managed child.</summary>
     public static void RequireLegacyGameFolder(string gameRoot, string operation) {
         string physical = MmcConfigurationPaths.PhysicalRoot(gameRoot);
+        RequireLegacyContainingInstance(physical, operation);
         RequireLegacy(physical, operation);
         string versions = MmcConfigurationPaths.Target(physical, "versions");
         var attributes = MmcInstancePaths.Attributes(versions);

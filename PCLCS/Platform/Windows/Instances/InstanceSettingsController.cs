@@ -34,8 +34,12 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
         } catch (Exception ex) { host.Error(ex,"重载版本独立设置时出错"); }
     }
     public void Reset() {
+        var capability = MmcInstanceCapabilities.LegacyOperation(host.Instance().PathVersion,"初始化旧版本独立设置");
+        if (!capability.Allowed) {
+            host.ErrorAlert(new InvalidOperationException(capability.RefusalReason),"初始化版本独立设置失败");
+            return;
+        }
         try {
-            MmcInstanceCapabilities.RequireLegacy(host.Instance().PathVersion,"初始化旧版本独立设置");
             host.ResetSettings(); host.Reset("VersionServerLogin",host.Instance()); host.Reset("VersionArgumentIndieV2",host.Instance()); host.Reset("VersionAdvanceAssets",host.Instance());
             if (host.SetForcedJava is not null) host.SetForcedJava(host.Instance(),null); else Configs.JavaForced.Reset(host.Instance().Config);
             host.JavaRefresh().Start();
