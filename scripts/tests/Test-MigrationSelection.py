@@ -136,6 +136,8 @@ def main() -> int:
         ("tests/PCLLF.Migration.Tests/MmcInstanceCloneTests.cs", "mmc-clone-tests", False),
         ("PCLCS/Minecraft/MmcInstances/MmcInstanceLifecycleBackend.cs", "mmc-lifecycle-tests", True),
         ("tests/PCLLF.Migration.Tests/MmcInstanceLifecycleTests.cs", "mmc-lifecycle-tests", False),
+        ("PCLCS/Minecraft/MmcInstances/MmcInstanceHistoryBackend.cs", "mmc-history-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcInstanceHistoryTests.cs", "mmc-history-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcArtifactTests.cs", "mmc-artifact-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcConfigurationTests.cs", "mmc-configuration-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcArchiveTests.cs", "mmc-archive-tests", False),
