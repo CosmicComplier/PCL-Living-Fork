@@ -34,7 +34,7 @@ internal static class MmcLegacyAdoptionUi {
         string minecraft = ModMinecraft.McFolderSelected;
         var services = ServicesFactory?.Invoke(minecraft) ?? Services(minecraft);
         string zip = services.SelectArchive is not null ? services.SelectArchive(instance) : MeloongCore.Wpf.Dialogs.SelectFile("选择对应原始 MMC ZIP", false,
-            filter: [(new[] { "zip" }, "MMC 原始整合包")]).FirstOrDefault();
+            filter: new[] { (new[] { "zip" }, "MMC 原始整合包") }).FirstOrDefault();
         if (string.IsNullOrWhiteSpace(zip)) return;
         string name = services.SelectName is not null ? services.SelectName(minecraft, instance.Name + "-MMC") : ModMain.MyMsgBoxInput("创建 MMC 管理副本（保留旧实例）", "选择新的版本名称。旧实例不改名、不接管。", instance.Name + "-MMC",
             new Collection<Validate> { new ValidateFolderName(Path.Combine(minecraft, "versions")) });
@@ -46,15 +46,17 @@ internal static class MmcLegacyAdoptionUi {
     internal static ModLoader.LoaderCombo<string> StartCreateCopy(ModMinecraft.McInstance instance, string zip, string minecraft, string name,
         MmcLegacyAdoptionUiServices services) {
         EnterBusy(); var fence = new MmcOperationCancellationFence(() => Interlocked.Exchange(ref busy, 0));
+        RedoableWorker sourceWorker = null;
         var worker = new MmcOperationWorker<string, MmcLegacyAdoptionResult>(fence, "读取旧实例与原包", task => {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
-            task.Output = CreateAsync(instance, zip, minecraft, name, services, task, fence, linked.Token).GetAwaiter().GetResult();
+            task.Output = CreateAsync(instance, zip, minecraft, name, services, task, sourceWorker, fence, linked.Token).GetAwaiter().GetResult();
         }) { InterruptOnCancel = false };
         var combo = new MmcOperationCombo<string>(fence, "创建 MMC 管理副本：" + name, [worker]);
-        return Register(combo, instance.PathVersion, services, fence);
+        sourceWorker = new RedoableWorker(LoaderFileOperation.CreateWorkload(combo, instance.PathVersion));
+        return Register(combo, instance.PathVersion, services, fence, sourceWorker);
     }
     private static async Task<MmcLegacyAdoptionResult> CreateAsync(ModMinecraft.McInstance instance, string zip, string minecraft, string name,
-        MmcLegacyAdoptionUiServices services, ModLoader.LoaderTask<string, MmcLegacyAdoptionResult> task, MmcOperationCancellationFence fence, CancellationToken token) {
+        MmcLegacyAdoptionUiServices services, ModLoader.LoaderTask<string, MmcLegacyAdoptionResult> task, IWorker sourceWorker, MmcOperationCancellationFence fence, CancellationToken token) {
         MmcArchiveSource source = null; MmcLegacyAdoptionPreview preview = null;
         try {
             source = await MmcArchiveSourceReader.ReadAsync(zip, cancellationToken: token).ConfigureAwait(false);
@@ -65,7 +67,7 @@ internal static class MmcLegacyAdoptionUi {
             bool mc = Directory.Exists(Path.Combine(root, "minecraft")), dot = Directory.Exists(Path.Combine(root, ".minecraft"));
             if (mc && dot) throw new IOException("旧实例有两棵游戏树，不能猜测或合并。");
             string game = mc ? Path.Combine(root, "minecraft") : dot ? Path.Combine(root, ".minecraft") : root;
-            var service = Backend(services, task, root);
+            var service = Backend(services, task, root, sourceWorker);
             var progress = new InlineProgress(services, task);
             preview = await service.PreviewPreparedAsync(source, new(root, game, zip, environment), resolved, token, progress).ConfigureAwait(false); source = null;
             var intent = ModBase.RunInUiWait(() => {
@@ -120,15 +122,15 @@ internal static class MmcLegacyAdoptionUi {
         }) { InterruptOnCancel = false };
         var combo = new MmcOperationCombo<string>(fence, "恢复 MMC 管理副本：" + entry.Name, [worker]); return Register(combo, entry.OperationDirectory, services, fence);
     }
-    private static MmcLegacyAdoptionService<ModNet.NetFile> Backend(MmcLegacyAdoptionUiServices services, ModLoader.LoaderTask<string, MmcLegacyAdoptionResult> worker, string sourceRoot) => new(services.Metadata, services.CacheRoots,
+    private static MmcLegacyAdoptionService<ModNet.NetFile> Backend(MmcLegacyAdoptionUiServices services, ModLoader.LoaderTask<string, MmcLegacyAdoptionResult> worker, string sourceRoot, IWorker sourceWorker = null) => new(services.Metadata, services.CacheRoots,
         MmcDownloads.BuildFile, (files, token) => MmcDownloads.RunBatchAsync(files, token, worker.CreateSyncProgressProvider(), services.DownloadCreated), new() {
             ObserveActivity = (root, game) => {
                 try { return ModWatcher.HasRunningMinecraft || QuickPlayWorlds.HasRunningSessions() || WorldBackups.IsBusy || WorldBackups.HasActiveGame(game) || ModLaunch.McLaunchLoader?.State == ModBase.LoadState.Loading || ModpackUpdate.Pending(root).Any()
                     ? MmcLegacyAdoptionActivity.Active : MmcLegacyAdoptionActivity.Idle; } catch { return MmcLegacyAdoptionActivity.Unknown; }
-            }, AcquireLegacyPathLock = root => sourceRoot is not null && PathUtils.IsSame(root, sourceRoot) ? new SourceLease(worker, root) : throw new IOException("没有旧源路径修改租约。")
+            }, AcquireLegacyPathLock = root => sourceRoot is not null && sourceWorker is not null && PathUtils.IsSame(root, sourceRoot) ? new SourceLease(sourceWorker, root) : throw new IOException("没有旧源路径修改租约。")
         });
-    private static ModLoader.LoaderCombo<string> Register(ModLoader.LoaderCombo<string> combo, string input, MmcLegacyAdoptionUiServices services, MmcOperationCancellationFence fence) {
-        try { if (services.RegisterTask is not null) services.RegisterTask(combo); else { ModLoader.LoaderTaskbarAdd(combo); ModBase.RunInUi(() => ModMain.FrmMain?.BtnExtraDownload.ShowRefresh()); } combo.Start(input); return combo; }
+    private static ModLoader.LoaderCombo<string> Register(ModLoader.LoaderCombo<string> combo, string input, MmcLegacyAdoptionUiServices services, MmcOperationCancellationFence fence, IWorker driver = null) {
+        try { if (services.RegisterTask is not null) services.RegisterTask(combo); else { ModLoader.LoaderTaskbarAdd(combo); ModBase.RunInUi(() => ModMain.FrmMain?.BtnExtraDownload.ShowRefresh()); } if (driver is null) combo.Start(input); else driver.Start(); return combo; }
         catch { fence.AbandonUnstarted(); throw; }
     }
     private static void CheckResult(MmcLegacyAdoptionResult result, CancellationToken token) {
