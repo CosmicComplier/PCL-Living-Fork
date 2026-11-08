@@ -52,6 +52,7 @@
 <Compile Include="Modules/Minecraft/MmcInstances.cs" />
 <Compile Include="Modules/Minecraft/MmcOperationLoaders.cs" />
 <Compile Include="Modules/Minecraft/MmcCloneUi.cs" />
+<Compile Include="Modules/Minecraft/MmcLifecycleUi.cs" />
 <Compile Include="My Project/Resources.Designer.cs" />
 <Compile Include="Pages/PageInstance/MyLocalModItem.xaml.cs" />
 <Compile Include="Modules/ModEvent.cs" />

@@ -94,6 +94,10 @@ namespace PCL
                 RefreshInstanceList = new Action(() => global::PCL.ModLoader.LoaderFolderRun(global::PCL.ModMinecraft.McInstanceListLoader, global::PCL.ModMinecraft.McFolderSelected, global::PCL.ModLoader.LoaderFolderRunType.ForceRun, MaxDepth: 1, ExtraPath: @"versions\")),
                 LoadInstance = new Func<global::System.String, global::PCL.ModMinecraft.McInstance>(Name => new global::PCL.ModMinecraft.McInstance(Name).Load()),
                 Rename = new Func<global::PCL.ModMinecraft.McInstance, global::System.String, global::PCL.ModMinecraft.McInstance>((Target, Name) => Target.Rename(Name)),
+                BeginManagedRename = Target => MmcLifecycleUi.PromptRename(Target, renamed => {
+                    if (!ReferenceEquals(PageInstanceLeft.Instance, Target)) return;
+                    PageInstanceLeft.Instance = renamed; Controller.Reload();
+                }),
                 ReadIni = new Func<global::System.String, global::System.String, global::System.String, global::System.String>((Path, Key, DefaultValue) => global::PCL.ModBase.ReadIni(Path, Key, DefaultValue)),
                 WriteIni = new Action<global::System.String, global::System.String, global::System.String>((Path, Key, Value) => global::PCL.ModBase.WriteIni(Path, Key, Value)),
                 ReadLogo = Path => global::PCL.MinecraftLogoCompatibility.ReadVersionLogo(Path),

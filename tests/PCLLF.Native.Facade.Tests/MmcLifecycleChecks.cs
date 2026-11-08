@@ -33,9 +33,46 @@ internal static class MmcLifecycleChecks {
         CheckUiAndBackground(managed);
         CheckOrdinary(root,game,managed);
         CheckManagedCloneUi(managed);
+        CheckManagedRenameUi(Path.Combine(game, "versions", "managed-ui-copy"));
         InstanceConfigProviders.FlushAndDisposeWithin(root);
         environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS mmc-lifecycle: real managed import/prepare/repair, six damaged/residual/unknown states, dedicated managed UI clone with new identity/source preservation, legacy clone/migration/history/update/component/delete refusal, UI/background dispatch before tasks, loose metadata/custom ordinary root/junction preservation. Guards do not claim P4 implementation.");
+        Console.WriteLine("PASS mmc-lifecycle: real managed import/prepare/repair, six damaged/residual/unknown states, dedicated managed UI clone and rename with new/retained identities, legacy clone/migration/history/update/component/delete refusal, UI/background dispatch before tasks, loose metadata/custom ordinary root/junction preservation. Guards do not claim P4 implementation.");
+    }
+
+    private static void CheckManagedRenameUi(string sourceRoot) {
+        var before = MmcInstanceInspector.Read(sourceRoot);
+        var type = Native.Type("PCL.MmcLifecycleUi");
+        var register = Native.Property(type, "RegisterTask"); var published = Native.Property(type, "Published");
+        object? oldRegister = register.GetValue(null), oldPublished = published.GetValue(null);
+        var scheduler = (PCLCS.Loaders.LegacyLoaderHost<ModLoader.LoaderBase, ModBase.LoadState, MyLoading.MyLoadingState>)
+            Native.Field(typeof(ModLoader), "NativeLoaderHost").GetValue(null)!;
+        Action refresh = scheduler.RefreshExtraDownload; using ManualResetEventSlim refreshed = new(false);
+        ModLoader.LoaderCombo<string>? actual = null; MmcInstanceLifecycleResult? result = null;
+        try {
+            scheduler.RefreshExtraDownload = refreshed.Set;
+            register.SetValue(null, new Action<ModLoader.LoaderCombo<string>>(loader => { actual = loader; ModLoader.LoaderTaskbar.Add(loader); }));
+            published.SetValue(null, new Action<MmcInstanceLifecycleResult>(value => result = value));
+            var instance = new ModMinecraft.McInstance(sourceRoot).Load();
+            var host = new InstanceOverallPageHost<ModMinecraft.McInstance, Grid, object> {
+                Instance = () => instance,
+                BeginManagedRename = target => Native.Static("PCL.MmcLifecycleUi", "StartRename", target, "managed-ui-renamed", null),
+                ErrorAlert = (error, _) => throw new IOException("Managed rename UI dispatch failed.", error)
+            };
+            new InstanceOverallPageController<ModMinecraft.McInstance, ModMinecraft.McInstance.McInstanceState,
+                ModMinecraft.McInstanceCardType, Grid, object>(new(), host, _ => { }, () => 0).Rename();
+            Native.Check(actual is not null, "Managed rename controller did not dispatch to the dedicated Main task.");
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            while (actual!.State == ModBase.LoadState.Loading || !refreshed.IsSet) {
+                if (timer.Elapsed > TimeSpan.FromSeconds(30)) throw new TimeoutException("Controlled managed rename task did not finish.");
+                Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, DateTime.UtcNow.AddSeconds(2)); Thread.Sleep(5);
+            }
+            Native.Check(actual.State == ModBase.LoadState.Finished && result?.Status == MmcInstanceBackendStatus.Succeeded,
+                "Dedicated rename task failed: " + actual.Error);
+            var renamed = MmcInstanceInspector.Read(result!.CurrentRoot!);
+            Native.Check(renamed.IsConsistent && renamed.Definition!.InstanceId == before.Definition!.InstanceId &&
+                renamed.Definition.Generation == before.Definition.Generation + 1 && !Directory.Exists(sourceRoot) &&
+                File.Exists(Path.Combine(result.CurrentRoot!, "managed-ui-renamed.json")), "Managed UI rename lost its identity/name projection.");
+        } finally { scheduler.RefreshExtraDownload = refresh; register.SetValue(null, oldRegister); published.SetValue(null, oldPublished); }
     }
 
     private static void CheckManagedCloneUi(string sourceRoot) {

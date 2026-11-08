@@ -77,6 +77,10 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
     }
     public void Rename() {
         try {
+            TInstance target = host.Instance();
+            if (!MmcInstanceInspector.Read(target.PathVersion).IsLegacy && host.BeginManagedRename is not null) {
+                host.BeginManagedRename(target); return;
+            }
             MmcInstanceCapabilities.RequireLegacy(host.Instance().PathVersion, "重命名");
             if (host.Locked(host.Instance())) { host.HintRed("该版本正在被修改，请稍后再重命名！"); return; }
             string oldName = host.Instance().Name; string? name = host.InputName(oldName, host.MinecraftFolder() + "versions");
