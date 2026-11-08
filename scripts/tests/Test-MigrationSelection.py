@@ -132,6 +132,8 @@ def main() -> int:
         ("PCLCS/Minecraft/MmcInstances/MmcInstanceBackend.cs", "mmc-backend-tests", True),
         ("PCLCS/Minecraft/MmcInstances/MmcSavedSourceStore.cs", "mmc-backend-tests", True),
         ("tests/PCLLF.Migration.Tests/MmcInstanceBackendTests.cs", "mmc-backend-tests", False),
+        ("PCLCS/Minecraft/MmcInstances/MmcInstanceCloneBackend.cs", "mmc-clone-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcInstanceCloneTests.cs", "mmc-clone-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcArtifactTests.cs", "mmc-artifact-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcConfigurationTests.cs", "mmc-configuration-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcArchiveTests.cs", "mmc-archive-tests", False),
