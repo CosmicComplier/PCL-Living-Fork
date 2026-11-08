@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 using PCLCS;
 using PCLLF.MMCC.Core;
 
@@ -21,6 +22,12 @@ internal static class MmcArtifactTests {
         yield return ("MMC native jars reject traversal duplicate targets and links", () => Run(NativeUnsafe));
         yield return ("MMC native jars enforce entry declared and actual output budgets", () => Run(NativeBudgets));
         yield return ("MMC native collisions across jars reject different contents", () => Run(NativeCollisions));
+        yield return ("MMC assets isolate index objects and legacy virtual aliases", () => Run(AssetViews));
+        yield return ("MMC assets map resources only inside the instance game root", () => Run(AssetResourceMapping));
+        yield return ("MMC assets repair offline from adopted originals", () => Run(AssetOfflineRepair));
+        yield return ("MMC assets reject ambiguous malformed and unsafe index data", () => Run(AssetInvalidIndexes));
+        yield return ("MMC assets enforce metadata object and aggregate byte budgets", () => Run(AssetBudgets));
+        yield return ("MMC materialization observations are measured even without declared SHA1", () => Run(ObservedDigests));
     }
 
     private static void Run(Func<Task> action) => action().GetAwaiter().GetResult();
@@ -228,6 +235,98 @@ internal static class MmcArtifactTests {
         Equal(0, fixture.ActiveStages());
     }
 
+    private static async Task AssetViews() {
+        using var fixture = new Fixture(); byte[] bytes = [3, 4, 5];
+        var index = AssetIndex(IndexJson(new Dictionary<string, byte[]> { ["sounds/a.ogg"] = bytes, ["sounds/b.ogg"] = bytes }, virtualAssets: true));
+        fixture.Source(index.Key, IndexJson(new Dictionary<string, byte[]> { ["sounds/a.ogg"] = bytes, ["sounds/b.ogg"] = bytes }, virtualAssets: true));
+        fixture.AssetSource(bytes);
+        var request = fixture.Request([index]) with { Assets = new("example", index, index.Provenance) };
+        using var prepared = await new MmcArtifactMaterializer().PrepareAsync(request, fixture.Access());
+        Equal(true, prepared.AssetsMaterialized); Equal(2, prepared.AssetFiles.Length); Equal(2, prepared.AdoptedLocks.Length);
+        Equal(1, prepared.OrderedBindings.Length);
+        Equal(prepared.AssetFiles[0].ObjectPath, prepared.AssetFiles[1].ObjectPath);
+        Equal(true, prepared.AssetsRoot!.StartsWith(fixture.Paths.RuntimeRoot, StringComparison.Ordinal));
+        Equal(true, prepared.GameAssetsRoot!.EndsWith(Path.Combine("assets", "virtual", "example"), StringComparison.Ordinal));
+        Equal(false, File.Exists(prepared.AssetFiles[0].ObjectPath));
+        Equal(true, prepared.AssetFiles.All(x => x.VirtualPath is not null && x.MappedResourcePath is null));
+        var objectMutation = prepared.StagedMutations.Single(x => x.TargetRelativePath.Contains("/assets/objects/", StringComparison.Ordinal));
+        Equal(Hash(bytes), Hash(File.ReadAllBytes(objectMutation.StagedPath)));
+        fixture.AssetSource([9, 9]);
+        Equal(Hash(bytes), Hash(File.ReadAllBytes(objectMutation.StagedPath)));
+        Equal(Convert.ToHexStringLower(SHA1.HashData(bytes)), prepared.AssetFiles[0].Sha1);
+    }
+
+    private static async Task AssetResourceMapping() {
+        using var fixture = new Fixture(); byte[] bytes = [1, 3, 5];
+        byte[] json = IndexJson(new Dictionary<string, byte[]> { ["sound/a.ogg"] = bytes }, mapToResources: true);
+        var index = AssetIndex(json); fixture.Source(index.Key, json); fixture.AssetSource(bytes);
+        string existing = Path.Combine(fixture.Paths.GameRoot, "resources", "sound", "a.ogg"); fixture.Write(existing, [7, 8]);
+        using var prepared = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([index]), fixture.Access());
+        Equal(Path.Combine(fixture.Paths.GameRoot, "resources"), prepared.MappedResourcesRoot);
+        Equal(prepared.MappedResourcesRoot, prepared.GameAssetsRoot);
+        Equal(existing, prepared.AssetFiles.Single().MappedResourcePath);
+        Equal(Hash([7, 8]), Hash(File.ReadAllBytes(existing)));
+        var mutation = prepared.StagedMutations.Single(x => x.TargetRelativePath == "minecraft/resources/sound/a.ogg");
+        Equal(Hash([7, 8]), mutation.ExpectedExistingSha256); Equal(Hash(bytes), mutation.NewSha256);
+    }
+
+    private static async Task AssetOfflineRepair() {
+        using var fixture = new Fixture(); byte[] bytes = [8, 6, 4];
+        byte[] json = IndexJson(new Dictionary<string, byte[]> { ["textures/a.png"] = bytes }, virtualAssets: true);
+        var index = AssetIndex(json); fixture.Source(index.Key, json); fixture.AssetSource(bytes);
+        ImmutableArray<MmcArtifactLock> locks; string view;
+        using (var initial = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([index]), fixture.Access())) { locks = initial.AdoptedLocks; view = initial.ViewKey; }
+        fixture.ClearSources();
+        using var repair = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([index], locks, MmcArtifactIntent.RepairExisting));
+        Equal(view, repair.ViewKey); Equal(true, repair.AssetsMaterialized); Equal(1, repair.AssetFiles.Length);
+        Equal(Hash(bytes), repair.AssetFiles[0].Sha256);
+        Equal(2, repair.Observations.Length);
+    }
+
+    private static async Task AssetInvalidIndexes() {
+        foreach (string text in new[] {
+            "{\"objects\":{},\"objects\":{}}", "{\"objects\":{},\"virtual\":\"true\"}", "{\"objects\":{},\"unknownInstallAction\":true}",
+            "{\"objects\":{\"../escape\":{\"hash\":\"" + new string('a', 40) + "\",\"size\":0}}}",
+            "{\"objects\":{\"a\":{\"hash\":\"" + new string('a', 40) + "\",\"size\":-1}}}",
+            "{\"objects\":{\"a\":{\"hash\":\"" + new string('a', 40) + "\",\"size\":false}}}"
+        }) {
+            using var fixture = new Fixture(); byte[] json = Encoding.UTF8.GetBytes(text); var index = AssetIndex(json); fixture.Source(index.Key, json);
+            await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(fixture.Request([index]), fixture.Access()));
+            Equal(0, fixture.ActiveStages());
+        }
+        foreach (var names in new[] { new[] { "a", "a/b" }, new[] { "Name", "name" } }) {
+            using var fixture = new Fixture(); byte[] json = IndexJson(names.ToDictionary(x => x, x => new byte[] { 1 }));
+            var index = AssetIndex(json); fixture.Source(index.Key, json);
+            await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(fixture.Request([index]), fixture.Access()));
+        }
+        using var unresolved = new Fixture();
+        var missing = new MmcAssetIndex("legacy", null, new("net.minecraft", "1", "fixture", "digest", "assets", 0));
+        await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(unresolved.Request([]) with { Assets = missing }));
+    }
+
+    private static async Task AssetBudgets() {
+        using var fixture = new Fixture(); byte[] json = IndexJson(new Dictionary<string, byte[]> { ["a"] = [1], ["b"] = [2] });
+        var index = AssetIndex(json); fixture.Source(index.Key, json); fixture.AssetSource([1]); fixture.AssetSource([2]);
+        await Throws<IOException>(() => new MmcArtifactMaterializer(new(MaxAssetObjects: 1)).PrepareAsync(fixture.Request([index]), fixture.Access()));
+        await Throws<IOException>(() => new MmcArtifactMaterializer(new(MaxAssetIndexBytes: 8)).PrepareAsync(fixture.Request([index]), fixture.Access()));
+        await Throws<IOException>(() => new MmcArtifactMaterializer(new(MaxCopiedBytes: json.Length + 1)).PrepareAsync(fixture.Request([index]), fixture.Access()));
+        Equal(0, fixture.ActiveStages());
+    }
+
+    private static async Task ObservedDigests() {
+        using var fixture = new Fixture(); byte[] bytes = [1, 4, 9];
+        var artifact = Artifact("measured", "a.jar", bytes) with { Sha1 = null };
+        fixture.Source(artifact.Key, bytes);
+        using var prepared = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([artifact]), fixture.Access());
+        string expected = Convert.ToHexStringLower(SHA1.HashData(bytes));
+        Equal(expected, prepared.OrderedBindings.Single().ObservedSha1); Equal(expected, prepared.Observations.Single().ObservedSha1);
+    }
+
+    private static byte[] IndexJson(Dictionary<string, byte[]> files, bool virtualAssets = false, bool mapToResources = false) =>
+        JsonSerializer.SerializeToUtf8Bytes(new { objects = files.ToDictionary(x => x.Key, x => new { hash = Convert.ToHexStringLower(SHA1.HashData(x.Value)), size = x.Value.Length }),
+            @virtual = virtualAssets, map_to_resources = mapToResources });
+    private static MmcArtifactReference AssetIndex(byte[] bytes) => Artifact("asset-index", "indexes/example.json", bytes) with { Role = MmcArtifactRole.AssetIndex };
+
     private static byte[] Jar(params (string Name, byte[] Content)[] entries) {
         using var bytes = new MemoryStream();
         using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, true)) {
@@ -258,17 +357,20 @@ internal static class MmcArtifactTests {
         public string Cache { get; }
         public MmcInstancePaths Paths { get; }
         public Dictionary<string, string> Sources { get; } = new(StringComparer.Ordinal);
+        private Dictionary<string, string> AssetSources { get; } = new(StringComparer.Ordinal);
         public Fixture() {
             Root = Path.Combine(Scope, "versions", "sample"); Cache = Path.Combine(Scope, "cache");
             Directory.CreateDirectory(Root); Directory.CreateDirectory(Cache); Paths = MmcInstancePaths.Resolve(Root);
         }
         public void Source(string key, byte[] bytes) { string path = Path.Combine(Cache, Hash(Encoding.UTF8.GetBytes(key))); Write(path, bytes); Sources[key] = path; }
+        public void AssetSource(byte[] bytes) { string hash = Convert.ToHexStringLower(SHA1.HashData(bytes)); string path = Path.Combine(Cache, "assets", hash); Write(path, bytes); AssetSources[hash] = path; }
         public void Write(string path, byte[] bytes) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllBytes(path, bytes); }
         public string Resolve(string relative) => Paths.ResolveRelative(MmcPathRole.Instance, relative);
         public MmcArtifactRequest Request(ImmutableArray<MmcArtifactReference> artifacts, ImmutableArray<MmcArtifactLock> locks = default,
             MmcArtifactIntent intent = MmcArtifactIntent.AdoptDeclaredVariant) => new(Paths, "compiler-context-v1", artifacts, [], locks, intent);
-        public MmcArtifactSourceAccess Access() => new((artifact, token) => ValueTask.FromResult<MmcArtifactSource?>(Sources.TryGetValue(artifact.Key, out string? path) ? new(Cache, path) : null));
-        public void ClearSources() { foreach (string path in Sources.Values) File.Delete(path); Sources.Clear(); }
+        public MmcArtifactSourceAccess Access() => new((artifact, token) => ValueTask.FromResult<MmcArtifactSource?>(
+            Sources.TryGetValue(artifact.Key, out string? path) || (MmcArtifactMaterializer.IsAssetObjectReference(artifact) && artifact.Sha1 is not null && AssetSources.TryGetValue(artifact.Sha1, out path)) ? new(Cache, path) : null));
+        public void ClearSources() { foreach (string path in Sources.Values.Concat(AssetSources.Values)) File.Delete(path); Sources.Clear(); AssetSources.Clear(); }
         public int ActiveStages() { string parent = Path.Combine(Paths.RuntimeRoot, ".staging"); return Directory.Exists(parent) ? Directory.GetDirectories(parent).Length : 0; }
         public void Dispose() { if (Directory.Exists(Scope)) Directory.Delete(Scope, true); }
     }

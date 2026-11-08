@@ -24,11 +24,14 @@ public sealed record MmcArtifactProgress(string Phase, string ArtifactKey, long 
 
 public sealed record MmcArtifactRequest(MmcInstancePaths Paths, string LogicalContext,
     ImmutableArray<MmcArtifactReference> Artifacts, ImmutableArray<MmcArtifactReference> AdditionalPreservedArtifacts,
-    ImmutableArray<MmcArtifactLock> ExistingLocks, MmcArtifactIntent Intent);
+    ImmutableArray<MmcArtifactLock> ExistingLocks, MmcArtifactIntent Intent, MmcAssetIndex? Assets = null);
 
 public sealed record MmcArtifactBinding(MmcArtifactReference Artifact, string Sha256, long SizeBytes,
-    string TargetRelativePath, string TargetPath, string VerifiedInputPath);
+    string TargetRelativePath, string TargetPath, string VerifiedInputPath, string? ObservedSha1 = null);
+public sealed record MmcArtifactObservation(string ArtifactKey, string ObservedSha256, string ObservedSha1, long SizeBytes);
 public sealed record MmcNativeFileBinding(string SourceArtifactKey, string RelativePath, string TargetPath, string Sha256, long SizeBytes);
+public sealed record MmcAssetFileBinding(string Name, string ArtifactKey, string Sha1, string Sha256, long SizeBytes,
+    string ObjectPath, string? VirtualPath, string? MappedResourcePath);
 
 /// <summary>Publication is exclusively the instance transaction executor's responsibility.</summary>
 public sealed record MmcArtifactStagedMutation(string StagedPath, string NewSourceRelativePath, string TargetRelativePath,
@@ -56,15 +59,24 @@ public sealed class MmcPreparedArtifacts : IDisposable {
     public string? NativeDirectory { get; }
     public string? AssetsRoot { get; }
     public ImmutableArray<MmcNativeFileBinding> NativeFiles { get; }
+    public ImmutableArray<MmcAssetFileBinding> AssetFiles { get; }
+    public string? GameAssetsRoot { get; }
+    public string? MappedResourcesRoot { get; }
+    public ImmutableArray<MmcArtifactObservation> Observations { get; }
 
     internal MmcPreparedArtifacts(MmcArtifactWorkspace workspace, string viewKey,
         ImmutableArray<MmcArtifactBinding> bindings, ImmutableArray<MmcArtifactLock> locks,
         ImmutableArray<MmcArtifactStagedMutation> mutations, bool nativeComplete, bool assetsMaterialized,
-        string? nativeDirectory = null, string? assetsRoot = null, ImmutableArray<MmcNativeFileBinding> nativeFiles = default) {
+        string? nativeDirectory = null, string? assetsRoot = null, ImmutableArray<MmcNativeFileBinding> nativeFiles = default,
+        ImmutableArray<MmcAssetFileBinding> assetFiles = default, string? gameAssetsRoot = null, string? mappedResourcesRoot = null,
+        ImmutableArray<MmcArtifactObservation> observations = default) {
         this.workspace = workspace; ViewKey = viewKey; OrderedBindings = bindings; AdoptedLocks = locks;
         StagedMutations = mutations; NativeExtractionComplete = nativeComplete; AssetsMaterialized = assetsMaterialized;
         NativeDirectory = nativeDirectory; AssetsRoot = assetsRoot;
         NativeFiles = nativeFiles.IsDefault ? [] : nativeFiles;
+        AssetFiles = assetFiles.IsDefault ? [] : assetFiles;
+        GameAssetsRoot = gameAssetsRoot; MappedResourcesRoot = mappedResourcesRoot;
+        Observations = observations.IsDefault ? [] : observations;
     }
     public void Dispose() => workspace.Dispose();
 }

@@ -9,6 +9,7 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 using System.Threading;
 using System.Threading.Tasks;
 using PCLLF.MMCC.Core;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace PCLCS;
 
@@ -35,8 +36,11 @@ public sealed partial class MmcArtifactMaterializer {
         access ??= new();
         MmcInstancePaths paths = MmcInstancePaths.Resolve(request.Paths.InstanceRoot, request.Paths.GameRootLeaf);
         var artifacts = request.Artifacts.IsDefault ? ImmutableArray<MmcArtifactReference>.Empty : request.Artifacts;
+        if (request.Assets is not null && request.Assets.Artifact is null) throw new IOException("Asset index metadata must be resolved before materialization.");
+        if (request.Assets?.Artifact is { } requiredIndex && !artifacts.Any(x => x.Key == requiredIndex.Key)) artifacts = artifacts.Add(requiredIndex);
         var preserved = request.AdditionalPreservedArtifacts.IsDefault ? ImmutableArray<MmcArtifactReference>.Empty : request.AdditionalPreservedArtifacts;
-        if ((long)artifacts.Length + preserved.Length > limits.MaxArtifacts) throw new IOException("Artifact count budget exceeded.");
+        if ((long)artifacts.Length + preserved.Length > limits.MaxArtifacts || (!request.ExistingLocks.IsDefault && request.ExistingLocks.Length > limits.MaxArtifacts))
+            throw new IOException("Artifact count budget exceeded.");
         var locks = new Dictionary<string, MmcArtifactLock>(StringComparer.Ordinal);
         foreach (var value in request.ExistingLocks.IsDefault ? [] : request.ExistingLocks) {
             ValidateLock(value);
@@ -67,7 +71,10 @@ public sealed partial class MmcArtifactMaterializer {
                 if (adoptedBytes > limits.MaxCopiedBytes) throw new IOException("Aggregate artifact actual byte budget exceeded.");
                 inputs.Add(artifact.Key, prepared);
             }
-            string viewKey = ViewKey(request.LogicalContext, artifacts.Select(x => inputs[x.Key]));
+            var assetPlan = await PrepareAssetInputsAsync(request.Assets, artifacts, inputs, locks, request.Intent,
+                paths, workspace, io, access, mutations, progress, cancellationToken).ConfigureAwait(false);
+            string viewKey = ViewKey(request.LogicalContext, artifacts.Select(x => inputs[x.Key]).Concat(
+                assetPlan is null ? [] : assetPlan.Objects.Select(x => inputs[x.Key])));
             var bindings = ImmutableArray.CreateBuilder<MmcArtifactBinding>();
             var targetClaims = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var artifact in artifacts) {
@@ -79,13 +86,19 @@ public sealed partial class MmcArtifactMaterializer {
                 string target = paths.ResolveRelative(MmcPathRole.Instance, relative);
                 string verified = await StageTargetAsync(input.OriginalInput, relative, input.Lock.AdoptedSha256,
                     input.Lock.SizeBytes, artifact.Key, paths, workspace, io, mutations, cancellationToken).ConfigureAwait(false);
-                bindings.Add(new(artifact, input.Lock.AdoptedSha256, input.Lock.SizeBytes, relative, target, verified));
+                bindings.Add(new(artifact, input.Lock.AdoptedSha256, input.Lock.SizeBytes, relative, target, verified, input.ObservedSha1));
             }
             var nativeFiles = await ExtractNativesAsync(artifacts.Where(x => x.Role == MmcArtifactRole.Native).Select(x => inputs[x.Key]),
                 viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
+            var assetFiles = await StageAssetsAsync(assetPlan, inputs, viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
+            string? assetsRoot = assetPlan is null ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/assets");
+            string? mappedRoot = assetPlan is { MapToResources: true, Virtual: false } ? paths.ResolveRelative(MmcPathRole.Game, "resources") : null;
+            string? gameAssetsRoot = assetPlan is null ? null : mappedRoot ?? paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/assets/virtual/" + assetPlan.IndexId);
             return new(workspace, viewKey, bindings.ToImmutable(), inputs.Values.Select(x => x.Lock).ToImmutableArray(),
-                mutations.Values.ToImmutableArray(), true, !artifacts.Any(x => x.Role == MmcArtifactRole.AssetIndex),
-                nativeFiles.IsEmpty ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/natives"), nativeFiles: nativeFiles);
+                mutations.Values.ToImmutableArray(), true, true,
+                nativeFiles.IsEmpty ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/natives"), assetsRoot,
+                nativeFiles, assetFiles, gameAssetsRoot, mappedRoot,
+                inputs.Values.Select(x => new MmcArtifactObservation(x.Artifact.Key, x.Lock.AdoptedSha256, x.ObservedSha1, x.Lock.SizeBytes)).ToImmutableArray());
         } catch (Exception failure) {
             try { workspace.Dispose(); }
             catch (Exception cleanup) { throw new AggregateException("Artifact preparation failed; owned workspace cleanup also failed.", failure, cleanup); }
@@ -93,21 +106,23 @@ public sealed partial class MmcArtifactMaterializer {
         }
     }
 
-    private sealed record PreparedInput(MmcArtifactReference Artifact, MmcArtifactLock Lock, string OriginalInput);
+    private sealed record PreparedInput(MmcArtifactReference Artifact, MmcArtifactLock Lock, string OriginalInput, string ObservedSha1);
 
     private async Task<PreparedInput> PrepareInputAsync(MmcArtifactReference artifact, MmcArtifactLock? adopted,
         MmcInstancePaths paths, MmcArtifactWorkspace workspace, MmcArtifactIo io, MmcArtifactSourceAccess access,
         Dictionary<string, MmcArtifactStagedMutation> mutations, IProgress<MmcArtifactProgress>? progress, CancellationToken token) {
         string? expected = adopted?.AdoptedSha256 ?? artifact.Sha256;
         long? expectedSize = adopted?.SizeBytes ?? artifact.Size;
+        long maximum = artifact.Role == MmcArtifactRole.AssetIndex ? Math.Min(limits.MaxAssetIndexBytes, limits.MaxArtifactBytes) : limits.MaxArtifactBytes;
+        if (expectedSize > maximum) throw new IOException("Artifact or asset-index byte budget exceeded.");
         string? working = null;
-        (string Sha256, long Size) observed = (string.Empty, 0);
+        (string Sha256, long Size, string Sha1) observed = (string.Empty, 0, string.Empty);
         var failures = new List<Exception>();
         if (adopted is not null) {
             string original = paths.ResolveRelative(MmcPathRole.Instance, OriginalRelative(adopted.AdoptedSha256));
             if (File.Exists(original)) {
                 try {
-                    observed = await MmcArtifactIo.HashAsync(original, limits.MaxArtifactBytes, token, artifact.Sha1).ConfigureAwait(false);
+                    observed = await MmcArtifactIo.HashAsync(original, maximum, token, artifact.Sha1).ConfigureAwait(false);
                     if (observed.Sha256 == adopted.AdoptedSha256.ToLowerInvariant() && observed.Size == adopted.SizeBytes) working = original;
                 } catch (IOException error) { failures.Add(error); }
             }
@@ -127,7 +142,7 @@ public sealed partial class MmcArtifactMaterializer {
                 string work = workspace.NewFile();
                 try {
                     string trusted = MmcArtifactIo.AuthorizedSource(source);
-                    observed = await io.CopyAsync(trusted, work, artifact.Key, expected, artifact.Sha1, expectedSize, token).ConfigureAwait(false);
+                    observed = await io.CopyAsync(trusted, work, artifact.Key, expected, artifact.Sha1, expectedSize, token, maximum).ConfigureAwait(false);
                     working = work; break;
                 } catch (IOException error) { failures.Add(error); }
             }
@@ -136,7 +151,7 @@ public sealed partial class MmcArtifactMaterializer {
                 if (fetched is not null) {
                     string trusted = MmcArtifactIo.AuthorizedSource(fetched);
                     string work = workspace.NewFile();
-                    observed = await io.CopyAsync(trusted, work, artifact.Key, expected, artifact.Sha1, expectedSize, token).ConfigureAwait(false);
+                    observed = await io.CopyAsync(trusted, work, artifact.Key, expected, artifact.Sha1, expectedSize, token, maximum).ConfigureAwait(false);
                     working = work;
                 }
             }
@@ -168,7 +183,7 @@ public sealed partial class MmcArtifactMaterializer {
             originalInput = originalTarget;
         }
         var locked = new MmcArtifactLock(artifact.Key, artifact.SourceRevision, observed.Sha256, observed.Size, originalRelative);
-        return new(artifact, locked, originalInput);
+        return new(artifact, locked, originalInput, observed.Sha1);
     }
 
     private async Task<string> StageTargetAsync(string verifiedSource, string relative, string sha256, long size,
@@ -209,7 +224,7 @@ public sealed partial class MmcArtifactMaterializer {
     }
     private static string ReferenceFingerprint(MmcArtifactReference value) => JsonSerializer.Serialize(value);
     private static string ViewKey(string context, IEnumerable<PreparedInput> inputs) {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { Format = "PCLLF.MmcRuntimeView/v2", NativeExtraction = "bounded-native-v1", Context = context,
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { Format = "PCLLF.MmcRuntimeView/v3", NativeExtraction = "bounded-native-v1", Assets = "owned-assets-v1", Context = context,
             Inputs = inputs.Select(x => new { x.Artifact.Key, x.Artifact.SourceRevision, x.Artifact.Role, x.Artifact.Scope,
                 x.Artifact.RelativePath, x.Artifact.NativeClassifier, x.Artifact.ExtractExcludes, x.Lock.AdoptedSha256, x.Lock.SizeBytes }).ToArray() });
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
