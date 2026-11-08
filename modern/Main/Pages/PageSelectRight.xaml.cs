@@ -290,6 +290,7 @@ namespace PCL
         }
 
         private void BtnMmcRecovery_Click(object sender, MouseButtonEventArgs e) => MmcDeleteUi.PromptCatalog(ModMinecraft.McFolderSelected);
+        private void BtnMmcLegacyRecovery_Click(object sender, MouseButtonEventArgs e) => MmcLegacyAdoptionUi.PromptRecovery(ModMinecraft.McFolderSelected);
 
         public static void DeleteInstance(global::PCL.MyListItem Item, global::PCL.ModMinecraft.McInstance Instance)
         {

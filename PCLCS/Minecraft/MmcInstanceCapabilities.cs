@@ -55,6 +55,7 @@ public static class MmcInstanceCapabilities {
         RequireLegacyContainingInstance(physical, operation);
         RequireLegacy(physical, operation);
         MmcInstancePackageUpdateCapabilities.AssertFolderHasNoCandidates(physical, operation);
+        MmcLegacyAdoptionCapabilities.RequireLegacyGameFolderSafe(physical, operation);
         string versions = MmcConfigurationPaths.Target(physical, "versions");
         var attributes = MmcInstancePaths.Attributes(versions);
         if (attributes is null) return;

@@ -84,6 +84,8 @@
                         <local:MyButton x:Name="BtnManageDelete" Text="删除版本" MinWidth="140" Padding="13,0" Margin="0,0,20,0" Grid.Column="2" ColorType="Red" />
                     </Grid>
                     <WrapPanel>
+                        <local:MyButton x:Name="BtnMmcLegacyAdoption" Text="从原 MMC 包创建副本" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"
+                                        Visibility="Collapsed" ToolTip="主动选择对应的原始 MMC ZIP，核对差异后创建管理副本。当前普通实例及其存档、设置会保留。" Click="BtnMmcLegacyAdoption_Click" />
                         <local:MyButton x:Name="BtnMmcExport" Text="导出 MMC 整合包" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"
                                         Visibility="Collapsed" Click="BtnMmcExport_Click" />
                         <local:MyButton x:Name="BtnMmcHistory" Text="MMC 环境记录" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"

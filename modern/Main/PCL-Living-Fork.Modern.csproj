@@ -57,6 +57,8 @@
 <Compile Include="Modules/Minecraft/MmcExportUi.cs" />
 <Compile Include="Modules/Minecraft/MmcHistoryUi.cs" />
 <Compile Include="Modules/Minecraft/MmcRepairUi.cs" />
+<Compile Include="Modules/Minecraft/MmcLegacyAdoptionUi.cs" />
+<Compile Include="Modules/Minecraft/MmcLegacyAdoptionPreviewView.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceOverall.Mmc.cs" />
 <Compile Include="My Project/Resources.Designer.cs" />
 <Compile Include="Pages/PageInstance/MyLocalModItem.xaml.cs" />

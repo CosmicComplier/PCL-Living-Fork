@@ -17,6 +17,7 @@ public sealed class MmcLegacyAdoptionUiServices {
     public Func<ModMinecraft.McInstance, string> SelectArchive { get; init; }
     public Func<string, string, string> SelectName { get; init; }
     public Func<MmcLegacyAdoptionPreview, string, MmcLegacyAdoptionIntent?> ConfirmPreview { get; init; }
+    public Func<MmcLegacyAdoptionRecoveryCatalog, int?> SelectRecovery { get; init; }
     public Action<ModLoader.LoaderCombo<string>> RegisterTask { get; init; }
     public Action<MmcLegacyAdoptionResult> Published { get; init; }
     public Action<MmcLegacyAdoptionProgress> ProgressObserved { get; init; }
@@ -94,12 +95,15 @@ internal static class MmcLegacyAdoptionUi {
             try {
                 var catalog = MmcLegacyAdoptionCatalog.Read(minecraftRoot);
                 ModBase.RunInUi(() => {
-                    if (catalog.Entries.IsEmpty) { ModMain.MyMsgBox("没有旧 MMC 转换副本的恢复记录。", "管理副本恢复"); return; }
-                    int? selected = ModMain.MyMsgBoxSelect(catalog.Entries.Select(entry => (IMyRadio)new MyRadioBox { Text = entry.Name, ToolTip = entry.Description }), "旧 MMC 管理副本恢复", "下一步", "取消");
-                    if (selected is null || selected < 0 || selected >= catalog.Entries.Length) return;
-                    var entry = catalog.Entries[selected.Value];
-                    if (!entry.CanRecover) { ModMain.MyMsgBox(entry.Description, entry.Name); return; }
-                    if (ModMain.MyMsgBox(entry.Description + "\n继续完成已有发布决定？不会覆盖同名内容。", "管理副本恢复确认", "恢复", "取消", IsWarn: true) == 1) StartRecovery(entry, minecraftRoot, services);
+                    try {
+                        if (catalog.Entries.IsEmpty) { ModMain.MyMsgBox("没有旧 MMC 转换副本的恢复记录。", "管理副本恢复"); return; }
+                        if (catalog.Truncated) ModMain.Hint("恢复记录较多，本次仅显示有界范围内的记录；其余记录仍被保留。", ModMain.HintType.Blue);
+                        int? selected = services.SelectRecovery is not null ? services.SelectRecovery(catalog) : ModMain.MyMsgBoxSelect(catalog.Entries.Select(entry => (IMyRadio)new MyRadioBox { Text = entry.Name, ToolTip = entry.Description }), "旧 MMC 管理副本恢复", "下一步", "取消");
+                        if (selected is null || selected < 0 || selected >= catalog.Entries.Length) return;
+                        var entry = catalog.Entries[selected.Value];
+                        if (!entry.CanRecover) { ModMain.MyMsgBox(entry.Description, entry.Name); return; }
+                        if (ModMain.MyMsgBox(entry.Description + "\n继续完成已有发布决定？不会覆盖同名内容。", "管理副本恢复确认", "恢复", "取消", IsWarn: true) == 1) StartRecovery(entry, minecraftRoot, services);
+                    } catch (Exception error) { Logger.Error(error, "无法开始管理副本恢复", LogBehavior.Alert); }
                 });
             } catch (Exception error) { Logger.Error(error, "读取管理副本恢复列表失败", LogBehavior.Alert); }
         }, "Read MMC legacy copy recovery");
