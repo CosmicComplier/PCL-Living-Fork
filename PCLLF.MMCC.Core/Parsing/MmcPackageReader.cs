@@ -12,6 +12,22 @@ public static class MmcPackageReader {
         "cachedConflicts", "cachedVolatile", "cachedOrder"
     };
 
+    public static MmcArchiveInspection InspectArchive(IReadOnlyList<MmcArchiveEntry> archiveEntries, MmcReadLimits? limits = null) {
+        ArgumentNullException.ThrowIfNull(archiveEntries);
+        limits ??= new();
+        ValidateLimits(limits);
+        List<MmcDiagnostic> diagnostics = [];
+        try {
+            long rawCharacters = 0;
+            var entries = Index(archiveEntries, limits, diagnostics, ref rawCharacters);
+            var inspected = Describe(entries, limits);
+            return new(inspected.Root, inspected.GameRoot, inspected.MetadataPaths, diagnostics.ToImmutableArray());
+        } catch (MmcInputException error) {
+            diagnostics.Add(new(error.Code, MmcDiagnosticSeverity.Error, error.SourcePath, error.Message));
+            return new(null, null, [], diagnostics.ToImmutableArray());
+        }
+    }
+
     public static MmcParseResult Parse(MmcPackageInput input, MmcReadLimits? limits = null) {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Entries);
@@ -23,17 +39,10 @@ public static class MmcPackageReader {
             long rawPathCharacters = 0;
             var entries = Index(input.Entries, limits, diagnostics, ref rawPathCharacters);
             var metadata = Metadata(input.Metadata, entries, limits, ref rawPathCharacters);
-            string[] manifests = entries.Where(e => !e.Value.IsDirectory && e.Key.Split('/')[^1].Equals("mmc-pack.json", StringComparison.OrdinalIgnoreCase))
-                .Select(e => e.Key).ToArray();
-            if (manifests.Length != 1) throw new MmcInputException("MMC_ROOT", "archive", manifests.Length == 0 ? "Missing mmc-pack.json." : "Multiple instance roots require explicit selection.");
-            string manifestPath = manifests[0];
-            string root = manifestPath[..^"mmc-pack.json".Length];
+            var inspected = Describe(entries, limits);
+            string root = inspected.Root;
+            string manifestPath = inspected.MetadataPaths[0];
             string manifest = RequiredMetadata(manifestPath, metadata);
-            foreach (string path in entries.Keys.Where(p => p.StartsWith(root, StringComparison.OrdinalIgnoreCase))) {
-                string relative = path[root.Length..];
-                if (relative.Equals("PCL/InstanceDefinition.json", StringComparison.OrdinalIgnoreCase) || relative.StartsWith("PCL/Mmc", StringComparison.OrdinalIgnoreCase))
-                    throw new MmcInputException("MMC_RESERVED_PATH", path, "Source package cannot publish LF ownership records.");
-            }
             using var document = MmcJson.Read(manifest, manifestPath, limits.MaxDepth);
             JsonElement manifestRoot = document.RootElement;
             MmcJson.FormatVersion(manifestRoot, manifestPath, true);
@@ -100,7 +109,7 @@ public static class MmcPackageReader {
             string cfgPath = root + "instance.cfg";
             string? cfg = entries.ContainsKey(cfgPath) ? RequiredMetadata(cfgPath, metadata) : null;
             MmcConfiguration configuration = MmcConfigurationReader.Parse(cfg, cfgPath, diagnostics);
-            string gameRoot = SelectGameRoot(root, entries);
+            string gameRoot = inspected.GameRoot;
             var package = new MmcPackage(root, gameRoot, MmcPatchReader.Hash(manifest), components.ToImmutable(), configuration,
                 requests.DistinctBy(r => (r.Uid, r.Version, r.Kind)).ToImmutableArray(), input.Entries.ToImmutableArray(), metadata.Values.Sum(text => (long)Encoding.UTF8.GetByteCount(text)));
             return new(package, diagnostics.ToImmutableArray());
@@ -223,6 +232,34 @@ public static class MmcPackageReader {
 
     private static string RequiredMetadata(string path, Dictionary<string, string> metadata) =>
         metadata.TryGetValue(path, out string? text) ? text : throw new MmcInputException("MMC_METADATA_MISSING", path, "Host must supply the listed metadata content.");
+
+    private static (string Root, string GameRoot, ImmutableArray<string> MetadataPaths) Describe(Dictionary<string, MmcArchiveEntry> entries, MmcReadLimits limits) {
+        string[] manifests = entries.Where(e => !e.Value.IsDirectory && e.Key.Split('/')[^1].Equals("mmc-pack.json", StringComparison.OrdinalIgnoreCase)).Select(e => e.Key).ToArray();
+        if (manifests.Length != 1) throw new MmcInputException("MMC_ROOT", "archive", manifests.Length == 0 ? "Missing mmc-pack.json." : "Multiple instance roots require explicit selection.");
+        string manifestPath = manifests[0];
+        string root = manifestPath[..^"mmc-pack.json".Length];
+        List<string> metadata = [manifestPath];
+        long metadataBytes = 0;
+        foreach ((string path, MmcArchiveEntry entry) in entries.Where(p => p.Key.StartsWith(root, StringComparison.OrdinalIgnoreCase))) {
+            string relative = path[root.Length..];
+            if (relative.Equals("PCL/InstanceDefinition.json", StringComparison.OrdinalIgnoreCase) || relative.StartsWith("PCL/Mmc", StringComparison.OrdinalIgnoreCase))
+                throw new MmcInputException("MMC_RESERVED_PATH", path, "Source package cannot publish LF ownership records.");
+            if (relative.Equals("instance.cfg", StringComparison.OrdinalIgnoreCase)) {
+                if (entry.IsDirectory) throw new MmcInputException("MMC_DIRECTORY_ROLE", path, "instance.cfg must be a file.");
+                metadata.Add(path);
+            } else if (relative.Equals("patches", StringComparison.OrdinalIgnoreCase) && !entry.IsDirectory)
+                throw new MmcInputException("MMC_DIRECTORY_ROLE", path, "patches must be a directory.");
+            else if (!entry.IsDirectory && relative.StartsWith("patches/", StringComparison.OrdinalIgnoreCase) &&
+                !relative["patches/".Length..].Contains('/') && relative.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) metadata.Add(path);
+        }
+        foreach (string path in metadata) {
+            long size = entries[path].UncompressedSize;
+            if (size > limits.MaxMetadataBytes || metadataBytes > limits.MaxTotalMetadataBytes - size)
+                throw new MmcInputException("MMC_METADATA_BUDGET", path, "Declared source metadata budget exceeded.");
+            metadataBytes += size;
+        }
+        return (root, SelectGameRoot(root, entries), metadata.ToImmutableArray());
+    }
 
     private static string SelectGameRoot(string root, Dictionary<string, MmcArchiveEntry> entries) {
         if (entries.TryGetValue(root + "libraries", out MmcArchiveEntry? libraries) && !libraries.IsDirectory)

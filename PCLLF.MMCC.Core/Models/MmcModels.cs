@@ -61,3 +61,9 @@ public sealed record MmcPackage(
 public sealed record MmcParseResult(MmcPackage? Package, ImmutableArray<MmcDiagnostic> Diagnostics) {
     public bool HasErrors => Diagnostics.Any(x => x.Severity == MmcDiagnosticSeverity.Error);
 }
+
+/// <summary>Validated logical archive index; the host still owns bounded byte reads and real path authorization.</summary>
+public sealed record MmcArchiveInspection(string? RelativeRoot, string? GameRootLeaf,
+    ImmutableArray<string> MetadataPaths, ImmutableArray<MmcDiagnostic> Diagnostics) {
+    public bool HasErrors => Diagnostics.Any(x => x.Severity == MmcDiagnosticSeverity.Error);
+}
