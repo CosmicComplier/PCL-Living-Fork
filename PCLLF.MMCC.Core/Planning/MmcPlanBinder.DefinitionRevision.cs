@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
+using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 namespace PCLLF.MMCC.Core;
 
 /// <summary>Host proof of an actually captured complete environment, not a request to create one.</summary>
 public sealed record MmcRetainedRevisionFact(Guid PointId, string ManifestSha256, Guid InstanceId, long Generation,
-    string PrimarySha256, string BoundFingerprint);
+    string PrimarySha256, string BoundFingerprint) {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CoverageVersion { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? FullSafePolicyVersion { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<string> AdditionalEnvironmentPaths { get; init; }
+}
 public sealed record MmcDefinitionRevisionBindOptions(string ExpectedPrimarySha256, string OutputJsonSha256,
     MmcRetainedRevisionFact Retained) {
     public MmcDerivationCompletion? NativeDerivation { get; init; }

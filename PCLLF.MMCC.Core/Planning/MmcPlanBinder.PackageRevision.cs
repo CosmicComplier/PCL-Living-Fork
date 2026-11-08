@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
+using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 namespace PCLLF.MMCC.Core;
 
 /// <summary>The host fixes the chosen archive digest and has already captured a complete undo point.</summary>
@@ -6,6 +8,8 @@ public sealed record MmcPackageRevisionBindOptions(Guid ExpectedInstanceId, long
     string ExpectedPrimarySha256, string ExpectedPackageSha256, string OutputJsonSha256, MmcRetainedRevisionFact Retained) {
     public MmcDerivationCompletion? NativeDerivation { get; init; }
     public ReadOnlyMemory<byte>? PackageOwnershipContent { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<string> RequiredUndoPaths { get; init; }
 }
 
 public static partial class MmcPlanBinder {
@@ -31,6 +35,28 @@ public static partial class MmcPlanBinder {
                 retained.PointId == Guid.Empty || retained.InstanceId != current.InstanceId || retained.Generation != current.Generation ||
                 retained.PrimarySha256 != options.ExpectedPrimarySha256 || retained.BoundFingerprint != current.InstalledProjection!.BoundFingerprint)
                 Fail("MMC_PACKAGE_REVISION_AUTHORITY", "The selected current publication and its complete undo authority must match.");
+            if (retained.CoverageVersion is not (null or 3 or 4 or 5) || (retained.CoverageVersion is null or 3) && !retained.AdditionalEnvironmentPaths.IsDefaultOrEmpty ||
+                retained.CoverageVersion == 4 && retained.AdditionalEnvironmentPaths.IsDefaultOrEmpty ||
+                retained.CoverageVersion == 5 && retained.FullSafePolicyVersion != 1 || retained.CoverageVersion != 5 && retained.FullSafePolicyVersion is not null)
+                Fail("MMC_PACKAGE_REVISION_UNDO_COVERAGE", "Unsupported history semantics cannot authorize package file mutations.");
+            if (!options.RequiredUndoPaths.IsDefaultOrEmpty) {
+                if (retained.CoverageVersion != 5 || retained.FullSafePolicyVersion != 1 || retained.AdditionalEnvironmentPaths.IsDefaultOrEmpty)
+                    Fail("MMC_PACKAGE_REVISION_UNDO_COVERAGE", "Package file mutations require complete safe-inventory undo coverage, not legacy fixed or single-operation exact coverage.");
+                if (options.RequiredUndoPaths.Length > limits.MaxArchiveEntries || retained.AdditionalEnvironmentPaths.Length > limits.MaxArchiveEntries)
+                    Fail("MMC_PACKAGE_REVISION_UNDO_COVERAGE", "Exact undo path budget exceeded.");
+                var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (!retained.AdditionalEnvironmentPaths.SequenceEqual(retained.AdditionalEnvironmentPaths.Order(StringComparer.Ordinal)))
+                    Fail("MMC_PACKAGE_REVISION_UNDO_COVERAGE", "Retained exact undo paths must use canonical ordering.");
+                foreach (string path in retained.AdditionalEnvironmentPaths) {
+                    MmcArtifactRules.Relative(path, "undo");
+                    if (path.Contains('\\') || !path.StartsWith(current.Layout.GameRootLeaf + "/", StringComparison.Ordinal) || !covered.Add(path))
+                        Fail("MMC_PACKAGE_REVISION_UNDO_COVERAGE", "Retained undo paths must identify unique exact active-game files.");
+                }
+                foreach (string path in options.RequiredUndoPaths) {
+                    MmcArtifactRules.Relative(path, "undo");
+                    if (path.Contains('\\') || !covered.Contains(path)) Fail("MMC_PACKAGE_REVISION_UNDO_COVERAGE", "A real package write/delete target is absent from the retained exact-path coverage.");
+                }
+            }
             if (source.InstanceId != current.InstanceId || source.Generation != current.Generation || source.ParentInstanceId != current.ParentInstanceId ||
                 source.SchemaVersion != current.SchemaVersion || source.ManagementKind != current.ManagementKind || source.FormatProfile != current.FormatProfile ||
                 source.InstalledProjection is not null || !source.ArtifactInventory.IsEmpty || !source.ArtifactLocks.IsEmpty || !source.DerivedOutputs.IsEmpty ||

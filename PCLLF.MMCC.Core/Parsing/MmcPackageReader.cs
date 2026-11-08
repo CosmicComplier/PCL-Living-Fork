@@ -7,6 +7,10 @@ namespace PCLLF.MMCC.Core;
 
 /// <summary>Pure source parsing. A successful result is not permission to install or launch.</summary>
 public static class MmcPackageReader {
+    /// <summary>Validates a bounded logical file/directory namespace without requiring package metadata.</summary>
+    public static ImmutableArray<MmcDiagnostic> ValidateNamespace(IReadOnlyList<MmcArchiveEntry> entries, MmcReadLimits? limits = null) {
+        ArgumentNullException.ThrowIfNull(entries); return InspectPaths(entries, limits ?? new());
+    }
     internal static ImmutableArray<MmcDiagnostic> InspectPaths(IReadOnlyList<MmcArchiveEntry> entries, MmcReadLimits limits) {
         List<MmcDiagnostic> diagnostics = [];
         long pathCharacters = 0;
