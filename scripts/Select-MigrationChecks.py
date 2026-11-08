@@ -45,7 +45,7 @@ def documentation_only(paths: list[str]) -> bool:
     return bool(paths) and all(is_documentation_path(name) for name in paths)
 
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -268,6 +268,11 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             # The native selection job always runs these real CLI regressions.
             # Changes to its test inputs alone do not require a product build.
             continue
+        elif name.startswith("PCLLF.MMCC.Core/"):
+            # The pure Core is a genuine managed product dependency. Keep its
+            # own rule group and the real modern Main graph in validation.
+            include(("mmc-profile",), (), build=False)
+            native = True
         elif name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
             inventory = True
         elif name in NATIVE_ONLY_PATHS or name.startswith(NATIVE_ONLY_PREFIXES):
@@ -291,7 +296,9 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             include(GROUPS, (), build=False)
         elif name.startswith("tests/PCLLF.Migration.Tests/"):
             stem = leaf.removesuffix("Tests.cs")
-            if stem.startswith("WorldMetadata"):
+            if stem in {"MmcProfile", "MmcManagement", "MmcInstancePaths"}:
+                include(("mmc-profile",), (), build=False)
+            elif stem.startswith("WorldMetadata"):
                 include(("world-metadata",), (), build=False)
             elif stem == "LocalGameData":
                 include(("local-data",), (), build=False)
@@ -371,7 +378,9 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         elif name in RESOURCE_IMAGE_PATHS:
             include(RESOURCE_GROUPS, RESOURCE_IMAGE_CHECKS)
         elif name.startswith("PCLCS/Minecraft/") and leaf.endswith(".cs"):
-            if leaf.startswith("InstanceResourceOnline"):
+            if leaf.startswith(("MmcManagement", "MmcInstancePaths")):
+                include(("mmc-profile",), (), build=False)
+            elif leaf.startswith("InstanceResourceOnline"):
                 include(RESOURCE_GROUPS, RESOURCE_ONLINE_CHECKS)
             elif leaf in {"ResourceRecycleFiles.cs", "MapDownloadFiles.cs"}:
                 include(RESOURCE_GROUPS, RESOURCE_CHECKS)

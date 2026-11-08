@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using JsonException = System.Text.Json.JsonException;
 
 namespace PCLCS;
 
@@ -23,6 +24,7 @@ public sealed record MmcManagementDocument(bool Exists, string? Json = null, str
 }
 
 /// <summary>Raw, immutable observations. Config/version inputs are extracted ownership hints, not whole files.</summary>
+/// <param name="HasSourceRecords">Includes recognized LF MMC source, override, artifact and runtime-store remnants.</param>
 public sealed record MmcManagementSnapshot(
     MmcManagementDocument Definition,
     MmcManagementDocument ConfigHint,

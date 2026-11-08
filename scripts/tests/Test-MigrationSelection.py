@@ -98,6 +98,19 @@ def main() -> int:
         ("tests/PCLLF.Migration.Tests/UpdateLogPromptTests.cs", "settings-tests", False),
     ):
         expect(cli([path]), scope, native, "A-003 routing: " + path, [path])
+    for path, native in (
+        ("PCLLF.MMCC.Core/Parsing/MmcPackageReader.cs", True),
+        ("PCLLF.MMCC.Core/PCLLF.MMCC.Core.csproj", True),
+        ("PCLLF.MMCC.Core/LICENSE", True),
+        ("PCLCS/Minecraft/MmcManagementReader.cs", True),
+        ("PCLCS/Minecraft/MmcInstancePaths.cs", True),
+        ("tests/PCLLF.Migration.Tests/MmcProfileTests.cs", False),
+        ("tests/PCLLF.Migration.Tests/MmcManagementTests.cs", False),
+        ("tests/PCLLF.Migration.Tests/MmcInstancePathsTests.cs", False),
+    ):
+        expect(cli([path]), "mmc-profile-tests", native, "MMC Core and host foundations: " + path, [path])
+    expect(cli(["PCLCS/Minecraft/MmcFutureInstaller.cs"]), "complete", True,
+           "future MMC mutation keeps conservative fallback", ["PCLCS/Minecraft/MmcFutureInstaller.cs"])
     registry_source = (repo / "tests/PCLLF.Migration.Tests/Program.cs").read_text(encoding="utf-8")
     registry_block = re.search(r'\bgroups\s*=\s*\[(.*?)\];', registry_source, re.DOTALL)
     require(registry_block is not None, "Production migration test group registration is missing.")

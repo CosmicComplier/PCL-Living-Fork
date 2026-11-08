@@ -24,6 +24,23 @@ The additional LF source is pinned to `50b028da5fcad2226d74d901a41d8c43a249bfb2`
 
 Current feature guides are retained under [file-task-progress-and-navigation.md](../../docs/file-task-progress-and-navigation.md), [microsoft-account-storage.md](../../docs/microsoft-account-storage.md), [mod-loader-compatibility.md](../../docs/mod-loader-compatibility.md) and [theme-and-update-channels.md](../../docs/theme-and-update-channels.md). The product VB host and temporary VB comparison builder have been retired; independent historical test oracles remain. Cross-compilation is not evidence of Windows GUI, account or real game behavior.
 
+## Independently implemented MMC foundations
+
+`PCLLF.MMCC.Core` is new C#/.NET 10 implementation under its own MPL-2.0
+[license](../../PCLLF.MMCC.Core/LICENSE). Its
+[mechanism and implementation record](../../PCLLF.MMCC.Core/README.md) identifies
+the fixed format references and supported parsing slice. Upstream mechanisms
+inform behavior; Prism, HMCL and CE implementations are not copied, ported or
+line-by-line translated into this Core. This records implementation provenance,
+not a formal clean-room or whole-product legal audit.
+
+The LF host adapters, archive audit tools and integration tests retain the
+repository's applicable existing license. Root `LICENCE`, third-party notices
+and the licenses of input packages are unchanged. A future binary distribution
+must supply the corresponding MPL-covered Core sources and notices, including
+when the assembly is bundled into a single executable. Parsing foundations do
+not yet enable the new managed MMC installation or game-launch path.
+
 ## Native build inputs and preserved optional mode
 
 The resource producer now reads `modern/BuildResources/LF.Resources.schema.json` and the actual Main project's explicit resource declarations. It reads only the five required data/native payloads from the inherited resource directory; managed dependencies use the normal .NET host graph; it does not read the old VB designer, `.vbproj` or `.resx`. The native application manifest is an exact copy at `modern/Main/app.manifest`. The resource regression compares actual Main bytes and real typed getters; its explicit Linux defer mode reports all Windows getter calls pending.

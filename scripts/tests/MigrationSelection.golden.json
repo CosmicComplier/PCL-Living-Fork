@@ -15,7 +15,8 @@
       "oracle",
       "inventory"
     ],
-    "packUpdateRouting": "Additive pack-update group and exact author-ownership/metadata source routes; existing captured scopes retained, with the new group included in complete registries."
+    "packUpdateRouting": "Additive pack-update group and exact author-ownership/metadata source routes; existing captured scopes retained, with the new group included in complete registries.",
+    "mmcRouting": "Additive mmc-profile group for the actual Core assembly and read-only host foundations; complete/all-test registries include it. Core and host source changes retain native Main validation."
   },
   "scopes": {
     "world-backups": {
@@ -139,7 +140,8 @@
         "mod-favorites",
         "validation-loaders",
         "legacy-java",
-        "foundation"
+        "foundation",
+        "mmc-profile"
       ],
       "windows_scripts": [],
       "world_checks": false,
@@ -199,6 +201,17 @@
       "oracle": false,
       "inventory": false
     },
+    "mmc-profile-tests": {
+      "full": false,
+      "product_build": false,
+      "migration_run": true,
+      "groups": ["mmc-profile"],
+      "windows_scripts": [],
+      "world_checks": false,
+      "engine_only": false,
+      "oracle": false,
+      "inventory": false
+    },
     "no-checks": {
       "full": false,
       "product_build": false,
@@ -234,7 +247,8 @@
         "mod-favorites",
         "validation-loaders",
         "legacy-java",
-        "foundation"
+        "foundation",
+        "mmc-profile"
       ],
       "windows_scripts": [
         "Test-Release",

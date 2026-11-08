@@ -20,6 +20,7 @@ internal static class MmcManagementTests {
         yield return ("MMC management disk probe distinguishes damaged ordinary config from MMC evidence", BrokenOrdinaryConfig);
         yield return ("MMC management disk probe retains ownership after definition deletion", DeletedDefinition);
         yield return ("MMC management disk probe observes pending entries and orphan sources", PendingAndSourceProbe);
+        yield return ("MMC management reserved override artifact and runtime remnants prevent legacy fallback", ReservedStoreRemnants);
         yield return ("MMC management disk probe duplicate hints remain positive ownership evidence", DuplicateHints);
         yield return ("MMC management disk probe rejects malformed UTF8 reserved files", InvalidUtf8);
     }
@@ -102,6 +103,21 @@ internal static class MmcManagementTests {
     }
     private static void Budget() => Equal(MmcManagementState.ManagedMmcRepairRequired,
         Evaluate(Snapshot() with { Definition = new(true, new string(' ', MmcManagementReader.MaximumDocumentBytes + 1)) }).State);
+    private static void ReservedStoreRemnants() {
+        foreach (string store in new[] { "MmcSource", "MmcOverrides", "MmcArtifacts", "MmcRuntime" }) {
+            using Fixture fixture = new();
+            string path = Path.Combine(fixture.Pcl, store);
+            Directory.CreateDirectory(path);
+            MmcManagementResult result = MmcManagementProbe.Read(fixture.Root);
+            Equal(MmcManagementState.ManagedMmcRepairRequired, result.State);
+            Equal(false, result.CanUseLegacyBackend);
+            Directory.Delete(path);
+            File.WriteAllText(path, "wrong role");
+            result = MmcManagementProbe.Read(fixture.Root);
+            Equal(false, result.CanUseLegacyBackend);
+            Equal(false, result.ObservationComplete);
+        }
+    }
     private static void ReadOnlyProbe() {
         using Fixture fixture = new();
         File.WriteAllText(Path.Combine(fixture.Root, "mmc-pack.json"), "{}");

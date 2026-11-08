@@ -103,6 +103,10 @@
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberParser.cs" Link="Production/LegacyPackMetadataNumberParser.cs" />
     <Compile Include="../../PCLCS/Minecraft/LegacyPackMetadataNumberFormatting.cs" Link="Production/LegacyPackMetadataNumberFormatting.cs" />
     <ProjectReference Include="../../MeloongCore/Shared/MeloongCore.csproj" />
+    <!-- Exercise the actual MPL Core assembly, never a linked second copy. -->
+    <ProjectReference Include="../../PCLLF.MMCC.Core/PCLLF.MMCC.Core.csproj" />
+    <Compile Include="../../PCLCS/Minecraft/MmcManagement*.cs" Link="Production/%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcInstancePaths*.cs" Link="Production/%(Filename)%(Extension)" />
     <!-- Match modern/PCLCS exactly: the .NET 10 product uses this fixed modern
          asset. The original LF DLL stays the independent CLR4 oracle input. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

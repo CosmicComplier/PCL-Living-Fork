@@ -28,6 +28,10 @@
       <HintPath>$(LauncherMainOutputDirectory)/PCLCS.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="PCLLF.MMCC.Core">
+      <HintPath>$(LauncherMainOutputDirectory)/PCLLF.MMCC.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="PCLLF.Presentation">
       <HintPath>$(LauncherMainOutputDirectory)/PCLLF.Presentation.dll</HintPath>
       <Private>true</Private>

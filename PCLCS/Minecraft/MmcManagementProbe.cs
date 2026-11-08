@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using JsonException = System.Text.Json.JsonException;
 
 namespace PCLCS;
 
@@ -12,6 +13,9 @@ namespace PCLCS;
 /// settings provider. Snapshot checks do not replace the cross-process operation/transaction lease.
 /// </summary>
 public static class MmcManagementProbe {
+    // These are LF-owned stores, not loose MMC package metadata. Even derived
+    // runtime leftovers remain ownership evidence when the definition is lost.
+    private static readonly string[] ReservedStores = ["MmcSource", "MmcOverrides", "MmcArtifacts", "MmcRuntime"];
     public static MmcManagementResult Read(string versionRoot) => MmcManagementReader.Evaluate(Capture(versionRoot));
 
     public static MmcManagementSnapshot Capture(string versionRoot) {
@@ -27,15 +31,17 @@ public static class MmcManagementProbe {
         MmcManagementDocument configHint = ReadHint(Path.Combine(pcl, "config.json"), true);
         MmcManagementDocument versionHint = ReadHint(Path.Combine(root, Path.GetFileName(root) + ".json"), false);
         bool sources = false, pending = false, complete = true;
-        try {
-            string sourcePath = Path.Combine(pcl, "MmcSource");
-            MmcInstancePaths.EnsureNoLinks(pcl);
-            FileAttributes? attributes = MmcInstancePaths.Attributes(sourcePath);
-            sources = attributes is not null;
-            MmcInstancePaths.EnsureNoLinks(sourcePath);
-            if (attributes is not null && (attributes.Value & FileAttributes.Directory) == 0) complete = false;
-        } catch (Exception ex) when (IsObservationFailure(ex)) {
-            complete = false;
+        foreach (string store in ReservedStores) {
+            try {
+                string storePath = Path.Combine(pcl, store);
+                MmcInstancePaths.EnsureNoLinks(pcl);
+                FileAttributes? attributes = MmcInstancePaths.Attributes(storePath);
+                sources |= attributes is not null;
+                MmcInstancePaths.EnsureNoLinks(storePath);
+                if (attributes is not null && (attributes.Value & FileAttributes.Directory) == 0) complete = false;
+            } catch (Exception ex) when (IsObservationFailure(ex)) {
+                complete = false;
+            }
         }
         try {
             string transactions = Path.Combine(pcl, "MmcTransactions");
