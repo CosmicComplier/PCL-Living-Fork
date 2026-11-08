@@ -25,6 +25,7 @@ public sealed class MmcImportServices {
     public Action<MmcInstanceBackendResult> Published { get; init; }
     public Action<ModNet.LoaderDownload> DownloadCreated { get; init; }
     public Action<MmcTransactionCheckpoint, int> TransactionObserved { get; init; }
+    public Action<MmcInstanceBackendProgress> ProgressObserved { get; init; }
 }
 
 public static class MmcInstances {
@@ -85,6 +86,7 @@ public static class MmcInstances {
         }, token,
             new SyncProgress<MmcInstanceBackendProgress>(value => {
                 if (value.Phase == "publishing-instance") task.Name = "保存 MMC 实例环境";
+                services.ProgressObserved?.Invoke(value);
             }), resolved).ConfigureAwait(false);
         if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(result.Failure, token);
         if (result.Status != MmcInstanceBackendStatus.Succeeded || result.Definition is null || result.Paths is null)
