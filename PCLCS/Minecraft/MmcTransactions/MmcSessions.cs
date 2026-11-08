@@ -63,6 +63,7 @@ public static class MmcSessions {
     }
 
     public static void AssertNoActive(MmcAdmissionLease lease) {
+        MmcOperationPendingGuard.AssertNoForeignPending(lease);
         lease.AssertHeld(); string root = MmcInstancePaths.Resolve(lease.VersionRoot).ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessions");
         if (MmcInstancePaths.Attributes(root) is not null && (!Directory.Exists(root) || Directory.EnumerateFileSystemEntries(root).Any()))
             throw new IOException("存在活动或待确认 MMC 会话。");

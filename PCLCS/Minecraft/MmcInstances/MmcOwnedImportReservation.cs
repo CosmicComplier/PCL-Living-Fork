@@ -57,6 +57,7 @@ public sealed partial class MmcOwnedImportReservation {
             if (primary.Definition.InstanceId != InstanceId || primary.Definition.Generation != 1 || primary.Definition.Origin.PackageSha256 != packageSha256)
                 throw new IOException("The private import definition does not belong to its reservation.");
             var ownGate = gates.Single(gate => gate.VersionRoot.Equals(TemporaryRoot, StringComparison.OrdinalIgnoreCase));
+            using var pendingPermit = EnterPending(ownGate);
             MmcFileTransactions.AssertNoPending(ownGate); MmcSessions.AssertNoActive(ownGate);
             // The only permitted pending observation here is this already hash-verified reservation.
             // Real transaction/session stores have just been checked independently under both gates.
@@ -82,6 +83,13 @@ public sealed partial class MmcOwnedImportReservation {
         if (MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcImportPending.json")) != Convert.ToHexStringLower(SHA256.HashData(marker)) ||
             MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, ".pclignore")) != Convert.ToHexStringLower(SHA256.HashData(ignore)))
             throw new IOException("Import ownership markers changed; preserving the directory for recovery.");
+    }
+    internal MmcPendingOperationPermit EnterPending(MmcAdmissionLease lease) => MmcPendingOperationPermit.ForReservation(lease, this);
+    internal string ValidatePendingPermit(MmcAdmissionLease lease) {
+        lease.AssertHeld();
+        if (lease.VersionRoot != TemporaryRoot || lease.InstanceId != InstanceId) throw new IOException("初始发布许可不属于该准入租约。");
+        VerifyMarker(TemporaryRoot);
+        return MmcDurableFiles.Hash(marker);
     }
     private static void CreateExclusiveDirectory(string path) {
         // Directory.CreateDirectory adopts an existing directory and is not an ownership primitive.

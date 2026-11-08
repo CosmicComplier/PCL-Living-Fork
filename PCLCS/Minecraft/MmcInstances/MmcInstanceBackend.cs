@@ -83,6 +83,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 progress?.Report(new("publishing-instance"));
                 using var quiet = MmcConfigurationCoordinator.Quiesce(paths.InstanceRoot, cancellationToken);
                 using var gate = MmcAdmissionGate.Acquire(paths.InstanceRoot, reservation.InstanceId, TimeSpan.Zero, cancellationToken);
+                using var pendingPermit = reservation.EnterPending(gate);
                 using var settings = quiet.OpenStructuralWrite(gate, 0);
                 SetManifest(settings, resolved.Resolution.Profile!, compiled, reservation.InstanceId, 1);
                 SetInitialPreferences(settings, source.Package.Configuration);

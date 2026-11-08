@@ -33,6 +33,7 @@ public sealed partial class MmcOwnedImportReservation {
         if (payloadManifest is not null) throw new IOException("Private payload adoption was already attempted; preserve its recovery record.");
         var paths = MmcInstancePaths.Resolve(TemporaryRoot, baseline.GameRootLeaf);
         using var gate = MmcAdmissionGate.Acquire(TemporaryRoot, InstanceId, TimeSpan.Zero, cancellationToken);
+        using var pendingPermit = EnterPending(gate);
         VerifyMarker(TemporaryRoot); MmcFileTransactions.AssertNoPending(gate); MmcSessions.AssertNoActive(gate);
         if (MmcInstancePaths.Attributes(paths.ResolveRelative(MmcPathRole.Instance, "PCL/InstanceDefinition.json")) is not null)
             throw new IOException("Private payload adoption is allowed only before the initial structural definition exists.");

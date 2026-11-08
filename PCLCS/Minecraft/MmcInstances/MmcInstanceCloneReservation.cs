@@ -41,6 +41,7 @@ internal sealed class MmcInstanceCloneReservation {
         snapshotHash = MmcDurableFiles.Hash(bytes);
     }
     internal void Verify(MmcAdmissionLease lease) {
+        using var pendingPermit = owned.EnterPending(lease);
         lease.AssertHeld();
         if (lease.VersionRoot != TemporaryRoot || lease.InstanceId != InstanceId) throw new IOException("Clone reservation admission mismatch.");
         var paths = MmcInstancePaths.Resolve(TemporaryRoot);
@@ -72,4 +73,5 @@ internal sealed class MmcInstanceCloneReservation {
         File.Delete(Path.Combine(FinalRoot, ".pclignore")); File.Delete(Path.Combine(FinalRoot, "PCL", "MmcImportPending.json")); return final;
     }
     internal string? RecoveryRoot => owned.RecoveryRoot;
+    internal MmcPendingOperationPermit EnterPending(MmcAdmissionLease lease) => owned.EnterPending(lease);
 }

@@ -32,6 +32,7 @@ public sealed class MmcInstanceCloneBackend {
             var sourceLease = leases.Single(lease => lease.VersionRoot == sourceRoot);
             var privateLease = leases.Single(lease => lease.VersionRoot == reservation.TemporaryRoot);
             var finalLease = leases.Single(lease => lease.VersionRoot == reservation.FinalRoot);
+            using var pendingPermit = reservation.EnterPending(privateLease);
             var sourceQuiet = quiet.Single(value => value.State.Root == sourceRoot);
             var targetQuiet = quiet.Single(value => value.State.Root == reservation.TemporaryRoot);
             AssertSource(sourceLease, request); reservation.Verify(privateLease);

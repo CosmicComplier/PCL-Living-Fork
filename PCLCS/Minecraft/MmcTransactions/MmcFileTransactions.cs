@@ -90,12 +90,14 @@ public static class MmcFileTransactions {
 
     public static MmcTransactionResult Recover(MmcAdmissionLease lease, Guid transactionId) {
         lease.AssertHeld(); if (transactionId == Guid.Empty) throw new ArgumentException("事务 ID 不能为空。");
+        MmcOperationPendingGuard.AssertNoForeignPending(lease);
         AssertNoSessions(MmcInstancePaths.Resolve(lease.VersionRoot));
         return RecoverCore(lease, transactionId);
     }
 
     public static IReadOnlyList<MmcTransactionResult> RecoverPending(MmcAdmissionLease lease) {
         lease.AssertHeld(); MmcInstancePaths paths = MmcInstancePaths.Resolve(lease.VersionRoot);
+        MmcOperationPendingGuard.AssertNoForeignPending(lease);
         AssertNoSessions(paths);
         string root = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcTransactions");
         if (!Directory.Exists(root)) return Array.Empty<MmcTransactionResult>();
@@ -110,6 +112,7 @@ public static class MmcFileTransactions {
     }
 
     public static void AssertNoPending(MmcAdmissionLease lease) {
+        MmcOperationPendingGuard.AssertNoForeignPending(lease);
         lease.AssertHeld(); string root = MmcInstancePaths.Resolve(lease.VersionRoot).ResolveRelative(MmcPathRole.Instance, "PCL/MmcTransactions");
         if (MmcInstancePaths.Attributes(root) is not null && (!Directory.Exists(root) || Directory.EnumerateFileSystemEntries(root).Any()))
             throw new IOException("存在待恢复 MMC 事务。");
