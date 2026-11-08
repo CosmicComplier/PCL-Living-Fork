@@ -12,7 +12,7 @@ $env:PCLLF_MMC_TEST_JAVA21 = 'C:\path\to\java21\bin\java.exe'
 dotnet run --project tests/PCLLF.Mmc.Runtime.Tests --configuration Debug
 ```
 
-`-- --group bridge` 仅核对自有 bridge 的源码与固定 bytecode/JAR 身份，不需要安装 Java；这不算真实进程验证。`argv` 与 `long-arguments` 使用 8/17/21，其他进程/类检查至少需要 8/17 及编译器。可运行 `-- --list-groups` 查看六个分组。
+`-- --group bridge` 仅核对自有 bridge 的源码与固定 bytecode/JAR 身份，不需要安装 Java；这不算真实进程验证。`argv` 与 `long-arguments` 使用 8/17/21，其他进程/类检查至少需要 8/17 及编译器。`session-budget` 只需 Java17 编译器，验证最终会话 nonce 的长度预留：runtime 参数加 nonce 恰好 32767 时允许，再增加一个字符明确拒绝，预留不会写入实际参数。可运行 `-- --list-groups` 查看七个分组。
 
 CI 可在独立 Windows job 中按 [setup-java 官方输出协议](https://github.com/actions/setup-java/blob/main/README.md#outputs)，用 `actions/setup-java@v6` 分别安装 8、17、21，记录各步输出 `path`，再设置：
 

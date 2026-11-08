@@ -104,7 +104,9 @@ public static class MmcRuntimeLaunchBuilder {
             actual.Add(compiled.MainClass); redacted.Add(compiled.MainClass);
             actual.AddRange(game.Select(a => a.Actual)); redacted.AddRange(game.Select(a => a.Redacted));
         }
-        if (OperatingSystem.IsWindows()) MmcRuntimeWindowsCommandLine.Validate(request.Java.ExecutablePath, actual);
+        // MmcSessions inserts one 32-hex nonce property immediately before Start.
+        // Reserve its exact quoted length without changing arguments/fingerprints.
+        if (OperatingSystem.IsWindows()) MmcRuntimeWindowsCommandLine.Validate(request.Java.ExecutablePath, actual.Prepend(MmcSessions.NonceArgumentPrefix + new string('0', 32)));
         string argumentFingerprint = MmcRuntimeFiles.Fingerprint(new[] { "mmc-runtime-arguments-v1", settings.WrapperMode.ToString(), compiled.MainClass }
             .Concat(logicalJvm.Select(a => a.Redacted)).Concat(game.Select(a => a.Redacted)).Concat([cpProperty, request.Wrapper?.Sha256, request.Bridge?.Sha256]));
         string inputFingerprint = MmcRuntimeFiles.Fingerprint(new[] { "mmc-runtime-inputs-v1", definition.InstanceId.ToString("D"), definition.Generation.ToString(CultureInfo.InvariantCulture), request.BoundPlan.BoundFingerprint,

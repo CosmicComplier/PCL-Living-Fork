@@ -16,6 +16,7 @@ internal static class MmcRuntimeLaunchTests {
         yield return ("MMC runtime refuses unbound execution variables account overrides Java conflicts and changed inputs", Refusals);
         yield return ("MMC classpath inspector preserves shadow order and resolves Java multi-release entries", ClasspathAndMultiRelease);
         yield return ("MMC deep 92-JAR launch preserves early system-loader classpath and bounded compressed transport", LongArguments);
+        yield return ("MMC runtime reserves the final managed-session nonce at the Windows command boundary", SessionNonceBudget);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();
@@ -287,6 +288,21 @@ public final class TestLoader extends ClassLoader {
             Task.WaitAll(stdout, stderr);
             Require(process.ExitCode != 0 && stderr.Result.Contains("UnsupportedClassVersionError", StringComparison.Ordinal), "Effective first-winner rejection did not match actual JVM behavior.");
         }
+    }
+    private static void SessionNonceBudget() {
+        using Fixture fixture = new(17, wrapperMode: MmcRuntimeWrapperMode.DirectMain);
+        MmcRuntimeLaunchRequest WithArgument(string argument) => fixture.Request with { Settings = fixture.Request.Settings with { ExtraGameTokens = [argument] } };
+        var baseline = MmcRuntimeLaunchBuilder.BuildAsync(WithArgument("")).GetAwaiter().GetResult();
+        var start = baseline.CreateStartInfo();
+        string nonce = MmcSessions.NonceArgumentPrefix + Guid.NewGuid().ToString("N");
+        int padding = checked(32767 - (int)MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(start.FileName, start.ArgumentList.Prepend(nonce)) + 2);
+        fixture.RemoveMutable(baseline);
+        var boundary = MmcRuntimeLaunchBuilder.BuildAsync(WithArgument(new string('x', padding))).GetAwaiter().GetResult();
+        start = boundary.CreateStartInfo();
+        Require(!start.ArgumentList.Any(argument => argument.StartsWith(MmcSessions.NonceArgumentPrefix, StringComparison.Ordinal)), "Budget reservation inserted a fake nonce into runtime arguments.");
+        Require(MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(start.FileName, start.ArgumentList.Prepend(nonce)) == 32767, "Final runtime arguments plus the actual-sized session nonce missed the exact Windows boundary.");
+        fixture.RemoveMutable(boundary);
+        Expect("MMC_RUNTIME_COMMAND_LENGTH", () => MmcRuntimeLaunchBuilder.BuildAsync(WithArgument(new string('x', padding + 1))).GetAwaiter().GetResult());
     }
     private static void LongArguments() {
         Require(MmcRuntimeWindowsCommandLine.LengthIncludingTerminator("java.exe", []) == 11, "Windows executable quote/NUL budget changed.");
