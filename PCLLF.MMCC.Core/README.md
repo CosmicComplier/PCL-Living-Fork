@@ -38,6 +38,6 @@ P0 小边界实验先在忽略的 artifacts 中验证内容输入、来源摘要
 
 ## 许可边界
 
-本目录新原创源文件以 `SPDX-License-Identifier: MPL-2.0` 标识，适用 [LICENSE](LICENSE)。完整文本取自 [Mozilla 官方纯文本](https://www.mozilla.org/media/MPL/2.0/index.txt)，SHA256 为 `3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04`。
+本目录新原创源文件以 `SPDX-License-Identifier: MPL-2.0` 标识，适用 [LICENSE](LICENSE)。完整文本取自 [Mozilla 官方纯文本](https://www.mozilla.org/media/MPL/2.0/index.txt)，LF 原件及 Git blob 的 SHA256 为 `3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04`；Windows checkout 可能转换为 CRLF，核对该摘要时须先归一换行。
 
 宿主、既有测试工程及其改动保留各自现行许可；根 LICENCE / NOTICE 未被本目录替换。第三方输入/资产不会因被读取而变为 MPL。若未来需要复用上游代码，须先解决逐文件授权与组合分发条件，不得在本目录直接改标 MPL。对外分发此 Core 的二进制（包括 single-file 内嵌）时仍需提供对应 MPL 源码、修改和必要声明的取得方式，见 [官方 FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)。

@@ -78,6 +78,6 @@ dotnet build PCL-Living-Fork.Modern.slnx --configuration Debug -nr:false
 
 中央目录在创建 ZipFile 对象前的预算预检、直接补丁位置/UID 与保留路径对齐
 已由 `033dd58` 集成并通过关闭复核。两原包的中央目录分别为
-3,106,576 / 3,107,461 字节；候选路径前缀约9.73Mi字符，均低于本批默认预算。
+3,106,576 / 3,107,461 字节；候选路径前缀约973万字符，均低于本批默认预算。
 最终只读原包报告、Core 现场解析、各项构建与测试日志均在集成工作树
 `artifacts/mmc-integration/`，目录不纳入源码提交。
