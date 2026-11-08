@@ -14,6 +14,7 @@ internal static class MmcInstanceBackendTests {
         yield return ("MMC backend rejects damaged authority and retains interrupted import ownership", FailureIsolation);
         yield return ("MMC launch preparation keeps complete generations and repairs only missing managed inputs offline", LaunchPreparation);
         yield return ("MMC launch preparation rejects stale identity, new variants and damaged support without adopting bytes", LaunchRefusals);
+        yield return ("MMC private payload placement binds measured files and preserves canceled or conflicting private roots", PrivatePayload);
     }
     private static void SourcePreparation() => SourcePreparationAsync().GetAwaiter().GetResult();
     private static async Task SourcePreparationAsync() {
@@ -72,6 +73,43 @@ internal static class MmcInstanceBackendTests {
         Equal("keep", JObject.Parse(File.ReadAllText(Path.Combine(paths.InstanceRoot, "PCL", "config.json"))).Value<string>("unknown-personal-pref"));
     }
     private static void FailureIsolation() => FailureIsolationAsync().GetAwaiter().GetResult();
+    private static void PrivatePayload() => PrivatePayloadAsync().GetAwaiter().GetResult();
+    private static async Task PrivatePayloadAsync() {
+        foreach (string mode in new[] { "complete", "cancel", "conflict" }) {
+            using Fixture fixture = new();
+            using var source = await MmcArchiveSourceReader.ReadAsync(fixture.Archive);
+            var reservation = MmcOwnedImportReservation.Create(fixture.VersionRoot, Guid.NewGuid(), source.PackageSha256);
+            var paths = MmcInstancePaths.Resolve(reservation.TemporaryRoot, source.Package.GameRootLeaf);
+            using var prepared = await MmcPackageFileStager.PrepareInitialAsync(source, paths);
+            byte[] bytes = MmcPackageFileBaselineCodec.Serialize(Baseline(source, prepared));
+            var resolved = MmcComponentResolver.Resolve(source.Package, []);
+            using var writer = MmcSourceBundleWriter.Prepare(source, new(resolved, []), paths);
+            var reference = writer.StageAuthorBaseline(bytes, prepared.Files.Length);
+            var proof = MmcPackageFileBaselineCodec.Read(new(bytes), reference, source.PackageSha256, source.Package.RelativeRoot);
+            if (proof.HasErrors || proof.Baseline is null) throw new Exception("Private payload fixture baseline is invalid.");
+            using CancellationTokenSource cancel = new();
+            string occupied = paths.ResolveRelative(MmcPathRole.Instance, prepared.InitialGameMutations[0].RelativePath);
+            if (mode == "conflict") { Directory.CreateDirectory(Path.GetDirectoryName(occupied)!); File.WriteAllText(occupied, "external private bytes"); }
+            bool canceled = false, conflicted = false;
+            try { reservation.AdoptPreparedGameFiles(prepared, proof.Baseline, cancel.Token, checkpoint: (phase, index) => { if (mode == "cancel" && phase == MmcInitialPayloadCheckpoint.Moved && index == 0) cancel.Cancel(); }); }
+            catch (OperationCanceledException) { canceled = true; }
+            catch (IOException) when (mode == "conflict") { conflicted = true; }
+            Equal(false, Directory.Exists(fixture.VersionRoot)); Equal(true, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPending.json")));
+            if (mode == "complete") {
+                foreach (var mutation in prepared.InitialGameMutations) {
+                    Equal(mutation.ExpectedNewSha256, MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, mutation.RelativePath)));
+                    Equal(false, File.Exists(paths.ResolveRelative(MmcPathRole.Instance, mutation.NewSourceRelativePath!)));
+                }
+                Equal(true, prepared.Files.Where(file => file.Role == PCLCS.MmcPackageFileRole.LocalLibrary).All(file => File.Exists(file.StagedPath)));
+                Equal(true, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPayload.json")));
+            } else if (mode == "cancel") {
+                Equal(true, canceled); prepared.Dispose();
+                Equal(true, File.Exists(Path.Combine(prepared.StageRoot, "owner.txt")));
+                Equal(true, prepared.InitialGameMutations.Any(mutation => File.Exists(paths.ResolveRelative(MmcPathRole.Instance, mutation.RelativePath))));
+                Equal(true, prepared.InitialGameMutations.Any(mutation => File.Exists(paths.ResolveRelative(MmcPathRole.Instance, mutation.NewSourceRelativePath!))));
+            } else { Equal(true, conflicted); Equal("external private bytes", File.ReadAllText(occupied)); }
+        }
+    }
     private static void LaunchPreparation() => LaunchPreparationAsync().GetAwaiter().GetResult();
     private static async Task LaunchPreparationAsync() {
         using Fixture fixture = new();

@@ -10,7 +10,7 @@ namespace PCLCS;
 
 // Original LF host implementation, under the repository LICENCE.
 /// <summary>A private sibling root. Failure never recursively removes a version root; its pending ownership survives.</summary>
-public sealed class MmcOwnedImportReservation {
+public sealed partial class MmcOwnedImportReservation {
     private readonly byte[] marker, ignore;
     public string FinalRoot { get; }
     public string TemporaryRoot { get; }

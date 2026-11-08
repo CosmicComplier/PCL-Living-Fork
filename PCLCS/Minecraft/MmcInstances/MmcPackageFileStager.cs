@@ -13,6 +13,7 @@ public sealed record MmcPackageFileObservation(string RelativePath, MmcPackageFi
 /// <summary>Fixed original package bytes and staged initial-import data; never writes an existing player file.</summary>
 public sealed class MmcPreparedPackageFiles : IDisposable {
     private readonly MmcArtifactWorkspace workspace;
+    private bool retainedForRecovery;
     public string StageRoot => workspace.Root;
     public ImmutableArray<MmcPackageFileObservation> Files { get; }
     public ImmutableArray<MmcFileMutation> InitialGameMutations { get; }
@@ -23,7 +24,8 @@ public sealed class MmcPreparedPackageFiles : IDisposable {
         this.workspace = workspace; Files = files; InitialGameMutations = mutations;
         LocalLibrarySources = new System.Collections.ObjectModel.ReadOnlyDictionary<string, MmcArtifactSource>(libraries);
     }
-    public void Dispose() => workspace.Dispose();
+    internal void RetainForImportRecovery() => retainedForRecovery = true;
+    public void Dispose() { if (!retainedForRecovery) workspace.Dispose(); }
 }
 
 public static class MmcPackageFileStager {
