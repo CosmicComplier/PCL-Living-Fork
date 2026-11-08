@@ -12,7 +12,9 @@ using PCLCS;
 using PCLLF.MMCC.Core;
 
 var selected=args is ["--case",var requested]?requested:null;
-foreach(var test in ExportChecks.Cases().Where(test=>selected is null||test.Name.Contains(selected,StringComparison.OrdinalIgnoreCase))) {
+var chosen=ExportChecks.Cases().Where(test=>selected is null||test.Name.Contains(selected,StringComparison.OrdinalIgnoreCase)).ToArray();
+if(chosen.Length==0){Console.Error.WriteLine("No managed export check matches the requested case.");return 2;}
+foreach(var test in chosen) {
     try { test.Run(); Console.WriteLine("PASS "+test.Name); }
     catch(Exception error) {Console.Error.WriteLine("FAIL "+test.Name+": "+error);return 1;}
 }
@@ -30,6 +32,8 @@ internal static class ExportChecks {
         yield return ("literal account data is rejected while ordinary version query URLs remain portable",AccountAndUrls);
         yield return ("hardlink originals and adopted-CAS changes remain protected across output volumes",OutputAndOriginals);
         yield return ("published ZIP outcome survives a late cancelled progress observer",PublishedObserver);
+        yield return ("final export argument policy rejects account root and equals-server bypasses",ArgumentReviewRegression);
+        yield return ("server inheritance respects disabled package joins and explicit empty instance values",ServerReviewRegression);
     }
     private static void RoundTrip() {
         foreach(int major in new[]{8,21}) using(var fixture=new Fixture(major)) {
@@ -107,6 +111,43 @@ internal static class ExportChecks {
         var options=new MmcInstanceExportOptions(){DiscardMachineJavaSelection=true,PortableMinimumMemoryMiB=512,PortableMaximumMemoryMiB=2048};
         var portable=exporter.ExportAsync(fixture.Request(source,"portable.zip",options)).GetAwaiter().GetResult();Success(portable);Check(portable.Preview!.Transformations.Any(x=>x.Contains("Java selection"))&&portable.Preview.Transformations.Any(x=>x.Contains("memory policy")),"Portable losses were not recorded in preview.");
     }
+    private static void ArgumentReviewRegression() {
+        const string macros="--username ${auth_player_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --session ${auth_session} --userProperties ${user_properties} --clientId ${clientid} --xuid ${auth_xuid}";
+        using var fixture=new Fixture(21,declaredGame:macros);var source=fixture.Import("source");using var provider=new InstanceConfigProvider(source.Paths!.InstanceRoot);var exporter=new MmcInstanceExportBackend();
+        string[] protectedFields={"--username","--uuid","--accessToken","--session","--userProperties","--clientId","--clientToken","--xuid","--userType","--gameDir","--assetsDir","--assetIndex"};
+        int caseId=0;
+        foreach(string field in protectedFields)foreach(string separator in new[]{" ","="}) {
+            MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]=field+separator+"PRIVATE-IDENTITY"});
+            var request=fixture.Request(source,"identity-"+(caseId++)+".zip");
+            Check(exporter.ExportAsync(request).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected&&!File.Exists(request.OutputZipPath),"Supplemental protected binding escaped: "+field+separator);
+        }
+        foreach(string field in new[]{"--server","--port","--quickPlayMultiplayer"})foreach(string separator in new[]{" ","="}) {
+            MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]=field+separator+"private.example"});
+            Check(exporter.ExportAsync(fixture.Request(source,"server-arg-"+(caseId++)+".zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Default no-server option was bypassed by "+field+separator);
+        }
+        MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]="--custom value"});
+        var legal=exporter.ExportAsync(fixture.Request(source,"legal-macros-and-extra.zip")).GetAwaiter().GetResult();Success(legal);
+        using(var zip=ZipFile.OpenRead(legal.OutputZipPath!))Check(zip.Entries.Where(entry=>entry.FullName.StartsWith("patches/",StringComparison.Ordinal)).Select(entry=>Read(zip,entry.FullName)).Any(text=>text.Contains("${clientid}")&&text.Contains("--custom value")),"Valid declared macros/custom extra were changed.");
+        MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]="--server=explicit.example"});
+        Success(exporter.ExportAsync(fixture.Request(source,"explicit-server-arg.zip",new(IncludeServers:true))).GetAwaiter().GetResult());
+    }
+    private static void ServerReviewRegression() {
+        foreach(bool enabled in new[]{false,true})using(var fixture=new Fixture(8,packageJoin:enabled,packageAddress:"package.example")) {
+            var source=fixture.Import("source");using var provider=new InstanceConfigProvider(source.Paths!.InstanceRoot);var exporter=new MmcInstanceExportBackend();
+            MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionServerEnter"]=null});
+            var inherited=exporter.ExportAsync(fixture.Request(source,"package-join.zip",new(IncludeServers:true))).GetAwaiter().GetResult();Success(inherited);
+            using(var archive=MmcArchiveSourceReader.ReadAsync(inherited.OutputZipPath!).GetAwaiter().GetResult()) {
+                var values=archive.Package.Configuration.Values;Check(values.GetValueOrDefault("JoinServerOnLaunch")==enabled.ToString().ToLowerInvariant(),"A disabled package join was enabled by a stale address.");
+                Check(enabled?values.GetValueOrDefault("JoinServerOnLaunchAddress")=="package.example":!values.ContainsKey("JoinServerOnLaunchAddress"),"Inactive/fallback server address changed.");
+            }
+            MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionServerEnter"]=""});
+            var empty=exporter.ExportAsync(fixture.Request(source,"empty-instance-join.zip",new(IncludeServers:true))).GetAwaiter().GetResult();Success(empty);
+            using(var archive=MmcArchiveSourceReader.ReadAsync(empty.OutputZipPath!).GetAwaiter().GetResult())Check(archive.Package.Configuration.Values.GetValueOrDefault("JoinServerOnLaunch")=="false"&&!archive.Package.Configuration.Values.ContainsKey("JoinServerOnLaunchAddress"),"Explicit empty instance server fell back to package address.");
+            MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionServerEnter"]="instance.example"});
+            var own=exporter.ExportAsync(fixture.Request(source,"own-instance-join.zip",new(IncludeServers:true))).GetAwaiter().GetResult();Success(own);
+            using(var archive=MmcArchiveSourceReader.ReadAsync(own.OutputZipPath!).GetAwaiter().GetResult())Check(archive.Package.Configuration.Values.GetValueOrDefault("JoinServerOnLaunch")=="true"&&archive.Package.Configuration.Values.GetValueOrDefault("JoinServerOnLaunchAddress")=="instance.example","Explicit instance server did not override package state.");
+        }
+    }
     private static void OutputAndOriginals() {
         using var fixture=new Fixture(8);var source=fixture.Import("source");var exporter=new MmcInstanceExportBackend();
         byte[] original=File.ReadAllBytes(fixture.Archive);string linked=Path.Combine(fixture.Root,"outputs","original-hardlink.zip");
@@ -180,6 +221,9 @@ internal static class ExportChecks {
         fixture.Put(source.Paths.InstanceRoot,"PCL/MmcTransactions/unknown.record","pending transaction");
         Check(exporter.ExportAsync(fixture.Request(source,"pending.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Pending transaction was ignored.");
         Check(File.ReadAllText(Path.Combine(source.Paths.InstanceRoot,"PCL","MmcTransactions","unknown.record"))=="pending transaction","Export changed pending transaction data.");
+        // Only remove this fixture's deliberately injected blocker after proving it was kept.
+        // Queued preference writers must be allowed to finish before provider teardown.
+        File.Delete(Path.Combine(source.Paths.InstanceRoot,"PCL","MmcTransactions","unknown.record"));
     }
     private static string Read(ZipArchive zip,string path){using var reader=new StreamReader(zip.GetEntry(path)!.Open());return reader.ReadToEnd();}
     private static void Success(MmcInstanceExportResult result){if(result.Status!=MmcInstanceExportStatus.Completed)throw new Exception(result.Status+": "+result.Failure);}
@@ -189,7 +233,7 @@ internal static class ExportChecks {
         internal string Root{get;}=Path.Combine(Path.GetTempPath(),"PCLLF-MmcExportTests-"+Guid.NewGuid().ToString("N"));
         internal string Archive=>Path.Combine(Root,"original.zip");private readonly HttpClient client;private readonly int major;
         private readonly byte[] index=Encoding.UTF8.GetBytes("{\"objects\":{}}");private readonly byte[] shared=JarResource("remote-resource.txt","self-authored remote bytes");
-        internal Fixture(int major,bool userComponent=false,bool tweaks=true,bool literalAccount=false,bool versionQuery=false) {
+        internal Fixture(int major,bool userComponent=false,bool tweaks=true,bool literalAccount=false,bool versionQuery=false,string? declaredGame=null,bool packageJoin=false,string? packageAddress=null) {
             this.major=major;Directory.CreateDirectory(Root);File.WriteAllText(Path.Combine(Root,"export-test-owner.json"),"PCLLF owned export fixture / "+Path.GetFileName(Root));Directory.CreateDirectory(Path.Combine(Root,"outputs"));
             string indexSha=Convert.ToHexStringLower(SHA1.HashData(index));string sharedSha=Convert.ToHexStringLower(SHA1.HashData(shared));
             string remote=new JObject{["formatVersion"]=1,["uid"]="fixture.remote",["version"]="1",["+jvmArgs"]=new JArray("-Dremote=yes"),["libraries"]=new JArray(new JObject{["name"]="fixture:shared:1",["downloads"]=new JObject{["artifact"]=new JObject{["url"]=versionQuery?"https://download.invalid/shared.jar?version=1":"https://download.invalid/shared.jar",["sha1"]=sharedSha,["size"]=shared.Length}}})}.ToString(Newtonsoft.Json.Formatting.None);
@@ -197,8 +241,8 @@ internal static class ExportChecks {
             using var zip=ZipFile.Open(Archive,ZipArchiveMode.Create);
             var declarations=new JArray(new JObject{["uid"]="net.minecraft",["version"]="1.7.10"},new JObject{["uid"]="fixture.remote",["version"]="1"});if(userComponent)declarations.Add(new JObject{["uid"]="fixture.user",["version"]="1"});Add("mmc-pack.json",new JObject{["formatVersion"]=1,["components"]=declarations}.ToString(Newtonsoft.Json.Formatting.None));
             if(userComponent)Add("patches/fixture.user.json","""{"uid":"fixture.user","version":"1","+jvmArgs":["-Duser=author"]}""");
-            Add("instance.cfg","name=Source\nOverrideJavaArgs=true\nJvmArgs=-Dpackage=yes\nOverrideMemory=true\nMinMemAlloc=512\nMaxMemAlloc=2048\n");
-            Add("patches/net.minecraft.json",new JObject{["uid"]="net.minecraft",["version"]="1.7.10",["mainClass"]="fixture.Game",["minecraftArguments"]=literalAccount?"--accessToken PRIVATE-LAUNCHER-TOKEN":"--sample value",["+jvmArgs"]=new JArray("-Dcustom=yes"),["+tweakers"]=tweaks?new JArray("fixture.Tweak"):new JArray(),["compatibleJavaMajors"]=major==8?new JArray(8):new JArray(17,21),["mainJar"]=new JObject{["name"]="fixture:client:1",["MMC-hint"]="local",["MMC-filename"]="client.jar"},["libraries"]=new JArray(new JObject{["name"]="fixture:local:1",["MMC-hint"]="local",["MMC-filename"]="same.jar"}),["assetIndex"]=new JObject{["id"]="fixture",["url"]="https://download.invalid/index.json",["sha1"]=indexSha,["size"]=index.Length}}.ToString(Newtonsoft.Json.Formatting.None));
+            Add("instance.cfg","name=Source\nOverrideJavaArgs=true\nJvmArgs=-Dpackage=yes\nOverrideMemory=true\nMinMemAlloc=512\nMaxMemAlloc=2048\n"+(packageAddress is null?"":"JoinServerOnLaunch="+packageJoin.ToString().ToLowerInvariant()+"\nJoinServerOnLaunchAddress="+packageAddress+"\n"));
+            Add("patches/net.minecraft.json",new JObject{["uid"]="net.minecraft",["version"]="1.7.10",["mainClass"]="fixture.Game",["minecraftArguments"]=declaredGame??(literalAccount?"--accessToken PRIVATE-LAUNCHER-TOKEN":"--sample value"),["+jvmArgs"]=new JArray("-Dcustom=yes"),["+tweakers"]=tweaks?new JArray("fixture.Tweak"):new JArray(),["compatibleJavaMajors"]=major==8?new JArray(8):new JArray(17,21),["mainJar"]=new JObject{["name"]="fixture:client:1",["MMC-hint"]="local",["MMC-filename"]="client.jar"},["libraries"]=new JArray(new JObject{["name"]="fixture:local:1",["MMC-hint"]="local",["MMC-filename"]="same.jar"}),["assetIndex"]=new JObject{["id"]="fixture",["url"]="https://download.invalid/index.json",["sha1"]=indexSha,["size"]=index.Length}}.ToString(Newtonsoft.Json.Formatting.None));
             AddBytes("libraries/client.jar",JarBytes());AddBytes("libraries/same.jar",JarResource("local-resource.txt","private adopted library"));AddBytes("libraries/orphan.jar",JarResource("orphan-resource.txt","preserved inactive library"));Add("minecraft/config/personal.cfg","author configuration");
             void Add(string path,string value)=>AddBytes(path,Encoding.UTF8.GetBytes(value));
             void AddBytes(string path,byte[] value){using var output=zip.CreateEntry(path).Open();output.Write(value);}

@@ -51,7 +51,7 @@ internal static class MmcInstanceExportMetadata {
             download["sha1"]=bytes.Sha1; download["size"]=bytes.SizeBytes;
         }
         ValidateNativeGameContract(profile,current);
-        ValidateAccountTemplates(current.GameArguments.Select(argument=>argument.Value).ToArray());
+        MmcInstanceExportArgumentPolicy.Declared(current.GameArguments.Select(argument=>argument.Value).ToArray(),prefs.IncludeServers);
         bool overlay=!prefs.ExtraGame.IsEmpty||prefs.Fullscreen;
         if(overlay) {
             string uid="org.pcllf.portable-launch-preferences";
@@ -61,6 +61,7 @@ internal static class MmcInstanceExportMetadata {
             }
             var game=current.GameArguments.Select(a=>a.Value).Concat(prefs.ExtraGame).ToList();
             if(prefs.Fullscreen&&!game.Contains("--fullscreen",StringComparer.Ordinal)) game.Add("--fullscreen");
+            MmcInstanceExportArgumentPolicy.Declared(game,prefs.IncludeServers);
             if(game.Any(token=>token.Length==0||token.Any(char.IsWhiteSpace))) throw new InvalidDataException("Prism legacy minecraftArguments cannot encode a literal empty/whitespace argument token; refusing an inexact export.");
             if(!current.Tweakers.IsEmpty) {
                 // Complete argv already contains these flags. Leaving +tweakers would append
@@ -87,6 +88,7 @@ internal static class MmcInstanceExportMetadata {
         if(!resolved.IsComplete) throw new InvalidDataException("Frozen MMC export still needs unfixed remote component metadata.");
         var portable=MmcProfileCompiler.Compile(resolved.Profile!,current.Environment);
         if(portable.HasErrors||portable.Profile is null) throw new InvalidDataException("Portable MMC launch compilation failed.");
+        MmcInstanceExportArgumentPolicy.Declared(portable.Profile.GameArguments.Select(argument=>argument.Value).ToArray(),prefs.IncludeServers);
         Equivalent(current,portable.Profile,prefs);
         transformations.Add("Effective local/user/remote component metadata frozen into exact local patches; current shared downloads pinned by adopted original SHA1/size.");
         return new(files.ToImmutable(),transformations.ToImmutable(),portable.Profile);
@@ -119,15 +121,6 @@ internal static class MmcInstanceExportMetadata {
             !expected.Classpath.Select(Artifact).SequenceEqual(actual.Classpath.Select(Artifact))||!expected.NativeArtifacts.Select(Artifact).SequenceEqual(actual.NativeArtifacts.Select(Artifact))||
             !expected.DownloadOnlyArtifacts.Select(Artifact).SequenceEqual(actual.DownloadOnlyArtifacts.Select(Artifact))||!expected.AuxiliaryArtifacts.Select(Artifact).SequenceEqual(actual.AuxiliaryArtifacts.Select(Artifact)))
             throw new InvalidDataException("Portable MMC projection changed the effective launch contract; refusing export.");
-    }
-    private static void ValidateAccountTemplates(string[] arguments) {
-        var fields=new HashSet<string>(new[]{"--username","--uuid","--accessToken","--session","--userProperties","--clientId","--xuid"},StringComparer.OrdinalIgnoreCase);
-        for(int index=0;index<arguments.Length;index++) {
-            string token=arguments[index];int separator=token.IndexOf('=');string key=separator<0?token:token[..separator];
-            if(!fields.Contains(key))continue;
-            string value=separator<0?(++index<arguments.Length?arguments[index]:""):token[(separator+1)..];
-            if(!System.Text.RegularExpressions.Regex.IsMatch(value,@"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$"))throw new InvalidDataException("Literal account/session data cannot be exported in a component game argument.");
-        }
     }
     private static bool CredentialQuery(string query) {
         var privateNames=new HashSet<string>(new[]{"token","access_token","auth","key","api_key","apikey","authorization","password","signature","sig","X-Amz-Credential","X-Amz-Signature","X-Goog-Credential","X-Goog-Signature"},StringComparer.OrdinalIgnoreCase);

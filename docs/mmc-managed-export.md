@@ -40,4 +40,6 @@ C:\Users\16892\.codex\tools\dotnet10\dotnet.exe run --project tests/PCLLF.Mmc.Ex
 
 测试 roots 带 `PCLLF-MmcExportTests-<GUID>` 所有权文件并保留。曾在旧 import publication 遇到 transient reader-lock 导致 private-root rename AccessDenied，发生在 Export 之前；相关 roots 保留，集成前置 `3989d589` 提供重新验证后的 publication 修复。该依赖未混入导出提交，也不把测试前置失败写成导出成功。
 
-最新验证：串行真图 build 0 warning / 0 error；十个聚合组全 run 通过。有效自有 tiny JAR 包含 Java8 class 字节，但测试不启动 JVM/游戏。测试 fixture 与失败/取消 partial 按所有权保留，不删除玩家路径。known account 文件和 launcher/account flag 常量值明确拒绝；opaque mod 配置按字节复制，不将通用导出器描述为任意第三方模组凭据格式的解析/清洗器。
+最新验证：串行真图 build 0 warning / 0 error；十二个聚合组全 run 通过。有效自有 tiny JAR 包含 Java8 class 字节，但测试不启动 JVM/游戏。测试 fixture 与失败/取消 partial 按所有权保留，不删除玩家路径。known account 文件和 launcher/account flag 常量值明确拒绝；opaque mod 配置按字节复制，不将通用导出器描述为任意第三方模组凭据格式的解析/清洗器。
+
+Astra medium 的两项 P2 实现修复已完成，仍待独立复核关闭：账号参数策略集中用于声明、extra 与 overlay/重编译后的最终参数；extra 还禁止替换 live account/root 绑定，合法声明占位符保持。默认排除服务器也检查 bare/equals flags。服务器 cfg 先按 INI 的存在性取值（空值同样优先），只有 INI 缺失且包内 JoinServerOnLaunch 真启用才回退地址，关闭状态的残留地址不会重新启用。

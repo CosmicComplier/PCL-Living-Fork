@@ -9,7 +9,7 @@ namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
 internal sealed record MmcExportPreferences(ImmutableDictionary<string,string> Values, ImmutableArray<string> ExtraGame,
-    bool Fullscreen, ImmutableArray<string> Transformations) {
+    bool Fullscreen, bool IncludeServers, ImmutableArray<string> Transformations) {
     internal string Encode() => string.Join("\n", Values.OrderBy(pair => pair.Key, StringComparer.Ordinal)
         .Select(pair => pair.Key + "=" + Quote(pair.Value))) + "\n";
     private static string Quote(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
@@ -65,16 +65,16 @@ internal static class MmcInstanceExportPreferences {
         if (!string.IsNullOrWhiteSpace(ini.GetValueOrDefault("VersionAdvanceRun"))) throw new InvalidDataException("An active host custom command is not a portable MMC launch definition.");
         var game=ini.TryGetValue("VersionAdvanceGame",out string? extra)?MmcArgumentTokenizer.Tokenize(extra):ImmutableArray<string>.Empty;
         PortableArguments(game);
-        if (game.Any(token=>token.StartsWith("--accessToken",StringComparison.OrdinalIgnoreCase)||token.StartsWith("--session",StringComparison.OrdinalIgnoreCase)||token.StartsWith("--uuid",StringComparison.OrdinalIgnoreCase)||token.StartsWith("--username",StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidDataException("Literal account overrides cannot be exported.");
-        if (!request.Options.IncludeServers && game.Any(token=>token is "--server" or "--port" or "--quickPlayMultiplayer")) throw new InvalidDataException("Auto-join arguments require the explicit server-data export option.");
-        if (!request.Options.IncludeServers && (!string.IsNullOrWhiteSpace(ini.GetValueOrDefault("VersionServerEnter")) || !string.IsNullOrWhiteSpace(package.Values.GetValueOrDefault("JoinServerOnLaunchAddress")))) transformations.Add("Server auto-join data omitted by the explicit default player-data exclusion policy.");
+        MmcInstanceExportArgumentPolicy.Extra(game,request.Options.IncludeServers);
+        string server=ini.TryGetValue("VersionServerEnter",out string? ownServer)?ownServer??"":
+            Flag(package.Values.GetValueOrDefault("JoinServerOnLaunch","false"))?package.Values.GetValueOrDefault("JoinServerOnLaunchAddress",""):"";
+        if (!request.Options.IncludeServers && !string.IsNullOrWhiteSpace(server)) transformations.Add("Server auto-join data omitted by the explicit default player-data exclusion policy.");
         if (request.Options.IncludeServers) {
-            string server=ini.GetValueOrDefault("VersionServerEnter",package.Values.GetValueOrDefault("JoinServerOnLaunchAddress",""));
+            values["JoinServerOnLaunch"]="false";
             if (!string.IsNullOrWhiteSpace(server)) { values["JoinServerOnLaunch"]="true"; values["JoinServerOnLaunchAddress"]=server; }
         }
         if (jvmMode=="Custom") transformations.Add("Instance JVM override becomes the new package override, preserving an explicit empty value.");
-        return new(values.ToImmutableDictionary(StringComparer.Ordinal),game,fullscreen,transformations.ToImmutable());
+        return new(values.ToImmutableDictionary(StringComparer.Ordinal),game,fullscreen,request.Options.IncludeServers,transformations.ToImmutable());
     }
     internal static void PortableArguments(IEnumerable<string> tokens) {
         foreach (string token in tokens) {
