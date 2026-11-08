@@ -252,6 +252,7 @@ internal static class MmcGtnhLaunchAcceptance {
         }
         private void DrainObservations() {while(observations.TryDequeue(out string? text)){string safe=runtime?.Redact(text)??text;lock(logGate)lifecycle.WriteLine(DateTime.UtcNow.ToString("O",CultureInfo.InvariantCulture)+" "+safe);}}
         private void ObserveGame() {
+            CapturePreparedPlan();
             if(game is null) {if(combo?.State==ModBase.LoadState.Failed)throw new IOException("Actual Main preparation failed.",combo.Error);return;}
             if(!game.HasExited) {
                 var window=Windows(game.Id).FirstOrDefault();
@@ -283,10 +284,20 @@ internal static class MmcGtnhLaunchAcceptance {
             Write(report,"repair-"+generation+".json",new{Status="ActualRepairSucceededAfterVerifiedExit",imported.InstanceId,Generation=generation,DefinitionSha256=definitionSha,Nonce=nonce,Keep=true});
         }
         private void Failure(Exception error) {
+            CapturePreparedPlan();
             string safe=runtime?.Redact(error.ToString())??error.ToString();
             if(safe==lastError)return;lastError=safe;
             Write(report,"failure.json",new{Status="Failed_NoAutomaticRestartOrKill",Launch=launch,HostPid=Environment.ProcessId,GamePid=game?.Id,SessionId=sessionId,Nonce=nonce,Error=safe,Keep=true});
             Console.Error.WriteLine(safe);
+        }
+        private void CapturePreparedPlan() {
+            if(runtime is not null||context is null||Native.Get(context,"runtime") is not MmcRuntimeLaunchPlan built)return;
+            runtime=built;var start=built.CreateStartInfo();
+            Write(report,"launch-"+launch+"-prepared-plan.json",new{Status="ActualBuilderPlanObservedBeforeProcess",Launch=launch,MainSha256=Hash(Native.Main.Location),Java=built.Request.Java,
+                built.Request.BoundPlan.DefinitionGeneration,built.Request.BoundPlan.BoundFingerprint,built.NonSensitiveArgumentFingerprint,built.RuntimeInputFingerprint,
+                CommandUtf16LengthIncludingNul=MmcRuntimeWindowsCommandLine.LengthIncludingTerminator(start.FileName,start.ArgumentList),ArgumentCount=start.ArgumentList.Count,
+                RedactedArguments=built.RedactedArguments,LogicalJvmArguments=built.LogicalJvmArguments,Classpath=built.OrderedGameClasspath,built.Inputs,built.MutableDirectories,
+                NativeDirectory=built.Request.Directories.NativeDirectory,AssetsRoot=built.Request.Directories.AssetsRoot,Keep=true});
         }
     }
 
