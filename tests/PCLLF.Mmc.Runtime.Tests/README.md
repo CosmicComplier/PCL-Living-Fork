@@ -53,6 +53,10 @@ Wrapper 本体没有修改或重打包。`MmcRuntimeBridgeTransport.JavaSource` 
 
 可显式执行 `--readonly-jar-proof <本地原始 JAR 路径>`，将不改字节的原件纳入真正的 Inspector Java8/21 类头证明，并核对源 SHA256 前后不变；不会执行该 JAR 或 Minecraft。该参数不属于默认组，也不会给 CI 增加外部 JAR 依赖。
 
+`--group short-native` 另需显式 `PCLLF_MMC_TEST_NATIVE_PLAN`，指向保留的已锁输入计划。
+该探针逐个核对 SDL/LWJGL 原始 JAR 摘要，用真实 Java21 原生加载对照长路径错误和生产 short scope。
+它不属于无参数默认 JDK 回归，不要求 CI 存在本机 GTNH 目录，不执行 Minecraft 或改写原件。
+
 
 `--group manifest-inputs` 用真实 JDK8/21 的自有 URLClassLoader 程序核对相对 URI 的空格、Unicode、plus/hash 转义及 parent 路径解析，证明不存在的 manifest 引用不贡献资源；新增文件后实际 JDK 会读取它，而 `RevalidateManifestInputs(plan, inspection, token)` 必须拒绝。最终 admission 应在 `MmcRuntimeLaunchBuilder.RevalidateAsync` 后、持 gate/pins 时同步调用该 API。`inspection.ManifestInputs` 保存每条引用的 actual JAR SHA、owned root、原 token 与 resolved missing target；检查既有 implicit 输入时明确 unsupported，因为加载顺序尚未绑定，即使它已在显式 classpath 中。
 

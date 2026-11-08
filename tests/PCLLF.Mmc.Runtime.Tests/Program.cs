@@ -7,12 +7,15 @@ string[] groups = ["bridge", "argv", "macros", "rejections", "classpath", "long-
 if (args is ["--list-groups"]) { foreach (string group in groups) Console.WriteLine(group); return 0; }
 int selected = -1;
 if (args.Length != 0) {
-    if (args is not ["--group", var group] || (selected = Array.IndexOf(groups, group)) < 0) { Console.Error.WriteLine("Use --group bridge|argv|macros|rejections|classpath|long-arguments|session-budget|jar-namespace|manifest-inputs, --list-groups, or no arguments for all checks."); return 2; }
+    if (args is not ["--group", var group] || (selected = Array.IndexOf(groups, group)) < 0) { Console.Error.WriteLine("Use --group bridge|argv|macros|rejections|classpath|long-arguments|session-budget|jar-namespace|manifest-inputs|short-native, --list-groups, or no arguments for the standard JDK checks. short-native requires explicit selection and a locked native plan."); return 2; }
 }
 var cases = MmcRuntimeLaunchTests.Cases().ToArray();
 int passed = 0;
 for (int index = 0; index < cases.Length; index++) {
     if (selected >= 0 && selected != index) continue;
+    // The native-source probe reads an explicitly supplied retained local plan;
+    // ordinary controlled-JDK regression runs never require GTNH fixture files.
+    if (selected < 0 && groups[index] == "short-native") continue;
     try { cases[index].Run(); Console.WriteLine("PASS " + groups[index] + ": " + cases[index].Name); passed++; }
     catch (Exception error) { Console.Error.WriteLine("FAIL " + groups[index] + ": " + error); return 1; }
 }
