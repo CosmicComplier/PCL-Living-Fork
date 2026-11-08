@@ -8,6 +8,7 @@ public enum MmcExportInactiveTree { RejectNonempty, Exclude }
 public sealed record MmcInstanceExportOptions(bool IncludeSaves = false, bool IncludeScreenshots = false, bool IncludeServers = false) {
     public MmcExportInactiveTree InactiveGameTree { get; init; } = MmcExportInactiveTree.RejectNonempty;
     public bool DiscardMachineJavaSelection { get; init; }
+    public bool IncludeUnrecognizedGameFiles { get; init; }
     public int? PortableMinimumMemoryMiB { get; init; }
     public int? PortableMaximumMemoryMiB { get; init; }
 }

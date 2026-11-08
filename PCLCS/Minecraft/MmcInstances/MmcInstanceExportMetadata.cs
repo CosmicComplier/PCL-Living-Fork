@@ -20,7 +20,7 @@ internal static class MmcInstanceExportMetadata {
         var components=new JsonArray(); var transformations=prefs.Transformations.ToBuilder();
         foreach(var component in profile.Components) {
             var patch=new JsonObject();
-            foreach(var field in component.Patch.Fields) patch[field.Key]=JsonNode.Parse(field.Value.GetRawText());
+            foreach(var field in component.Patch.Fields.OrderBy(pair=>pair.Key,StringComparer.Ordinal)) patch[field.Key]=JsonNode.Parse(field.Value.GetRawText());
             patch["uid"]=component.Uid; patch["formatVersion"]=1; patch["volatile"]=false;
             if(component.Version is not null) patch["version"]=component.Version;
             patches.Add(component.Uid,patch);
