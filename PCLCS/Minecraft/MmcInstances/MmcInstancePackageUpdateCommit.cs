@@ -48,8 +48,10 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
             var desired = preview.LocalInputs.ToDictionary(value => "libraries/" + value.FileName, value => value.Sha256, StringComparer.OrdinalIgnoreCase);
             MmcInstanceDefinitionChangeBackend<TNetFile>.PackageAssertPrivate(currentPaths, current, desired);
             MmcInstanceDefinitionChangeBackend<TNetFile>.PackageAssertMapped(currentPaths, current, mapped);
+            var operations = engine.ManagedFileOperations(preview.Plan, token);
+            var requiredUndo = PackageUndoPaths(currentPaths, operations);
             if (preview.ChangesMinecraftVersion) backups = BackupWorlds(currentPaths, token);
-            undo = MmcInstanceHistoryStore.Capture(currentLease, primary, currentSaved, "整合包更新前", token, null);
+            undo = MmcInstanceHistoryStore.Capture(currentLease, primary, currentSaved, "整合包更新前", token, null, requiredUndo, fullSafeEnvironment: true);
             var locals = preview.LocalInputs.ToDictionary(value => value.FileName, StringComparer.OrdinalIgnoreCase);
             using var prepared = materializer.PrepareAsync(artifacts, fetched.CreateAccess((artifact, ct) => {
                 ct.ThrowIfCancellationRequested(); return ValueTask.FromResult<MmcArtifactSource?>(locals.TryGetValue(artifact.RelativePath, out var input)
@@ -60,7 +62,8 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
             var actualMapped = observed.DerivedOutputs.Where(value => value.Kind == MmcDerivedOutputKind.AssetMappedResource)
                 .Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes)).OrderBy(value => value.RelativePath, StringComparer.Ordinal).ToArray();
             if (!mapped.OrderBy(value => value.RelativePath, StringComparer.Ordinal).SequenceEqual(actualMapped)) throw new IOException("Prepared mappings differ from the guarded new-package sources.");
-            var operations = engine.ManagedFileOperations(preview.Plan, token);
+            operations = engine.ManagedFileOperations(preview.Plan, token);
+            if (!requiredUndo.SequenceEqual(PackageUndoPaths(currentPaths, operations))) throw new IOException("Selected package operations changed their exact undo coverage.");
             byte[] ownershipBytes = Encoding.UTF8.GetBytes(engine.BuildNextManifest(preview.Plan, token).ToString(Formatting.Indented));
             string ownershipHash = MmcDurableFiles.Hash(ownershipBytes), ownershipPath = "PCL/MmcSource/" + preview.Source.SourceBundle.BundleSha256 + "/ownership/" + ownershipHash + ".json";
             var source = preview.Source with { PackageOwnershipReference = new(ownershipHash, ownershipPath) };
@@ -71,8 +74,11 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
                 prepared.AssetsRoot is null ? "PCL/MmcRuntime/" + prepared.ViewKey + "/assets" : Relative(currentPaths, prepared.AssetsRoot));
             var bound = MmcPlanBinder.BindPackageRevision(current, source, compiled, observed.Facts,
                 new(current.InstanceId, current.Generation, primary.Sha256, preview.PackageSha256, MmcDurableFiles.Hash(projection),
-                    new(undo.PointId, undo.ManifestSha256, current.InstanceId, current.Generation, primary.Sha256, current.InstalledProjection!.BoundFingerprint)) {
-                    NativeDerivation = observed.NativeCompletion, PackageOwnershipContent = ownershipBytes
+                    new(undo.PointId, undo.ManifestSha256, current.InstanceId, current.Generation, primary.Sha256, current.InstalledProjection!.BoundFingerprint) {
+                        CoverageVersion = undo.CoverageVersion, AdditionalEnvironmentPaths = undo.AdditionalEnvironmentPaths,
+                        FullSafePolicyVersion = undo.FullSafeEnvironment ? 1 : null
+                    }) {
+                    NativeDerivation = observed.NativeCompletion, PackageOwnershipContent = ownershipBytes, RequiredUndoPaths = requiredUndo
                 }, saved.BaselineInput, observed.DerivedOutputs, observed.AssetIndexes);
             if (bound.HasErrors || bound.Definition is null || bound.Plan is null) throw new IOException("New package binding rejected its measured authority: " + string.Join("; ", bound.Diagnostics.Select(value => value.Code)));
             byte[] definition = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition));
@@ -137,6 +143,14 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
     }
     private static void ValidateLocalSnapshot(MmcInstancePackageUpdatePreview preview, MmcInstancePaths paths, CancellationToken token) {
         if (!preview.LocalSnapshot.SequenceEqual(MmcInstancePackageUpdatePlanning<TNetFile>.LocalSnapshot(paths, token))) throw new IOException("Local files or their namespace changed after ZIP update preview.");
+    }
+    private static ImmutableArray<string> PackageUndoPaths(MmcInstancePaths paths, IReadOnlyList<Tuple<string, string?, string?>> operations) {
+        var result = ImmutableArray.CreateBuilder<string>();
+        foreach (var operation in operations) {
+            MmcInstancePackageUpdatePlanning<TNetFile>.Within(paths.GameRoot, operation.Item1);
+            result.Add(paths.GameRootLeaf + "/" + Path.GetRelativePath(paths.GameRoot, operation.Item1).Replace('\\', '/'));
+        }
+        return MmcInstanceHistoryFiles.NormalizeAdditionalPaths(paths, result.Distinct(StringComparer.OrdinalIgnoreCase).ToImmutableArray());
     }
     private static IEnumerable<MmcFileMutation> GameMutations(MmcInstancePackageUpdatePreview preview, MmcInstancePaths paths,
         IReadOnlyList<Tuple<string, string?, string?>> operations, MmcArtifactWorkspace workspace, CancellationToken token) {

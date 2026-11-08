@@ -15,6 +15,126 @@ internal static class MmcInstancePackageUpdateTests {
         yield return ("MMC ZIP update cancellation and decided interruption retain recoverable package and ownership authority", Transactions);
         yield return ("MMC ZIP Minecraft changes use actual world backups and reject implicit game-tree migration", WorldSafety);
         yield return ("MMC external candidate stores block old whole-root and PCL cleanup even without an active versions child", ExternalStoreGuard);
+        yield return ("MMC ZIP undo and redo retain exact modified removed and absent resource custom and root-file states", DynamicUndo);
+        yield return ("MMC exact history coverage keeps legacy shape and rejects unknown unsafe noncanonical or contradictory payload roles", CoverageBoundaries);
+        yield return ("MMC full safe inventory restores an early author point directly across later additions and removals without inventing personal absence", DirectOldPoint);
+        yield return ("MMC full ZIP undo keeps personal runtime options out of safe managed paths while legacy fixed history retains its coverage", PersonalRuntimeFiles);
+    }
+    private static void PersonalRuntimeFiles() {
+        using Fixture fixture = new(); fixture.Import(fixture.Pack("personal-A", "runtimeA", new() { ["config/managed.cfg"] = "author A" }));
+        string[] personal = ["options.txt", "optionsof.txt", "optionsshaders.txt", "config/litematica/litematica_world.json"];
+        foreach (string path in personal) fixture.Put("minecraft/" + path, "legacy personal value");
+        var primary = fixture.Primary(); var legacy = new MmcInstanceHistoryBackend().CaptureAsync(new(fixture.VersionRoot, primary.Definition.InstanceId, primary.Definition.Generation,
+            primary.Sha256, "legacy fixed roles")).GetAwaiter().GetResult(); if (legacy.Point is null) throw new Exception(legacy.Failure);
+        Equal(3, legacy.Point.CoverageVersion);
+        var loadedLegacy = MmcInstanceHistoryStore.Read(MmcInstancePaths.Resolve(fixture.VersionRoot), legacy.Point.PointId, legacy.Point.ManifestSha256, CancellationToken.None);
+        foreach (string path in personal) Equal(true, loadedLegacy.Manifest.EnvironmentFiles.Any(value => value.RelativePath == "minecraft/" + path));
+        foreach (string path in personal) fixture.Put("minecraft/" + path, "current personal value");
+        var authorB = new Dictionary<string, string> { ["config/managed.cfg"] = "author B" };
+        foreach (string path in personal) authorB[path] = "unwanted author runtime option";
+        var preview = Preserve(fixture, Prepare(fixture, fixture.Pack("personal-B", "runtimeB", authorB)));
+        var updated = fixture.Update().CommitAsync(NewCommit(preview)).GetAwaiter().GetResult(); Require(updated);
+        Equal(5, updated.UndoPoint!.CoverageVersion);
+        foreach (string path in personal) {
+            Equal("current personal value", fixture.Read("minecraft/" + path));
+            Equal(false, updated.UndoPoint.AdditionalEnvironmentPaths.Contains("minecraft/" + path, StringComparer.OrdinalIgnoreCase));
+        }
+        Restore(fixture, legacy.Point);
+        foreach (string path in personal) Equal("legacy personal value", fixture.Read("minecraft/" + path));
+    }
+    private static void DirectOldPoint() {
+        foreach (bool personalAtFuturePath in new[] { false, true }) {
+            using Fixture fixture = new();
+            fixture.Import(fixture.Pack("full-A", "runtimeA", new() { ["resourcepacks/old.zip"] = "resource A", ["custom/keep.data"] = "keep A" }));
+            if (personalAtFuturePath) fixture.Put("minecraft/custom/late.data", "personal before A");
+            fixture.Put("minecraft/resourcepacks/personal.zip", "outside scope A"); fixture.Put("minecraft/saves/world/level.dat", "world stays");
+            fixture.Put("minecraft/config/xaero/map.cfg", "map stays");
+            var b = Prepare(fixture, fixture.Pack("full-B", "runtimeB", new() { ["resourcepacks/old.zip"] = "resource B", ["custom/keep.data"] = "keep A" }));
+            var updatedB = fixture.Update().CommitAsync(NewCommit(Preserve(fixture, b))).GetAwaiter().GetResult(); Require(updatedB);
+            fixture.Put("minecraft/resourcepacks/personal.zip", "outside scope C");
+            var c = Prepare(fixture, fixture.Pack("full-C", "runtimeC", new() { ["resourcepacks/old.zip"] = "resource B", ["custom/late.data"] = "author late C" }));
+            var updatedC = fixture.Update().CommitAsync(NewCommit(Preserve(fixture, c))).GetAwaiter().GetResult(); Require(updatedC);
+            Equal(false, File.Exists(fixture.Path("minecraft/custom/keep.data")));
+            string? lateC = MmcDurableFiles.Observe(fixture.Path("minecraft/custom/late.data"));
+            string? resourceC = MmcDurableFiles.Observe(fixture.Path("minecraft/resourcepacks/old.zip"));
+            var current = fixture.Primary(); var restored = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, current.Definition.InstanceId, current.Definition.Generation,
+                current.Sha256, updatedB.UndoPoint!.PointId, updatedB.UndoPoint.ManifestSha256)).GetAwaiter().GetResult();
+            if (restored.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(restored.Failure);
+            Equal("resource A", fixture.Read("minecraft/resourcepacks/old.zip")); Equal("keep A", fixture.Read("minecraft/custom/keep.data"));
+            if (personalAtFuturePath) Equal("personal before A", fixture.Read("minecraft/custom/late.data"));
+            else Equal(false, File.Exists(fixture.Path("minecraft/custom/late.data")));
+            Equal("outside scope C", fixture.Read("minecraft/resourcepacks/personal.zip"));
+            Equal(5, updatedB.UndoPoint.CoverageVersion); Equal(5, restored.UndoPoint!.CoverageVersion);
+            current = fixture.Primary(); var redo = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, current.Definition.InstanceId, current.Definition.Generation,
+                current.Sha256, restored.UndoPoint.PointId, restored.UndoPoint.ManifestSha256)).GetAwaiter().GetResult();
+            if (redo.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(redo.Failure);
+            Equal(resourceC, MmcDurableFiles.Observe(fixture.Path("minecraft/resourcepacks/old.zip")));
+            Equal(lateC, MmcDurableFiles.Observe(fixture.Path("minecraft/custom/late.data")));
+            Equal(false, File.Exists(fixture.Path("minecraft/custom/keep.data")));
+            Equal("outside scope C", fixture.Read("minecraft/resourcepacks/personal.zip")); Equal("world stays", fixture.Read("minecraft/saves/world/level.dat")); Equal("map stays", fixture.Read("minecraft/config/xaero/map.cfg"));
+            Ready(fixture);
+        }
+    }
+    private static void CoverageBoundaries() {
+        using Fixture fixture = new(); fixture.Import(fixture.Pack("coverage", "runtimeA", new()));
+        var history = new MmcInstanceHistoryBackend(); var current = fixture.Primary();
+        var request = new MmcInstanceHistoryCaptureRequest(fixture.VersionRoot, current.Definition.InstanceId, current.Definition.Generation, current.Sha256, "coverage");
+        var legacy = history.CaptureAsync(request).GetAwaiter().GetResult(); if (legacy.Point is null) throw new Exception(legacy.Failure);
+        Equal(3, legacy.Point.CoverageVersion);
+        string legacyRoot = MmcInstanceHistoryStore.PointRoot(MmcInstancePaths.Resolve(fixture.VersionRoot), legacy.Point.PointId);
+        var legacyManifest = MmcDurableFiles.ReadRecord<MmcHistoryManifest>(Path.Combine(legacyRoot, "manifest.record")).Value;
+        Equal(null, legacyManifest.AdditionalCoverage);
+        Equal(false, System.Text.Json.JsonSerializer.Serialize(legacyManifest).Contains("AdditionalCoverage", StringComparison.Ordinal));
+        foreach (string path in new[] { "minecraft/saves/world/level.dat", "minecraft/config/xaero/points.cfg", "minecraft/accounts.json", ".minecraft/custom/file.cfg", "PCL/config.json" })
+            Equal(MmcInstanceBackendStatus.NeedsRecovery, history.CaptureAsync(request with { AdditionalEnvironmentPaths = [path] }).GetAwaiter().GetResult().Status);
+        fixture.Put("minecraft/custom/present.bin", "explicit environment");
+        var captured = history.CaptureAsync(request with { AdditionalEnvironmentPaths = ["minecraft/custom/present.bin", "minecraft/custom/absent.bin"] }).GetAwaiter().GetResult();
+        if (captured.Point is null) throw new Exception(captured.Failure); Equal(4, captured.Point.CoverageVersion);
+        var paths = MmcInstancePaths.Resolve(fixture.VersionRoot); string root = MmcInstanceHistoryStore.PointRoot(paths, captured.Point.PointId);
+        string recordPath = Path.Combine(root, "manifest.record"), indexPath = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcHistory/index/" + captured.Point.PointId.ToString("N") + ".record");
+        var original = MmcDurableFiles.ReadRecord<MmcHistoryManifest>(recordPath).Value;
+        foreach (var changed in new[] { original with { CoverageVersion = 3 }, original with { CoverageVersion = 5 },
+            original with { AdditionalCoverage = original.AdditionalCoverage! with { FormatVersion = 2 } },
+            original with { AdditionalCoverage = original.AdditionalCoverage! with { Paths = original.AdditionalCoverage.Paths.Reverse().ToImmutableArray() } },
+            original with { AdditionalCoverage = original.AdditionalCoverage! with { Paths = ["minecraft/custom/present.bin", "minecraft/custom/present.bin"] } },
+            original with { AdditionalCoverage = original.AdditionalCoverage! with { Paths = ["minecraft/saves/world/level.dat"] } } }) {
+            string hash = Replace(changed); Throws(() => MmcInstanceHistoryStore.Read(paths, captured.Point.PointId, hash, CancellationToken.None));
+        }
+        string validHash = Replace(original);
+        string absent = Path.Combine(root, "versions", "snapshot", "minecraft", "custom", "absent.bin"); File.WriteAllText(absent, "unlisted payload");
+        Throws(() => MmcInstanceHistoryStore.Read(paths, captured.Point.PointId, validHash, CancellationToken.None));
+        Equal(current.Sha256, fixture.Primary().Sha256);
+        string Replace(MmcHistoryManifest value) {
+            File.Delete(recordPath); string hash = MmcDurableFiles.WriteRecord(recordPath, value); File.Delete(indexPath);
+            MmcDurableFiles.WriteRecord(indexPath, new MmcHistoryIndex(1, captured.Point.PointId, captured.Point.InstanceId, hash)); return hash;
+        }
+    }
+    private static void DynamicUndo() {
+        using Fixture fixture = new();
+        string a = fixture.Pack("dynamic-A", "runtimeA", new() { ["resourcepacks/modify.zip"] = "resource old", ["resourcepacks/remove.zip"] = "removed old",
+            ["shaderpacks/modify.zip"] = "shader old", ["custom/nested.data"] = "custom old", ["root.json"] = "{\"author\":\"old\"}" });
+        fixture.Import(a); fixture.Put("minecraft/saves/world/level.dat", "world stays"); fixture.Put("minecraft/config/xaero/map.cfg", "map stays");
+        fixture.Put("minecraft/resourcepacks/personal.zip", "unrelated personal resource");
+        string[] paths = ["resourcepacks/modify.zip", "resourcepacks/remove.zip", "resourcepacks/add.zip", "shaderpacks/modify.zip", "custom/nested.data", "root.json"];
+        var before = paths.ToDictionary(path => path, path => MmcDurableFiles.Observe(fixture.Path("minecraft/" + path)), StringComparer.Ordinal);
+        string b = fixture.Pack("dynamic-B", "runtimeB", new() { ["resourcepacks/modify.zip"] = "resource new", ["resourcepacks/add.zip"] = "added new",
+            ["shaderpacks/modify.zip"] = "shader new", ["custom/nested.data"] = "custom new", ["root.json"] = "{\"author\":\"new\"}" });
+        var preview = Preserve(fixture, Prepare(fixture, b));
+        var updated = fixture.Update().CommitAsync(NewCommit(preview)).GetAwaiter().GetResult(); Require(updated);
+        var after = paths.ToDictionary(path => path, path => MmcDurableFiles.Observe(fixture.Path("minecraft/" + path)), StringComparer.Ordinal);
+        Equal(false, File.Exists(fixture.Path("minecraft/resourcepacks/remove.zip"))); Equal(true, File.Exists(fixture.Path("minecraft/resourcepacks/add.zip")));
+        var current = fixture.Primary(); var undo = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, current.Definition.InstanceId, current.Definition.Generation,
+            current.Sha256, updated.UndoPoint!.PointId, updated.UndoPoint.ManifestSha256)).GetAwaiter().GetResult();
+        if (undo.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(undo.Failure);
+        foreach (string path in paths) Equal(before[path], MmcDurableFiles.Observe(fixture.Path("minecraft/" + path)));
+        Equal(5, updated.UndoPoint.CoverageVersion); Equal(5, undo.UndoPoint!.CoverageVersion);
+        current = fixture.Primary(); var redo = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, current.Definition.InstanceId, current.Definition.Generation,
+            current.Sha256, undo.UndoPoint.PointId, undo.UndoPoint.ManifestSha256)).GetAwaiter().GetResult();
+        if (redo.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(redo.Failure);
+        foreach (string path in paths) Equal(after[path], MmcDurableFiles.Observe(fixture.Path("minecraft/" + path)));
+        Equal("world stays", fixture.Read("minecraft/saves/world/level.dat")); Equal("map stays", fixture.Read("minecraft/config/xaero/map.cfg"));
+        Equal("unrelated personal resource", fixture.Read("minecraft/resourcepacks/personal.zip"));
+        Ready(fixture);
     }
     private static void Continuity() {
         using Fixture fixture = new();

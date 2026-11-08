@@ -14,6 +14,25 @@ internal static class MmcInstanceDefinitionChangeTests {
         yield return ("MMC component changes reject stale candidates, changed local inputs, unknown targets and session or pending barriers", Refusals);
         yield return ("MMC component transactions roll back predecision cancellation and recover a decided interruption", Transactions);
         yield return ("MMC component asset mapping preserves unknown and edited resources while allowing owned revisions and safe missing or identical targets", MappedResources);
+        yield return ("MMC history rejects ordinary author to mapped asset role migration without claiming a partial restoration", MappedRoleRestore);
+    }
+    private static void MappedRoleRestore() {
+        using Fixture fixture = new(authorResource: true); fixture.Import(); var primary = fixture.Primary();
+        var captured = new MmcInstanceHistoryBackend().CaptureAsync(new(fixture.VersionRoot, primary.Definition.InstanceId, primary.Definition.Generation,
+            primary.Sha256, "ordinary author resource") { FullSafeEnvironment = true }).GetAwaiter().GetResult();
+        if (captured.Point is null) throw new Exception(captured.Failure);
+        var a = Preview(fixture, new("net.minecraft", PatchContentUtf8: fixture.MinecraftPatch(fixture.MappedIndex("role-a", new() { ["owned.txt"] = "mapped A" }))));
+        Require(fixture.Changes().CommitAsync(new(a, a.CandidateSha256)).GetAwaiter().GetResult());
+        var c = Preview(fixture, new("net.minecraft", PatchContentUtf8: fixture.MinecraftPatch(fixture.MappedIndex("role-c", new() { ["owned.txt"] = "mapped C" }))));
+        Require(fixture.Changes().CommitAsync(new(c, c.CandidateSha256)).GetAwaiter().GetResult());
+        primary = fixture.Primary(); Equal("mapped C", fixture.Read("minecraft/resources/owned.txt"));
+        var refused = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, primary.Definition.InstanceId, primary.Definition.Generation,
+            primary.Sha256, captured.Point.PointId, captured.Point.ManifestSha256)).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, refused.Status); Equal(null, refused.UndoPoint);
+        Equal(primary.Sha256, fixture.Primary().Sha256); Equal("mapped C", fixture.Read("minecraft/resources/owned.txt"));
+        var point = MmcInstanceHistoryStore.Read(MmcInstancePaths.Resolve(fixture.VersionRoot), captured.Point.PointId, captured.Point.ManifestSha256, CancellationToken.None);
+        var original = point.Manifest.EnvironmentFiles.Single(value => value.RelativePath == "minecraft/resources/owned.txt");
+        Equal("mapped A", File.ReadAllText(MmcInstanceHistoryEnvironmentObjects.Resolve(point.StorePaths, original)));
     }
     private static void MappedResources() {
         using Fixture fixture = new(); fixture.Import(); var backend = fixture.Changes();
@@ -175,7 +194,7 @@ internal static class MmcInstanceDefinitionChangeTests {
         private readonly byte[] native;
         private readonly HttpClient client;
         private readonly Dictionary<string, byte[]> mappedSources = new(StringComparer.Ordinal);
-        internal Fixture() {
+        internal Fixture(bool authorResource = false) {
             using (MemoryStream bytes = new()) { using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, true)) { using var writer = new StreamWriter(zip.CreateEntry("native.dll").Open()); writer.Write("controlled native bytes"); } native = bytes.ToArray(); }
             client = new(new Metadata(this)); Directory.CreateDirectory(Root);
             using var pack = ZipFile.Open(Path.Combine(Root, "fixture.zip"), ZipArchiveMode.Create);
@@ -184,6 +203,7 @@ internal static class MmcInstanceDefinitionChangeTests {
             Add("pack/patches/net.minecraft.json", $$"""{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Base","mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"game.jar"},"assetIndex":{"id":"fixture","url":"https://files.invalid/index.json","sha1":"{{Convert.ToHexStringLower(SHA1.HashData(index))}}","size":{{index.Length}}},"compatibleJavaMajors":[8,21]}""");
             Add("pack/patches/fixture.custom.json", CustomPatch("1", "custom original", "fixture.Custom", "-Dcustom=1"));
             Add("pack/libraries/game.jar", "game original"); Add("pack/libraries/custom.jar", "custom original"); Add("pack/minecraft/config/test.cfg", "player config"); Add("readme.txt", "opaque provenance");
+            if (authorResource) Add("pack/minecraft/resources/owned.txt", "mapped A");
             void Add(string path, string text) { using var writer = new StreamWriter(pack.CreateEntry(path).Open(), new UTF8Encoding(false)); writer.Write(text); }
         }
         internal string CustomPatch(string version, string bytes, string main, string jvm) => new JObject {

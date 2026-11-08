@@ -11,6 +11,7 @@ namespace PCLCS;
 // Original LF host implementation; governed by the repository LICENCE.
 public sealed class MmcInstanceHistoryBackend {
     public const int CoverageVersion = MmcInstanceHistoryStore.CoverageVersion;
+    public const int MaximumCoverageVersion = MmcInstanceHistoryStore.FullSafeCoverageVersion;
     private readonly MmcArtifactMaterializer materializer;
     public MmcInstanceHistoryBackend(MmcArtifactLimits? limits = null) => materializer = new(limits);
 
@@ -32,7 +33,7 @@ public sealed class MmcInstanceHistoryBackend {
             var paths = MmcInstancePaths.Resolve(root, primary.Definition.Layout.GameRootLeaf);
             var saved = MmcSavedSourceStore.LoadAsync(paths, primary.Definition, token).GetAwaiter().GetResult();
             _ = MmcInstanceCloneBackend.CompileEnvironment(saved.Resolved.Resolution, primary.Definition, request.LegacyEnvironmentCandidates);
-            var point = MmcInstanceHistoryStore.Capture(lease, primary, saved, request.Label, token, request.Checkpoint);
+            var point = MmcInstanceHistoryStore.Capture(lease, primary, saved, request.Label, token, request.Checkpoint, request.AdditionalEnvironmentPaths, request.FullSafeEnvironment);
             return new(MmcInstanceBackendStatus.Succeeded, point);
         } catch (OperationCanceledException error) { return new(MmcInstanceBackendStatus.Cancelled, Failure: error.Message); }
         catch (Exception error) when (Expected(error)) { return new(MmcInstanceBackendStatus.NeedsRecovery, Failure: error.Message); }
@@ -55,7 +56,12 @@ public sealed class MmcInstanceHistoryBackend {
             var compiled = MmcInstanceCloneBackend.CompileEnvironment(point.Saved.Resolved.Resolution, point.Definition, request.LegacyEnvironmentCandidates);
             var currentSaved = MmcSavedSourceStore.LoadAsync(paths, current, token).GetAwaiter().GetResult();
             // Complete rollback environment, including all current original lock bindings, before any live mutation.
-            undo = MmcInstanceHistoryStore.Capture(lease, primary, currentSaved, "恢复前自动保存", token, request.Checkpoint);
+            var additional = point.Manifest.AdditionalCoverage?.Paths ?? [];
+            var restoreScope = RestoreScope(paths, current, currentSaved, point, token);
+            bool fullSafe = point.Manifest.FullSafeCoverage is not null;
+            var desiredEnvironment = fullSafe ? point.Manifest.EnvironmentFiles.Where(value => restoreScope.Contains(value.RelativePath, StringComparer.OrdinalIgnoreCase)).ToImmutableArray() : point.Manifest.EnvironmentFiles;
+            undo = MmcInstanceHistoryStore.Capture(lease, primary, currentSaved, "恢复前自动保存", token, request.Checkpoint,
+                fullSafe ? restoreScope : additional, fullSafe, fullSafe ? restoreScope : default);
             request.Checkpoint?.Invoke(MmcInstanceHistoryCheckpoint.BeforeRestorePreparation); token.ThrowIfCancellationRequested();
             AssertPrivateLibraryReplacements(paths, current, point.Definition);
             using var sources = new MmcArtifactWorkspace(paths);
@@ -87,8 +93,8 @@ public sealed class MmcInstanceHistoryBackend {
             if (bound.HasErrors || bound.Definition is null || bound.Plan is null)
                 throw new IOException("History binding rejected its immutable authority: " + string.Join("; ", bound.Diagnostics.Select(value => value.Code)));
             byte[] definitionBytes = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition));
-            var currentEnvironment = MmcInstanceHistoryFiles.Environment(paths, current, token);
-            var environment = StageEnvironment(paths, point, currentEnvironment, sources, token);
+            var currentEnvironment = fullSafe ? ObserveScope(paths, restoreScope, token) : MmcInstanceHistoryFiles.Environment(paths, current, token, additional);
+            var environment = StageEnvironment(paths, point, currentEnvironment, desiredEnvironment, sources, token);
             var mutations = sourceMutations.Concat(prepared.StagedMutations.Select(value => new MmcFileMutation(value.TargetRelativePath,
                     value.ExpectedMissing ? null : value.ExpectedExistingSha256, null, value.NewSha256, value.NewSourceRelativePath)))
                 .Concat(environment).Concat(StagePrivateLibraries(paths, point, current, sources, token))
@@ -99,20 +105,20 @@ public sealed class MmcInstanceHistoryBackend {
                 InstanceId = current.InstanceId, PreviousGeneration = current.Generation, NewGeneration = next,
                 PreviousPrimarySha256 = primary.Sha256, PointId = point.Point.PointId, point.Point.ManifestSha256,
                 SelectedPrimarySha256 = point.Point.PrimarySha256, UndoPointId = undo.PointId, UndoManifestSha256 = undo.ManifestSha256,
-                NewPrimarySha256 = MmcDurableFiles.Hash(definitionBytes) });
+                NewPrimarySha256 = MmcDurableFiles.Hash(definitionBytes), Scope = restoreScope, SelectedCoverageVersion = point.Manifest.CoverageVersion });
             mutations.Add(new("PCL/MmcHistory/restores/" + restoration.ToString("N") + ".json", null, receipt, MmcDurableFiles.Hash(receipt)));
             request.Checkpoint?.Invoke(MmcInstanceHistoryCheckpoint.BeforeRestoreTransaction);
             MmcInstanceHistoryStore.AssertCurrent(lease, current.InstanceId, current.Generation, primary.Sha256);
             _ = MmcInstanceHistoryStore.Read(paths, request.PointId, request.ExpectedPointManifestSha256, token);
             AssertPrivateLibraryReplacements(paths, current, point.Definition);
-            if (!currentEnvironment.SequenceEqual(MmcInstanceHistoryFiles.Environment(paths, current, token))) throw new IOException("Current environment changed while restore was preparing.");
+            if (!currentEnvironment.SequenceEqual(fullSafe ? ObserveScope(paths, restoreScope, token) : MmcInstanceHistoryFiles.Environment(paths, current, token, additional))) throw new IOException("Current environment changed while restore was preparing.");
             using var scope = quiet.OpenStructuralWrite(lease, current.Generation);
             SetManifest(scope, point.Saved.Resolved.Resolution.Profile!, compiled, current.InstanceId, next);
             var result = scope.Execute(new(current.InstanceId, current.Generation, next, Merge(mutations)), token, (phase, index) => {
                 if (phase == MmcTransactionCheckpoint.CommitDecided) decided = true;
                 request.TransactionCheckpoint?.Invoke(phase, index);
                 if (phase == MmcTransactionCheckpoint.BeforeDecision) {
-                    if (!point.Manifest.EnvironmentFiles.SequenceEqual(MmcInstanceHistoryFiles.Environment(paths, bound.Definition, token)))
+                    if (!desiredEnvironment.SequenceEqual(fullSafe ? ObserveScope(paths, restoreScope, token) : MmcInstanceHistoryFiles.Environment(paths, bound.Definition, token, additional)))
                         throw new IOException("Restored environment namespace differs before the commit decision.");
                     MmcInstanceHistoryFiles.Verify(paths, point.Manifest.SourceFiles.Where(value => value.RelativePath != "PCL/InstanceDefinition.json"), token);
                     MmcInstanceHistoryFiles.Verify(paths, MmcInstanceHistoryFiles.PrivateLibraries(point.Definition).Values, token);
@@ -143,9 +149,9 @@ public sealed class MmcInstanceHistoryBackend {
         return mutations;
     }
     private static IEnumerable<MmcFileMutation> StageEnvironment(MmcInstancePaths paths, MmcHistoryLoadedPoint point,
-        ImmutableArray<MmcHistoryFile> current, MmcArtifactWorkspace workspace, CancellationToken token) {
+        ImmutableArray<MmcHistoryFile> current, ImmutableArray<MmcHistoryFile> desired, MmcArtifactWorkspace workspace, CancellationToken token) {
         var before = current.ToDictionary(value => value.RelativePath, StringComparer.OrdinalIgnoreCase);
-        var after = point.Manifest.EnvironmentFiles.ToDictionary(value => value.RelativePath, StringComparer.OrdinalIgnoreCase);
+        var after = desired.ToDictionary(value => value.RelativePath, StringComparer.OrdinalIgnoreCase);
         var io = new MmcArtifactIo(new(), null);
         foreach (string relative in before.Keys.Union(after.Keys, StringComparer.OrdinalIgnoreCase)) {
             token.ThrowIfCancellationRequested(); before.TryGetValue(relative, out var old); after.TryGetValue(relative, out var next);
@@ -153,10 +159,56 @@ public sealed class MmcInstanceHistoryBackend {
             string? staged = null;
             if (next is not null) {
                 staged = workspace.NewFile();
-                io.CopyAsync(point.SourcePaths.ResolveRelative(MmcPathRole.Instance, next.RelativePath), staged, relative, next.Sha256, null, next.SizeBytes, token).GetAwaiter().GetResult();
+                string payload = point.Manifest.FullSafeCoverage is not null ? MmcInstanceHistoryEnvironmentObjects.Resolve(point.StorePaths, next) : point.SourcePaths.ResolveRelative(MmcPathRole.Instance, next.RelativePath);
+                io.CopyAsync(payload, staged, relative, next.Sha256, null, next.SizeBytes, token).GetAwaiter().GetResult();
             }
             yield return new(relative, old?.Sha256, null, next?.Sha256, staged is null ? null : Relative(paths, staged));
         }
+    }
+    private static ImmutableArray<string> RestoreScope(MmcInstancePaths paths, MmcInstanceDefinition current,
+        MmcSavedInstanceSources saved, MmcHistoryLoadedPoint point, CancellationToken token) {
+        AssertNoMappedRoleMigration(paths, current, saved, point, token);
+        var union = MmcInstanceHistoryFiles.AuthorPaths(paths, current, saved)
+            .Concat(MmcInstanceHistoryFiles.AuthorPaths(point.SourcePaths, point.Definition, point.Saved))
+            .Concat(point.Manifest.FullSafeCoverage?.ManagedPaths ?? point.Manifest.AdditionalCoverage?.Paths ?? [])
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal).ToImmutableArray();
+        var derived = current.DerivedOutputs.Concat(point.Definition.DerivedOutputs).Where(value => value.Kind == MmcDerivedOutputKind.AssetMappedResource)
+            .Select(value => value.TargetRelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        union = union.Where(path => !derived.Contains(path)).ToImmutableArray();
+        if (point.Manifest.FullSafeCoverage is { } full) {
+            if (union.Any(path => full.Directories.Contains(path, StringComparer.OrdinalIgnoreCase))) throw new IOException("History restoration requires an explicit file/directory role migration.");
+            return MmcInstanceHistoryFiles.NormalizeAdditionalPaths(paths, union);
+        }
+        var explicitPaths = (point.Manifest.AdditionalCoverage?.Paths ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (string path in union) if (!MmcInstanceHistoryFiles.IsEnvironment(paths, path) && !explicitPaths.Contains(path))
+            throw new IOException("This older history coverage cannot prove the required author-path state; complete safe inventory is required.");
+        return MmcInstanceHistoryFiles.Environment(paths, current, token, point.Manifest.AdditionalCoverage?.Paths ?? []).Select(value => value.RelativePath)
+            .Concat(point.Manifest.EnvironmentFiles.Select(value => value.RelativePath)).Concat(explicitPaths).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal).ToImmutableArray();
+    }
+    private static void AssertNoMappedRoleMigration(MmcInstancePaths paths, MmcInstanceDefinition current,
+        MmcSavedInstanceSources saved, MmcHistoryLoadedPoint point, CancellationToken token) {
+        HashSet<string> Mapped(MmcInstanceDefinition definition) => definition.DerivedOutputs.Where(value => value.Kind == MmcDerivedOutputKind.AssetMappedResource &&
+            value.RuntimePlanFingerprint == definition.InstalledProjection!.RuntimePlanFingerprint).Select(value => value.TargetRelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var currentMapped = Mapped(current); var selectedMapped = Mapped(point.Definition);
+        var selectedOrdinary = MmcInstanceHistoryFiles.AuthorPaths(point.SourcePaths, point.Definition, point.Saved)
+            .Concat(point.Manifest.FullSafeCoverage?.ManagedPaths ?? point.Manifest.AdditionalCoverage?.Paths ?? [])
+            .Concat(point.Manifest.FullSafeCoverage is null ? point.Manifest.EnvironmentFiles.Select(value => value.RelativePath) : [])
+            .Where(path => !selectedMapped.Contains(path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var currentOrdinary = MmcInstanceHistoryFiles.AuthorPaths(paths, current, saved)
+            .Concat(MmcInstanceHistoryFiles.Environment(paths, current, token).Select(value => value.RelativePath))
+            .Where(path => !currentMapped.Contains(path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (currentMapped.Overlaps(selectedOrdinary) || selectedMapped.Overlaps(currentOrdinary))
+            throw new IOException("History restoration requires an explicit ordinary-file/mapped-asset role migration; current bytes were preserved.");
+    }
+    private static ImmutableArray<MmcHistoryFile> ObserveScope(MmcInstancePaths paths, ImmutableArray<string> scope, CancellationToken token) {
+        var files = ImmutableArray.CreateBuilder<MmcHistoryFile>(); long total = 0;
+        foreach (string relative in MmcInstanceHistoryFiles.NormalizeAdditionalPaths(paths, scope)) {
+            string target = paths.ResolveRelative(MmcPathRole.Instance, relative); if (!File.Exists(target)) continue;
+            var file = MmcInstanceHistoryFiles.Measure(paths, relative, token); total = checked(total + file.SizeBytes);
+            if (total > MmcInstanceHistoryFiles.MaximumBytes) throw new IOException("History restore scope exceeds its byte budget.");
+            files.Add(file);
+        }
+        return files.ToImmutable();
     }
     private static IEnumerable<MmcFileMutation> StagePrivateLibraries(MmcInstancePaths paths, MmcHistoryLoadedPoint point,
         MmcInstanceDefinition current, MmcArtifactWorkspace workspace, CancellationToken token) {

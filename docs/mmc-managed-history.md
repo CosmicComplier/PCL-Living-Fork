@@ -2,7 +2,7 @@
 
 `MmcInstanceHistoryBackend` is the dedicated managed backend. The ordinary
 `EnvironmentHistoryEngine` and its coverage versions 1/2 remain unchanged.
-This backend accepts coverage **3** only and does not partially restore old
+This backend accepts fixed coverage **3**, exact-path coverage **4**, and complete safe-inventory coverage **5**. It does not partially restore old
 version JSON, Setup.ini or config.json into a managed instance.
 
 ## Public contract
@@ -35,6 +35,49 @@ config/Setup preferences are excluded. Game configuration remains game
 configuration; this is a local private history store, not an export of a
 sanitized public pack. The alternate game tree is neither merged nor restored.
 Both trees' current player data remain at their current paths.
+
+Ordinary captures keep the original coverage-3 manifest shape. A caller that
+mutates additional safe game files declares their exact instance-relative paths
+in `AdditionalEnvironmentPaths`. Such a point uses coverage 4 and a versioned,
+sorted, unique `AdditionalCoverage.Paths` set. Payload entries record files
+present at capture; a covered path without a payload explicitly records absence.
+This permits reversible updates of resource packs, shader packs, custom paths
+and root JSON files without claiming the entire game tree. Worlds, maps,
+accounts, launcher metadata, directories and inactive-tree paths remain refused.
+Old readers reject coverage 4 instead of reporting an incomplete restoration.
+
+Restore re-observes the same exact set together with the fixed environment
+whitelist. Its automatic undo point inherits that set and coverage 4, so both
+file deletion and absence survive undo/redo. Unsupported coverage versions,
+unknown path-set semantics, noncanonical paths and payloads contradicting a
+declared absence refuse before publication.
+
+`FullSafeEnvironment=true` captures coverage 5. Every safe game file is inventoried
+and copied to a private append-only `PCL/MmcHistory/objects/sha256` content store;
+unchanged hashes reuse the existing object after actual integrity verification.
+The point separately records author/explicitly managed paths and safe directory
+roles. Inventory observations do not become author declarations. Source and CAS
+objects are instance-relative, bounded, reject links, use no hardlinks and are not
+automatically garbage-collected. Missing or corrupted objects refuse restoration.
+
+Restoration acts only on the union of current/selected author paths and the
+selected point's explicitly managed paths. For a future author path, the complete
+selected inventory proves either its old personal payload or its absence. Thus
+directly restoring A from C restores an unchanged-at-B file that C later removed
+and handles C's new paths without inventing an absent personal file at A. Unknown
+personal files outside this union remain untouched. Automatic undo captures the
+same union with a complete inventory, preserving redo without broadening scope.
+Old coverage 3/4 points refuse if they cannot prove the needed union. Derived
+mapped assets remain separate typed runtime inputs; edited mapped bytes cannot
+be adopted as ordinary environment or managed-path authority.
+
+Legacy fixed-role options files remain supported by coverage 3/4 independently.
+They are filtered out of coverage-5 safe/managed authority, so ordinary game
+`options.txt`, OptiFine/shader options and Litematica runtime files neither block
+a new ZIP undo capture nor become permission for the ZIP to overwrite them.
+An ordinary-author file changing into or out of the mapped-asset role requires
+explicit role migration. History refuses that transition before mutation rather
+than silently dropping the file from its restore scope and reporting success.
 
 Restore first publishes a complete undo point for the current environment.
 Under configuration quiescence and the shared admission lease it revalidates
@@ -83,3 +126,11 @@ keeps every published point immutable through this API. It streams files and
 does not hardlink player files. Cross-point content deduplication, retention,
 orphan cleanup, UI routing and actual host-process-kill acceptance are separate
 integration work; no completion of those capabilities is implied here.
+
+Coverage 5 adds content deduplication for safe environment payloads through its
+private append-only object store; original source/runtime-authority replicas
+retain their existing storage. No garbage collection or retention of the new
+objects is implied. The direct-old-point, runtime-options and mapped-role P2
+aggregates passed together (3/3) after a zero-warning build; an unmodified
+43e71f2c production checkout with the transplanted direct-old-point test failed
+on the actual stale resource bytes rather than an API or compilation mismatch.

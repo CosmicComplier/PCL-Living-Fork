@@ -67,7 +67,14 @@ runtime preparation does not require a surviving global cache or silently
 adopt unknown local paths. Network work finishes before current-instance
 admission. Commit quiesces settings, takes sorted current/candidate admission
 leases, rechecks session/pending/current identity and both file snapshots,
-and captures a real complete coverage-3 undo point under the same owner lease.
+and captures a real complete undo point under the same owner lease. Its final
+validated write/delete operation targets are declared in the managed-path scope
+of a complete coverage-5 safe inventory, including absent targets. Core package
+binding requires that every real mutation target belongs to the captured proof;
+a fixed-scope point cannot authorize extra resource-pack/custom/root-file writes.
+New ZIP undo points use complete safe inventory even for runtime-only changes,
+so later direct restoration can prove future paths without guessing away
+existing personal content.
 Unknown private-library and mapped-resource destinations retain the existing
 typed ownership guards.
 
@@ -102,3 +109,11 @@ world-backup and cleanup aggregates have been authored and await their scheduled
 focused run. No GUI, real game launch or host-process-kill acceptance is claimed.
 This local-ZIP operation infers no platform project ID and does not carry the old
 platform version ID into a new unverified origin.
+
+The coverage-5 correction subsequently passed a zero-warning single-node build
+and three targeted real-file aggregates: direct A-to-B-to-C restoration of A and
+redo of C, both absent/personal future-path variants and unrelated personal data;
+existing options/OptiFine/shader/Litematica runtime settings with legacy fixed
+coverage; and conservative ordinary-author/mapped-asset role migration refusal.
+An independent 43e71f2c production checkout reproduced the direct-old-point bug
+with the same API: restoration reported success while A's resource still held B.
