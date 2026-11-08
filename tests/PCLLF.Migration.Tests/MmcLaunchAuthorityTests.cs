@@ -103,7 +103,7 @@ internal static class MmcLaunchAuthorityTests {
             upgraded.InstalledProjection.BoundFingerprint!=old.InstalledProjection!.BoundFingerprint && MmcDefinitionCodec.Serialize(old)==before,
             "Explicit new-generation repair did not migrate its exact environment while retaining immutable old authority.");
         var repeat=Good(Bind(fixture,upgraded,options:Options(expected:2,next:2,intent:MmcBindingIntent.RepairExisting))).Definition!;
-        Require(repeat.InstalledProjection!.RuntimeEnvironment==environment && repeat.InstalledProjection.BoundFingerprint==upgraded.InstalledProjection.BoundFingerprint,
+        Require(repeat.InstalledProjection!.RuntimeEnvironment==environment && repeat.InstalledProjection.BoundFingerprint==upgraded.InstalledProjection!.BoundFingerprint,
             "Same-generation repair of a recorded environment changed its binding.");
         var unknown=MmcProfileCompiler.Compile(fixture.Sources,environment with { JavaMajor=0 });
         Require(!unknown.HasErrors && unknown.Profile is not null,"Compiler must remain usable for an unselected Java analysis profile.");

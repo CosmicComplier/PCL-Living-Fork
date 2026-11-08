@@ -126,6 +126,26 @@ classpath、有界内存压缩帧及精确长度检查已接入。Java 8/17/21 �
 当前专用 Auth/Nide 认证代理、启动脚本导出和新的 Java/platform 变体仍有明确未接入项，
 完整生命周期、更新、MMC 导出和身份迁移也仍在整个 goal 内；不能用拒绝入口替代这些最终实现。
 
+后续增量：显式 Java 变体采用已接 backend 与 Main 确认入口，清掉原 ZIP/缓存后仍可保留已采用
+字节并往返 8/21；Main 自有程序验证拒绝确认不改 primary、不创建进程，确认后真实 Java17 启动两次，
+仅首次产生新代数和提示。精确 runtime environment 开始随新发布保存，旧无字段 JSON/指纹及
+同代数只读重绑定不隐式迁移。专用 Core BindClone 和宿主 clone backend 已接入并通过 Root 四项
+回归，包含当前个人字节、双游戏树、新 ID/Parent/代数 1、离线重建及失败保留；Main 克隆入口仍待接线。
+
+新版双 GTNH 真 Main 导入及独立发布后复核均已通过，保留实例没有被移动或重导：Java8约1778.66秒，
+现代Java21约1909.30秒；两包继续分别保留51/96制品、14/10 native与674 assets的实际摘要证明。
+现代声明为17、21、25、26，不是连续版本范围。原旧夹具失败记录没有覆盖；本轮新依赖传输为0，
+复用了之前按所有权与摘要核对的缓存，原 ZIP 未重新下载。
+
+首个真实 Java8 游戏启动准备又暴露 dynamic asset input locks 遗漏：原件存在，但离线 prefetch未从
+DerivedOutputs.AssetObject恢复已采用输入。现 static/package/asset-object统一汇集锁，native/virtual
+仍只作为输出；Root三项变体/资源测试包含删除全局缓存后完整启动准备、再删除owned object离线修复。
+真实游戏 JVM、菜单和世界闭环仍继续单独验收，导入成功不计为游戏通过。
+
+普通 history 与 update 回归已定性为夹具合同问题：retention原先直接读写私有缓存，现以真实Set/Get和
+物理INI校验；更新原各场景确实完成，原128条进度日志上限与单组总时限造成误判，自动来源场景拆出
+独立组，原断言和每组60秒预算不变。子分支history68项、更新两组各自通过，没有修改生产调度来掩盖等待。
+
 ## 已有证据与当前边界
 
 - R7 map 已提交为共享基线；原工作目录的 README、图标及其他未提交工作未纳入。
