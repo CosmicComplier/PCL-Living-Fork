@@ -209,6 +209,14 @@ public static class MmcDefinitionCodec {
         Dictionary<string, MmcArtifactLockRecord> locks, MmcReadLimits limits, Action<string?, int> text) {
         Dictionary<(string Key, string View, string Context), MmcDerivedOutputRecord> objects = [];
         Dictionary<string, MmcDerivedOutputRecord> adoptedObjects = new(StringComparer.Ordinal);
+        // Validate every scalar used by cross-record comparisons first. Damaged
+        // managed JSON must return Invalid, including an early null digest.
+        foreach (var output in definition.DerivedOutputs) {
+            if (output is null || !Enum.IsDefined(output.Kind)) MmcJson.Fail("definition", "Invalid derived output.");
+            CheckHash(output.Sha256); CheckHash(output.ParentSha256); CheckHash(output.SourceSetFingerprint); CheckHash(output.RuntimePlanFingerprint); CheckHash(output.ContextFingerprint); CheckHash(output.ViewKey);
+            if (output.Kind is MmcDerivedOutputKind.NativeFile or MmcDerivedOutputKind.AssetObject) CheckHash(output.ParentArtifactKey);
+            else if (!MmcDerivedProofs.IsAssetObjectKey(output.ParentArtifactKey)) MmcJson.Fail("definition", "Asset layout output requires an adopted object parent key.");
+        }
         foreach (var output in definition.DerivedOutputs) if (output is { Kind: MmcDerivedOutputKind.AssetObject }) {
             if (output.ArtifactKey is null || !MmcDerivedProofs.IsAssetObjectKey(output.ArtifactKey) || !objects.TryAdd((output.ArtifactKey, output.ViewKey, output.ContextFingerprint), output)) MmcJson.Fail("definition", "Asset derived-object identity is missing or duplicated.");
             if (adoptedObjects.TryGetValue(output.ArtifactKey, out var old) && (!SameHash(old.Sha256, output.Sha256) || old.SizeBytes != output.SizeBytes)) MmcJson.Fail("definition", "An adopted asset-object key changed its expected contents across views.");

@@ -158,17 +158,12 @@ public static class MmcProfileCompiler {
             var classpath = ordinary.Append(mainJar).ToImmutableArray();
             ValidateTargets(classpath.Concat(native).Concat(maven).Concat(auxiliaries));
             if (diagnostics.Any(d => d.Severity == MmcDiagnosticSeverity.Error)) return new(null, diagnostics.Distinct().ToImmutableArray());
-            string structural = MmcFingerprint.Of(["mmc-prism-v1-compiler-1", resolved.SourceFingerprint]);
-            string runtimeFingerprint = MmcFingerprint.Of(new[] { structural, environment.OperatingSystem, environment.Architecture,
-                environment.JavaMajor.ToString(), environment.JavaBitness.ToString(), mainClass, assets.Id }
-                .Concat(classpath.Concat(native).Concat(maven).Concat(auxiliaries).SelectMany(a => new[] { a.Key, a.RelativePath, a.Sha1, a.Sha256 }))
-                .Concat(jvm.Concat(gameArguments).Select(a => a.Value))
-                .Concat(javaPolicy.AllowedMajors.Select(m => m.ToString()))
-                .Concat(javaPolicy.HardConstraints.SelectMany(c => new[] { c.Source, c.MinimumMajor?.ToString(), c.MaximumMajor?.ToString(), string.Join(",", c.AllowedMajors.IsDefault ? [] : c.AllowedMajors) })));
-            return new(new("prism-v1", resolved.SourceFingerprint, structural, runtimeFingerprint, environment, minecraftVersion, versionType,
+            var compiled = new MmcCompiledProfile("prism-v1", resolved.SourceFingerprint, "", "", environment, minecraftVersion, versionType,
                 mainClass, mainJar, assets, jvm.ToImmutableArray(), gameArguments.ToImmutableArray(), tweakers.Select(t => t.Value).ToImmutableArray(), traits.ToImmutableArray(),
                 classpath, native.ToImmutableArray(), maven.ToImmutableArray(), auxiliaries.ToImmutableArray(), inventory.ToImmutableArray(), javaPolicy,
-                provenance.ToImmutableArray(), effects.ToImmutableArray()), diagnostics.Distinct().ToImmutableArray());
+                provenance.ToImmutableArray(), effects.ToImmutableArray());
+            var fingerprints = MmcProfileFingerprints.Compute(compiled);
+            return new(compiled with { ProfileFingerprint = fingerprints.ProfileFingerprint, RuntimePlanFingerprint = fingerprints.RuntimePlanFingerprint }, diagnostics.Distinct().ToImmutableArray());
 
             MmcFieldSource Source(MmcResolvedComponent component, string field) {
                 var source = new MmcFieldSource(component.Uid, component.Version, component.Patch.Source, component.Patch.ContentSha256, field, fieldPosition++);

@@ -15,6 +15,9 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC binder rejects arbitrary extra facts unowned targets and prior-lock omissions", Ownership);
         yield return ("MMC aggregate launch proof accepts a sourced local final entry while retaining target-specific heuristics", AggregateAuthority);
         yield return ("MMC aggregate launch proof remains conservative for missing class locks candidates or bound agents", ConservativeAuthority);
+        yield return ("MMC binder preserves published baseline authority across explicit candidate drafts", PublishedAuthority);
+        yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
+        yield return ("MMC binder validates both virtual and mapped outputs when the verified index requires both", BothAssetLayouts);
     }
     private sealed record Fixture(MmcCompiledProfile Plan, MmcInstanceDefinition Definition,
         ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
@@ -91,8 +94,10 @@ internal static class MmcLaunchAuthorityTests {
     private static void Generations() {
         var fixture = Create();
         Error(Bind(fixture, options: Options(next: 2)), "MMC_BIND_GENERATION");
-        Error(Bind(fixture, options: Options(intent: MmcBindingIntent.RepairExisting)), "MMC_BIND_ADOPTION_REQUIRED");
-        var adopted = Good(Bind(fixture, options: Options(next: 2, intent: MmcBindingIntent.AdoptDeclaredVariant)));
+        Error(Bind(fixture, options: Options(intent: MmcBindingIntent.RepairExisting)), "MMC_BIND_AUTHORITY");
+        var original = Good(Bind(fixture)).Definition!;
+        var adopted = Good(MmcPlanBinder.Bind(original with { InstalledProjection = null }, fixture.Plan, fixture.Facts,
+            Options(next: 2, intent: MmcBindingIntent.AdoptDeclaredVariant), publishedBaseline: original));
         Require(adopted.Definition!.Generation == 2, "Explicit adoption did not advance generation.");
     }
     private static void NativeBinding() {
@@ -126,6 +131,15 @@ internal static class MmcLaunchAuthorityTests {
         var changedInput = fixture with { AssetIndex = fixture.AssetIndex! with { Content = Encoding.UTF8.GetBytes("{\"objects\":{}}") } };
         Error(Bind(changedInput, facts: fixture.Facts.Add(objectFact)), "MMC_BIND_ASSET_INDEX");
         Good(Bind(fixture, result.Definition, fixture.Facts.Add(objectFact), Options(intent: MmcBindingIntent.RepairExisting)));
+        var damagedJson = System.Text.Json.Nodes.JsonNode.Parse(MmcDefinitionCodec.Serialize(result.Definition!))!.AsObject();
+        var derived = damagedJson["derivedOutputs"]!.AsArray();
+        var second = derived[0]!.DeepClone().AsObject();
+        derived[0]!["sha256"] = null;
+        second["viewKey"] = Hash("another view"); second["runtimePlanFingerprint"] = Hash("another runtime");
+        second["contextFingerprint"] = MmcDerivedProofs.ComputeDerivedContextFingerprint(Hash("another runtime"), second["sourceSetFingerprint"]!.GetValue<string>(), "bounded-assets-v1");
+        second["targetRelativePath"] = "PCL/MmcRuntime/" + Hash("another view") + "/assets/" + second["relativePath"]!.GetValue<string>();
+        derived.Add(second);
+        Require(MmcDefinitionCodec.Read(damagedJson.ToJsonString()).Status == MmcDefinitionReadStatus.Invalid, "Malformed duplicate derived object threw or escaped as valid.");
     }
     private static void Ownership() {
         var fixture = Create();
@@ -164,5 +178,61 @@ internal static class MmcLaunchAuthorityTests {
         var unspecified = Create(); var unknown = Good(Bind(unspecified));
         Require(!MmcLaunchAuthorityEvaluator.Evaluate(unknown.Definition!, unknown.Plan!, unspecified.Sources, Host(), ClassObservations(unspecified)).HasAuthority, "No Java declaration authorized retirement.");
         Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan! with { DefinitionGeneration = 2 }, fixture.Sources, Host(), probes).HasAuthority, "Stale generation authorized retirement.");
+        foreach (string input in new[] { "@custom.args", "-jar", "-m", "--module=fixture/module", "-p", "--module-path=modules", "-Djava.class.path=unbound", "-Djava.ext.dirs=unbound" })
+            Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host() with { AdditionalJvmArguments = [input] }, probes).HasAuthority, "Unbound Java execution form authorized retirement: " + input);
+    }
+    private static void PublishedAuthority() {
+        var fixture = Create();
+        var original = Good(Bind(fixture)).Definition!;
+        var lockB = original.ArtifactLocks[0] with { AdoptedSha256 = Hash("replacement B"), RecoveryObjectRelativePath = "PCL/MmcArtifacts/sha256/" + Hash("replacement B") };
+        var factsB = fixture.Facts.Select(f => f.ArtifactKey == lockB.ArtifactKey ? f with { ObservedSha256 = lockB.AdoptedSha256, RecoveryObjectRelativePath = lockB.RecoveryObjectRelativePath } : f).ToArray();
+        var tampered = original with { ArtifactLocks = original.ArtifactLocks.SetItem(0, lockB) };
+        Error(Bind(fixture, tampered, factsB, Options(intent: MmcBindingIntent.RepairExisting)), "MMC_BIND_AUTHORITY");
+        Error(Bind(fixture, tampered with { InstalledProjection = null }, factsB, Options(intent: MmcBindingIntent.RepairExisting)), "MMC_BIND_AUTHORITY");
+        Error(MmcPlanBinder.Bind(tampered with { InstalledProjection = null }, fixture.Plan, factsB, Options(intent: MmcBindingIntent.RepairExisting), publishedBaseline: original), "MMC_BIND_AUTHORITY");
+        var variantResult = MmcProfileCompiler.Compile(fixture.Sources, new("windows", "x86", 17, 32));
+        Require(!variantResult.HasErrors && variantResult.Profile is not null, "Variant fixture failed compile.");
+        var variant = variantResult.Profile!;
+        var variantFacts = variant.Classpath.Select(artifact => {
+            var old = fixture.Facts.Single(f => f.TargetRelativePath == "libraries/" + artifact.RelativePath);
+            return old with { ArtifactKey = artifact.Key, SourceRevision = artifact.SourceRevision };
+        }).ToArray();
+        var next = Good(MmcPlanBinder.Bind(original with { InstalledProjection = null }, variant, variantFacts, Options(next: 2, intent: MmcBindingIntent.AdoptDeclaredVariant), publishedBaseline: original));
+        Require(next.Definition!.Generation == 2 && next.Definition.ArtifactLocks.Length > original.ArtifactLocks.Length, "Explicit variant draft did not preserve and extend the published locks.");
+        var staleBaseline = MmcDefinitionTests.Published(original with { Generation = 2 });
+        Error(MmcPlanBinder.Bind(original with { InstalledProjection = null }, variant, variantFacts, Options(next: 2, intent: MmcBindingIntent.AdoptDeclaredVariant), publishedBaseline: staleBaseline), "MMC_BIND_AUTHORITY");
+        Error(MmcPlanBinder.Bind(original with { InstalledProjection = null }, fixture.Plan, fixture.Facts, Options(next: 2, intent: MmcBindingIntent.UpdateDefinition), publishedBaseline: original), "MMC_BIND_SOURCE_CHANGE");
+        Error(MmcPlanBinder.Bind(original, fixture.Plan, fixture.Facts, Options(intent: MmcBindingIntent.RepairExisting) with { OutputJsonSha256 = Hash("changed projection") }), "MMC_BIND_GENERATION");
+    }
+    private static void PlanFingerprints() {
+        var fixture = Create(declaredJava: true);
+        var original = Good(Bind(fixture));
+        var altered = new[] {
+            fixture.Plan with { JvmArguments = [new("-Dchanged=true", fixture.Plan.FieldProvenance[0])] },
+            fixture.Plan with { Classpath = fixture.Plan.Classpath.Reverse().ToImmutableArray() },
+            fixture.Plan with { JavaPolicy = fixture.Plan.JavaPolicy with { AllowedMajors = [17] } }
+        };
+        foreach (var plan in altered) {
+            Error(MmcPlanBinder.Bind(fixture.Definition, plan, fixture.Facts, Options()), "MMC_BIND_PLAN_FINGERPRINT");
+            Require(!MmcLaunchAuthorityEvaluator.Evaluate(original.Definition!, original.Plan! with { CompiledProfile = plan }, fixture.Sources, Host(), ClassObservations(fixture)).HasAuthority, "Modified execution fields with stale labels authorized heuristic retirement.");
+        }
+        var cold = JsonSerializer.Deserialize<MmcCompiledProfile>(JsonSerializer.Serialize(fixture.Plan))!;
+        Require(MmcProfileFingerprints.Matches(cold), "Cold serialized plan lost canonical semantic fingerprints.");
+    }
+    private static void BothAssetLayouts() {
+        string sha1 = Convert.ToHexStringLower(SHA1.HashData([1, 2, 3])), sha256 = Convert.ToHexStringLower(SHA256.HashData([1, 2, 3]));
+        string json = "{\"objects\":{\"sound/test.ogg\":{\"hash\":\"" + sha1 + "\",\"size\":3}},\"virtual\":true,\"map_to_resources\":true}";
+        var fixture = Create(assetJson: json);
+        var parent = fixture.Facts.Single(f => f.ArtifactKey == fixture.Plan.Assets.Artifact!.Key);
+        string key = MmcDerivedProofs.ComputeAssetObjectKey(parent.ArtifactKey, parent.ObservedSha256, sha1, 3);
+        var fact = new MmcMaterializedArtifactFact(key, parent.ObservedSha256, sha256, 3, "PCL/MmcArtifacts/sha256/" + sha256, "PCL/MmcRuntime/" + View + "/assets/objects/" + sha1[..2] + "/" + sha1, sha1);
+        string sources = MmcDerivedProofs.ComputeAssetSourceSetFingerprint(parent.ArtifactKey, parent.ObservedSha256, parent.SizeBytes);
+        string context = MmcDerivedProofs.ComputeDerivedContextFingerprint(fixture.Plan.RuntimePlanFingerprint, sources, "bounded-assets-v1");
+        var virtualFile = new MmcDerivedOutputRecord(MmcDerivedOutputKind.AssetVirtualFile, key, sha256, "bounded-assets-v1", sources, fixture.Plan.RuntimePlanFingerprint, context, View,
+            "virtual/fixture/sound/test.ogg", "PCL/MmcRuntime/" + View + "/assets/virtual/fixture/sound/test.ogg", sha256, 3, ObservedSha1: sha1);
+        var mapped = virtualFile with { Kind = MmcDerivedOutputKind.AssetMappedResource, RelativePath = "sound/test.ogg", TargetRelativePath = "minecraft/resources/sound/test.ogg" };
+        Error(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [virtualFile]), "MMC_BIND_ASSET_DERIVED");
+        Error(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [mapped]), "MMC_BIND_ASSET_DERIVED");
+        Require(Good(Bind(fixture, facts: fixture.Facts.Add(fact), derived: [virtualFile, mapped])).Definition!.DerivedOutputs.Length == 3, "Both required legacy asset layouts were not bound.");
     }
 }

@@ -41,7 +41,7 @@ public enum MmcDefinitionReadStatus { Valid, Invalid, Unsupported }
 public sealed record MmcDefinitionReadResult(MmcInstanceDefinition? Definition, MmcDefinitionReadStatus Status,
     ImmutableArray<MmcDiagnostic> Diagnostics);
 
-public enum MmcBindingIntent { InitialImport, AdoptDeclaredVariant, RepairExisting }
+public enum MmcBindingIntent { InitialImport, AdoptDeclaredVariant, RepairExisting, UpdateDefinition }
 /// <summary>Host observations of verified bytes, not declarations copied from metadata.</summary>
 public sealed record MmcMaterializedArtifactFact(string ArtifactKey, string SourceRevision, string ObservedSha256,
     long SizeBytes, string RecoveryObjectRelativePath, string TargetRelativePath, string? ObservedSha1 = null);

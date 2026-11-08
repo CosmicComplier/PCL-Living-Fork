@@ -15,6 +15,7 @@ public static class MmcLaunchAuthorityEvaluator {
             diagnostics.AddRange(MmcDefinitionCodec.Validate(definition, MmcDefinitionValidationMode.Published, limits));
             if (diagnostics.Count != 0) return new(null, diagnostics.ToImmutableArray());
             var plan = boundPlan.CompiledProfile;
+            if (!MmcProfileFingerprints.Matches(plan)) Reject("Compiled plan contents differ from their canonical fingerprints.");
             if (boundPlan.DefinitionGeneration != definition.Generation || boundPlan.BoundFingerprint != definition.InstalledProjection!.BoundFingerprint ||
                 plan.ProfileFingerprint != definition.InstalledProjection.ProfileFingerprint || plan.RuntimePlanFingerprint != definition.InstalledProjection.RuntimePlanFingerprint ||
                 sources.SourceFingerprint != plan.SourceFingerprint) Reject("Bound launch identity/generation/sources are inconsistent.");
@@ -101,7 +102,9 @@ public static class MmcLaunchAuthorityEvaluator {
 
     private static bool IsUnboundExecutionInput(string argument) => argument.StartsWith("-javaagent", StringComparison.Ordinal) || argument.StartsWith("-agentpath", StringComparison.Ordinal) ||
         argument.StartsWith("-agentlib", StringComparison.Ordinal) || argument.StartsWith("-Xbootclasspath", StringComparison.Ordinal) || argument.StartsWith("--patch-module", StringComparison.Ordinal) ||
-        argument.StartsWith("--module-path", StringComparison.Ordinal) || argument.StartsWith("--upgrade-module-path", StringComparison.Ordinal) || argument is "-cp" or "-classpath" or "--class-path" || argument.StartsWith("--class-path=", StringComparison.Ordinal);
+        argument.StartsWith("--module-path", StringComparison.Ordinal) || argument.StartsWith("--upgrade-module-path", StringComparison.Ordinal) || argument is "-cp" or "-classpath" or "--class-path" or "-jar" or "-m" or "--module" or "-p" ||
+        argument.StartsWith("--class-path=", StringComparison.Ordinal) || argument.StartsWith("--module=", StringComparison.Ordinal) || argument.StartsWith('@') || argument.StartsWith("-Xrun", StringComparison.Ordinal) ||
+        new[] { "-Djava.class.path=", "-Dsun.boot.class.path=", "-Djava.ext.dirs=", "-Djava.endorsed.dirs=", "-Djdk.module.path=", "-Djdk.module.upgrade.path=" }.Any(prefix => argument.StartsWith(prefix, StringComparison.Ordinal));
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void Reject(string message) => throw new MmcInputException("MMC_AUTHORITY_CONSERVATIVE", "authority", message);
 }

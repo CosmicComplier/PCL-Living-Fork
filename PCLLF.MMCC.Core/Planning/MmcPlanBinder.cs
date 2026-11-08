@@ -8,23 +8,45 @@ public static class MmcPlanBinder {
     public static MmcBindingResult Bind(MmcInstanceDefinition definition, MmcCompiledProfile plan,
         IReadOnlyList<MmcMaterializedArtifactFact> facts, MmcBindOptions options,
         IReadOnlyList<MmcArtifactLockRecord>? priorLocks = null, IReadOnlyList<MmcDerivedOutputRecord>? derivedOutputs = null,
-        IReadOnlyList<MmcAssetIndexInput>? assetIndexes = null, MmcReadLimits? limits = null) {
+        IReadOnlyList<MmcAssetIndexInput>? assetIndexes = null, MmcReadLimits? limits = null,
+        MmcInstanceDefinition? publishedBaseline = null) {
         ArgumentNullException.ThrowIfNull(definition); ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(facts); ArgumentNullException.ThrowIfNull(options);
         limits ??= new();
         List<MmcDiagnostic> diagnostics = [];
         try {
+            // A published definition is prior authority, not a mutable draft.
+            // Dropping its projection is insufficient to create fresh authority.
+            if (definition.InstalledProjection is not null) ValidatePublished(definition);
             diagnostics.AddRange(MmcDefinitionCodec.Validate(definition, MmcDefinitionValidationMode.Draft, limits));
             if (diagnostics.Count != 0) return new(null, null, diagnostics.ToImmutableArray());
+            MmcInstanceDefinition? authority = publishedBaseline;
+            if (authority is not null) ValidatePublished(authority);
+            if (options.Intent != MmcBindingIntent.InitialImport) {
+                authority ??= definition.InstalledProjection is not null ? definition : null;
+                if (authority is null) Fail("MMC_BIND_AUTHORITY", "Noninitial binding requires a separately verified published baseline.");
+                if (authority.InstanceId != definition.InstanceId || authority.Generation != options.ExpectedGeneration || definition.Generation != authority.Generation ||
+                    definition.InstalledProjection is not null && definition.InstalledProjection.BoundFingerprint != authority.InstalledProjection!.BoundFingerprint)
+                    Fail("MMC_BIND_AUTHORITY", "Candidate identity/generation or published projection differs from its prior baseline.");
+                var oldInventoryKeys = authority.ArtifactInventory.Select(i => i.ArtifactKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (!SameRecords(authority.ArtifactLocks, definition.ArtifactLocks, l => l.ArtifactKey) ||
+                    !SameRecords(authority.ArtifactInventory, definition.ArtifactInventory.Where(i => oldInventoryKeys.Contains(i.ArtifactKey)).ToImmutableArray(), i => i.ArtifactKey) ||
+                    !SameRecords(authority.DerivedOutputs, definition.DerivedOutputs, d => d.TargetRelativePath))
+                    Fail("MMC_BIND_AUTHORITY", "Candidate cannot rewrite, omit or manufacture prior adopted authority.");
+                bool changedSources = SourceEnvelopeFingerprint(authority) != SourceEnvelopeFingerprint(definition);
+                if (options.Intent == MmcBindingIntent.UpdateDefinition ? !changedSources : changedSources)
+                    Fail("MMC_BIND_SOURCE_CHANGE", "Source changes require an explicit new-definition intent; repair/variant adoption preserve the source envelope.");
+            } else if (authority is not null || !definition.DerivedOutputs.IsEmpty) Fail("MMC_BIND_AUTHORITY", "Initial import cannot inherit or manufacture published/derived prior authority.");
+            if (!MmcProfileFingerprints.Matches(plan)) Fail("MMC_BIND_PLAN_FINGERPRINT", "Compiled plan contents do not match their canonical fingerprints.");
             if (definition.Generation != options.ExpectedGeneration || options.ManifestGeneration != options.NewGeneration || !Enum.IsDefined(options.Intent)) Fail("MMC_BIND_GENERATION", "Binding generation/intent is inconsistent.");
             bool increment = definition.Generation < long.MaxValue && options.NewGeneration == definition.Generation + 1;
             if (options.Intent == MmcBindingIntent.InitialImport ? definition.Generation != 1 || options.NewGeneration != 1 || definition.InstalledProjection is not null || !definition.ArtifactLocks.IsEmpty :
-                options.Intent == MmcBindingIntent.AdoptDeclaredVariant ? !increment : options.NewGeneration != definition.Generation && !increment)
+                options.Intent is MmcBindingIntent.AdoptDeclaredVariant or MmcBindingIntent.UpdateDefinition ? !increment : options.NewGeneration != definition.Generation && !increment)
                 Fail("MMC_BIND_GENERATION", "Initial adoption, new-variant adoption and repair use distinct generation rules.");
             MmcDefinitionCodec.CheckHash(options.OutputJsonSha256);
             if (plan.FormatProfile != definition.FormatProfile || !MmcDefinitionCodec.SameHash(plan.SourceFingerprint, definition.SourceBundle.ResolutionFingerprint)) Fail("MMC_BIND_SOURCE", "Compiled sources do not match the preserved definition sources.");
             if (facts.Count > limits.MaxArchiveEntries || (derivedOutputs?.Count ?? 0) > limits.MaxArchiveEntries * 2L || (assetIndexes?.Count ?? 0) > 1) Fail("MMC_BIND_BUDGET", "Binding fact count exceeded.");
-            var originalLocks = definition.ArtifactLocks.ToDictionary(x => x.ArtifactKey, StringComparer.OrdinalIgnoreCase);
+            var originalLocks = (authority?.ArtifactLocks ?? definition.ArtifactLocks).ToDictionary(x => x.ArtifactKey, StringComparer.OrdinalIgnoreCase);
             if (priorLocks is not null) {
                 if (priorLocks.Count != originalLocks.Count) Fail("MMC_BIND_PRIOR_LOCK", "Prior locks cannot omit adopted identities.");
                 HashSet<string> supplied = new(StringComparer.OrdinalIgnoreCase);
@@ -94,9 +116,16 @@ public static class MmcPlanBinder {
                 InstalledProjection = new(plan.ProfileFingerprint, options.OutputJsonSha256, options.NewGeneration, plan.RuntimePlanFingerprint, new string('0', 64))
             };
             string fingerprint = MmcDefinitionCodec.ComputeBoundFingerprint(candidate);
+            if (authority is not null && options.NewGeneration == authority.Generation && !MmcDefinitionCodec.SameHash(fingerprint, authority.InstalledProjection!.BoundFingerprint))
+                Fail("MMC_BIND_GENERATION", "Repair may retain a generation only when the published structural binding remains unchanged.");
             candidate = candidate with { InstalledProjection = candidate.InstalledProjection! with { BoundFingerprint = fingerprint } };
             diagnostics.AddRange(MmcDefinitionCodec.Validate(candidate, MmcDefinitionValidationMode.Published, limits));
             return diagnostics.Count != 0 ? new(null, null, diagnostics.ToImmutableArray()) : new(candidate, new(plan, options.NewGeneration, fingerprint, activeLocks), []);
+
+            void ValidatePublished(MmcInstanceDefinition value) {
+                var errors = MmcDefinitionCodec.Validate(value, MmcDefinitionValidationMode.Published, limits);
+                if (!errors.IsEmpty) Fail("MMC_BIND_AUTHORITY", "Published baseline failed validation: " + errors[0].Message);
+            }
 
             void BindStatic(MmcArtifactInventoryRecord item, MmcMaterializedArtifactFact fact) {
                 if (!MmcDefinitionCodec.SameHash(item.SourceRevision, fact.SourceRevision) || item.DeclaredSha256 is not null && !MmcDefinitionCodec.SameHash(item.DeclaredSha256, fact.ObservedSha256) ||
@@ -190,10 +219,11 @@ public static class MmcPlanBinder {
             var item = new MmcDerivedOutputRecord(MmcDerivedOutputKind.AssetObject, index.Key, parent.ObservedSha256, "bounded-assets-v1", sources, plan.RuntimePlanFingerprint, context, view,
                 relative, target, fact.ObservedSha256, fact.SizeBytes, key, fact.ObservedSha1, fact.RecoveryObjectRelativePath);
             if (adopted.TryAdd(key, item)) accepted.Add(item);
-            if (read.Index.Virtual || read.Index.MapToResources) {
-                var kind = read.Index.Virtual ? MmcDerivedOutputKind.AssetVirtualFile : MmcDerivedOutputKind.AssetMappedResource;
-                string outputRelative = read.Index.Virtual ? "virtual/" + plan.Assets.Id + "/" + asset.Name : asset.Name;
-                string outputTarget = read.Index.Virtual ? "PCL/MmcRuntime/" + view + "/assets/" + outputRelative : definition.Layout.GameRootLeaf + "/resources/" + asset.Name;
+            var outputKinds = (read.Index.Virtual ? new[] { MmcDerivedOutputKind.AssetVirtualFile } : []).Concat(read.Index.MapToResources ? [MmcDerivedOutputKind.AssetMappedResource] : []);
+            foreach (var kind in outputKinds) {
+                bool virtualFile = kind == MmcDerivedOutputKind.AssetVirtualFile;
+                string outputRelative = virtualFile ? "virtual/" + plan.Assets.Id + "/" + asset.Name : asset.Name;
+                string outputTarget = virtualFile ? "PCL/MmcRuntime/" + view + "/assets/" + outputRelative : definition.Layout.GameRootLeaf + "/resources/" + asset.Name;
                 var provided = supplied.Where(d => d.Kind == kind && d.TargetRelativePath == outputTarget).ToArray();
                 if (provided.Length != 1 || provided[0].ParentArtifactKey != key || provided[0].ParentSha256 != fact.ObservedSha256 || provided[0].Sha256 != fact.ObservedSha256 || provided[0].ObservedSha1 != fact.ObservedSha1 ||
                     provided[0].SizeBytes != fact.SizeBytes || provided[0].RelativePath != outputRelative || provided[0].ProducerVersion != "bounded-assets-v1" || provided[0].SourceSetFingerprint != sources || provided[0].ContextFingerprint != context || provided[0].RuntimePlanFingerprint != plan.RuntimePlanFingerprint || provided[0].ViewKey != view)
@@ -211,6 +241,19 @@ public static class MmcPlanBinder {
         return parts.Length >= 4 && parts[0] == "PCL" && parts[1] == "MmcRuntime" ? parts[2] : null;
     }
     private static bool SameOptionalHash(string? left, string? right) => left is null ? right is null : right is not null && MmcDefinitionCodec.SameHash(left, right);
+    private static bool SameRecords<T>(ImmutableArray<T> left, ImmutableArray<T> right, Func<T, string> key) where T : class {
+        if (left.IsDefault || right.IsDefault || left.Length != right.Length || left.Any(x => x is null) || right.Any(x => x is null)) return false;
+        var expected = left.ToDictionary(key, StringComparer.OrdinalIgnoreCase);
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        return right.All(value => seen.Add(key(value)) && expected.TryGetValue(key(value), out var old) && EqualityComparer<T>.Default.Equals(value, old));
+    }
+    private static string SourceEnvelopeFingerprint(MmcInstanceDefinition definition) => MmcFingerprint.Of(new[] {
+        definition.Origin.PackageSha256, definition.Origin.OriginalName, definition.Origin.PlatformProjectIdentity?.Platform, definition.Origin.PlatformProjectIdentity?.ProjectId,
+        definition.Origin.PlatformProjectIdentity?.VersionId, definition.SourceBundle.RelativeRoot, definition.SourceBundle.BundleSha256, definition.SourceBundle.ResolutionFingerprint,
+        definition.Layout.GameRootLeaf, definition.Layout.LayoutVersion.ToString(), definition.ParentInstanceId?.ToString("D"), definition.AuthorFileBaseline?.ContentSha256,
+        definition.AuthorFileBaseline?.ObjectRelativePath, definition.AuthorFileBaseline?.EntryCount.ToString() }
+        .Concat(definition.SourceBundle.MetadataRecords.OrderBy(r => r.RelativePath, StringComparer.Ordinal).ThenBy(r => r.Kind).SelectMany(r => new[] { r.RelativePath, r.ContentSha256, r.ObjectRelativePath, r.Kind.ToString(), r.Uid, r.Version, r.ComponentSourceKind?.ToString(), r.SourceIdentity }))
+        .Concat(definition.ComponentOverrides.OrderBy(o => o.Uid, StringComparer.Ordinal).SelectMany(o => new[] { o.Uid, o.Enabled?.ToString(), o.Version, o.PatchReference?.Sha256, o.PatchReference?.ObjectRelativePath })));
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void Fail(string code, string message) => throw new MmcInputException(code, "binding", message);
 }
