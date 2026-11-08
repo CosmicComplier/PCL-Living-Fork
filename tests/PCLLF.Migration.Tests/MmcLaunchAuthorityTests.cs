@@ -13,12 +13,14 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC binder binds native output batches to locked parents exclusions and context", NativeBinding);
         yield return ("MMC binder validates dynamic asset membership against raw adopted index bytes", AssetBinding);
         yield return ("MMC binder rejects arbitrary extra facts unowned targets and prior-lock omissions", Ownership);
+        yield return ("MMC aggregate launch proof accepts a sourced local final entry while retaining target-specific heuristics", AggregateAuthority);
+        yield return ("MMC aggregate launch proof remains conservative for missing class locks candidates or bound agents", ConservativeAuthority);
     }
     private sealed record Fixture(MmcCompiledProfile Plan, MmcInstanceDefinition Definition,
-        ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcAssetIndexInput? AssetIndex = null);
+        ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
     private static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static string View => new('9', 64);
-    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false) {
+    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false) {
         Dictionary<string, object?> patch = new() {
             ["uid"] = "net.minecraft", ["version"] = "1", ["mainClass"] = "fixture.Main",
             ["mainJar"] = new Dictionary<string, object?> { ["name"] = "fixture:main:1:client", ["MMC-hint"] = "local" },
@@ -27,9 +29,11 @@ internal static class MmcLaunchAuthorityTests {
         if (native) patch["+libraries"] = new[] { new { name = "fixture:native:1", natives = new { windows = "native-64" }, extract = new { exclude = new[] { "META-INF/" } } } };
         if (assetJson is not null) patch["assetIndex"] = new { id = "fixture", url = "https://example.invalid/fixture.json" };
         if (mavenDuplicates) patch["mavenFiles"] = new[] { new { name = "fixture:tool:1" }, new { name = "fixture:tool:1" } };
-        string manifest = "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"}]}";
+        if (declaredJava) patch["compatibleJavaMajors"] = new[] { 17, 21 };
+        string manifest = lateEntrypoint ? "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"},{\"uid\":\"bootstrap\",\"version\":\"1\"}]}" : "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"}]}";
         string component = JsonSerializer.Serialize(patch);
         Dictionary<string, string> content = new() { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = component };
+        if (lateEntrypoint) content["patches/bootstrap.json"] = "{\"uid\":\"bootstrap\",\"version\":\"1\",\"mainClass\":\"fixture.Boot\",\"+jvmArgs\":[\"-Djava.system.class.loader=fixture.Loader\"],\"+tweakers\":[\"fixture.Tweaker\"]}";
         var parsed = MmcPackageReader.Parse(new(content.Select(c => new MmcArchiveEntry(c.Key)).ToArray(), content));
         var resolved = MmcComponentResolver.Resolve(parsed, []);
         Require(resolved.IsComplete, "Fixture resolution failed.");
@@ -38,10 +42,11 @@ internal static class MmcLaunchAuthorityTests {
         var plan = compiled.Profile!;
         var draft = MmcDefinitionTests.Draft(plan.SourceFingerprint);
         string prefix = "PCL/MmcSource/" + draft.SourceBundle.BundleSha256 + "/";
-        draft = draft with { SourceBundle = draft.SourceBundle with { MetadataRecords = [
-            new("mmc-pack.json", Hash(manifest), prefix + "mmc-pack.json", MmcSourceRecordKind.Manifest),
-            new("patches/net.minecraft.json", Hash(component), prefix + "patches/net.minecraft.json", MmcSourceRecordKind.Component, "net.minecraft", "1", MmcComponentSourceKind.PackageLocal, "package:patches/net.minecraft.json")
-        ] } };
+        var metadataRecords = ImmutableArray.CreateBuilder<MmcSourceMetadataRecord>();
+        metadataRecords.Add(new("mmc-pack.json", Hash(manifest), prefix + "mmc-pack.json", MmcSourceRecordKind.Manifest));
+        foreach (var source in resolved.Profile!.Components) metadataRecords.Add(new("patches/" + source.Uid + ".json", source.Patch.ContentSha256, prefix + "patches/" + source.Uid + ".json",
+            MmcSourceRecordKind.Component, source.Uid, source.Version, MmcComponentSourceKind.PackageLocal, "package:patches/" + source.Uid + ".json"));
+        draft = draft with { SourceBundle = draft.SourceBundle with { MetadataRecords = metadataRecords.ToImmutable() } };
         var artifacts = plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).DistinctBy(a => a.Key).ToArray();
         var facts = artifacts.Select(a => new MmcMaterializedArtifactFact(a.Key, a.SourceRevision,
             a.Role == MmcArtifactRole.AssetIndex ? Hash(assetJson!) : Hash("verified fixture bytes:" + a.Key),
@@ -49,7 +54,7 @@ internal static class MmcLaunchAuthorityTests {
             "PCL/MmcArtifacts/sha256/" + (a.Role == MmcArtifactRole.AssetIndex ? Hash(assetJson!) : Hash("verified fixture bytes:" + a.Key)),
             a.Scope == MmcArtifactScope.InstanceLocal ? "libraries/" + a.RelativePath : "PCL/MmcRuntime/" + View + "/" + (a.Role == MmcArtifactRole.AssetIndex ? "assets/" : a.Role == MmcArtifactRole.LoggingConfiguration ? "" : "libraries/") + a.RelativePath,
             a.Sha1)).ToImmutableArray();
-        return new(plan, draft, facts, assetJson is null ? null : new(plan.Assets.Artifact!.Key, Encoding.UTF8.GetBytes(assetJson)));
+        return new(plan, draft, facts, resolved.Profile!, assetJson is null ? null : new(plan.Assets.Artifact!.Key, Encoding.UTF8.GetBytes(assetJson)));
     }
     private static MmcBindOptions Options(long expected = 1, long next = 1, MmcBindingIntent intent = MmcBindingIntent.InitialImport) => new(expected, next, intent, Hash("projection"), next);
     private static MmcBindingResult Bind(Fixture fixture, MmcInstanceDefinition? definition = null, IReadOnlyList<MmcMaterializedArtifactFact>? facts = null,
@@ -129,5 +134,35 @@ internal static class MmcLaunchAuthorityTests {
         var original = Good(Bind(fixture)).Definition!;
         var result = MmcPlanBinder.Bind(original, fixture.Plan, fixture.Facts, Options(intent: MmcBindingIntent.RepairExisting), priorLocks: []);
         Error(result, "MMC_BIND_PRIOR_LOCK");
+    }
+    private static MmcHostLaunchChain Host() => new(Hash("verified Java identity"), Hash("verified wrapper identity"), Hash("non-sensitive host arguments"));
+    private static ImmutableArray<MmcJarClassObservation> ClassObservations(Fixture fixture) {
+        string? systemLoader = fixture.Plan.JvmArguments.Select(a => a.Value).LastOrDefault(a => a.StartsWith("-Djava.system.class.loader=", StringComparison.Ordinal));
+        string[] names = new[] { fixture.Plan.MainClass }.Concat(systemLoader is null ? [] : new[] { systemLoader["-Djava.system.class.loader=".Length..] }).Concat(fixture.Plan.Tweakers).Distinct().ToArray();
+        return fixture.Plan.Classpath.DistinctBy(a => a.Key).Select((artifact, position) => new MmcJarClassObservation(artifact.Key,
+            fixture.Facts.Single(f => f.ArtifactKey == artifact.Key).ObservedSha256,
+            names.Select(name => new MmcJarClassPresence(name, position == 0, position == 0 ? name.Replace('.', '/') + ".class" : null)).ToImmutableArray())).ToImmutableArray();
+    }
+    private static void AggregateAuthority() {
+        var fixture = Create(declaredJava: true, lateEntrypoint: true);
+        var bound = Good(Bind(fixture));
+        Require(!fixture.Plan.OverrideEffects.Single(e => e.ComponentUid == "net.minecraft").ReplacesBuiltinLaunchDefinition, "Fixture must exercise a final entry from a later local component.");
+        var proof = MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host(), ClassObservations(fixture));
+        Require(proof.HasAuthority && proof.Retires("net.minecraft", MmcRetiredHeuristicKind.BuiltinMinecraftJavaInference) && !proof.Retires("other", MmcRetiredHeuristicKind.BuiltinMinecraftJavaInference) &&
+            !proof.Retires("net.minecraftforge", MmcRetiredHeuristicKind.BuiltinForgeJavaInference) && proof.Proof!.ClassBindings.Length == 3,
+            "Aggregate proof lost local final entry/classloader/tweaker structure or widened retired heuristics.");
+        var differentJava = MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host() with { JavaIdentitySha256 = Hash("other Java identity") }, ClassObservations(fixture));
+        Require(differentJava.HasAuthority && differentJava.Proof!.ProofFingerprint != proof.Proof!.ProofFingerprint, "Authority fingerprint did not bind Java identity.");
+    }
+    private static void ConservativeAuthority() {
+        var fixture = Create(declaredJava: true);
+        var bound = Good(Bind(fixture));
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host(), ClassObservations(fixture).RemoveAt(0)).HasAuthority, "Missing ordered class observations authorized heuristic retirement.");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host() with { AdditionalJvmArguments = ["-javaagent:unbound.jar"] }, ClassObservations(fixture)).HasAuthority, "Unbound agent chain authorized heuristic retirement.");
+        var probes = ClassObservations(fixture);
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host(), probes.SetItem(0, probes[0] with { ArtifactSha256 = Hash("different jar") })).HasAuthority, "Unmatched JAR bytes authorized retirement.");
+        var unspecified = Create(); var unknown = Good(Bind(unspecified));
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(unknown.Definition!, unknown.Plan!, unspecified.Sources, Host(), ClassObservations(unspecified)).HasAuthority, "No Java declaration authorized retirement.");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan! with { DefinitionGeneration = 2 }, fixture.Sources, Host(), probes).HasAuthority, "Stale generation authorized retirement.");
     }
 }
