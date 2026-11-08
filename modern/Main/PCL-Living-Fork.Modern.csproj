@@ -46,6 +46,7 @@
 <Compile Include="Modules/Minecraft/ModModpack.cs" />
 <Compile Include="Modules/ThirdParty/DragHelper.cs" />
 <Compile Include="Modules/Minecraft/MmcDownloads.cs" />
+<Compile Include="Modules/Minecraft/MmcInstances.cs" />
 <Compile Include="My Project/Resources.Designer.cs" />
 <Compile Include="Pages/PageInstance/MyLocalModItem.xaml.cs" />
 <Compile Include="Modules/ModEvent.cs" />

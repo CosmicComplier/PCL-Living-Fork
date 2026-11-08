@@ -20,14 +20,29 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
 
     public async Task<MmcInstanceBackendResult> ImportAsync(MmcInstanceImportRequest request, CancellationToken cancellationToken = default,
         IProgress<MmcInstanceBackendProgress>? progress = null) {
-        MmcOwnedImportReservation? reservation = null;
         try {
-            ArgumentNullException.ThrowIfNull(request); ValidateName(request.VersionRoot, request.InstanceName);
-            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(request);
             using var source = await MmcArchiveSourceReader.ReadAsync(request.ArchivePath,
                 progress: new CallbackProgress<MmcArchiveProgress>(value => progress?.Report(new(value.Phase, value.CompletedBytes, value.TotalBytes))), cancellationToken: cancellationToken).ConfigureAwait(false);
+            return await ImportPreparedAsync(source, request, cancellationToken, progress).ConfigureAwait(false);
+        } catch (OperationCanceledException error) { return new(MmcInstanceBackendStatus.Cancelled, Failure: error.Message); }
+        catch (Exception error) when (IsExpectedFailure(error)) { return new(MmcInstanceBackendStatus.Rejected, Failure: error.Message); }
+    }
+
+    /// <summary>The caller owns the single read-locked/hash-bound source and keeps it alive through publication.</summary>
+    public async Task<MmcInstanceBackendResult> ImportPreparedAsync(MmcArchiveSource source, MmcInstanceImportRequest request,
+        CancellationToken cancellationToken = default, IProgress<MmcInstanceBackendProgress>? progress = null,
+        MmcResolvedSourceBundle? preparedResolution = null) {
+        MmcOwnedImportReservation? reservation = null;
+        try {
+            ArgumentNullException.ThrowIfNull(source); ArgumentNullException.ThrowIfNull(request); ValidateName(request.VersionRoot, request.InstanceName);
+            if (!string.Equals(source.OriginalPath, Path.GetFullPath(request.ArchivePath), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                throw new InvalidDataException("Prepared package source differs from its import request.");
+            cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new("metadata-resolution"));
-            var resolved = await MmcMetadataResolution.ResolveAsync(source.Package, metadata, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var resolved = preparedResolution ?? await MmcMetadataResolution.ResolveAsync(source.Package, metadata, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (resolved.Resolution.Profile is not null && !ReferenceEquals(resolved.Resolution.Profile.Package, source.Package))
+                throw new InvalidDataException("Prepared metadata resolution belongs to another package source.");
             var compiled = Compile(resolved.Resolution, request.Environment);
             reservation = MmcOwnedImportReservation.Create(request.VersionRoot, Guid.NewGuid(), source.PackageSha256);
             var paths = MmcInstancePaths.Resolve(reservation.TemporaryRoot, source.Package.GameRootLeaf);
