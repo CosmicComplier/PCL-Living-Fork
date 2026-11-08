@@ -13,6 +13,48 @@ internal static class MmcInstanceDefinitionChangeTests {
         yield return ("MMC exact component version replaces same-name local bytes with complete undo and resolves new native dependencies", Revisions);
         yield return ("MMC component changes reject stale candidates, changed local inputs, unknown targets and session or pending barriers", Refusals);
         yield return ("MMC component transactions roll back predecision cancellation and recover a decided interruption", Transactions);
+        yield return ("MMC component asset mapping preserves unknown and edited resources while allowing owned revisions and safe missing or identical targets", MappedResources);
+    }
+    private static void MappedResources() {
+        using Fixture fixture = new(); fixture.Import(); var backend = fixture.Changes();
+        var indexA = fixture.MappedIndex("a", new() { ["owned.txt"] = "mapped A" });
+        var first = Preview(fixture, new("net.minecraft", PatchContentUtf8: fixture.MinecraftPatch(indexA)));
+        fixture.Put("minecraft/resources/owned.txt", "unknown resource"); string primary = fixture.Primary().Sha256;
+        var unknown = backend.CommitAsync(new(first, first.CandidateSha256)).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, unknown.Status); Equal(null, unknown.UndoPoint);
+        Equal(primary, fixture.Primary().Sha256); Equal("unknown resource", fixture.Read("minecraft/resources/owned.txt"));
+        File.Delete(Path.Combine(fixture.VersionRoot, "minecraft", "resources", "owned.txt"));
+        var missing = backend.CommitAsync(new(first, first.CandidateSha256)).GetAwaiter().GetResult(); Require(missing);
+        Equal(2L, fixture.Primary().Definition.Generation); Equal("mapped A", fixture.Read("minecraft/resources/owned.txt"));
+        var indexB = fixture.MappedIndex("b", new() { ["owned.txt"] = "mapped B" });
+        var next = Preview(fixture, new("net.minecraft", PatchContentUtf8: fixture.MinecraftPatch(indexB)));
+        fixture.Put("minecraft/resources/owned.txt", "edited owned resource"); primary = fixture.Primary().Sha256;
+        var edited = backend.CommitAsync(new(next, next.CandidateSha256)).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, edited.Status); Equal(null, edited.UndoPoint);
+        Equal(primary, fixture.Primary().Sha256); Equal("edited owned resource", fixture.Read("minecraft/resources/owned.txt"));
+        fixture.Put("minecraft/resources/owned.txt", "mapped A");
+        var raced = backend.CommitAsync(new(next, next.CandidateSha256) { BeforeTransaction = () => fixture.Put("minecraft/resources/owned.txt", "late edited resource") }).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, raced.Status); Equal(true, raced.UndoPoint is not null);
+        Equal(primary, fixture.Primary().Sha256); Equal("late edited resource", fixture.Read("minecraft/resources/owned.txt"));
+        fixture.Put("minecraft/resources/owned.txt", "mapped A");
+        var upgraded = backend.CommitAsync(new(next, next.CandidateSha256)).GetAwaiter().GetResult(); Require(upgraded);
+        Equal(3L, fixture.Primary().Definition.Generation); Equal("mapped B", fixture.Read("minecraft/resources/owned.txt"));
+        var current = fixture.Primary(); var undo = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, current.Definition.InstanceId,
+            current.Definition.Generation, current.Sha256, upgraded.UndoPoint!.PointId, upgraded.UndoPoint.ManifestSha256)).GetAwaiter().GetResult();
+        if (undo.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(undo.Failure);
+        Equal(4L, fixture.Primary().Definition.Generation); Equal("mapped A", fixture.Read("minecraft/resources/owned.txt"));
+        current = fixture.Primary(); var redo = new MmcInstanceHistoryBackend().RestoreAsync(new(fixture.VersionRoot, current.Definition.InstanceId,
+            current.Definition.Generation, current.Sha256, undo.UndoPoint!.PointId, undo.UndoPoint.ManifestSha256)).GetAwaiter().GetResult();
+        if (redo.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(redo.Failure);
+        Equal(5L, fixture.Primary().Definition.Generation); Equal("mapped B", fixture.Read("minecraft/resources/owned.txt"));
+        var indexC = fixture.MappedIndex("c", new() { ["owned.txt"] = "mapped B", ["new.txt"] = "mapped C" });
+        var added = Preview(fixture, new("net.minecraft", PatchContentUtf8: fixture.MinecraftPatch(indexC)));
+        fixture.Put("minecraft/resources/new.txt", "unknown added target"); primary = fixture.Primary().Sha256;
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, backend.CommitAsync(new(added, added.CandidateSha256)).GetAwaiter().GetResult().Status);
+        Equal(primary, fixture.Primary().Sha256); Equal("unknown added target", fixture.Read("minecraft/resources/new.txt"));
+        fixture.Put("minecraft/resources/new.txt", "mapped C");
+        Require(backend.CommitAsync(new(added, added.CandidateSha256)).GetAwaiter().GetResult());
+        Equal(6L, fixture.Primary().Definition.Generation); Equal("mapped C", fixture.Read("minecraft/resources/new.txt"));
     }
     private static void Switches() {
         using Fixture fixture = new(); fixture.Import();
@@ -132,6 +174,7 @@ internal static class MmcInstanceDefinitionChangeTests {
         private readonly byte[] index = Encoding.UTF8.GetBytes("{\"objects\":{}}");
         private readonly byte[] native;
         private readonly HttpClient client;
+        private readonly Dictionary<string, byte[]> mappedSources = new(StringComparer.Ordinal);
         internal Fixture() {
             using (MemoryStream bytes = new()) { using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, true)) { using var writer = new StreamWriter(zip.CreateEntry("native.dll").Open()); writer.Write("controlled native bytes"); } native = bytes.ToArray(); }
             client = new(new Metadata(this)); Directory.CreateDirectory(Root);
@@ -148,9 +191,31 @@ internal static class MmcInstanceDefinitionChangeTests {
             ["+libraries"] = new JArray(new JObject { ["name"] = "fixture:custom:" + version, ["MMC-hint"] = "local", ["MMC-filename"] = "custom.jar",
                 ["downloads"] = new JObject { ["artifact"] = new JObject { ["sha256"] = Hash(bytes), ["size"] = Encoding.UTF8.GetByteCount(bytes) } } })
         }.ToString(Newtonsoft.Json.Formatting.None);
+        internal JObject MappedIndex(string tag, Dictionary<string, string> contents) {
+            JObject objects = new();
+            foreach (var item in contents.OrderBy(value => value.Key, StringComparer.Ordinal)) {
+                byte[] bytes = Encoding.UTF8.GetBytes(item.Value); string sha1 = Convert.ToHexStringLower(SHA1.HashData(bytes));
+                mappedSources["https://resources.download.minecraft.net/" + sha1[..2] + "/" + sha1] = bytes;
+                objects[item.Key] = new JObject { ["hash"] = sha1, ["size"] = bytes.Length };
+            }
+            byte[] indexBytes = Encoding.UTF8.GetBytes(new JObject { ["objects"] = objects, ["map_to_resources"] = true }.ToString(Newtonsoft.Json.Formatting.None));
+            string url = "https://files.invalid/index-" + tag + ".json"; mappedSources[url] = indexBytes;
+            return new JObject { ["id"] = tag, ["url"] = url, ["sha1"] = Convert.ToHexStringLower(SHA1.HashData(indexBytes)), ["size"] = indexBytes.Length };
+        }
+        internal string MinecraftPatch(JObject indexDeclaration) {
+            var current = Primary().Definition;
+            var record = current.SourceBundle.MetadataRecords.Single(value => value.Kind == MmcSourceRecordKind.Component && value.Uid == "net.minecraft" && value.ComponentSourceKind == MmcComponentSourceKind.PackageLocal);
+            var patch = JObject.Parse(Encoding.UTF8.GetString(MmcSavedSourceStore.ReadBounded(MmcInstancePaths.Resolve(VersionRoot), record.ObjectRelativePath, 16 * 1024 * 1024)));
+            patch["assetIndex"] = indexDeclaration.DeepClone(); return patch.ToString(Newtonsoft.Json.Formatting.None);
+        }
         private MmcMetadataStore Store() => new(Path.Combine(CacheRoot, "metadata"), new Uri("https://metadata.invalid/"), client);
         private MmcArtifactCacheRoots Caches() => new(Path.Combine(CacheRoot, "libraries"), Path.Combine(CacheRoot, "assets"), Path.Combine(CacheRoot, "sources"));
-        private async Task Downloads(ImmutableArray<MmcArtifactDownloadSpec> files, CancellationToken token) { foreach (var file in files) await File.WriteAllBytesAsync(file.DownloadPath, file.Artifact.Role == MmcArtifactRole.AssetIndex ? index : native, token); }
+        private async Task Downloads(ImmutableArray<MmcArtifactDownloadSpec> files, CancellationToken token) {
+            foreach (var file in files) {
+                byte[]? mapped = file.Urls.Select(value => mappedSources.TryGetValue(value, out var bytes) ? bytes : null).FirstOrDefault(value => value is not null);
+                await File.WriteAllBytesAsync(file.DownloadPath, mapped ?? (file.Artifact.Role == MmcArtifactRole.AssetIndex ? index : native), token);
+            }
+        }
         internal MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(Store(), Caches(), value => value, Downloads);
         internal MmcInstanceDefinitionChangeBackend<MmcArtifactDownloadSpec> Changes() => new(Store(), Caches(), value => value, Downloads);
         internal void Import() { var result = Backend().ImportAsync(new(Path.Combine(Root, "fixture.zip"), VersionRoot, "fixture", new("windows", "x86_64", 8))).GetAwaiter().GetResult(); if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(result.Failure); }

@@ -7,6 +7,48 @@ namespace PCLCS;
 
 // Original LF host implementation; governed by the repository LICENCE.
 public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where TNetFile : notnull {
+    private static ImmutableArray<MmcHistoryFile> MappedResourceFacts(MmcInstancePaths paths, MmcCompiledProfile compiled,
+        MmcPrefetchedSources fetched, CancellationToken token) {
+        if (compiled.Assets.Artifact is not { } artifact) return [];
+        if (!fetched.Sources.TryGetValue(artifact.Key, out var source)) throw new IOException("The candidate asset index has no fixed prefetched source.");
+        string input = MmcArtifactIo.AuthorizedSource(source); byte[] bytes;
+        using (FileStream stream = new(input, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            if (stream.Length > 16 * 1024 * 1024) throw new IOException("Candidate asset index exceeds its metadata budget.");
+            using MemoryStream content = new(); byte[] buffer = new byte[8192]; int count;
+            while ((count = stream.Read(buffer, 0, buffer.Length)) != 0) {
+                token.ThrowIfCancellationRequested(); if (content.Length + count > 16 * 1024 * 1024) throw new IOException("Candidate asset index grew beyond its metadata budget.");
+                content.Write(buffer, 0, count);
+            }
+            bytes = content.ToArray();
+        }
+        string indexHash = MmcDurableFiles.Hash(bytes);
+        if (artifact.Sha256 is { } expected && indexHash != expected || artifact.Sha1 is { } sha1 && Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(bytes)) != sha1 ||
+            artifact.Size is { } size && bytes.LongLength != size) throw new IOException("Candidate asset index bytes differ from their declared source.");
+        var read = MmcAssetIndexReader.Read(new(artifact.Key, bytes), indexHash);
+        if (read.HasErrors || read.Index is null) throw new IOException("Candidate asset index is unsupported: " + string.Join("; ", read.Diagnostics.Select(value => value.Code)));
+        if (!read.Index.EffectiveMapToResources) return [];
+        var result = ImmutableArray.CreateBuilder<MmcHistoryFile>();
+        foreach (var item in read.Index.Objects) {
+            string key = MmcDerivedProofs.ComputeAssetObjectKey(artifact.Key, indexHash, item.Sha1, item.SizeBytes);
+            if (!fetched.Sources.TryGetValue(key, out var original)) throw new IOException("A mapped resource lacks its exact prefetched object source.");
+            var observed = MmcArtifactIo.HashAsync(MmcArtifactIo.AuthorizedSource(original), MmcDurableFiles.MaximumFileBytes, token, item.Sha1).GetAwaiter().GetResult();
+            if (observed.Size != item.SizeBytes) throw new IOException("A mapped resource differs from its indexed size.");
+            string relative = paths.GameRootLeaf + "/resources/" + item.Name; paths.ResolveRelative(MmcPathRole.Instance, relative);
+            result.Add(new(relative, observed.Sha256, observed.Size));
+        }
+        return result.ToImmutable();
+    }
+    private static void AssertMappedResourceTargets(MmcInstancePaths paths, MmcInstanceDefinition current, ImmutableArray<MmcHistoryFile> desired) {
+        var owned = current.DerivedOutputs.Where(value => value.Kind == MmcDerivedOutputKind.AssetMappedResource &&
+            value.RuntimePlanFingerprint == current.InstalledProjection!.RuntimePlanFingerprint)
+            .GroupBy(value => value.TargetRelativePath, StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        foreach (var file in desired) {
+            string? actual = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, file.RelativePath));
+            if (actual is null || actual == file.Sha256) continue;
+            if (!owned.TryGetValue(file.RelativePath, out var previous) || actual != previous.Sha256)
+                throw new IOException("A mapped resource target contains unknown or edited player bytes; preserve it before changing components: " + file.RelativePath);
+        }
+    }
     private static MmcArtifactRequest ArtifactRequest(MmcInstancePaths paths, MmcCompiledProfile compiled, MmcInstanceDefinition current,
         MmcValidatedPackageBaseline baseline, CancellationToken token) {
         var active = compiled.Classpath.Concat(compiled.NativeArtifacts).Concat(compiled.DownloadOnlyArtifacts).Concat(compiled.AuxiliaryArtifacts)

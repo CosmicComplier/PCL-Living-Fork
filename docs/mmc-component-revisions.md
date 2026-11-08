@@ -54,6 +54,15 @@ are not deleted. New targets cannot overwrite unknown same-name files; removed
 known targets must still match their old adopted bytes. Final validation also
 covers reused owned inputs, not only files that required mutation.
 
+Mapped asset resources are also player-directory targets. Before capturing undo,
+commit reads the bounded verified index and prefetched object bytes to fix every
+mapped target's SHA256/size. An existing different target requires an active
+current `AssetMappedResource` record with matching old bytes; unknown resources
+and edited old resources refuse without becoming authorized by an undo capture.
+Missing targets and exact new-byte reuse remain safe. The materializer's actual
+mapped-output inventory must match this guarded snapshot, and the ownership
+check runs again after the final caller checkpoint before the transaction.
+
 The minimal regression group exercises custom main/JVM/library component
 disable/enable/reset, fresh empty/unknown preference overlays, ordinary managed
 repair after modification, exact remote-version/dependency/native resolution,
@@ -65,3 +74,7 @@ backend/real-file tests; they do not claim GUI, Minecraft or process-kill
 acceptance. Root-component creation/removal outside the immutable author
 manifest is not an edit operation; new/removable dependency references are
 resolved from the edited component declarations.
+The mapped-resource case additionally checks new unknown targets, edited owned
+targets and a late edit before transaction; all retain current primary bytes,
+generation and player bytes. Known A-to-B mapping, history undo/redo, missing
+targets and exact-byte reuse succeed.

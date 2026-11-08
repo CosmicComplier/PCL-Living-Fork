@@ -109,11 +109,13 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
             VerifyLocalFacts(candidate.LocalFacts, token);
             var artifacts = ArtifactRequest(paths, compiled, current, saved.Baseline, token);
             var fetched = prefetch.PrefetchAsync(compiled, artifacts, token).GetAwaiter().GetResult();
+            var mappedResources = MappedResourceFacts(paths, compiled, fetched, token);
             using var quiet = MmcConfigurationCoordinator.Quiesce(paths.InstanceRoot, token);
             using var lease = MmcAdmissionGate.Acquire(paths.InstanceRoot, current.InstanceId, TimeSpan.Zero, token);
             MmcInstanceHistoryStore.AssertCurrent(lease, current.InstanceId, current.Generation, primary.Sha256);
             var desired = candidate.LocalFacts.ToDictionary(value => "libraries/" + value.FileName, value => value.Sha256, StringComparer.OrdinalIgnoreCase);
             AssertPrivateTargets(paths, current, desired); VerifyLocalFacts(candidate.LocalFacts, token);
+            AssertMappedResourceTargets(paths, current, mappedResources);
             undo = MmcInstanceHistoryStore.Capture(lease, primary, saved, "修改游戏组件前", token, null);
             var local = candidate.LocalFacts.ToDictionary(value => value.FileName, StringComparer.OrdinalIgnoreCase);
             using var prepared = materializer.PrepareAsync(artifacts, fetched.CreateAccess((artifact, ct) => {
@@ -123,6 +125,10 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
             using var workspace = new MmcArtifactWorkspace(paths);
             var sourceMutations = StageSources(paths, candidate, workspace, token);
             var observations = MmcArtifactBindingAdapter.Create(artifacts, compiled, prepared);
+            var preparedMapped = observations.DerivedOutputs.Where(value => value.Kind == MmcDerivedOutputKind.AssetMappedResource)
+                .Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes)).OrderBy(value => value.RelativePath, StringComparer.Ordinal).ToArray();
+            if (!mappedResources.OrderBy(value => value.RelativePath, StringComparer.Ordinal).SequenceEqual(preparedMapped))
+                throw new IOException("Prepared mapped resources differ from the guarded candidate source snapshot.");
             long next = checked(current.Generation + 1); string name = Path.GetFileName(paths.InstanceRoot);
             byte[] projection = MmcVersionProjection.Render(name, current.InstanceId, next, compiled,
                 prepared.OrderedBindings.ToDictionary(value => value.Artifact.Key, value => value.TargetRelativePath),
@@ -146,6 +152,7 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
             request.BeforeTransaction?.Invoke();
             MmcInstanceHistoryStore.AssertCurrent(lease, current.InstanceId, current.Generation, primary.Sha256);
             AssertPrivateTargets(paths, current, desired); VerifyLocalFacts(candidate.LocalFacts, token);
+            AssertMappedResourceTargets(paths, current, mappedResources);
             _ = MmcInstanceHistoryStore.Read(paths, undo.PointId, undo.ManifestSha256, token);
             using var scope = quiet.OpenStructuralWrite(lease, current.Generation);
             SetManifest(scope, resolution.Profile!, compiled, current.InstanceId, next);
