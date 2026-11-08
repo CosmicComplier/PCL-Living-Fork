@@ -16,6 +16,7 @@ internal static class MmcTransactionTests {
         yield return ("MMC transaction missing old target without a move backup stays recovery required", UnknownMissingTarget);
         yield return ("MMC transaction delete uses recoverable move and rollback restores bytes", DeleteRollback);
         yield return ("MMC transaction input identity generation hashes and reserved paths are checked", InvalidRequests);
+        yield return ("MMC transaction file-backed staging streams into locked journal objects and refuses tampering or escape", FileBackedSource);
         yield return ("MMC admission gate excludes another process even when its claimed instance ID differs", CrossProcessGate);
         yield return ("MMC transaction recovers real process termination before and after decision", KilledChildRecovery);
     }
@@ -143,6 +144,40 @@ internal static class MmcTransactionTests {
         changes = request.Mutations.ToArray(); changes[0] = changes[0] with { RelativePath = "PCL/MmcTransactions/fake" };
         Throws<IOException>(() => MmcFileTransactions.Execute(lease, request with { Mutations = changes }));
         Equal("old-library", File.ReadAllText(fixture.Library));
+    }
+    private static void FileBackedSource() {
+        using Fixture fixture = new(); using var lease = fixture.Lease(); var request = fixture.Request();
+        string relative = "PCL/MmcRuntime/.staging/" + Guid.NewGuid().ToString("N") + "/local.jar";
+        string source = Path.Combine(fixture.Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        // A larger-than-copy-buffer fixture proves the source path traverses streaming I/O, not a DTO byte[].
+        using (FileStream output = new(source, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+            byte[] chunk = Encoding.UTF8.GetBytes(new string('x', 81920));
+            for (int i = 0; i < 4; i++) output.Write(chunk);
+        }
+        string hash;
+        using (FileStream input = File.OpenRead(source)) hash = Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();
+        var changes = request.Mutations.ToArray(); changes[0] = new("libraries/local.jar", changes[0].ExpectedOldSha256, null, hash, relative);
+        var streamed = request with { Mutations = changes };
+        var invalid = changes.ToArray(); invalid[0] = invalid[0] with { NewSourceRelativePath = "../outside.jar" };
+        Throws<IOException>(() => MmcFileTransactions.Execute(lease, request with { Mutations = invalid }));
+        File.AppendAllText(source, "tampered");
+        Throws<IOException>(() => MmcFileTransactions.Execute(lease, streamed));
+        using (FileStream trim = new(source, FileMode.Open, FileAccess.Write, FileShare.None)) trim.SetLength(4 * 81920);
+        var result = MmcFileTransactions.Execute(lease, streamed, checkpoint: (stage, _) => {
+            if (stage == MmcTransactionCheckpoint.Prepared) {
+                File.WriteAllText(source, "changed after prepared");
+                throw new MmcTransactionInterruptionException("journal owns its verified source copy");
+            }
+        });
+        Equal(MmcTransactionOutcome.Interrupted, result.Outcome);
+        // Recovery is independent of the mutable source path after Prepared.
+        Equal(MmcTransactionOutcome.Aborted, MmcFileTransactions.Recover(lease, result.TransactionId).Outcome);
+        Equal("old-library", File.ReadAllText(fixture.Library));
+        File.Copy(Path.Combine(fixture.Root, "PCL", "MmcTransactionHistory", result.TransactionId.ToString("N"), "new-0.bin"), source, true);
+        Equal(MmcTransactionOutcome.Committed, MmcFileTransactions.Execute(lease, streamed).Outcome);
+        using FileStream published = File.OpenRead(fixture.Library);
+        Equal(hash, Convert.ToHexString(SHA256.HashData(published)).ToLowerInvariant());
     }
     private static void CrossProcessGate() {
         using Fixture fixture = new(); using var lease = fixture.Lease();

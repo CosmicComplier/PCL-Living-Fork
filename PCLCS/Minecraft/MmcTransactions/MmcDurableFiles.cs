@@ -37,12 +37,13 @@ internal static class MmcDurableFiles {
         using FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 8192, FileOptions.WriteThrough);
         stream.Write(content); stream.Flush(true);
     }
-    internal static void CopyNew(string source, string target, string expectedSha256, CancellationToken token = default) {
+    internal static long CopyNew(string source, string target, string expectedSha256, CancellationToken token = default) {
         MmcInstancePaths.EnsureNoLinks(source); MmcInstancePaths.EnsureNoLinks(target);
+        long total = 0;
         using (FileStream input = new(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
         using (FileStream output = new(target, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 8192, FileOptions.WriteThrough)) {
             if (input.Length > MaximumFileBytes) throw new IOException("事务文件超过预算。");
-            byte[] buffer = new byte[81920]; long total = 0; int count;
+            byte[] buffer = new byte[81920]; int count;
             while ((count = input.Read(buffer, 0, buffer.Length)) != 0) {
                 token.ThrowIfCancellationRequested(); total += count;
                 if (total > MaximumFileBytes) throw new IOException("事务复制期间超过预算。");
@@ -51,6 +52,7 @@ internal static class MmcDurableFiles {
             output.Flush(true);
         }
         if (Observe(target) != expectedSha256) throw new IOException("事务副本摘要不符合已锁定内容。");
+        return total;
     }
     internal static string WriteRecord<T>(string path, T value) {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(value);

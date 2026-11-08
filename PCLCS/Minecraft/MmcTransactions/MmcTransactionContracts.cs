@@ -5,8 +5,10 @@ namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
 /// <param name="ExpectedOldSha256">Null means the target must be absent.</param>
-/// <param name="NewContent">Null means delete by moving to a recoverable transaction backup.</param>
-public sealed record MmcFileMutation(string RelativePath, string? ExpectedOldSha256, byte[]? NewContent, string? ExpectedNewSha256);
+/// <param name="NewContent">In-memory payload. Mutually exclusive with NewSourceRelativePath.</param>
+/// <param name="NewSourceRelativePath">Owned instance-relative PCL/MmcRuntime/.staging/GUID-N/... source, copied as a stream. Both new-source fields null means recoverable deletion.</param>
+public sealed record MmcFileMutation(string RelativePath, string? ExpectedOldSha256, byte[]? NewContent, string? ExpectedNewSha256,
+    string? NewSourceRelativePath = null);
 public sealed record MmcFileTransactionRequest(Guid InstanceId, long ExpectedGeneration, long NewGeneration, IReadOnlyList<MmcFileMutation> Mutations);
 public enum MmcTransactionOutcome { Committed, Aborted, RecoveryRequired, Interrupted }
 public enum MmcTransactionCheckpoint { Prepared, BeforeMutation, AfterMutation, BeforeDecision, CommitDecided, BeforeFinalize, Finalized }

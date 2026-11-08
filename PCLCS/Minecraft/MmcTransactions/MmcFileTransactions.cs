@@ -39,9 +39,9 @@ public static class MmcFileTransactions {
                 MmcFileMutation mutation = mutations[i]; string target = Target(paths, mutation.RelativePath);
                 if (MmcDurableFiles.Observe(target) != mutation.ExpectedOldSha256) throw new IOException("事务前置旧摘要已变化。");
                 if (mutation.ExpectedOldSha256 is not null) {
-                    staged = checked(staged + new FileInfo(target).Length);
-                    if (staged > MaximumStagedBytes) throw new IOException("事务暂存总量超过预算。");
-                    MmcDurableFiles.CopyNew(target, ObjectFile(directory, i, false), mutation.ExpectedOldSha256, cancellationToken);
+                    CheckStagedBudget(staged, new FileInfo(target).Length);
+                    staged = checked(staged + MmcDurableFiles.CopyNew(target, ObjectFile(directory, i, false), mutation.ExpectedOldSha256, cancellationToken));
+                    CheckStagedBudget(staged, 0);
                 }
                 if (mutation.NewContent is not null) {
                     staged = checked(staged + mutation.NewContent.LongLength);
@@ -49,6 +49,12 @@ public static class MmcFileTransactions {
                     MmcDurableFiles.WriteNew(ObjectFile(directory, i, true), mutation.NewContent);
                     if (MmcDurableFiles.Observe(ObjectFile(directory, i, true)) != mutation.ExpectedNewSha256)
                         throw new IOException("新制品摘要不符合锁定记录，禁止重采用。");
+                } else if (mutation.NewSourceRelativePath is not null) {
+                    string source = StagedSource(paths, mutation.NewSourceRelativePath);
+                    if (MmcDurableFiles.Observe(source) != mutation.ExpectedNewSha256) throw new IOException("文件来源摘要不符合锁定内容。");
+                    CheckStagedBudget(staged, new FileInfo(source).Length);
+                    staged = checked(staged + MmcDurableFiles.CopyNew(source, ObjectFile(directory, i, true), mutation.ExpectedNewSha256!, cancellationToken));
+                    CheckStagedBudget(staged, 0);
                 }
             }
             ValidateStaged(journal, directory);
@@ -150,10 +156,14 @@ public static class MmcFileTransactions {
             string normalized = NormalizeRelative(mutation.RelativePath);
             if (normalized != mutation.RelativePath || !targets.Add(Target(paths, normalized))) throw new IOException("事务目标路径不规范或重复。");
             if (mutation.ExpectedOldSha256 is not null && !MmcDurableFiles.IsHash(mutation.ExpectedOldSha256)) throw new IOException("旧摘要无效。");
-            if ((mutation.NewContent is null) != (mutation.ExpectedNewSha256 is null) || mutation.NewContent is null && mutation.ExpectedOldSha256 is null)
+            bool hasNew = mutation.NewContent is not null || mutation.NewSourceRelativePath is not null;
+            if (mutation.NewContent is not null && mutation.NewSourceRelativePath is not null || hasNew != (mutation.ExpectedNewSha256 is not null) || !hasNew && mutation.ExpectedOldSha256 is null)
                 throw new IOException("事务修改缺少明确的新旧内容。");
             if (mutation.NewContent is not null && (!MmcDurableFiles.IsHash(mutation.ExpectedNewSha256) || MmcDurableFiles.Hash(mutation.NewContent) != mutation.ExpectedNewSha256))
                 throw new IOException("新内容不符合已声明摘要。");
+            if (mutation.NewSourceRelativePath is not null && (!MmcDurableFiles.IsHash(mutation.ExpectedNewSha256) ||
+                MmcDurableFiles.Observe(StagedSource(paths, mutation.NewSourceRelativePath)) != mutation.ExpectedNewSha256))
+                throw new IOException("文件来源不符合已声明摘要。");
         }
         MmcFileMutation definition = mutations.SingleOrDefault(m => string.Equals(m.RelativePath, DefinitionPath, StringComparison.OrdinalIgnoreCase)) ?? throw new IOException("事务必须包含新代数的实例定义。");
         if (definition.RelativePath != DefinitionPath || definition.NewContent is null) throw new IOException("定义目标必须使用固定路径且不能删除。");
@@ -276,10 +286,23 @@ public static class MmcFileTransactions {
         return marker;
     }
     private static string Target(MmcInstancePaths paths, string relative) => paths.ResolveRelative(MmcPathRole.Instance, NormalizeRelative(relative));
+    private static string StagedSource(MmcInstancePaths paths, string relative) {
+        string[] pieces = relative.Split('/');
+        if (pieces.Length < 5 || pieces[0] != "PCL" || pieces[1] != "MmcRuntime" || pieces[2] != ".staging" ||
+            !Guid.TryParseExact(pieces[3], "N", out Guid stagingId) || stagingId == Guid.Empty || relative.Contains('\\'))
+            throw new IOException("文件来源必须位于本实例 owned .staging/GUID 目录。");
+        return paths.ResolveRelative(MmcPathRole.Instance, relative);
+    }
+    private static void CheckStagedBudget(long existing, long additional) {
+        if (additional < 0 || additional > MmcDurableFiles.MaximumFileBytes || checked(existing + additional) > MaximumStagedBytes)
+            throw new IOException("事务暂存单项或总量超过预算。");
+    }
     private static string NormalizeRelative(string relative) {
         ArgumentNullException.ThrowIfNull(relative);
         string normalized = relative.Replace('\\', '/');
         string first = normalized.Split('/').Take(2).Aggregate((a, b) => a + "/" + b);
+        if (normalized.Equals("PCL/MmcRuntime/.staging", StringComparison.OrdinalIgnoreCase) || normalized.StartsWith("PCL/MmcRuntime/.staging/", StringComparison.OrdinalIgnoreCase))
+            throw new IOException("暂存来源不能成为持久 live 目标。");
         if (new[] { "PCL/MmcTransactions", "PCL/MmcTransactionHistory", "PCL/MmcSessions", "PCL/MmcSessionHistory" }.Any(p => string.Equals(first, p, StringComparison.OrdinalIgnoreCase)))
             throw new IOException("事务不能修改自己的日志或会话控制目录。");
         return normalized;
