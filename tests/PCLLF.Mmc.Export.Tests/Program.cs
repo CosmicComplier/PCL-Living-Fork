@@ -28,6 +28,7 @@ internal static class ExportChecks {
         yield return ("published user component patch survives portable export and fresh reimport",UserPatch);
         yield return ("extra game and fullscreen become native component arguments without host identity",ExtraGameAndFullscreen);
         yield return ("literal account data is rejected while ordinary version query URLs remain portable",AccountAndUrls);
+        yield return ("hardlink originals and adopted-CAS changes remain protected across output volumes",OutputAndOriginals);
     }
     private static void RoundTrip() {
         foreach(int major in new[]{8,21}) using(var fixture=new Fixture(major)) {
@@ -104,6 +105,21 @@ internal static class ExportChecks {
         var exporter=new MmcInstanceExportBackend();Check(exporter.ExportAsync(fixture.Request(source,"machine.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Machine-dependent choices were silently exported.");
         var options=new MmcInstanceExportOptions(){DiscardMachineJavaSelection=true,PortableMinimumMemoryMiB=512,PortableMaximumMemoryMiB=2048};
         var portable=exporter.ExportAsync(fixture.Request(source,"portable.zip",options)).GetAwaiter().GetResult();Success(portable);Check(portable.Preview!.Transformations.Any(x=>x.Contains("Java selection"))&&portable.Preview.Transformations.Any(x=>x.Contains("memory policy")),"Portable losses were not recorded in preview.");
+    }
+    private static void OutputAndOriginals() {
+        using var fixture=new Fixture(8);var source=fixture.Import("source");var exporter=new MmcInstanceExportBackend();
+        byte[] original=File.ReadAllBytes(fixture.Archive);string linked=Path.Combine(fixture.Root,"outputs","original-hardlink.zip");
+        Check(NativeExportLinks.CreateHardLink(linked,fixture.Archive,IntPtr.Zero),"Owned hardlink could not be created.");
+        Check(exporter.ExportAsync(fixture.Request(source,"original-hardlink.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected&&File.ReadAllBytes(linked).SequenceEqual(original),"Hardlink source archive was overwritten.");
+        string outputRoot=Path.Combine(Directory.GetCurrentDirectory(),"artifacts","mmc-export-volume-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(outputRoot);
+        string target=Path.Combine(outputRoot,"other-volume.zip");bool observed=false;
+        var cross=fixture.Request(source,"unused.zip") with {OutputZipPath=target,Checkpoint=(phase,_)=>{if(phase==MmcInstanceExportCheckpoint.EntryWritten){string partial=Directory.EnumerateFiles(outputRoot,"*.partial").Single();Check(Path.GetDirectoryName(partial)==Path.GetDirectoryName(target),"Partial and final paths are on different volume/parent.");observed=true;}}};
+        Success(exporter.ExportAsync(cross).GetAwaiter().GetResult());Check(observed,"Same-output-directory writer was not observed.");
+        Console.WriteLine("Output source volume="+Path.GetPathRoot(fixture.Root)+" destination volume="+Path.GetPathRoot(target)+"; staging/final same parent verified.");
+        var lockRecord=source.Definition!.ArtifactLocks.First();string cas=source.Paths!.ResolveRelative(MmcPathRole.Instance,lockRecord.RecoveryObjectRelativePath);byte[] saved=File.ReadAllBytes(cas);
+        var tamper=fixture.Request(source,"changed-cas.zip") with {Checkpoint=(phase,_)=>{if(phase==MmcInstanceExportCheckpoint.BeforePublication)File.WriteAllText(cas,"tampered adopted CAS");}};
+        Check(exporter.ExportAsync(tamper).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Failed&&!File.Exists(tamper.OutputZipPath),"Changed CAS was published.");
+        File.WriteAllBytes(cas,saved);Check(File.ReadAllBytes(fixture.Archive).SequenceEqual(original),"Export changed its original source ZIP.");
     }
     private static void AccountAndUrls() {
         using(var fixture=new Fixture(8,literalAccount:true)){var source=fixture.Import("source");Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"private-token.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Literal account token was exported.");}
@@ -214,4 +230,10 @@ internal static class ExportChecks {
     private sealed class Metadata(string json):HttpMessageHandler {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(json,Encoding.UTF8,"application/json")});
     }
+}
+
+internal static class NativeExportLinks {
+    [System.Runtime.InteropServices.DllImport("kernel32.dll",EntryPoint="CreateHardLinkW",CharSet=System.Runtime.InteropServices.CharSet.Unicode,SetLastError=true)]
+    [return:System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    internal static extern bool CreateHardLink(string newName,string existingName,IntPtr security);
 }
