@@ -10,7 +10,7 @@ public sealed record MmcVersionRecommendation(string Uid, string Version, string
 public sealed record MmcComponentOverride(string Uid, bool? Enabled = null, string? Version = null,
     string? PatchContentUtf8 = null, string? PatchSource = null);
 public enum MmcComponentSourceKind { PackageLocal, RemoteMetadata, UserPatch }
-public sealed record MmcResolvedComponent(string Uid, string Version, bool Enabled, bool IsAutomatic,
+public sealed record MmcResolvedComponent(string Uid, string? Version, bool Enabled, bool IsAutomatic,
     MmcComponentSourceKind SourceKind, MmcPatch Patch, MmcComponent? OriginalDeclaration);
 public sealed record MmcResolvedProfile(string FormatProfile, string SourceFingerprint, MmcPackage Package,
     ImmutableArray<MmcResolvedComponent> Components, ImmutableArray<MmcVersionRecommendation> AdoptedRecommendations);

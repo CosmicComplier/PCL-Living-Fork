@@ -45,6 +45,7 @@ public sealed record MmcComponent(
     ImmutableDictionary<string, JsonElement> ManifestFields);
 
 public enum MmcConfigurationFormat { Absent, Legacy, QtScalar }
+public sealed record MmcOpaquePackageMetadata(string RelativePath, string? ContentSha256);
 public sealed record MmcConfiguration(
     MmcConfigurationFormat Format, ImmutableDictionary<string, string> Values) {
     public string? Name => Values.GetValueOrDefault("name");
@@ -55,7 +56,9 @@ public sealed record MmcPackage(
     string RelativeRoot, string GameRootLeaf, string ManifestSha256,
     ImmutableArray<MmcComponent> Components, MmcConfiguration Configuration,
     ImmutableArray<MmcMetadataRequest> MissingMetadata,
-    ImmutableArray<MmcArchiveEntry> ArchiveEntries, long MetadataUtf8ByteCount = 0);
+    ImmutableArray<MmcArchiveEntry> ArchiveEntries, long MetadataUtf8ByteCount = 0) {
+    public ImmutableArray<MmcOpaquePackageMetadata> PackageMetadata { get; init; } = [];
+}
 
 /// <summary>Read diagnostics only. HasErrors=false is neither a complete semantic profile nor install/launch authorization.</summary>
 public sealed record MmcParseResult(MmcPackage? Package, ImmutableArray<MmcDiagnostic> Diagnostics) {

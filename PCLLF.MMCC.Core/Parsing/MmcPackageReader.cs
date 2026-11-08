@@ -74,11 +74,20 @@ public static class MmcPackageReader {
             }
 
             Dictionary<string, MmcPatch> patches = new(StringComparer.Ordinal);
+            List<MmcOpaquePackageMetadata> packageMetadata = [];
             long artifactCount = 0;
             string patchesPrefix = root + "patches/";
             foreach (var entry in entries.Where(e => !e.Value.IsDirectory && e.Key.StartsWith(patchesPrefix, StringComparison.OrdinalIgnoreCase))) {
                 string tail = entry.Key[patchesPrefix.Length..];
                 if (tail.Contains('/') || !tail.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
+                string filenameUid = tail[..^5];
+                if (!declared.ContainsKey(filenameUid)) {
+                    if (declared.Keys.Any(uid => uid.Equals(filenameUid, StringComparison.OrdinalIgnoreCase)))
+                        throw new MmcInputException("MMC_PATCH_UID", entry.Key, "A component patch filename must preserve its exact UID spelling.");
+                    packageMetadata.Add(new(entry.Key[root.Length..], metadata.TryGetValue(entry.Key, out string? opaque) ? MmcPatchReader.Hash(opaque) : null));
+                    diagnostics.Add(new("MMC_UNREFERENCED_PATCH", MmcDiagnosticSeverity.Information, entry.Key, "Unreferenced package file is preserved as opaque metadata and contributes no component semantics."));
+                    continue;
+                }
                 string text = RequiredMetadata(entry.Key, metadata);
                 // Read identity first so disabled unsupported capabilities can be retained.
                 using var identity = MmcJson.Read(text, entry.Key, limits.MaxDepth);
@@ -117,7 +126,7 @@ public static class MmcPackageReader {
             MmcConfiguration configuration = MmcConfigurationReader.Parse(cfg, cfgPath, diagnostics);
             string gameRoot = inspected.GameRoot;
             var package = new MmcPackage(root, gameRoot, MmcPatchReader.Hash(manifest), components.ToImmutable(), configuration,
-                requests.DistinctBy(r => (r.Uid, r.Version, r.Kind)).ToImmutableArray(), input.Entries.ToImmutableArray(), metadata.Values.Sum(text => (long)Encoding.UTF8.GetByteCount(text)));
+                requests.DistinctBy(r => (r.Uid, r.Version, r.Kind)).ToImmutableArray(), input.Entries.ToImmutableArray(), metadata.Values.Sum(text => (long)Encoding.UTF8.GetByteCount(text))) { PackageMetadata = packageMetadata.ToImmutableArray() };
             return new(package, diagnostics.ToImmutableArray());
         } catch (MmcInputException e) {
             diagnostics.Add(new(e.Code, MmcDiagnosticSeverity.Error, e.SourcePath, e.Message));

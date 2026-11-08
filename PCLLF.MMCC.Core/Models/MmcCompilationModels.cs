@@ -7,7 +7,7 @@ namespace PCLLF.MMCC.Core;
 /// <summary>Architecture describes selected Java, not the launcher process.</summary>
 public sealed record MmcRuntimeEnvironment(string OperatingSystem, string Architecture,
     int JavaMajor = 0, int JavaBitness = 64, string? OsVersion = null);
-public sealed record MmcFieldSource(string ComponentUid, string ComponentVersion, string Source,
+public sealed record MmcFieldSource(string ComponentUid, string? ComponentVersion, string Source,
     string SourceSha256, string Field, int Position);
 public sealed record MmcArgumentToken(string Value, MmcFieldSource Provenance);
 public enum MmcArtifactRole { Classpath, MainJar, Native, DownloadOnly, LoggingConfiguration, AssetIndex }

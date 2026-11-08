@@ -6,7 +6,7 @@ namespace PCLLF.MMCC.Core;
 public sealed record MmcPlatformProjectIdentity(string Platform, string ProjectId, string? VersionId = null);
 public sealed record MmcInstanceOrigin(string PackageSha256, string OriginalName, MmcPlatformProjectIdentity? PlatformProjectIdentity = null);
 public sealed record MmcInstanceLayout(string GameRootLeaf, int LayoutVersion = 1);
-public enum MmcSourceRecordKind { Manifest, Configuration, Component, RecommendationIndex }
+public enum MmcSourceRecordKind { Manifest, Configuration, Component, RecommendationIndex, PackageMetadata }
 /// <summary>References preserved metadata objects, never the original ZIP or a player's absolute path.</summary>
 public sealed record MmcSourceMetadataRecord(string RelativePath, string ContentSha256, string ObjectRelativePath,
     MmcSourceRecordKind Kind, string? Uid = null, string? Version = null,

@@ -109,9 +109,10 @@ public static class MmcDefinitionCodec {
                         if (!record.RelativePath.Equals("instance.cfg", StringComparison.OrdinalIgnoreCase) || record.Uid is not null || record.Version is not null) MmcJson.Fail("definition", "Invalid cfg source record.");
                         break;
                     case MmcSourceRecordKind.Component:
-                        if (record.Uid is null || string.IsNullOrEmpty(record.Version) || record.ComponentSourceKind is null || !Enum.IsDefined(record.ComponentSourceKind.Value) || record.ComponentSourceKind == MmcComponentSourceKind.UserPatch)
-                            MmcJson.Fail("definition", "Component source requires UID/version and an original/remote source kind.");
-                        MmcPatchReader.ValidateUid(record.Uid, "definition.sourceBundle"); Text(record.Version);
+                        if (record.Uid is null || record.ComponentSourceKind is null || !Enum.IsDefined(record.ComponentSourceKind.Value) || record.ComponentSourceKind == MmcComponentSourceKind.UserPatch ||
+                            record.ComponentSourceKind == MmcComponentSourceKind.RemoteMetadata && string.IsNullOrEmpty(record.Version))
+                            MmcJson.Fail("definition", "Component source requires UID and source kind; remote metadata requires an exact version.");
+                        MmcPatchReader.ValidateUid(record.Uid, "definition.sourceBundle"); if (record.Version is not null) Text(record.Version);
                         if (record.ComponentSourceKind == MmcComponentSourceKind.PackageLocal) {
                             string[] patchPath = record.RelativePath.Split('/');
                             if (patchPath.Length != 2 || !patchPath[0].Equals("patches", StringComparison.OrdinalIgnoreCase) || !patchPath[1].EndsWith(".json", StringComparison.OrdinalIgnoreCase) || patchPath[1][..^5] != record.Uid)
@@ -121,6 +122,9 @@ public static class MmcDefinitionCodec {
                     case MmcSourceRecordKind.RecommendationIndex:
                         if (record.Uid is null || !string.IsNullOrEmpty(record.Version)) MmcJson.Fail("definition", "Invalid recommendation index identity.");
                         MmcPatchReader.ValidateUid(record.Uid, "definition.sourceBundle");
+                        break;
+                    case MmcSourceRecordKind.PackageMetadata:
+                        if (record.Uid is not null || record.Version is not null || record.ComponentSourceKind is not null) MmcJson.Fail("definition", "Opaque package metadata cannot impersonate a component identity.");
                         break;
                 }
                 if ((record.Kind == MmcSourceRecordKind.RecommendationIndex || record.ComponentSourceKind == MmcComponentSourceKind.RemoteMetadata) && string.IsNullOrEmpty(record.SourceIdentity))

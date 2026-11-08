@@ -178,7 +178,6 @@ public static class MmcComponentResolver {
                     var patch = MmcPatchReader.Parse(userText, source, limits, node.Enabled, diagnostics);
                     CheckIdentity(patch, node.Uid, null);
                     node.Version = Nonempty(patch.Version) ?? node.Version;
-                    if (node.Version is null) throw new MmcInputException("MMC_VERSION_REQUIRED", source, "User patch has no effective version.");
                     node.Resolved = new(node.Uid, node.Version, node.Enabled, false, MmcComponentSourceKind.UserPatch, patch, node.Declaration);
                     return;
                 }
@@ -187,7 +186,6 @@ public static class MmcComponentResolver {
                     // without serializing source JSON or accepting stale warning state.
                     MmcPatchReader.ValidateCapabilities(local, node.Enabled, diagnostics);
                     node.Version = Nonempty(local.Version) ?? node.Version;
-                    if (node.Version is null) throw new MmcInputException("MMC_VERSION_REQUIRED", local.Source, "Local patch has no effective version.");
                     node.Resolved = new(node.Uid, node.Version, node.Enabled, false, MmcComponentSourceKind.PackageLocal, local, node.Declaration);
                     return;
                 }

@@ -159,7 +159,8 @@ public static class MmcPlanBinder {
         return result;
     }
     private static string SourceObject(MmcInstanceDefinition definition, string uid, string sourceRevision, string? version) {
-        var source = definition.SourceBundle.MetadataRecords.FirstOrDefault(r => r.Kind == MmcSourceRecordKind.Component && r.Uid == uid && MmcDefinitionCodec.SameHash(r.ContentSha256, sourceRevision) && (version is null || r.Version == version));
+        var source = definition.SourceBundle.MetadataRecords.FirstOrDefault(r => r.Kind == MmcSourceRecordKind.Component && r.Uid == uid && MmcDefinitionCodec.SameHash(r.ContentSha256, sourceRevision) &&
+            (version is null || r.Version == version || r.ComponentSourceKind == MmcComponentSourceKind.PackageLocal && string.IsNullOrEmpty(r.Version)));
         if (source is not null) return source.ObjectRelativePath;
         var user = definition.ComponentOverrides.FirstOrDefault(o => o.Uid == uid && o.PatchReference is not null && MmcDefinitionCodec.SameHash(o.PatchReference.Sha256, sourceRevision));
         if (user?.PatchReference is { } patch) return patch.ObjectRelativePath;
