@@ -45,7 +45,7 @@ public sealed partial class MmcOwnedImportReservation {
         return new(target, root, instanceId, packageSha256, marker, ignore);
     }
     /// <summary>Call only after all preparation workspaces have been consumed and disposed.</summary>
-    public MmcInstancePaths Publish(string gameRootLeaf) {
+    public MmcInstancePaths Publish(string gameRootLeaf, IProgress<MmcInstanceBackendProgress>? progress = null) {
         using var quiet = MmcConfigurationCoordinator.Quiesce(TemporaryRoot);
         List<MmcAdmissionLease> gates = [];
         try {
@@ -63,6 +63,7 @@ public sealed partial class MmcOwnedImportReservation {
             var observation = MmcManagementProbe.CaptureAtPhysicalRoot(TemporaryRoot, InstanceName) with { HasPendingTransaction = false };
             var ownership = MmcManagementReader.Evaluate(observation);
             if (ownership.State != MmcManagementState.ManagedMmc || ownership.Envelope?.InstanceId != InstanceId) throw new IOException("Private import projections are not ready for publication.");
+            VerifyInitialPayload(paths, primary.Definition, progress);
             string staging = paths.ResolveRelative(MmcPathRole.Runtime, ".staging");
             if (Directory.Exists(staging)) {
                 if (Directory.EnumerateFileSystemEntries(staging).Any()) throw new IOException("Prepared workspaces remain; refusing to move active absolute paths.");

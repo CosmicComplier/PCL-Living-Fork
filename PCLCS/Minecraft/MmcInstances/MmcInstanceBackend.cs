@@ -69,7 +69,11 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                     derivedOutputs: observations.DerivedOutputs, assetIndexes: observations.AssetIndexes, packageBaseline: new(baselineBytes));
                 RequireBinding(bound);
                 byte[] definition = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition!));
-                var mutations = new List<MmcFileMutation>(packageFiles.InitialGameMutations);
+                // The exclusive unpublished root has no player-owned live targets to replace.
+                // Move already flushed/CRC-checked bulk game data there once; only structural,
+                // source, library and definition publications need the recoverable file journal.
+                reservation.AdoptPreparedGameFiles(packageFiles, baseline, cancellationToken, progress, request.PrivatePayloadCheckpoint);
+                var mutations = new List<MmcFileMutation>();
                 var declaredLocal = DeclaredLocalTargets(compiled);
                 foreach (var file in packageFiles.Files.Where(file => file.Role == MmcPackageFileRole.LocalLibrary && !declaredLocal.Contains(file.TargetRelativePath!)))
                     mutations.Add(new(file.TargetRelativePath!, null, null, file.Sha256, Path.GetRelativePath(paths.InstanceRoot, file.StagedPath!).Replace('\\', '/')));
@@ -88,7 +92,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                         WorkingRoot: reservation.TemporaryRoot, Failure: result.Diagnostic ?? "The import transaction did not commit.");
             }
             // Every source/runtime workspace has been consumed and disposed before its absolute root moves.
-            var final = reservation.Publish(source.Package.GameRootLeaf);
+            var final = reservation.Publish(source.Package.GameRootLeaf, progress);
             progress?.Report(new("completed"));
             return new(MmcInstanceBackendStatus.Succeeded, bound.Definition, bound.Plan, final, source.Package.Configuration,
                 final.InstanceRoot, PreferenceDiagnostics(source.Package.Configuration));

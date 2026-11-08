@@ -7,6 +7,7 @@ namespace PCLCS;
 public enum MmcInstanceBackendStatus { Succeeded, Cancelled, Rejected, NeedsRecovery }
 public sealed record MmcInstanceImportRequest(string ArchivePath, string VersionRoot, string InstanceName, MmcRuntimeEnvironment Environment) {
     public Action<MmcTransactionCheckpoint, int>? TransactionCheckpoint { get; init; }
+    public Action<MmcInitialPayloadCheckpoint, int>? PrivatePayloadCheckpoint { get; init; }
 }
 public sealed record MmcInstanceRepairRequest(string VersionRoot, MmcRuntimeEnvironment Environment, Guid? ExpectedInstanceId = null,
     bool AllowRebuildDivergedProjection = false) {
