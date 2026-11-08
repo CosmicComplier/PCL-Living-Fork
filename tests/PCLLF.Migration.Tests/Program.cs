@@ -66,7 +66,9 @@ internal static class Program {
             ("mmc-history", MmcInstanceHistoryTests.Cases),
             ("mmc-definition-change", MmcInstanceDefinitionChangeTests.Cases),
             ("mmc-import-publication", MmcInstanceBackendTests.PublicationCases),
-            ("mmc-package-revision", MmcPackageRevisionTests.Cases)
+            ("mmc-package-revision", MmcPackageRevisionTests.Cases),
+            ("mmc-package-scope", MmcPackageLocalScopeTests.Cases),
+            ("mmc-package-update", MmcInstancePackageUpdateTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);
