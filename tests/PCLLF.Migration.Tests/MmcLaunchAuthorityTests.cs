@@ -19,12 +19,16 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
         yield return ("MMC binder follows virtual-first asset layout without unrequested resource writes", BothAssetLayouts);
         yield return ("MMC binder records exact published environments and migrates old bindings only in a new generation", PublishedEnvironment);
+        yield return ("MMC clone binding derives generation one from a selected generation three without losing historical locks", CloneAuthority);
+        yield return ("MMC clone binding rejects changed source identity plans destinations and measured contents", CloneRejections);
+        yield return ("MMC clone binding retains old environment authority and requires current native observations", CloneNative);
+        yield return ("MMC clone binding revalidates asset membership rather than copying arbitrary child authority", CloneAssets);
     }
     private sealed record Fixture(MmcCompiledProfile Plan, MmcInstanceDefinition Definition,
         ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
     private static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static string View => new('9', 64);
-    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false) {
+    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false, bool storedOverride = false) {
         Dictionary<string, object?> patch = new() {
             ["uid"] = "net.minecraft", ["version"] = "1", ["mainClass"] = "fixture.Main",
             ["mainJar"] = new Dictionary<string, object?> { ["name"] = "fixture:main:1:client", ["MMC-hint"] = "local" },
@@ -39,7 +43,7 @@ internal static class MmcLaunchAuthorityTests {
         Dictionary<string, string> content = new() { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = component };
         if (lateEntrypoint) content["patches/bootstrap.json"] = "{\"uid\":\"bootstrap\",\"version\":\"1\",\"mainClass\":\"fixture.Boot\",\"+jvmArgs\":[\"-Djava.system.class.loader=fixture.Loader\"],\"+tweakers\":[\"fixture.Tweaker\"]}";
         var parsed = MmcPackageReader.Parse(new(content.Select(c => new MmcArchiveEntry(c.Key)).ToArray(), content));
-        var resolved = MmcComponentResolver.Resolve(parsed, []);
+        var resolved = MmcComponentResolver.Resolve(parsed, [],overrides:storedOverride ? [new("net.minecraft",Enabled:true)] : []);
         Require(resolved.IsComplete, "Fixture resolution failed.");
         var compiled = MmcProfileCompiler.Compile(resolved.Profile!, new("windows", "amd64", 17));
         Require(!compiled.HasErrors && compiled.Profile is not null, "Fixture compilation failed.");
@@ -51,6 +55,7 @@ internal static class MmcLaunchAuthorityTests {
         foreach (var source in resolved.Profile!.Components) metadataRecords.Add(new("patches/" + source.Uid + ".json", source.Patch.ContentSha256, prefix + "patches/" + source.Uid + ".json",
             MmcSourceRecordKind.Component, source.Uid, source.Version, MmcComponentSourceKind.PackageLocal, "package:patches/" + source.Uid + ".json"));
         draft = draft with { SourceBundle = draft.SourceBundle with { MetadataRecords = metadataRecords.ToImmutable() } };
+        if (storedOverride) draft=draft with { ComponentOverrides=[new("net.minecraft",Enabled:true)] };
         var artifacts = plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).GroupBy(a => a.Key).Select(g => g.First()).ToArray();
         var facts = artifacts.Select(a => new MmcMaterializedArtifactFact(a.Key, a.SourceRevision,
             a.Role == MmcArtifactRole.AssetIndex ? Hash(assetJson!) : Hash("verified fixture bytes:" + a.Key),
@@ -103,6 +108,79 @@ internal static class MmcLaunchAuthorityTests {
         var unknown=MmcProfileCompiler.Compile(fixture.Sources,environment with { JavaMajor=0 });
         Require(!unknown.HasErrors && unknown.Profile is not null,"Compiler must remain usable for an unselected Java analysis profile.");
         Require(Bind(fixture with { Plan=unknown.Profile! }).HasErrors,"An unselected Java major was published as an exact runtime environment.");
+    }
+    private static MmcCloneBindOptions CloneOptions(MmcInstanceDefinition source) =>
+        new(source.InstanceId,source.Generation,source.InstalledProjection!.BoundFingerprint,Guid.Parse("2f5656be-ec81-44d4-b4a7-eeb46ebaf7b1"),Hash("clone projection"));
+    private static void CloneAuthority() {
+        var fixture=Create(declaredJava:true,storedOverride:true);
+        var first=Good(Bind(fixture)).Definition!;
+        var variant=MmcProfileCompiler.Compile(fixture.Sources,new("windows","x86",17,32));
+        Require(!variant.HasErrors && variant.Profile is not null,"Historical variant fixture failed compile.");
+        var variantFacts=variant.Profile!.Classpath.Select(artifact=>fixture.Facts.Single(f=>f.TargetRelativePath=="libraries/"+artifact.RelativePath) with {
+            ArtifactKey=artifact.Key,SourceRevision=artifact.SourceRevision
+        }).ToImmutableArray();
+        var second=Good(Bind(fixture with { Plan=variant.Profile,Facts=variantFacts },first,options:Options(next:2,intent:MmcBindingIntent.AdoptDeclaredVariant))).Definition!;
+        var source=Good(Bind(fixture,second,options:Options(expected:2,next:3,intent:MmcBindingIntent.AdoptDeclaredVariant))).Definition!;
+        Require(source.Generation==3 && source.ArtifactLocks.Length>fixture.Facts.Length,"Source fixture did not retain inactive historical variant locks.");
+        string before=MmcDefinitionCodec.Serialize(source);
+        var clone=Good(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,CloneOptions(source))).Definition!;
+        Require(clone.InstanceId!=source.InstanceId && clone.ParentInstanceId==source.InstanceId && clone.Generation==1 && clone.InstalledProjection!.ManifestGeneration==1,
+            "Clone identity/generation/parent did not derive from its selected published source.");
+        Require(clone.Origin==source.Origin && clone.SourceBundle==source.SourceBundle && clone.Layout==source.Layout && clone.AuthorFileBaseline==source.AuthorFileBaseline &&
+            clone.ComponentOverrides.SequenceEqual(source.ComponentOverrides) && clone.ArtifactInventory.SequenceEqual(source.ArtifactInventory) &&
+            clone.ArtifactLocks.SequenceEqual(source.ArtifactLocks) && clone.PackageFileInventory.SequenceEqual(source.PackageFileInventory) &&
+            clone.PackageFileLocks.SequenceEqual(source.PackageFileLocks) && clone.DerivedOutputs.SequenceEqual(source.DerivedOutputs),
+            "Clone dropped or changed original references, overrides or historical adopted authority.");
+        Require(clone.InstalledProjection!.RuntimeEnvironment==fixture.Plan.Environment && clone.InstalledProjection.RuntimePlanFingerprint==source.InstalledProjection!.RuntimePlanFingerprint &&
+            clone.InstalledProjection.OutputJsonSha256==Hash("clone projection") && clone.InstalledProjection.BoundFingerprint!=source.InstalledProjection.BoundFingerprint &&
+            MmcDefinitionCodec.Read(MmcDefinitionCodec.Serialize(clone)).Status==MmcDefinitionReadStatus.Valid && MmcDefinitionCodec.Serialize(source)==before,
+            "Clone failed its new structural binding or mutated the selected source.");
+    }
+    private static void CloneRejections() {
+        var fixture=Create();var source=Good(Bind(fixture)).Definition!;var options=CloneOptions(source);
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options with { ExpectedSourceInstanceId=Guid.NewGuid() }),"MMC_CLONE_SOURCE");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options with { ExpectedSourceGeneration=2 }),"MMC_CLONE_SOURCE");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options with { ExpectedSourceBoundFingerprint=Hash("wrong source") }),"MMC_CLONE_SOURCE");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options with { NewInstanceId=source.InstanceId }),"MMC_CLONE_IDENTITY");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options with { NewInstanceId=Guid.Empty }),"MMC_CLONE_IDENTITY");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan with { MainClass="fixture.Unbound" },fixture.Facts,options),"MMC_CLONE_PLAN");
+        var other=MmcProfileCompiler.Compile(fixture.Sources,fixture.Plan.Environment with { JavaMajor=21 }).Profile!;
+        Error(MmcPlanBinder.BindClone(source,other,fixture.Facts,options),"MMC_CLONE_PLAN");
+        var changed=fixture.Facts[0] with { ObservedSha256=Hash("different bytes"),RecoveryObjectRelativePath="PCL/MmcArtifacts/sha256/"+Hash("different bytes") };
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts.SetItem(0,changed),options),"MMC_BIND_REBIND");
+        Require(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts.SetItem(0,fixture.Facts[0] with { SizeBytes=11 }),options).HasErrors,"Clone changed an adopted artifact size.");
+        Require(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts.SetItem(0,fixture.Facts[0] with { TargetRelativePath="libraries/moved.jar" }),options).HasErrors,"Clone moved an active owned target.");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts.Skip(1).ToArray(),options),"MMC_BIND_FACT_MISSING");
+        Require(MmcPlanBinder.BindClone(source with { Generation=2 },fixture.Plan,fixture.Facts,options).HasErrors,"Clone accepted an invalid published source.");
+    }
+    private static void CloneNative() {
+        var fixture=Create(native:true);var artifact=fixture.Plan.NativeArtifacts[0];var parent=fixture.Facts.Single(f=>f.ArtifactKey==artifact.Key);
+        string sources=MmcDerivedProofs.ComputeNativeSourceSetFingerprint(fixture.Plan.NativeArtifacts,fixture.Facts.Select(f=>new MmcArtifactDigestFact(f.ArtifactKey,f.SourceRevision,f.ObservedSha256,f.SizeBytes)).ToArray());
+        var completion=new MmcDerivationCompletion("bounded-native-v1",sources,fixture.Plan.RuntimePlanFingerprint,View,1,true);
+        var output=new MmcDerivedOutputRecord(MmcDerivedOutputKind.NativeFile,parent.ArtifactKey,parent.ObservedSha256,"bounded-native-v1",sources,fixture.Plan.RuntimePlanFingerprint,
+            MmcDerivedProofs.ComputeDerivedContextFingerprint(fixture.Plan.RuntimePlanFingerprint,sources,"bounded-native-v1"),View,"fixture.dll","PCL/MmcRuntime/"+View+"/natives/fixture.dll",Hash("native bytes"),8);
+        var source=Good(Bind(fixture,options:Options() with { NativeDerivation=completion },derived:[output])).Definition!;
+        source=source with { InstalledProjection=source.InstalledProjection! with { RuntimeEnvironment=null } };
+        source=source with { InstalledProjection=source.InstalledProjection! with { BoundFingerprint=MmcDefinitionCodec.ComputeBoundFingerprint(source) } };
+        string before=MmcDefinitionCodec.Serialize(source);
+        var options=CloneOptions(source) with { NativeDerivation=completion };
+        var clone=Good(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options,derivedOutputs:[output])).Definition!;
+        Require(clone.InstalledProjection!.RuntimeEnvironment==fixture.Plan.Environment && clone.DerivedOutputs.SequenceEqual(source.DerivedOutputs) &&
+            source.InstalledProjection!.RuntimeEnvironment is null && MmcDefinitionCodec.Serialize(source)==before,"Clone lost current native authority or silently migrated its old source.");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options with { NativeDerivation=completion with { OutputCount=0 } },derivedOutputs:[]),"MMC_CLONE_DERIVED_MISSING");
+        Require(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,options,derivedOutputs:[output with { Sha256=Hash("wrong native") }]).HasErrors,"Clone accepted different extracted native bytes.");
+    }
+    private static void CloneAssets() {
+        string sha1=Convert.ToHexStringLower(SHA1.HashData([1,2,3])),sha256=Convert.ToHexStringLower(SHA256.HashData([1,2,3]));
+        var fixture=Create(assetJson:"{\"objects\":{\"sound/test.ogg\":{\"hash\":\""+sha1+"\",\"size\":3}}}");
+        var parent=fixture.Facts.Single(f=>f.ArtifactKey==fixture.Plan.Assets.Artifact!.Key);
+        string key=MmcDerivedProofs.ComputeAssetObjectKey(parent.ArtifactKey,parent.ObservedSha256,sha1,3);
+        var fact=new MmcMaterializedArtifactFact(key,parent.ObservedSha256,sha256,3,"PCL/MmcArtifacts/sha256/"+sha256,"PCL/MmcRuntime/"+View+"/assets/objects/"+sha1[..2]+"/"+sha1,sha1);
+        var facts=fixture.Facts.Add(fact);var source=Good(Bind(fixture,facts:facts)).Definition!;
+        var clone=Good(MmcPlanBinder.BindClone(source,fixture.Plan,facts,CloneOptions(source),assetIndexes:[fixture.AssetIndex!])).Definition!;
+        Require(clone.DerivedOutputs.SequenceEqual(source.DerivedOutputs),"Clone lost indexed asset-object originals or digests.");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,fixture.Facts,CloneOptions(source),assetIndexes:[fixture.AssetIndex!]),"MMC_BIND_ASSET_OBJECT");
+        Error(MmcPlanBinder.BindClone(source,fixture.Plan,facts,CloneOptions(source),assetIndexes:[]),"MMC_BIND_ASSET_INDEX");
     }
     private static void BindingRejections() {
         var fixture = Create();

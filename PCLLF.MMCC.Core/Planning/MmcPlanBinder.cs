@@ -4,7 +4,7 @@ using System.Collections.Immutable;
 namespace PCLLF.MMCC.Core;
 
 /// <summary>Pure binding of host-verified bytes. Publication and process/session admission remain host responsibilities.</summary>
-public static class MmcPlanBinder {
+public static partial class MmcPlanBinder {
     public static MmcBindingResult Bind(MmcInstanceDefinition definition, MmcCompiledProfile plan,
         IReadOnlyList<MmcMaterializedArtifactFact> facts, MmcBindOptions options,
         IReadOnlyList<MmcArtifactLockRecord>? priorLocks = null, IReadOnlyList<MmcDerivedOutputRecord>? derivedOutputs = null,

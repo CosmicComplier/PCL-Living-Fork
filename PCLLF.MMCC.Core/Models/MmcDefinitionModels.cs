@@ -56,6 +56,11 @@ public sealed record MmcBindOptions(long ExpectedGeneration, long NewGeneration,
     string OutputJsonSha256, long ManifestGeneration) {
     public MmcDerivationCompletion? NativeDerivation { get; init; }
 }
+/// <summary>Cloning preserves one selected published source; no arbitrary target authority is accepted.</summary>
+public sealed record MmcCloneBindOptions(Guid ExpectedSourceInstanceId, long ExpectedSourceGeneration,
+    string ExpectedSourceBoundFingerprint, Guid NewInstanceId, string OutputJsonSha256) {
+    public MmcDerivationCompletion? NativeDerivation { get; init; }
+}
 public sealed record MmcBoundLaunchPlan(MmcCompiledProfile CompiledProfile, long DefinitionGeneration,
     string BoundFingerprint, ImmutableArray<MmcArtifactLockRecord> ActiveArtifactLocks);
 public sealed record MmcBindingResult(MmcInstanceDefinition? Definition, MmcBoundLaunchPlan? Plan,
