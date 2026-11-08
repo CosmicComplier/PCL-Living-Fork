@@ -101,6 +101,7 @@ internal static class MmcManifestClasspath {
     }
     private static void RejectNetwork(string path) {
         if (!Path.IsPathFullyQualified(path) || path.StartsWith("\\\\",StringComparison.Ordinal) || path.StartsWith("//",StringComparison.Ordinal)) throw Fail("Network/UNC/device manifest file paths are unsupported.");
+        if (new DriveInfo(Path.GetPathRoot(path)!).DriveType == DriveType.Network) throw Fail("Mapped network manifest file volumes are unsupported.");
     }
     private static bool Within(string target,string root) => target.StartsWith(root+Path.DirectorySeparatorChar,MmcRuntimeFiles.PathComparison);
     private static void PhysicalSegment(string value) {
