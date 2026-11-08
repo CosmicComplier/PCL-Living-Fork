@@ -25,7 +25,7 @@ public static class MmcRuntimeLaunchBuilder {
         var currentPaths = MmcInstancePaths.Resolve(request.Paths.VersionRoot, definition.Layout.GameRootLeaf);
         var locks = definition.ArtifactLocks.ToDictionary(l => l.ArtifactKey, StringComparer.Ordinal);
         var targets = request.Targets.ToDictionary(t => t.ArtifactKey, StringComparer.Ordinal);
-        var activeArtifacts = compiled.Classpath.Concat(compiled.NativeArtifacts).Concat(compiled.DownloadOnlyArtifacts).Concat(compiled.AuxiliaryArtifacts).DistinctBy(a => a.Key).ToArray();
+        var activeArtifacts = compiled.Classpath.Concat(compiled.NativeArtifacts).Concat(compiled.DownloadOnlyArtifacts).Concat(compiled.AuxiliaryArtifacts).GroupBy(a => a.Key).Select(group => group.First()).ToArray();
         List<MmcRuntimeInputObservation> inputs = [];
         foreach (var artifact in activeArtifacts) {
             if (!locks.TryGetValue(artifact.Key, out var adopted) || !request.BoundPlan.ActiveArtifactLocks.Any(l => l == adopted))
