@@ -90,6 +90,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     // The complete original transaction boundary: persist backups/log before writing,
     // keep the current before/after guards and reverse rollback under the caller's real workload lock.
     public string Commit(TPlan plan, string versionFolder, CancellationToken token, Dictionary<string, string>? extraFiles = null, Action<int>? beforeApply = null, Action<double>? progress = null) {
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "旧整合包更新");
         token.ThrowIfCancellationRequested();
         ValidateChoices(plan, token);
         var operations = BuildFileOperations(plan, token);
@@ -108,6 +109,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         ApplyTransactionWithProgress(gameRoot, versionFolder, operations, token, null, beforeApply, box);
 
     public string ApplyTransactionWithProgress(string gameRoot, string versionFolder, List<Tuple<string, string?, string?>> operations, CancellationToken token, Action<double>? progress, Action<int>? beforeApply = null, string? box = null) {
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "旧环境文件事务");
         token.ThrowIfCancellationRequested();
         if (operations.GroupBy(op => Path.GetFullPath(op.Item1), StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
             throw new IOException("更新存在重复的目标操作，请先确认文件关联，未修改当前实例。");
@@ -175,6 +177,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
     public static void ReplaceFrom(string source, string destination) => ReplaceFromWithProgress(source, destination, CancellationToken.None, null);
 
     public static void ReplaceFromWithProgress(string source, string destination, CancellationToken token, Action<double>? progress) {
+        MmcInstanceCapabilities.RequireLegacyContainingInstance(destination, "旧环境文件替换");
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         string temporary = destination + ".pcl-update-" + Guid.NewGuid().ToString("N");
         try {
@@ -196,6 +199,7 @@ public sealed partial class PackUpdateEngine<TFile, TPackage, TChange, TPlan, TN
         return result;
     }
     public void Recover(string versionFolder, string gameRoot) {
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "恢复旧环境文件事务");
         foreach (string logFile in Pending(versionFolder)) {
             JObject log = JObject.Parse(File.ReadAllText(logFile)); JArray items = (JArray)log["files"]!;
             if (!PathUtils.IsSame(log["gameRoot"]!.ToString(), gameRoot)) throw new IOException("更新备份对应的游戏目录已经变化，请手动检查备份。");

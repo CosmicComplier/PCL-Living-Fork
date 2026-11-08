@@ -62,6 +62,8 @@ public sealed partial class MinecraftInstallEngine<TLoader, TNetFile, TInstance,
         } catch (Exception error) { host.RefreshInstanceList(); Logger.Error(error, "开始修改版本失败", LogBehavior.Toast); return false; }
     }
     public void McInstallCommit(TInstance instance, McInstallManifest newManifest, string buildFolder, string targetFolder) {
+        MmcInstanceCapabilities.RequireLegacy(instance.PathVersion, "组件修改");
+        MmcInstanceCapabilities.RequireLegacyContainingInstance(targetFolder, "组件修改");
         host.BeforeMinecraftChange(instance, instance.Version.VanillaName, newManifest.Components.MinecraftVersion, CancellationToken.None);
         host.CaptureEnvironment(instance, "修改游戏组件前", CancellationToken.None);
         IEnumerable<McInstallManifest.ManagedFile> oldFiles = Configs.McInstallManifest.Get(instance.Config)?.ManagedFiles ?? Array.Empty<McInstallManifest.ManagedFile>();

@@ -65,10 +65,7 @@ public static class MmcInstanceInspector {
     }
 
     public static void AssertLegacyOperationAllowed(string versionRoot, string operation) {
-        var inspection = Read(versionRoot);
-        if (!inspection.IsLegacy || !inspection.Management.CanUseLegacyBackend)
-            throw new InvalidOperationException("此实例由 MMC 后端管理，不能使用普通版本的" + operation + "入口。" +
-                (inspection.Error is null ? "" : " " + inspection.Error));
+        MmcInstanceCapabilities.RequireLegacy(versionRoot, operation);
     }
 
     public static string ManagedGameRoot(string versionRoot) {

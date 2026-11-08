@@ -10,6 +10,7 @@ namespace PCLCS;
 
 public sealed partial class MinecraftInstallEngine<TLoader, TNetFile, TInstance, TState, TCard, TOptiFine, TForgeLike, TForge, TNeo, TLite, TLib, TResource, TRequest> {
     public List<TLoader> McInstallLoadersGet(TRequest request) {
+        MmcInstanceCapabilities.RequireLegacy(request.InstanceFolder, "普通组件安装");
         string temp = host.RequestTempFolder(request.Components.OptiFineEntry is not null || request.Components.ModLoaderVersions.ContainsKey(ModLoaders.Forge) || request.Components.ModLoaderVersions.ContainsKey(ModLoaders.NeoForge));
         TOptiFine? optiFine = request.Components.OptiFineEntry?.ToObject<TOptiFine>();
         string? optiFolder = optiFine is null ? null : temp + "versions\\" + optiFine.InstanceName;

@@ -118,6 +118,7 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
 
     public string CaptureWithProgress(string versionFolder, string gameRoot, string label, CancellationToken token, Action<double>? progress,
         Dictionary<string, string>? dependencies = null, string description = "") {
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "创建旧格式环境还原点");
         token.ThrowIfCancellationRequested();
         lock (Gate) {
             using (new StoreLease(this, versionFolder)) {
@@ -173,6 +174,7 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
     public string CaptureInstance(TInstance instance, string label, CancellationToken token) => CaptureInstanceWithProgress(instance, label, token, null);
 
     public string CaptureInstanceWithProgress(TInstance instance, string label, CancellationToken token, Action<double>? progress) {
+        MmcInstanceCapabilities.RequireLegacy(host.VersionPath(instance), "创建旧格式环境还原点");
         string mcRoot = Path.GetDirectoryName(Path.GetDirectoryName(host.VersionPath(instance).TrimEnd('\\'))) + "\\";
         Dictionary<string, string> dependencies = new(StringComparer.OrdinalIgnoreCase);
         foreach (string libraryPath in host.LibraryPaths(instance)) {
