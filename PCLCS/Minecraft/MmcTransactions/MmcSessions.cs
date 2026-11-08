@@ -24,11 +24,13 @@ public static class MmcSessions {
         MmcFileTransactions.AssertNoPending(lease); AssertNoActive(lease);
         ProcessStartInfo start = CopyStartInfo(request.StartInfo, paths);
         if (!SameExecutable(ObserveExecutable(start.FileName), request.JavaIdentity)) throw new IOException("进程入口不符合已选 Java 身份。");
+        if (request.RuntimeBinding is not null && request.SessionId is null) throw new IOException("Mutable runtime requires one preallocated session ID.");
         Guid sessionId = request.SessionId ?? Guid.NewGuid();
         string sessionDirectory = SessionDirectory(paths, sessionId);
         string sessionHistory = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessionHistory/" + sessionId.ToString("N"));
         if (MmcInstancePaths.Attributes(sessionDirectory) is not null || MmcInstancePaths.Attributes(sessionHistory) is not null)
             throw new IOException("会话 ID 已被使用，不能覆盖原有会话记录。");
+        if (request.RuntimeBinding is { } runtimeBinding) MmcSessionRuntimeDirectories.ValidateLaunch(paths, sessionId, runtimeBinding);
         string nonce = Guid.NewGuid().ToString("N");
         IMmcJavaSessionPin pin = acquireJavaPin(sessionId, request.JavaIdentity) ?? throw new IOException("Java 服务未返回保护租约。");
         bool durableIntent = false; Process? process = null;
@@ -37,9 +39,10 @@ public static class MmcSessions {
             ValidateCurrentDefinition(paths, request.InstanceId, request.DefinitionGeneration, request.GameRootLeaf);
             if (!SameExecutable(ObserveExecutable(request.LauncherIdentity.ExecutablePath), request.LauncherIdentity)) throw new IOException("宿主镜像身份已变化。");
             finalValidation();
+            if (request.RuntimeBinding is { } finalBinding) MmcSessionRuntimeDirectories.ValidateLaunch(paths, sessionId, finalBinding);
             string directory = sessionDirectory; Directory.CreateDirectory(directory);
             MmcSessionReceipt receipt = new(1, sessionId, request.InstanceId, paths.VersionRoot, request.DefinitionGeneration,
-                request.RuntimeFingerprint, nonce, request.JavaIdentity, request.LauncherIdentity);
+                request.RuntimeFingerprint, nonce, request.JavaIdentity, request.LauncherIdentity) { RuntimeBinding = request.RuntimeBinding };
             string hash = MmcDurableFiles.WriteRecord(Path.Combine(directory, "Launching.record"), receipt);
             durableIntent = true; checkpoint?.Invoke(MmcSessionCheckpoint.LaunchingPersisted);
             // JVM system properties must precede the main class/-jar boundary, never become game args.
@@ -76,12 +79,14 @@ public static class MmcSessions {
             MmcSessionProcessRegistration? running = ReadRunning(receipt, hash, directory);
             if (MmcInstancePaths.Attributes(Path.Combine(directory, "Exited.record")) is not null) {
                 ValidateExit(directory, receipt, hash);
+                MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt);
                 releaseVerifiedJavaPin(receipt); Archive(paths, directory, sessionId);
                 return new(sessionId, MmcSessionObservation.ProvenExited);
             }
             MmcSessionObservation observation = inspector.Inspect(receipt, running);
             if (observation != MmcSessionObservation.ProvenExited) return new(sessionId, observation, observation == MmcSessionObservation.Unknown ? "会话仍待确认，保持只读。" : null);
             WriteExit(directory, receipt, hash, "TrustedHostProcessObservation");
+            MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt);
             releaseVerifiedJavaPin(receipt); Archive(paths, directory, sessionId);
             return new(sessionId, MmcSessionObservation.ProvenExited);
         } catch (Exception ex) when (IsFailure(ex)) { return new(sessionId, MmcSessionObservation.Unknown, ex.Message); }
@@ -107,6 +112,7 @@ public static class MmcSessions {
         var persisted = ReadLaunching(lease, paths, receipt.SessionId, directory);
         if (persisted.Hash != hash || ReadRunning(receipt, hash, directory) != registration) throw new IOException("会话收据与运行租约不一致。");
         WriteExit(directory, receipt, hash, "OwnedProcessHandleExited"); checkpoint?.Invoke(MmcSessionCheckpoint.ExitedPersisted);
+        MmcSessionRuntimeDirectories.CompleteVerifiedExit(paths, receipt);
         pin.CompleteVerifiedExit(); Archive(paths, directory, receipt.SessionId);
     }
 

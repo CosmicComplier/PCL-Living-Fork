@@ -14,6 +14,8 @@ internal static class MmcSessionTests {
         yield return ("MMC session rejects stale generation layout and caller nonce overrides", InvalidLaunch);
         yield return ("MMC session serialized receipts contain identities but no process arguments", ReceiptPrivacy);
         yield return ("MMC session host termination retains running receipt and blocks structural writes", KilledHost);
+        yield return ("MMC unlaunched mutable runtime cleanup validates ownership and preserves receipts", AbandonMutable);
+        yield return ("MMC mutable cleanup failure retains pin and exit evidence for reconciliation retry", RetryMutableCleanup);
     }
 
     internal static bool TryRunChild(string[] args, out int exitCode) {
@@ -43,7 +45,9 @@ internal static class MmcSessionTests {
     private static void LaunchAndExit() {
         using Fixture fixture = new(); using var lease = fixture.Lease(); FixturePin? pin = null;
         Guid plannedSession = Guid.NewGuid();
-        var request = fixture.Request() with { SessionId = plannedSession };
+        var binding = new MmcSessionRuntimeBinding(new string('b', 64));
+        string mutable = CreateMutable(fixture.Root, plannedSession, binding);
+        var request = fixture.Request() with { SessionId = plannedSession, RuntimeBinding = binding };
         using var session = MmcSessions.Launch(lease, request, () => Equal(true, pin is not null), (_, image) => pin = new(image, fixture.PinFile));
         Equal(plannedSession, session.Receipt.SessionId);
         fixture.WaitChild();
@@ -51,6 +55,10 @@ internal static class MmcSessionTests {
         Throws<IOException>(() => session.CompleteVerifiedExit(lease));
         fixture.Stop(); session.Process.WaitForExit(10000); session.CompleteVerifiedExit(lease);
         Equal(true, pin!.Completed); Equal(false, File.Exists(fixture.PinFile)); MmcSessions.AssertNoActive(lease);
+        Equal(false, Directory.Exists(mutable));
+        string retired = Path.Combine(fixture.Root, "PCL", "MmcRuntime", ".session-history", plannedSession.ToString("N"));
+        Equal(1, Directory.GetFileSystemEntries(retired).Length);
+        Equal("owner.txt", Path.GetFileName(Directory.GetFileSystemEntries(retired).Single()));
         Throws<IOException>(() => MmcSessions.Launch(lease, request, () => { }, (_, _) => throw new Exception("Reused session reached pin acquisition.")));
     }
     private static void StructuralGate() {
@@ -63,24 +71,30 @@ internal static class MmcSessionTests {
     }
     private static void DisposeKeepsProtection() {
         using Fixture fixture = new(); using var lease = fixture.Lease(); FixturePin? pin = null;
-        var session = MmcSessions.Launch(lease, fixture.Request(), () => { }, (_, image) => pin = new(image, fixture.PinFile));
+        Guid planned = Guid.NewGuid(); var binding = new MmcSessionRuntimeBinding(new string('e', 64));
+        string mutable = CreateMutable(fixture.Root, planned, binding);
+        var session = MmcSessions.Launch(lease, fixture.Request() with { SessionId = planned, RuntimeBinding = binding }, () => { }, (_, image) => pin = new(image, fixture.PinFile));
         fixture.WaitChild(); var id = session.Receipt.SessionId; session.Dispose();
         Equal(true, pin!.Retained); Equal(true, File.Exists(fixture.PinFile));
         Throws<IOException>(() => MmcSessions.AssertNoActive(lease));
         Equal(MmcSessionObservation.Unknown, MmcSessions.Reconcile(lease, id, new MmcSessionProcessInspector(), _ => pin.CompleteVerifiedExit()).Observation);
+        Equal(true, File.Exists(Path.Combine(mutable, "temp", "native.dll")));
         fixture.StopAndWait();
         Equal(MmcSessionObservation.ProvenExited, MmcSessions.Reconcile(lease, id, new MmcSessionProcessInspector(), _ => pin.CompleteVerifiedExit()).Observation);
+        Equal(false, Directory.Exists(mutable));
         MmcSessions.AssertNoActive(lease);
     }
     private static void IdentityAndNonce() {
         using Fixture fixture = new(); using var lease = fixture.Lease();
         using var session = MmcSessions.Launch(lease, fixture.Request(), () => { }, (_, image) => new FixturePin(image, fixture.PinFile)); fixture.WaitChild();
+        try {
         IMmcSessionProcessInspector inspector = new MmcSessionProcessInspector((pid, nonce) => pid == fixture.ChildPid() && nonce == fixture.ChildNonce());
         Equal(MmcSessionObservation.MatchingRunning, inspector.Inspect(session.Receipt, session.Registration));
         Equal(MmcSessionObservation.Unknown, inspector.Inspect(session.Receipt, session.Registration with { CreationTimeUtcTicks = session.Registration.CreationTimeUtcTicks + 1 }));
         Equal(MmcSessionObservation.Unknown, inspector.Inspect(session.Receipt, null));
         Equal(MmcSessionObservation.Unknown, new MmcSessionProcessInspector().Inspect(session.Receipt, session.Registration));
         fixture.Stop(); session.Process.WaitForExit(10000); session.CompleteVerifiedExit(lease);
+        } catch (Exception error) { Console.Error.WriteLine("DIAG session inspector primary failure before fixture disposal: " + error); throw; }
     }
     private static void LaunchingInterruption() {
         using Fixture fixture = new(); using var lease = fixture.Lease();
@@ -115,6 +129,44 @@ internal static class MmcSessionTests {
         foreach (string record in Directory.GetFiles(fixture.Sessions, "*.record", SearchOption.AllDirectories))
             Equal(false, Encoding.UTF8.GetString(File.ReadAllBytes(record)).Contains("synthetic-access-token-should-not-persist", StringComparison.Ordinal));
         fixture.Stop(); session.Process.WaitForExit(10000); session.CompleteVerifiedExit(lease);
+    }
+    private static void AbandonMutable() {
+        using Fixture fixture = new(); using var lease = fixture.Lease();
+        Guid id = Guid.NewGuid(); var binding = new MmcSessionRuntimeBinding(new string('d', 64));
+        string mutable = CreateMutable(fixture.Root, id, binding), owner = Path.Combine(mutable, "owner.txt");
+        string original = File.ReadAllText(owner); File.WriteAllText(owner, "foreign marker");
+        Throws<IOException>(() => MmcSessionRuntimeDirectories.AbandonUnlaunched(lease, id, binding));
+        Equal(true, File.Exists(Path.Combine(mutable, "temp", "native.dll")));
+        File.WriteAllText(owner, original);
+        MmcSessionRuntimeDirectories.AbandonUnlaunched(lease, id, binding);
+        MmcSessionRuntimeDirectories.AbandonUnlaunched(lease, id, binding);
+        Equal(false, Directory.Exists(mutable));
+    }
+    private static string CreateMutable(string root, Guid id, MmcSessionRuntimeBinding binding) {
+        string path = Path.Combine(root, "PCL", "MmcRuntime", "sessions", id.ToString("N"));
+        Directory.CreateDirectory(Path.Combine(path, "temp")); Directory.CreateDirectory(Path.Combine(path, "extract", "nested"));
+        File.WriteAllText(Path.Combine(path, "owner.txt"), "PCLLF.MmcSessionMutable/v1\n" + id.ToString("N") + "\n" + binding.BoundPlanFingerprint);
+        File.WriteAllText(Path.Combine(path, "temp", "native.dll"), "inert native fixture");
+        File.WriteAllText(Path.Combine(path, "extract", "nested", "native.dll"), "inert native fixture");
+        return path;
+    }
+    private static void RetryMutableCleanup() {
+        using Fixture fixture = new(); using var lease = fixture.Lease(); FixturePin? pin = null;
+        Guid id = Guid.NewGuid(); var binding = new MmcSessionRuntimeBinding(new string('f', 64));
+        string mutable = CreateMutable(fixture.Root, id, binding), marker = Path.Combine(mutable, "owner.txt");
+        string expected = File.ReadAllText(marker);
+        using var session = MmcSessions.Launch(lease, fixture.Request() with { SessionId = id, RuntimeBinding = binding }, () => { }, (_, image) => pin = new(image, fixture.PinFile));
+        fixture.WaitChild(); fixture.Stop();
+        if (!session.Process.WaitForExit(10000)) throw new Exception("Mutable cleanup fixture did not exit.");
+        File.WriteAllText(marker, "foreign marker");
+        Throws<IOException>(() => session.CompleteVerifiedExit(lease));
+        Equal(true, File.Exists(fixture.PinFile));
+        Equal(true, File.Exists(Path.Combine(fixture.Sessions, id.ToString("N"), "Exited.record")));
+        Throws<IOException>(() => MmcSessions.AssertNoActive(lease));
+        File.WriteAllText(marker, expected);
+        Equal(MmcSessionObservation.ProvenExited, MmcSessions.Reconcile(lease, id, new MmcSessionProcessInspector(), _ => pin!.CompleteVerifiedExit()).Observation);
+        Equal(false, File.Exists(fixture.PinFile)); Equal(false, Directory.Exists(mutable));
+        MmcSessions.AssertNoActive(lease);
     }
     private static void KilledHost() {
         using Fixture fixture = new();
@@ -193,6 +245,19 @@ internal static class MmcSessionTests {
             try { using Process process = Process.GetProcessById(ChildPid()); if (!process.WaitForExit(10000)) throw new Exception("Controlled game did not exit."); }
             catch (ArgumentException) { }
         }
-        public void Dispose() { if (!cleanup) return; StopAndWait(); if (Directory.Exists(Scope)) Directory.Delete(Scope, true); }
+        public void Dispose() {
+            if (!cleanup) return;
+            StopAndWait();
+            string verified = Path.GetFullPath(Scope);
+            if (!verified.StartsWith(Path.Combine(Path.GetTempPath(), "pcllf-mmc-session-"), StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Refusing unexpected session fixture cleanup root.");
+            var elapsed = Stopwatch.StartNew();
+            while (Directory.Exists(verified)) {
+                try { Directory.Delete(verified, true); break; }
+                // A confirmed-exited Windows child can briefly retain its cwd handle. Retry only
+                // sharing violations; permission errors and all other cleanup failures remain failures.
+                catch (IOException error) when ((error.HResult & 0xffff) == 32 && elapsed.ElapsedMilliseconds < 1000) { Thread.Sleep(20); }
+            }
+        }
     }
 }

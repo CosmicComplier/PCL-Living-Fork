@@ -5,14 +5,18 @@ namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
 public sealed record MmcExecutableIdentity(string ExecutablePath, string Sha256);
+public sealed record MmcSessionRuntimeBinding(string BoundPlanFingerprint);
 public sealed record MmcSessionLaunchRequest(Guid InstanceId, long DefinitionGeneration, string RuntimeFingerprint,
     MmcExecutableIdentity JavaIdentity, MmcExecutableIdentity LauncherIdentity, ProcessStartInfo StartInfo, string GameRootLeaf = "minecraft") {
     /// <summary>Allocate once before building mutable runtime paths; null retains the legacy fixture allocation.</summary>
     public Guid? SessionId { get; init; }
+    public MmcSessionRuntimeBinding? RuntimeBinding { get; init; }
 }
 public sealed record MmcSessionReceipt(int SchemaVersion, Guid SessionId, Guid InstanceId, string CanonicalRoot,
     long DefinitionGeneration, string RuntimeFingerprint, string Nonce, MmcExecutableIdentity JavaIdentity,
-    MmcExecutableIdentity LauncherIdentity);
+    MmcExecutableIdentity LauncherIdentity) {
+    public MmcSessionRuntimeBinding? RuntimeBinding { get; init; }
+}
 public sealed record MmcSessionProcessRegistration(int SchemaVersion, Guid SessionId, string LaunchingSha256,
     int ProcessId, long CreationTimeUtcTicks, MmcExecutableIdentity ExecutableIdentity);
 internal sealed record MmcSessionExitRecord(int SchemaVersion, Guid SessionId, string LaunchingSha256, string Proof);
