@@ -246,6 +246,7 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
         }
     }
     public int PruneAutomatic(string versionFolder, int count, string? newestId, CancellationToken token) {
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "清理旧格式环境还原点");
         if (count < 1 || count > 100) throw new IOException("自动还原点保留数量必须为 1 到 100。");
         lock (Gate) {
             using (new StoreLease(this, versionFolder)) {
@@ -297,6 +298,7 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
     }
     public void MarkHealthy(string versionFolder, string? id, bool healthy) {
         if (string.IsNullOrEmpty(id) || !healthy) return;
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "修改旧格式环境还原点");
         lock (Gate) {
             using (new StoreLease(this, versionFolder)) {
                 if (!Regex.IsMatch(id!, @"\A[a-f0-9]{32}\z")) throw new IOException("还原点编号无效。");
@@ -314,6 +316,7 @@ public sealed partial class EnvironmentHistoryEngine<TInstance> where TInstance 
         else host.Hint("此版本还没有环境还原点。");
     }
     public string? DeletePoints(string versionFolder, IEnumerable<string> ids) {
+        MmcInstanceCapabilities.RequireLegacy(versionFolder, "删除旧格式环境还原点");
         lock (Gate) {
             using (new StoreLease(this, versionFolder)) {
                 List<string> selected = ids.Distinct(StringComparer.Ordinal).ToList();

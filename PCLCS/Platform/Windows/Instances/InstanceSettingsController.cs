@@ -24,6 +24,9 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
     public void Reload() {
         try {
             _ = host.Instance().PathIndie;
+            var isolation = MmcInstanceCapabilities.LegacyOperation(host.Instance().PathVersion,"切换版本隔离");
+            view.Isolation.IsEnabled = isolation.Allowed;
+            if (!isolation.Allowed) view.Isolation.ToolTip = isolation.RefusalReason;
             view.Isolation.SelectedIndex = host.Boolean("VersionArgumentIndieV2",host.Instance()) ? 0 : 1; UpdateJavaList();
             view.Login.SelectedIndex = host.Integer("VersionServerLogin",host.Instance()); view.SetLoginLast(view.Login.SelectedIndex); UpdateServerLoginUi();
             if (host.Integer("VersionAdvanceAssets",host.Instance()) == 2) { host.Info("已迁移老版本的关闭文件校验设置"); host.Reset("VersionAdvanceAssets",host.Instance()); host.Set("VersionAdvanceAssetsV2",true,host.Instance()); }
@@ -32,6 +35,7 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
     }
     public void Reset() {
         try {
+            MmcInstanceCapabilities.RequireLegacy(host.Instance().PathVersion,"初始化旧版本独立设置");
             host.ResetSettings(); host.Reset("VersionServerLogin",host.Instance()); host.Reset("VersionArgumentIndieV2",host.Instance()); host.Reset("VersionAdvanceAssets",host.Instance());
             if (host.SetForcedJava is not null) host.SetForcedJava(host.Instance(),null); else Configs.JavaForced.Reset(host.Instance().Config);
             host.JavaRefresh().Start();
@@ -101,6 +105,14 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
     public void SearchJava() => host.SearchJava();
     public void IsolationChanged(ComboBox sender,SelectionChangedEventArgs e) {
         if (host.Animation()!=0 || isReverting) return;
+        var capability = MmcInstanceCapabilities.LegacyOperation(host.Instance().PathVersion,"切换版本隔离");
+        if (!capability.Allowed) {
+            isReverting=true;
+            try { if (e.RemovedItems.Count>0) view.Isolation.SelectedItem=e.RemovedItems[0]; }
+            finally { isReverting=false; }
+            host.ErrorAlert(new InvalidOperationException(capability.RefusalReason),"此实例的版本隔离由 MMC 布局管理");
+            return;
+        }
         if (host.Confirm("调整版本隔离设置后，你需要游戏存档、Mod 等文件手动迁移到新的游戏文件夹中。\r\n如果发现存档消失，把这项设置改回来就能恢复。\r\n如果你不会迁移存档，不建议修改这项设置！","警告","我知道我在做什么","取消",true)==2) { isReverting=true; if (e.RemovedItems.Count>0) view.Isolation.SelectedItem=e.RemovedItems[0]; isReverting=false; }
         host.Set("VersionArgumentIndieV2",sender.SelectedIndex==0,host.Instance());
     }

@@ -77,6 +77,7 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
     }
     public void Rename() {
         try {
+            MmcInstanceCapabilities.RequireLegacy(host.Instance().PathVersion, "重命名");
             if (host.Locked(host.Instance())) { host.HintRed("该版本正在被修改，请稍后再重命名！"); return; }
             string oldName = host.Instance().Name; string? name = host.InputName(oldName, host.MinecraftFolder() + "versions");
             if (string.IsNullOrWhiteSpace(name)) return;
@@ -107,6 +108,7 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
     public void OpenGameFolder(string leaf) { string folder = host.Instance().PathIndie + leaf + "\\"; DirectoryUtils.Create(folder); host.Explorer(folder); }
     public void Script() {
         try {
+            MmcInstanceCapabilities.RequireLegacy(host.Instance().PathVersion, "导出旧启动脚本");
             string? path = host.SaveScript("选择脚本保存位置", "启动 " + host.Instance().Name + ".bat"); if (path is null) return;
             if (host.LaunchLoading()) { host.HintRed("请在当前启动任务结束后再试！"); return; }
             if (host.LaunchScript(host.Instance(), path)) host.Hint(host.LegacyLogin() ? "正在导出启动脚本……" : "正在导出启动脚本……（注意，使用脚本启动可能会导致登录失效！）");
@@ -132,6 +134,7 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
         TInstance? target = null;
         try {
             target = host.Instance();
+            MmcInstanceCapabilities.RequireLegacy(target.PathVersion, "删除");
             if (host.Locked(target)) { host.HintRed("该版本正在被修改，请稍后再删除！"); return; }
             bool shift = host.Shift(); bool hintIndie = Convert.ToInt32(target.State) != 0 && !Same(target.PathIndie, host.MinecraftFolder());
             DirectoryInfo folder = DirectoryUtils.GetInfo(target.PathIndie + @"saves\");

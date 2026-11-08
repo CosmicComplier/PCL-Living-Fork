@@ -115,6 +115,7 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
         if (host.ModpackEnabled()) return;
         try {
             instance = ResolveDeleteTarget(item, instance);
+            MmcInstanceCapabilities.RequireLegacy(instance.PathVersion, "删除");
             if (host.Locked(instance)) { host.Hint("该版本正在被修改，请稍后再删除！", SelectionPageHint.Red); return; }
             bool shift = host.Shift(), hintIndie = Convert.ToInt32(instance.State) != 0 && !Same(instance.PathIndie, host.MinecraftFolder());
             DirectoryInfo savesFolder = DirectoryUtils.GetInfo(instance.PathIndie + "saves\\");
