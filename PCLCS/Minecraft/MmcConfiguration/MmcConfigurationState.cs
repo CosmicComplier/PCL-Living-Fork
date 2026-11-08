@@ -49,6 +49,8 @@ internal sealed partial class MmcConfigurationState {
         if (string.IsNullOrEmpty(key)) throw new ArgumentException("配置键不能为空。", nameof(key));
         lock (Sync) {
             AssertContext(context);
+            if (MmcConfigurationCoordinator.IsAlwaysReserved(key) || context.Kind == MmcConfigurationContextKind.Managed && MmcConfigurationCoordinator.IsStructuralKey(key))
+                throw new IOException("实例结构配置只能通过有 ExpectedGeneration 的维护事务修改。");
             Patches[key] = new(++sequence, value?.DeepClone(), remove, context);
             MmcConfigurationCoordinator.PinPending(this);
             if (PauseCount == 0) Timer.Change(500, Timeout.Infinite);

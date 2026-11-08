@@ -30,7 +30,7 @@ public static partial class LegacyBaseOperations {
         return DecodeLegacyText(FileUtils.ReadAsBytes(fileName));
 #endif
     }
-    private static string DecodeLegacyText(byte[] bytes) {
+    internal static string DecodeLegacyText(byte[] bytes) {
 #if NETFRAMEWORK
         return bytes.GetString();
 #else

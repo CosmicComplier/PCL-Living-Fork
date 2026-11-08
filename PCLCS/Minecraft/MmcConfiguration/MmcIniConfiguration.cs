@@ -121,7 +121,8 @@ internal sealed partial class MmcConfigurationState {
     internal long? LastManagementGeneration;
     private bool consumerInvalidationPending;
     internal IDisposable RegisterInvalidator(Action callback) {
-        WeakReference<Action> weak = new(callback); lock (Sync) invalidators.Add(weak);
+        WeakReference<Action> weak = new(callback);
+        lock (Sync) { invalidators.RemoveAll(reference => !reference.TryGetTarget(out _)); invalidators.Add(weak); }
         return new CacheSubscription(this, weak);
     }
     private sealed class CacheSubscription(MmcConfigurationState owner, WeakReference<Action> weak) : IDisposable {
@@ -129,7 +130,10 @@ internal sealed partial class MmcConfigurationState {
     }
     private void InvalidatePreferenceConsumers() {
         Action[] callbacks;
-        lock (Sync) { consumerInvalidationPending = false; callbacks = invalidators.Select(weak => weak.TryGetTarget(out var callback) ? callback : null).Where(callback => callback is not null).Cast<Action>().ToArray(); }
+        lock (Sync) {
+            callbacks = invalidators.Select(weak => weak.TryGetTarget(out var callback) ? callback : null).Where(callback => callback is not null).Cast<Action>().ToArray();
+            if (callbacks.Length != 0) consumerInvalidationPending = false;
+        }
         // This contract only permits ConcurrentDictionary cache removal. It never raises UI events.
         foreach (Action callback in callbacks) callback();
     }

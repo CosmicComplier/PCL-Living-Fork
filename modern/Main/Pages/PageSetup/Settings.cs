@@ -18,7 +18,7 @@ namespace PCL
             ReadIni = new Func<string, string, string, string>((File, Key, Fallback) => ModBase.ReadIni(File, Key, Fallback)),
             WriteIni = new Action<string, string, string>((File, Key, Value) => ModBase.WriteIni(File, Key, Value)),
             DeleteIni = new Action<string, string>((File, Key) => ModBase.DeleteIniKey(File, Key)),
-            ValidateInstanceConfiguration = Instance => Instance.Config.AssertAttached(),
+            ValidateInstanceConfiguration = ValidateInstanceConfiguration,
             WriteInstanceIni = (Instance, Key, Value) => MmcIniConfiguration.WithInstanceContext(Instance.Config, () => ModBase.WriteIni(Instance.PathVersion + "PCL\\Setup.ini", Key, Value)),
             DeleteInstanceIni = (Instance, Key) => MmcIniConfiguration.WithInstanceContext(Instance.Config, () => ModBase.DeleteIniKey(Instance.PathVersion + "PCL\\Setup.ini", Key)),
             HasIni = new Func<string, string, bool>((File, Key) => ModBase.HasIniKey(File, Key)),
@@ -29,6 +29,15 @@ namespace PCL
             IdentifyCandidates = LegacySettingsRegistryStore.IdentifyCandidates,
             Log = LogSettings
         });
+
+        private static void ValidateInstanceConfiguration(ModMinecraft.McInstance Instance)
+        {
+            Instance.Config.EnsurePreferenceCacheInvalidator(() => {
+                foreach (var Entry in Entries.Values)
+                    if (Entry.Source == Sources.Instance) Entry.ValueCache.TryRemove(Instance.PathVersion, out _);
+            });
+            Instance.Config.AssertAttached();
+        }
 
         private static void LogSettings(Exception ErrorValue, string Message, LegacySettingsLogLevel Level, bool Toast)
         {

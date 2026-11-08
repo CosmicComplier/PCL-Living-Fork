@@ -67,13 +67,18 @@ public static partial class MmcConfigurationCoordinator {
         if (management.State == MmcManagementState.Legacy && management.ObservationComplete || management.State == MmcManagementState.ManagedMmc) return;
         throw new IOException("实例管理状态尚未确认，配置修改已排队并等待恢复。");
     }
-    internal static JObject ReadConfig(string root) {
-        string path = MmcConfigurationPaths.Target(root, "PCL/config.json");
+    internal static JObject ReadConfig(string root) => ReadJsonObject(root, "PCL/config.json");
+    internal static JObject ReadJsonObject(string root, string relative) {
+        string path = MmcConfigurationPaths.Target(root, relative);
         if (MmcInstancePaths.Attributes(path) is null) return [];
         using FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (file.Length > MmcManagementReader.MaximumDocumentBytes) throw new IOException("实例配置超过读取预算。");
-        using StreamReader reader = new(file, new UTF8Encoding(false, true), true);
-        string text = reader.ReadToEnd();
+        using MemoryStream bytes = new(); byte[] buffer = new byte[8192]; int count;
+        while ((count = file.Read(buffer, 0, buffer.Length)) != 0) {
+            if (bytes.Length + count > MmcManagementReader.MaximumDocumentBytes) throw new IOException("实例配置读取期间超过预算。");
+            bytes.Write(buffer, 0, count);
+        }
+        string text = LegacyBaseOperations.DecodeLegacyText(bytes.ToArray());
         if (Encoding.UTF8.GetByteCount(text) > MmcManagementReader.MaximumDocumentBytes) throw new IOException("实例配置读取期间超过预算。");
         try { return JObject.Parse(text, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error }); }
         catch (Newtonsoft.Json.JsonException) { throw new IOException("实例配置 JSON 无效，已保留原文件。"); }
@@ -84,7 +89,11 @@ public static partial class MmcConfigurationCoordinator {
             else target[pair.Key] = pair.Value.Value?.DeepClone() ?? JValue.CreateNull();
         }
     }
-    internal static byte[] ConfigBytes(JObject value) => new UTF8Encoding(false).GetBytes(value.ToString(Formatting.Indented));
+    internal static byte[] ConfigBytes(JObject value) {
+        byte[] bytes = new UTF8Encoding(false).GetBytes(value.ToString(Formatting.Indented));
+        if (bytes.Length > MmcManagementReader.MaximumDocumentBytes) throw new IOException("实例配置写入超过预算。");
+        return bytes;
+    }
     internal static void WritePreferenceConfig(string root, JObject value) {
         AssertExistingVersionRoot(root);
         string path = MmcConfigurationPaths.Target(root, "PCL/config.json");

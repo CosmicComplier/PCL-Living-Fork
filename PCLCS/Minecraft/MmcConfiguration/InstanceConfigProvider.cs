@@ -16,6 +16,7 @@ public interface IInstanceConfigProvider : IConfigProvider, IDisposable {
     string VersionRoot { get; }
     MmcConfigurationContextStamp ContextStamp { get; }
     void AssertAttached();
+    void EnsurePreferenceCacheInvalidator(Action invalidatePreferenceCache);
     void Save();
     Task FlushAsync(CancellationToken cancellationToken = default);
 }
@@ -27,7 +28,7 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
     private readonly MmcConfigurationState state;
     private readonly long attachmentEpoch;
     private Action? cacheInvalidator;
-    private readonly IDisposable? cacheRegistration;
+    private IDisposable? cacheRegistration;
     private bool disposed;
     public string VersionRoot => state.Root;
     public MmcConfigurationContextStamp ContextStamp { get; }
@@ -54,6 +55,15 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
         lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch); }
         state.NotifyPendingInvalidations();
     }
+    /// <summary>Register once after model construction; the callback must only remove thread-safe cached data, with no UI, host factory, settings access or I/O.</summary>
+    public void EnsurePreferenceCacheInvalidator(Action invalidatePreferenceCache) {
+        ArgumentNullException.ThrowIfNull(invalidatePreferenceCache);
+        lock (state.Sync) {
+            ObjectDisposedException.ThrowIf(disposed, this); state.AssertContext(ContextStamp, attachmentEpoch);
+            if (cacheRegistration is not null) return;
+            cacheInvalidator = invalidatePreferenceCache; cacheRegistration = state.RegisterInvalidator(cacheInvalidator);
+        }
+    }
     public T? Read<T>(string key, T? defaultValue, bool encrypted) {
         ObjectDisposedException.ThrowIf(disposed, this);
         AssertAttached();
@@ -70,10 +80,10 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
     }
     public bool HasValue(string key) { AssertAttached(); state.Read(key, ContextStamp, attachmentEpoch, out bool present, out _); return present; }
     public void DiscardCache() { ObjectDisposedException.ThrowIf(disposed, this); typedValues.Clear(); state.InvalidateReads(); }
-    public void Save() { ObjectDisposedException.ThrowIf(disposed, this); state.Flush(CancellationToken.None); }
+    public void Save() { AssertAttached(); state.Flush(CancellationToken.None); }
     public Task FlushAsync(CancellationToken cancellationToken = default) {
         ObjectDisposedException.ThrowIf(disposed, this);
-        return Task.Run(() => state.Flush(cancellationToken), cancellationToken);
+        return Task.Run(() => { AssertAttached(); state.Flush(cancellationToken); }, cancellationToken);
     }
     public void Dispose() {
         lock (state.Sync) { if (disposed) return; disposed = true; }
@@ -91,13 +101,9 @@ public static class InstanceConfigProviders {
     private static readonly ConcurrentBag<WeakReference<InstanceConfigProvider>> providers = [];
     internal static void Register(InstanceConfigProvider provider) => providers.Add(new(provider));
     public static void SaveAll() {
-        List<Exception> errors = [];
-        try { MmcConfigurationCoordinator.FlushPending(); } catch (Exception error) { errors.Add(error); }
-        foreach (var weak in providers)
-            if (weak.TryGetTarget(out var provider)) {
-                try { provider.Save(); } catch (ObjectDisposedException) { } catch (Exception error) { errors.Add(error); }
-            }
-        if (errors.Count != 0) throw new AggregateException("实例配置尚未全部保存。", errors);
+        // Pending states strongly retain all queued writes, including providerless INI writes. Clean,
+        // stale weak providers must not turn a completed identity handoff into a shutdown failure.
+        MmcConfigurationCoordinator.FlushPending();
     }
     /// <summary>Fixture/owned-root shutdown hook; no provider under an unrelated root is flushed or disposed.</summary>
     public static void FlushAndDisposeWithin(string ownedRoot) {

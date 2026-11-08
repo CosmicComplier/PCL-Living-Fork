@@ -25,7 +25,22 @@ internal static class MmcConfigurationPaths {
     internal static MmcManagementResult ReadManagement(string logicalRoot, string physicalRoot) {
         if (!string.Equals(PhysicalRoot(logicalRoot), physicalRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             return new(MmcManagementState.ManagedMmcRepairRequired, null, false, "", [new("ConfigurationRootMoved", "实例目录的实际位置已变化，请重新建立实例上下文。")]);
-        var result = MmcManagementReader.Evaluate(MmcManagementProbe.CaptureAtPhysicalRoot(physicalRoot, Path.GetFileName(LogicalRoot(logicalRoot))));
+        var snapshot = MmcManagementProbe.CaptureAtPhysicalRoot(physicalRoot, Path.GetFileName(LogicalRoot(logicalRoot)));
+        if (snapshot.ConfigHint.Error is not null) {
+            try {
+                var config = MmcConfigurationCoordinator.ReadConfig(physicalRoot);
+                var hint = (config[MmcManagementReader.ConfigManifestPropertyName] as Newtonsoft.Json.Linq.JObject)?[MmcManagementReader.HintPropertyName];
+                snapshot = snapshot with { ConfigHint = hint is null ? MmcManagementDocument.Missing : new(true, hint.ToString(Newtonsoft.Json.Formatting.None)) };
+            } catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException) { }
+        }
+        if (snapshot.VersionHint.Error is not null) {
+            try {
+                var version = MmcConfigurationCoordinator.ReadJsonObject(physicalRoot, Path.GetFileName(LogicalRoot(logicalRoot)) + ".json");
+                var hint = version[MmcManagementReader.HintPropertyName];
+                snapshot = snapshot with { VersionHint = hint is null ? MmcManagementDocument.Missing : new(true, hint.ToString(Newtonsoft.Json.Formatting.None)) };
+            } catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException) { }
+        }
+        var result = MmcManagementReader.Evaluate(snapshot);
         if (result.State == MmcManagementState.Legacy) return result;
         try { MmcInstancePaths.Resolve(logicalRoot); return result; }
         catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException) {

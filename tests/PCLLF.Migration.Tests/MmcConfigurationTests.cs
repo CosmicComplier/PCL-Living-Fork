@@ -156,6 +156,9 @@ internal static class MmcConfigurationTests {
             Equal(MmcTransactionOutcome.Committed, scope.Execute(fixture.Publish(0)).Outcome);
         }
         using var managedProvider = new InstanceConfigProvider(fixture.Root);
+        bool manifestRejected = false;
+        try { managedProvider.Set("MinecraftInstallManifest", new JObject { ["stale"] = true }, false); } catch (IOException) { manifestRejected = true; }
+        Equal(true, manifestRejected);
         MmcIniConfiguration.WithInstanceContext(managedProvider, () => LegacyBaseOperations.WriteIni(file, "CustomInfo", "next-launch", cache));
         MmcIniConfiguration.WithInstanceContext(managedProvider, () => LegacyBaseOperations.WriteIni(file, "VersionArgumentIndieV2", "False", cache));
         try { managedProvider.Save(); } catch (IOException) { }
@@ -210,8 +213,13 @@ internal static class MmcConfigurationTests {
         string scope = Path.Combine(Path.GetTempPath(), "pcllf-config-plain-" + Guid.NewGuid().ToString("N"));
         string root = Path.Combine(scope, "temporary-version"); Directory.CreateDirectory(root);
         try {
+            Directory.CreateDirectory(Path.Combine(root, "PCL"));
+            var encoding = CodePagesEncodingProvider.Instance.GetEncoding("GB18030")!;
+            File.WriteAllBytes(Path.Combine(root, "PCL", "config.json"), encoding.GetBytes("{\"historical\":\"旧配置中文\"}"));
+            File.WriteAllBytes(Path.Combine(root, "temporary-version.json"), encoding.GetBytes("{\"id\":\"temp\",\"description\":\"普通版本中文\"}"));
             using var provider = new InstanceConfigProvider(root); provider.Set("plain", "value", false); provider.Save();
             Equal("value", provider.Read("plain", "", false));
+            Equal("旧配置中文", provider.Read("historical", "", false));
             Equal("value", JObject.Parse(File.ReadAllText(Path.Combine(root, "PCL", "config.json"))).Value<string>("plain"));
         } finally { InstanceConfigProviders.FlushAndDisposeWithin(scope); Directory.Delete(scope, true); }
     }
@@ -253,7 +261,7 @@ internal static class MmcConfigurationTests {
         File.WriteAllText(file, "VersionArgumentTitle:from-A\r\n");
         PreferenceEntry entry = new("VersionArgumentTitle"); int invalidations = 0;
         Action invalidate = () => { entry.ValueCache.TryRemove(path, out _); invalidations++; };
-        using var oldProvider = new InstanceConfigProvider(fixture.Root, invalidate);
+        using var oldProvider = new InstanceConfigProvider(fixture.Root);
         Equal(0, invalidations);
         PreferenceOwner old = new(path, oldProvider);
         var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<string, string>>();
@@ -263,7 +271,7 @@ internal static class MmcConfigurationTests {
             ReadIni = (address, key, fallback) => LegacyBaseOperations.ReadIni(address, key, fallback, cache),
             WriteIni = (_, _, _) => throw new Exception("Instance context was lost before writing."),
             DeleteIni = (_, _) => throw new Exception("Instance context was lost before resetting."),
-            ValidateInstanceConfiguration = owner => owner.Config.AssertAttached(),
+            ValidateInstanceConfiguration = owner => { owner.Config.EnsurePreferenceCacheInvalidator(invalidate); owner.Config.AssertAttached(); },
             WriteInstanceIni = (owner, key, value) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, value, cache)),
             DeleteInstanceIni = (owner, key) => MmcIniConfiguration.WithInstanceContext(owner.Config, () => LegacyBaseOperations.WriteIni(Path.Combine(owner.Path, "PCL", "Setup.ini"), key, null, cache)),
             Log = (_, _, _, _) => { }
@@ -275,7 +283,7 @@ internal static class MmcConfigurationTests {
         using (var quiet = MmcConfigurationCoordinator.Quiesce(fixture.Root))
         using (var gate = fixture.Lease()) {
             Directory.Delete(fixture.Root, true); fixture.RecreateManaged(Guid.NewGuid()); File.WriteAllText(file, "VersionArgumentTitle:from-B\r\n");
-            int beforeConstruction = invalidations; freshProvider = new(fixture.Root, invalidate);
+            int beforeConstruction = invalidations; freshProvider = new(fixture.Root);
             Equal(beforeConstruction, invalidations); // No callback against a half-constructed model.
             PreferenceOwner current = new(path, freshProvider);
             Equal("from-B", engine.Get(entry.Key, current));
