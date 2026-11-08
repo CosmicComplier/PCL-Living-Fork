@@ -13,6 +13,8 @@ internal static class MmcConfigurationTests {
         yield return ("MMC configuration Set remains nonblocking while a structural scope owns admission", NonblockingSet);
         yield return ("MMC configuration Shared PreviewGet Reset uses the same queued key writer", PreviewReset);
         yield return ("MMC configuration rollback invalidates snapshots without consuming pending preferences", RollbackEpoch);
+        yield return ("MMC configuration admission reload and paused inflight writer follow one lock order", LockOrder);
+        yield return ("MMC configuration typed values preserve Set and repeated Read reference identity", TypedIdentity);
     }
     internal static bool TryRunChild(string[] args, out int exitCode) {
         exitCode = 0;
@@ -20,6 +22,7 @@ internal static class MmcConfigurationTests {
         try {
             if (args.Length != 5) throw new Exception("Invalid controlled config child.");
             using var provider = new InstanceConfigProvider(args[2]);
+            if (args[1] == "lockorder") { RunLockOrder(provider, args[2]); return true; }
             if (args[1] == "rebase") { provider.Set("childPreference", "B", false); provider.Save(); return true; }
             provider.Set("MinecraftInstallManifest", new JObject { ["stale"] = true }, false);
             provider.Set("childPreference", "B-after-conversion", false);
@@ -94,6 +97,36 @@ internal static class MmcConfigurationTests {
         }
         Equal(true, provider.Epoch > before); Equal("retained", provider.Read("queued", "", false)); provider.Save();
         Equal("retained", fixture.Config().Value<string>("queued")); Equal(1, JObject.Parse(File.ReadAllText(fixture.DefinitionFile)).Value<int>("generation"));
+    }
+    private static void LockOrder() {
+        using Fixture fixture = new(); using Process child = StartChild("lockorder", fixture); WaitChild(child);
+    }
+    private static void RunLockOrder(InstanceConfigProvider provider, string root) {
+        using ManualResetEventSlim registered = new(), paused = new();
+        MmcConfigurationCoordinator.OperationObserver = (path, phase) => {
+            if (!path.Equals(provider.VersionRoot, StringComparison.OrdinalIgnoreCase)) return;
+            if (phase == "Registered") registered.Set(); else if (phase == "QuiescePaused") paused.Set();
+        };
+        try {
+            provider.Set("pending", "B", false); provider.DiscardCache();
+            using var gate = MmcAdmissionGate.Acquire(root, Guid.NewGuid(), TimeSpan.Zero);
+            Task writer = Task.Run(provider.Save);
+            if (!registered.Wait(3000)) throw new Exception("Writer did not register before admission wait.");
+            Task quiescer = Task.Run(() => { using var quiet = MmcConfigurationCoordinator.Quiesce(root); });
+            if (!paused.Wait(3000)) throw new Exception("Quiescer did not enter pause/drain.");
+            // A real gate owner refreshes without waiting for the registered writer that needs its gate.
+            Equal("kept", provider.Read("unknown", "", false));
+            gate.Dispose();
+            if (!Task.WaitAll([writer, quiescer], 5000)) throw new Exception("Admission/read/drain cycle did not complete.");
+        } finally { MmcConfigurationCoordinator.OperationObserver = null; }
+    }
+    private static void TypedIdentity() {
+        using Fixture fixture = new(); using var provider = new InstanceConfigProvider(fixture.Root);
+        List<string> original = ["value"]; provider.Set("typed", original, false);
+        Equal(true, ReferenceEquals(original, provider.Read<List<string>>("typed", null, false)));
+        provider.Save(); List<string>? read = provider.Read<List<string>>("typed", null, false);
+        Equal(true, ReferenceEquals(read, provider.Read<List<string>>("typed", null, false)));
+        provider.DiscardCache(); Equal(false, ReferenceEquals(read, provider.Read<List<string>>("typed", null, false)));
     }
     private static Process StartChild(string mode, Fixture fixture) {
         string executable = Environment.ProcessPath!; ProcessStartInfo start = new(executable) { UseShellExecute = false, CreateNoWindow = true };

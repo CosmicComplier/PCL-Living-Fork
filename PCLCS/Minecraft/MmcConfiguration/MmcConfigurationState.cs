@@ -9,15 +9,17 @@ namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
 internal sealed record MmcConfigPatch(long Sequence, JToken? Value, bool Remove);
+internal readonly record struct MmcConfigValueVersion(long Epoch, long PatchSequence);
 internal sealed class MmcConfigurationState {
     internal readonly string Root;
     internal readonly object Sync = new();
     internal readonly SemaphoreSlim Writer = new(1, 1);
     internal readonly ManualResetEventSlim Resumed = new(true);
+    internal readonly ManualResetEventSlim Drained = new(true);
     internal readonly Timer Timer;
     internal readonly Dictionary<string, MmcConfigPatch> Patches = new(StringComparer.Ordinal);
     internal readonly List<string> RejectedKeys = [];
-    internal int PauseCount, ProviderCount;
+    internal int PauseCount, ProviderCount, Inflight;
     internal long Epoch;
     internal Exception? LastSaveFailure;
     private long sequence;
@@ -31,19 +33,21 @@ internal sealed class MmcConfigurationState {
             if (value is WeakReference<MmcConfigurationState> weak && weak.TryGetTarget(out var state)) state.AutoFlush();
         }, new WeakReference<MmcConfigurationState>(this), Timeout.Infinite, Timeout.Infinite);
     }
-    internal void Enqueue(string key, JToken? value, bool remove) {
+    internal MmcConfigValueVersion Enqueue(string key, JToken? value, bool remove) {
         if (string.IsNullOrEmpty(key)) throw new ArgumentException("配置键不能为空。", nameof(key));
         lock (Sync) {
             Patches[key] = new(++sequence, value?.DeepClone(), remove);
             if (PauseCount == 0) Timer.Change(500, Timeout.Infinite);
+            return new(Epoch, sequence);
         }
     }
-    internal JToken? Read(string key, out bool present) {
+    internal JToken? Read(string key, out bool present, out MmcConfigValueVersion version) {
         bool refresh;
-        lock (Sync) refresh = readsInvalid && PauseCount == 0;
+        lock (Sync) refresh = readsInvalid;
         if (refresh) Reload();
         lock (Sync) {
-            if (Patches.TryGetValue(key, out var patch)) { present = !patch.Remove; return patch.Value?.DeepClone(); }
+            if (Patches.TryGetValue(key, out var patch)) { version = new(Epoch, patch.Sequence); present = !patch.Remove; return patch.Value?.DeepClone(); }
+            version = new(Epoch, 0);
             present = snapshot.TryGetValue(key, out var token); return token?.DeepClone();
         }
     }
@@ -64,18 +68,21 @@ internal sealed class MmcConfigurationState {
     }
     internal void Flush(CancellationToken token) {
         while (true) {
-            Resumed.Wait(token); Writer.Wait(token);
-            bool paused;
-            lock (Sync) paused = PauseCount != 0;
-            if (paused) { Writer.Release(); continue; }
-            try { FlushUnderWriter(token); return; }
-            finally { Writer.Release(); }
+            lock (Sync) { if (Patches.Count == 0) return; }
+            Resumed.Wait(token);
+            if (!BeginOperation()) continue;
+            try {
+                MmcConfigurationCoordinator.OperationObserver?.Invoke(Root, "Registered");
+                using var lease = MmcConfigurationCoordinator.PreferenceLease(Root, token);
+                Writer.Wait(token);
+                try { FlushUnderWriter(token); return; }
+                finally { Writer.Release(); }
+            } finally { EndOperation(); }
         }
     }
     private void FlushUnderWriter(CancellationToken token) {
         var pending = CapturePatches(); if (pending.Count == 0) return;
         try {
-            using var lease = MmcConfigurationCoordinator.PreferenceLease(Root, token);
             var management = MmcManagementProbe.Read(Root);
             MmcConfigurationCoordinator.AssertPreferenceWritable(management);
             JObject current = MmcConfigurationCoordinator.ReadConfig(Root);
@@ -90,12 +97,23 @@ internal sealed class MmcConfigurationState {
         } catch (Exception error) { LastSaveFailure = error; throw; }
     }
     private void Reload() {
-        Writer.Wait();
+        bool registered = BeginOperation();
+        // During quiescence a reader never waits for a foreign admission owner. A reader already
+        // inside admission can reenter the named mutex and refresh under Admission -> Writer order.
+        MmcAdmissionLease? lease = registered ? null : MmcConfigurationCoordinator.TryPreferenceLease(Root);
+        if (!registered && lease is null) return;
         try {
-            lock (Sync) { if (PauseCount != 0) return; }
-            using var lease = MmcConfigurationCoordinator.PreferenceLease(Root, CancellationToken.None);
-            Publish(MmcConfigurationCoordinator.ReadConfig(Root));
-        } finally { Writer.Release(); }
+            lease ??= MmcConfigurationCoordinator.PreferenceLease(Root, CancellationToken.None);
+            Writer.Wait();
+            try { Publish(MmcConfigurationCoordinator.ReadConfig(Root)); }
+            finally { Writer.Release(); }
+        } finally { lease?.Dispose(); if (registered) EndOperation(); }
+    }
+    private bool BeginOperation() {
+        lock (Sync) { if (PauseCount != 0) return false; Inflight++; Drained.Reset(); return true; }
+    }
+    private void EndOperation() {
+        lock (Sync) { if (--Inflight == 0) Drained.Set(); }
     }
     private void AutoFlush() {
         lock (Sync) { if (PauseCount != 0) return; }

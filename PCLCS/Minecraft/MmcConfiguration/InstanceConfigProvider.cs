@@ -20,6 +20,8 @@ public interface IInstanceConfigProvider : IConfigProvider, IDisposable {
 
 /// <summary>Instance-only key-patch provider. Global/account providers retain their existing implementation.</summary>
 public sealed class InstanceConfigProvider : IInstanceConfigProvider {
+    private sealed record TypedValue(MmcConfigValueVersion Version, object? Value);
+    private readonly ConcurrentDictionary<string, TypedValue> typedValues = new(StringComparer.Ordinal);
     private readonly MmcConfigurationState state;
     private bool disposed;
     public string VersionRoot => state.Root;
@@ -34,22 +36,24 @@ public sealed class InstanceConfigProvider : IInstanceConfigProvider {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (encrypted && value is not null) throw new NotImplementedException("加密需要改为使用识别码，现在尚未实现。");
         JToken token = value is null ? JValue.CreateNull() : JToken.FromObject(value);
-        lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.Enqueue(key, token, remove: false); }
+        lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); typedValues[key] = new(state.Enqueue(key, token, remove: false), value); }
     }
-    public void Remove(string key) { lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.Enqueue(key, null, remove: true); } }
+    public void Remove(string key) { lock (state.Sync) { ObjectDisposedException.ThrowIf(disposed, this); state.Enqueue(key, null, remove: true); typedValues.TryRemove(key, out _); } }
     public T? Read<T>(string key, T? defaultValue, bool encrypted) {
         ObjectDisposedException.ThrowIf(disposed, this);
-        JToken? token = state.Read(key, out bool present);
+        JToken? token = state.Read(key, out bool present, out var version);
         if (!present) return defaultValue;
+        if (typedValues.TryGetValue(key, out var cached) && cached.Version == version) return (T?)cached.Value;
         if (token is null || token.Type is JTokenType.Null or JTokenType.Undefined) return default;
-        if (!encrypted) return token.ToObject<T>();
+        if (!encrypted) { T? value = token.ToObject<T>(); typedValues[key] = new(version, value); return value; }
         try {
             string plaintext = CryptographyUtils.AesDecrypt(token.Value<string>())!;
-            return typeof(T) == typeof(string) ? (T)(object)plaintext : Newtonsoft.Json.JsonConvert.DeserializeObject<T>(plaintext);
+            T? value = typeof(T) == typeof(string) ? (T)(object)plaintext : Newtonsoft.Json.JsonConvert.DeserializeObject<T>(plaintext);
+            typedValues[key] = new(version, value); return value;
         } catch (CryptographicException) { Remove(key); return defaultValue; }
     }
-    public bool HasValue(string key) { ObjectDisposedException.ThrowIf(disposed, this); state.Read(key, out bool present); return present; }
-    public void DiscardCache() { ObjectDisposedException.ThrowIf(disposed, this); state.InvalidateReads(); }
+    public bool HasValue(string key) { ObjectDisposedException.ThrowIf(disposed, this); state.Read(key, out bool present, out _); return present; }
+    public void DiscardCache() { ObjectDisposedException.ThrowIf(disposed, this); typedValues.Clear(); state.InvalidateReads(); }
     public void Save() { ObjectDisposedException.ThrowIf(disposed, this); state.Flush(CancellationToken.None); }
     public Task FlushAsync(CancellationToken cancellationToken = default) {
         ObjectDisposedException.ThrowIf(disposed, this);

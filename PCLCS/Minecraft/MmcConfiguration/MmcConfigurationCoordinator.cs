@@ -15,6 +15,7 @@ public static class MmcConfigurationCoordinator {
     // This is only a path-gate admission identity before reading disk, never an instance identity.
     private static readonly Guid PreferenceAdmissionIdentity = new("649a06b5-2b88-4f56-9abd-139c4d39cdf9");
     private static readonly ConcurrentDictionary<string, WeakReference<MmcConfigurationState>> states = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    internal static Action<string, string>? OperationObserver;
     private static readonly HashSet<string> structural = new(StringComparer.Ordinal) {
         "MinecraftInstallManifest", "pcllfManagement", "instanceId", "generation", "managementKind", "schemaVersion", "formatProfile", "layout",
         "sourceBundle", "artifactInventory", "artifactLocks", "installedProjection", "componentOverrides"
@@ -32,7 +33,7 @@ public static class MmcConfigurationCoordinator {
     public static MmcConfigurationQuiescence Quiesce(string versionRoot, CancellationToken cancellationToken = default) {
         MmcConfigurationState state = StateFor(versionRoot);
         lock (state.Sync) { state.PauseCount++; state.Resumed.Reset(); state.Timer.Change(Timeout.Infinite, Timeout.Infinite); }
-        try { state.Writer.Wait(cancellationToken); return new(state); }
+        try { OperationObserver?.Invoke(state.Root, "QuiescePaused"); state.Drained.Wait(cancellationToken); return new(state); }
         catch {
             lock (state.Sync) { if (--state.PauseCount == 0) state.Resumed.Set(); }
             throw;
@@ -41,6 +42,10 @@ public static class MmcConfigurationCoordinator {
     public static bool IsStructuralKey(string key) => structural.Contains(key);
     internal static bool IsAlwaysReserved(string key) => key != "MinecraftInstallManifest" && structural.Contains(key);
     internal static MmcAdmissionLease PreferenceLease(string root, CancellationToken token) => MmcAdmissionGate.Acquire(root, PreferenceAdmissionIdentity, Timeout.InfiniteTimeSpan, token);
+    internal static MmcAdmissionLease? TryPreferenceLease(string root) {
+        try { return MmcAdmissionGate.Acquire(root, PreferenceAdmissionIdentity, TimeSpan.Zero); }
+        catch (IOException) { return null; }
+    }
     internal static void AssertPreferenceWritable(MmcManagementResult management) {
         if (management.State == MmcManagementState.Legacy && management.ObservationComplete || management.State == MmcManagementState.ManagedMmc) return;
         throw new IOException("实例管理状态尚未确认，配置修改已排队并等待恢复。");
@@ -88,7 +93,6 @@ public sealed class MmcConfigurationQuiescence : IDisposable {
         lock (State.Sync) {
             if (--State.PauseCount == 0) { State.Resumed.Set(); if (State.Patches.Count != 0) State.Timer.Change(1, Timeout.Infinite); }
         }
-        State.Writer.Release();
     }
 }
 
