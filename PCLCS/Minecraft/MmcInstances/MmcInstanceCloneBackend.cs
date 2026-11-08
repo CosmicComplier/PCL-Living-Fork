@@ -54,8 +54,7 @@ public sealed class MmcInstanceCloneBackend {
                 var active = Active(compiled);
                 var declared = active.Where(value => value.Scope == MmcArtifactScope.InstanceLocal).Select(value => "libraries/" + value.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var preserved = MmcPackageFilePreservation.CreateLibraryArtifacts(saved.Baseline).Where(value => !declared.Contains("libraries/" + value.RelativePath)).ToImmutableArray();
-                var locks = initial.Definition.ArtifactLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))
-                    .Concat(initial.Definition.PackageFileLocks.Select(value => new MmcArtifactLock(value.ArtifactKey, value.SourceRevision, value.AdoptedSha256, value.SizeBytes, value.RecoveryObjectRelativePath))).ToImmutableArray();
+                var locks = MmcPublishedArtifactLocks.Create(initial.Definition);
                 var artifacts = new MmcArtifactRequest(targetPaths, compiled.RuntimePlanFingerprint, active, preserved, locks, MmcArtifactIntent.RepairExisting, compiled.Assets);
                 using var prepared = materializer.PrepareAsync(artifacts, cancellationToken: token).GetAwaiter().GetResult();
                 var observations = MmcArtifactBindingAdapter.Create(artifacts, compiled, prepared);
@@ -140,8 +139,7 @@ public sealed class MmcInstanceCloneBackend {
         foreach (var record in definition.SourceBundle.MetadataRecords) Require(record.ObjectRelativePath, record.ContentSha256);
         if (definition.AuthorFileBaseline is { } baseline) Require(baseline.ObjectRelativePath, baseline.ContentSha256);
         foreach (var record in definition.ComponentOverrides) if (record.PatchReference is { } patch) Require(patch.ObjectRelativePath, patch.Sha256);
-        foreach (var record in definition.ArtifactLocks) Require(record.RecoveryObjectRelativePath, record.AdoptedSha256, record.SizeBytes);
-        foreach (var record in definition.PackageFileLocks) Require(record.RecoveryObjectRelativePath, record.AdoptedSha256, record.SizeBytes);
+        foreach (var record in MmcPublishedArtifactLocks.Create(definition)) Require(record.RecoveryObjectRelativePath, record.AdoptedSha256, record.SizeBytes);
         var active = Active(compiled).Where(value => value.Scope == MmcArtifactScope.InstanceLocal).ToArray();
         foreach (var artifact in active) { var record = definition.ArtifactLocks.Single(value => value.ArtifactKey == artifact.Key); Require(record.TargetRelativePath, record.AdoptedSha256, record.SizeBytes); }
         var declared = active.Select(value => "libraries/" + value.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);

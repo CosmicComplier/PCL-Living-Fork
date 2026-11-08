@@ -12,6 +12,27 @@ internal static class MmcInstanceCloneTests {
         yield return ("MMC clone publishes a fresh child identity with current preferences and offline rebuilt runtime", RoundTrip);
         yield return ("MMC clone cancellation, interrupted journals, changed sources and uncertain sessions preserve both roots", Failures);
         yield return ("MMC clone uniquely recompiles an old source environment without migrating its original definition", LegacyEnvironment);
+        yield return ("MMC clone preserves one indexed asset original and rebuilds its view with global caches removed", IndexedAsset);
+    }
+    private static void IndexedAsset() {
+        using Fixture fixture = new(withAsset: true); var source = fixture.Import();
+        var original = source.Definition!.DerivedOutputs.Single(value => value.Kind == MmcDerivedOutputKind.AssetObject);
+        Directory.Delete(Path.Combine(fixture.Root, "global-assets"), true);
+        var result = new MmcInstanceCloneBackend().CloneAsync(Request(fixture, source)).GetAwaiter().GetResult();
+        if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(result.Failure);
+        var asset = result.Definition!.DerivedOutputs.Single(value => value.Kind == MmcDerivedOutputKind.AssetObject);
+        Equal(original.Sha256, asset.Sha256); Equal(original.RecoveryObjectRelativePath, asset.RecoveryObjectRelativePath);
+        Equal(original.Sha256, MmcDurableFiles.Observe(result.Paths!.ResolveRelative(MmcPathRole.Instance, asset.RecoveryObjectRelativePath!)));
+        Equal(original.Sha256, MmcDurableFiles.Observe(result.Paths!.ResolveRelative(MmcPathRole.Instance, asset.TargetRelativePath)));
+        Equal(false, Directory.Exists(Path.Combine(fixture.Root, "global-assets")));
+        var ready = fixture.Backend().PrepareLaunchAsync(new(fixture.TargetRoot, new("windows", "x86_64", 8), result.Definition.InstanceId, 1)).GetAwaiter().GetResult();
+        if (ready.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(ready.Failure); Equal(false, ready.Repaired);
+        string badOriginal = source.Paths!.ResolveRelative(MmcPathRole.Instance, original.RecoveryObjectRelativePath!);
+        File.WriteAllText(badOriginal, "damaged owned object");
+        string rejectedTarget = Path.Combine(Path.GetDirectoryName(fixture.TargetRoot)!, "bad-copy");
+        var rejected = new MmcInstanceCloneBackend().CloneAsync(Request(fixture, source) with { TargetRoot = rejectedTarget, TargetName = "bad-copy" }).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, rejected.Status); Equal(false, Directory.Exists(rejectedTarget));
+        Equal("damaged owned object", File.ReadAllText(badOriginal));
     }
     private static MmcInstanceCloneRequest Request(Fixture fixture, MmcInstanceBackendResult source, MmcInstanceCloneOptions? options = null) =>
         new(fixture.SourceRoot, fixture.TargetRoot, "clone", source.Definition!.InstanceId, source.Definition.Generation, MmcSavedSourceStore.ReadPrimary(source.Paths!).Sha256, options ?? new());
@@ -124,8 +145,12 @@ internal static class MmcInstanceCloneTests {
         internal string SourceRoot => Path.Combine(Root, "game", "versions", "source");
         internal string TargetRoot => Path.Combine(Root, "game", "versions", "clone");
         private readonly HttpClient client = new(new NoNetwork());
-        internal Fixture() {
-            Directory.CreateDirectory(Root); byte[] index = Encoding.UTF8.GetBytes("{\"objects\":{}}"); string sha1 = Convert.ToHexStringLower(SHA1.HashData(index));
+        private readonly byte[] index;
+        private static readonly byte[] ObjectBytes = Encoding.UTF8.GetBytes("owned indexed object");
+        internal Fixture(bool withAsset = false) {
+            string objectHash = Convert.ToHexStringLower(SHA1.HashData(ObjectBytes));
+            index = Encoding.UTF8.GetBytes(withAsset ? new JObject { ["objects"] = new JObject { ["fixture/object.bin"] = new JObject { ["hash"] = objectHash, ["size"] = ObjectBytes.Length } } }.ToString(Newtonsoft.Json.Formatting.None) : "{\"objects\":{}}");
+            Directory.CreateDirectory(Root); string sha1 = Convert.ToHexStringLower(SHA1.HashData(index));
             using var zip = ZipFile.Open(Path.Combine(Root, "fixture.zip"), ZipArchiveMode.Create);
             Add("pack/mmc-pack.json", """{"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.7.10"}]}""");
             Add("pack/instance.cfg", "name=Source\n");
@@ -136,7 +161,7 @@ internal static class MmcInstanceCloneTests {
         }
         internal MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(new(Path.Combine(Root, "metadata"), new Uri("https://metadata.invalid/"), client),
                 new(Path.Combine(Root, "global-libraries"), Path.Combine(Root, "global-assets"), Path.Combine(Root, "global-sources")), value => value,
-                async (files, token) => { foreach (var file in files) await File.WriteAllTextAsync(file.DownloadPath, "{\"objects\":{}}", new UTF8Encoding(false), token); });
+                async (files, token) => { foreach (var file in files) await File.WriteAllBytesAsync(file.DownloadPath, file.Artifact.Role == MmcArtifactRole.AssetIndex ? index : ObjectBytes, token); });
         internal MmcInstanceBackendResult Import() {
             var backend = Backend();
             var result = backend.ImportAsync(new(Path.Combine(Root, "fixture.zip"), SourceRoot, "source", new("windows", "x86_64", 8))).GetAwaiter().GetResult();
