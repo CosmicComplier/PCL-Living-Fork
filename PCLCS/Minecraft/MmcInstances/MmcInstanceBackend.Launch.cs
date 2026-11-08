@@ -29,8 +29,12 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                     management = MmcManagementProbe.Read(paths.InstanceRoot);
                 }
                 progress?.Report(new("preparing-existing-launch"));
+                progress?.Report(new("launch-sources-start"));
                 var saved = await MmcSavedSourceStore.LoadAsync(paths, definition, cancellationToken).ConfigureAwait(false);
+                progress?.Report(new("launch-sources-complete"));
+                progress?.Report(new("launch-compile-start"));
                 var compiled = Compile(saved.Resolved.Resolution, request.Environment);
+                progress?.Report(new("launch-compile-complete"));
                 if (compiled.RuntimePlanFingerprint != definition.InstalledProjection!.RuntimePlanFingerprint) {
                     return new(MmcInstanceBackendStatus.Rejected, Failure: "A different Java/platform runtime variant requires explicit adoption before launch.",
                         Diagnostics: [new("MMC_INSTANCE_VARIANT_REQUIRED", MmcDiagnosticSeverity.Error, "runtime", "Launch preparation cannot silently adopt a different runtime environment.")]);
@@ -39,18 +43,25 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 var artifactRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, ActiveArtifacts(compiled),
                     PreservedArtifacts(saved.Baseline, compiled), locks, MmcArtifactIntent.RepairExisting, compiled.Assets,
                     PublishedNativeCache(definition, compiled));
+                progress?.Report(new("launch-prefetch-start"));
                 var fetched = await prefetch.PrefetchAsync(compiled, artifactRequest, cancellationToken).ConfigureAwait(false);
+                progress?.Report(new("launch-prefetch-complete"));
                 bool incomplete;
                 MmcPreparedInstanceLaunch? snapshot = null;
+                // This outer phase includes all owned workspace disposal. Inner phases overlap it.
+                progress?.Report(new("launch-artifact-scope-start"));
                 using (var prepared = await materializer.PrepareAsync(artifactRequest, fetched.CreateAccess(), cancellationToken, ArtifactProgress(progress)).ConfigureAwait(false)) {
                     using var preservedWorkspace = new MmcArtifactWorkspace(paths);
+                    progress?.Report(new("launch-preserved-check-start"));
                     var preservedRepairs = await RepairPreservedTargetsAsync(paths, definition, compiled, prepared, preservedWorkspace, cancellationToken).ConfigureAwait(false);
+                    progress?.Report(new("launch-preserved-check-complete"));
                     string projectionPath = paths.ResolveRelative(MmcPathRole.Instance, Path.GetFileName(paths.InstanceRoot) + ".json");
                     string? projectionHash = MmcDurableFiles.Observe(projectionPath);
                     if (projectionHash is not null && projectionHash != definition.InstalledProjection.OutputJsonSha256)
                         throw new IOException("The compatibility JSON was externally changed; explicit projection recovery is required.");
                     incomplete = management.State != MmcManagementState.ManagedMmc || projectionHash is null || !prepared.StagedMutations.IsEmpty || !preservedRepairs.IsEmpty;
                     if (!incomplete) {
+                        progress?.Report(new("launch-bind-start"));
                         var observed = MmcArtifactBindingAdapter.Create(artifactRequest, compiled, prepared);
                         var options = observed.ApplyTo(new(definition.Generation, definition.Generation, MmcBindingIntent.RepairExisting,
                             definition.InstalledProjection.OutputJsonSha256, definition.Generation));
@@ -63,10 +74,14 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                             prepared.OrderedBindings.Select(value => new MmcInstanceLaunchTarget(value.Artifact.Key, value.TargetRelativePath, value.TargetPath)).ToImmutableArray(),
                             new(prepared.ViewKey, prepared.NativeDirectory ?? Path.Combine(view, "natives"), prepared.AssetsRoot ?? Path.Combine(view, "assets"),
                                 prepared.GameAssetsRoot ?? Path.Combine(view, "assets")), files);
-                        using var lease = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken);
-                        ValidatePreparedLaunch(lease, snapshot, cancellationToken);
+                        progress?.Report(new("launch-bind-complete"));
+                        progress?.Report(new("launch-final-validation-start"));
+                        using (var lease = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken))
+                            ValidatePreparedLaunch(lease, snapshot, cancellationToken);
+                        progress?.Report(new("launch-final-validation-complete"));
                     }
                 }
+                progress?.Report(new("launch-artifact-scope-complete"));
                 if (snapshot is not null) {
                     progress?.Report(new("launch-inputs-ready"));
                     return new(MmcInstanceBackendStatus.Succeeded, snapshot, repaired);
