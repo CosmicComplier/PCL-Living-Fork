@@ -191,6 +191,12 @@ internal static class LegacyJavaTests {
         f.Game("1.7.10"); f.Nide = true; f.Mode = 1; f.Range = "[8, 9)";
         var account = f.Engine.GetManagedJavaRequirement(f.Owner, true, true).Range;
         Require(!account.Contains(new Version(8, 0, 140, 0)) && account.Contains(new Version(8, 0, 141, 0)) && !account.Contains(new Version(9, 0, 0, 0)), "User range early-return lost the account bound or the user's range.");
+        var oldAccountReader = f.Host.IsNideLogin;
+        f.Host.IsNideLogin = () => throw new Exception("Managed validation attempted live account IO instead of its snapshot.");
+        try {
+            Require(f.Engine.GetManagedJavaRequirement(f.Owner, true, true, nideLogin: false).Range.Contains(new Version(8, 0, 140, 0)), "A captured non-Nide account did not remain independent of live account state.");
+            Require(!f.Engine.GetManagedJavaRequirement(f.Owner, true, true, nideLogin: true).Range.Contains(new Version(8, 0, 140, 0)), "A captured Nide account lost its retained minimum.");
+        } finally { f.Host.IsNideLogin = oldAccountReader; }
         f.Nide = false; f.Mode = 0; f.Game("1.10.2"); f.Owner.Version.OptiFine = "H1";
         Require(!f.Engine.GetManagedJavaRequirement(f.Owner, true, true).Range.Contains(new Version(21, 0)), "Retirement removed an unrelated OptiFine bound.");
         f.Game("1.20.5"); f.Owner.Version.ModLoaderVersions[ModLoaders.Fabric] = "0.16.14";

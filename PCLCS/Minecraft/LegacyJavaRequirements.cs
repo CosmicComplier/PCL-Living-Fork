@@ -14,10 +14,10 @@ public sealed partial class LegacyJavaService<TInstance> where TInstance : class
     /// independently proven Minecraft/Forge launch replacements may retire their named inference.
     /// </summary>
     public (ValueRange<Version> Range, string? RecommendedComponent) GetManagedJavaRequirement(TInstance instance,
-        bool retireMinecraft, bool retireForge) => GetJavaRequirement(instance, managed: true, retireMinecraft, retireForge);
+        bool retireMinecraft, bool retireForge, bool? nideLogin = null) => GetJavaRequirement(instance, managed: true, retireMinecraft, retireForge, nideLogin);
 
     private (ValueRange<Version> Range, string? RecommendedComponent) GetJavaRequirement(TInstance instance,
-        bool managed, bool retireMinecraft, bool retireForge) {
+        bool managed, bool retireMinecraft, bool retireForge, bool? nideLogin = null) {
         ValueRange<Version>? userRange = null;
         if (host.ReadInteger("VersionArgumentJavaV2", instance) == 1) {
             try {
@@ -135,7 +135,7 @@ public sealed partial class LegacyJavaService<TInstance> where TInstance : class
         if (VersionData().ModLoaders.HasFlagF(ModLoaders.LiteLoader) && VersionData().Valid) {
             AddConstraint(ValueRange<Version>.LessThan(new Version(9, 0)));
         }
-        if (host.IsNideLogin()) {
+        if (managed && nideLogin.HasValue ? nideLogin.Value : host.IsNideLogin()) {
             // Preserve LF's actual 8u141 value (the old comment said 8u101).
             AddConstraint(ValueRange<Version>.AtLeast(new Version(8, 0, 141)));
         }
