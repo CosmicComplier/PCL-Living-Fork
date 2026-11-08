@@ -87,6 +87,7 @@ namespace PCL
         {
             return global::CacheCow.Client.ClientExtensions.CreateClient(new global::CacheCow.Client.FileCacheStore.FileStore(Path), Transport);
         }
+        internal static global::System.Net.Http.HttpClient StandardMetadataClient => NativeRuntime.GetStandardRequestClient();
         private sealed class NativeTaskWaiter : global::PCLCS.Network.ILegacyNetworkTaskWaiter
         {
             public T Result<T>(global::System.Threading.Tasks.Task<T> Work, global::System.Threading.CancellationTokenSource Source, global::System.Int32 Timeout)
