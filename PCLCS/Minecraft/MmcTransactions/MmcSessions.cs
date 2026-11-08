@@ -24,7 +24,12 @@ public static class MmcSessions {
         MmcFileTransactions.AssertNoPending(lease); AssertNoActive(lease);
         ProcessStartInfo start = CopyStartInfo(request.StartInfo, paths);
         if (!SameExecutable(ObserveExecutable(start.FileName), request.JavaIdentity)) throw new IOException("进程入口不符合已选 Java 身份。");
-        Guid sessionId = Guid.NewGuid(); string nonce = Guid.NewGuid().ToString("N");
+        Guid sessionId = request.SessionId ?? Guid.NewGuid();
+        string sessionDirectory = SessionDirectory(paths, sessionId);
+        string sessionHistory = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessionHistory/" + sessionId.ToString("N"));
+        if (MmcInstancePaths.Attributes(sessionDirectory) is not null || MmcInstancePaths.Attributes(sessionHistory) is not null)
+            throw new IOException("会话 ID 已被使用，不能覆盖原有会话记录。");
+        string nonce = Guid.NewGuid().ToString("N");
         IMmcJavaSessionPin pin = acquireJavaPin(sessionId, request.JavaIdentity) ?? throw new IOException("Java 服务未返回保护租约。");
         bool durableIntent = false; Process? process = null;
         try {
@@ -32,7 +37,7 @@ public static class MmcSessions {
             ValidateCurrentDefinition(paths, request.InstanceId, request.DefinitionGeneration, request.GameRootLeaf);
             if (!SameExecutable(ObserveExecutable(request.LauncherIdentity.ExecutablePath), request.LauncherIdentity)) throw new IOException("宿主镜像身份已变化。");
             finalValidation();
-            string directory = SessionDirectory(paths, sessionId); Directory.CreateDirectory(directory);
+            string directory = sessionDirectory; Directory.CreateDirectory(directory);
             MmcSessionReceipt receipt = new(1, sessionId, request.InstanceId, paths.VersionRoot, request.DefinitionGeneration,
                 request.RuntimeFingerprint, nonce, request.JavaIdentity, request.LauncherIdentity);
             string hash = MmcDurableFiles.WriteRecord(Path.Combine(directory, "Launching.record"), receipt);

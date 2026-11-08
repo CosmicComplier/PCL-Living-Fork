@@ -42,12 +42,16 @@ internal static class MmcSessionTests {
 
     private static void LaunchAndExit() {
         using Fixture fixture = new(); using var lease = fixture.Lease(); FixturePin? pin = null;
-        using var session = MmcSessions.Launch(lease, fixture.Request(), () => Equal(true, pin is not null), (_, image) => pin = new(image, fixture.PinFile));
+        Guid plannedSession = Guid.NewGuid();
+        var request = fixture.Request() with { SessionId = plannedSession };
+        using var session = MmcSessions.Launch(lease, request, () => Equal(true, pin is not null), (_, image) => pin = new(image, fixture.PinFile));
+        Equal(plannedSession, session.Receipt.SessionId);
         fixture.WaitChild();
         Equal(session.Receipt.Nonce, fixture.ChildNonce());
         Throws<IOException>(() => session.CompleteVerifiedExit(lease));
         fixture.Stop(); session.Process.WaitForExit(10000); session.CompleteVerifiedExit(lease);
         Equal(true, pin!.Completed); Equal(false, File.Exists(fixture.PinFile)); MmcSessions.AssertNoActive(lease);
+        Throws<IOException>(() => MmcSessions.Launch(lease, request, () => { }, (_, _) => throw new Exception("Reused session reached pin acquisition.")));
     }
     private static void StructuralGate() {
         using Fixture fixture = new(); using var lease = fixture.Lease();
@@ -92,6 +96,7 @@ internal static class MmcSessionTests {
     }
     private static void InvalidLaunch() {
         using Fixture fixture = new(); using var lease = fixture.Lease();
+        Throws<IOException>(() => MmcSessions.Launch(lease, fixture.Request() with { SessionId = Guid.Empty }, () => { }, (_, _) => throw new Exception("Empty session reached pin acquisition.")));
         Throws<IOException>(() => MmcSessions.Launch(lease, fixture.Request() with { DefinitionGeneration = 2 }, () => { }, (_, image) => new FixturePin(image, fixture.PinFile)));
         Throws<IOException>(() => MmcSessions.Launch(lease, fixture.Request() with { GameRootLeaf = ".minecraft" }, () => { }, (_, image) => new FixturePin(image, fixture.PinFile)));
         var request = fixture.Request(); request.StartInfo.ArgumentList.Add(MmcSessions.NonceArgumentPrefix + "forged");
