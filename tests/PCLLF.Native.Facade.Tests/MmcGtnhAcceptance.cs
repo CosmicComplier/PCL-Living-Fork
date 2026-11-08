@@ -253,20 +253,21 @@ internal static class MmcGtnhAcceptance {
         File.Move(temporary, Path.Combine(root, ReceiptName), false);
     }
     private static string OwnedCacheCase(string runRoot, string sample, string acceptanceBase) {
-        string run = Path.GetFullPath(runRoot), expectedBase = Path.GetFullPath(acceptanceBase);
-        if (Native.Full(Directory.GetParent(run)?.FullName ?? "") != Native.Full(expectedBase)) throw new IOException("Cache run must be a direct retained acceptance child.");
+        string run = Native.Full(runRoot), expectedBase = Native.Full(acceptanceBase);
+        if (!SameOwnedPath(Directory.GetParent(run)?.FullName ?? "", expectedBase)) throw new IOException("Cache run must be a direct retained acceptance child.");
         string caseRoot = Path.Combine(run, sample);
         for (DirectoryInfo? directory = new(caseRoot); directory is not null; directory = directory.Parent)
             if (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Retained cache ancestors must not be reparse points.");
         using var owner = JsonDocument.Parse(File.ReadAllText(Path.Combine(run, OwnerName)));
         using var caseOwner = JsonDocument.Parse(File.ReadAllText(Path.Combine(caseRoot, OwnerName)));
         var runRecord = owner.RootElement; var caseRecord = caseOwner.RootElement;
-        if (runRecord.GetProperty("Kind").GetString() != "PCLLF.GtnhImportAcceptance" || Native.Full(runRecord.GetProperty("Root").GetString()!) != Native.Full(run) || !runRecord.GetProperty("Keep").GetBoolean() ||
-            caseRecord.GetProperty("Kind").GetString() != "PCLLF.GtnhImportCase" || Native.Full(caseRecord.GetProperty("Root").GetString()!) != Native.Full(caseRoot) ||
-            Native.Full(caseRecord.GetProperty("MinecraftRoot").GetString()!) != Native.Full(Path.Combine(caseRoot, "game")) || caseRecord.GetProperty("Sample").GetString() != sample || !caseRecord.GetProperty("Keep").GetBoolean())
+        if (runRecord.GetProperty("Kind").GetString() != "PCLLF.GtnhImportAcceptance" || !SameOwnedPath(runRecord.GetProperty("Root").GetString()!, run) || !runRecord.GetProperty("Keep").GetBoolean() ||
+            caseRecord.GetProperty("Kind").GetString() != "PCLLF.GtnhImportCase" || !SameOwnedPath(caseRecord.GetProperty("Root").GetString()!, caseRoot) ||
+            !SameOwnedPath(caseRecord.GetProperty("MinecraftRoot").GetString()!, Path.Combine(caseRoot, "game")) || caseRecord.GetProperty("Sample").GetString() != sample || !caseRecord.GetProperty("Keep").GetBoolean())
             throw new IOException("Retained cache ownership marker mismatch.");
         return caseRoot;
     }
+    private static bool SameOwnedPath(string left, string right) => string.Equals(Native.Full(left), Native.Full(right), StringComparison.OrdinalIgnoreCase);
     private static string MainHash() => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Native.Main.Location)));
     private static string? Option(string[] args, string key) { int position = Array.IndexOf(args, key); return position < 0 ? null : position + 1 < args.Length ? args[position + 1] : throw new ArgumentException("Missing value: " + key); }
     private static string FindRepository() { for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent) if (File.Exists(Path.Combine(directory.FullName, ".git")) || Directory.Exists(Path.Combine(directory.FullName, ".git"))) return directory.FullName; throw new IOException("Run the explicit acceptance from its repository build output."); }
