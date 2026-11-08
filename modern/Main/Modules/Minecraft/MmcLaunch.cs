@@ -20,6 +20,9 @@ public static class MmcLaunch {
     private static readonly ConcurrentDictionary<Guid, MmcRunningSession> Active = new();
     private static int closeAfterSessions;
     public static bool HasActiveSessions => !Active.IsEmpty;
+    // Observes a genuinely registered child; tests may request cancellation here,
+    // but cannot replace process creation, the session receipt, or Java pinning.
+    internal static Action<Guid, Process> ProcessCreated { get; set; }
     public static bool KeepAliveWhileSessionsFinish() {
         if (Active.IsEmpty) return false;
         Interlocked.Exchange(ref closeAfterSessions, 1);
@@ -161,6 +164,7 @@ public static class MmcLaunch {
             _ = MonitorExitAsync(session, prepared.Paths.InstanceRoot, prepared.Definition.InstanceId);
             ModLaunch.McLaunchProcess = session.Process;
             try {
+                ProcessCreated?.Invoke(sessionId, session.Process);
                 var watchTask = new ModLoader.LoaderTask<Process, int>("MMC 窗口监控", _ => { }) { Input = session.Process };
                 watcher = new ModWatcher.Watcher(watchTask, instance, "", game => {
                     TryOptional(() => WorldBackups.Track(instance, game), "记录 MMC 存档备份会话失败");
