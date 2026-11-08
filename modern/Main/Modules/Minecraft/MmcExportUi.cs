@@ -122,8 +122,8 @@ internal sealed class MmcExportOptionsView : StackPanel {
     internal readonly MyCheckBox Saves = Choice("包含存档"), Screenshots = Choice("包含截图"), Servers = Choice("包含服务器列表及自动加入设置");
     internal readonly MyCheckBox OtherGameFiles = Choice("包含未识别的游戏文件（可能含个人数据）"), ExcludeInactive = Choice("不导出未启用的另一游戏目录");
     internal readonly MyCheckBox PortableJava = Choice("移除本机 Java 选择，保留整合包的 Java 要求"), FixedMemory = Choice("将自动内存改为下方固定值（MiB）");
-    internal readonly TextBox Minimum = new() { Text = "0", Width = 90, Margin = new Thickness(8, 0, 20, 0) };
-    internal readonly TextBox Maximum = new() { Text = "4096", Width = 90, Margin = new Thickness(8, 0, 0, 0) };
+    internal readonly MyTextBox Minimum = new() { Text = "0", Width = 90, Margin = new Thickness(8, 0, 20, 0) };
+    internal readonly MyTextBox Maximum = new() { Text = "4096", Width = 90, Margin = new Thickness(8, 0, 0, 0) };
     internal MmcExportOptionsView() {
         foreach (var check in new[] { Saves, Screenshots, Servers, OtherGameFiles, ExcludeInactive, PortableJava, FixedMemory }) Children.Add(check);
         var memory = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };

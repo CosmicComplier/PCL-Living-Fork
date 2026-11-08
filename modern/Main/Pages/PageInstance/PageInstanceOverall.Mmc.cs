@@ -10,8 +10,14 @@ public partial class PageInstanceOverall {
         // ContextStamp is already attached by the normal instance reader. Avoid
         // re-reading settings with side effects merely to decide button visibility.
         var visibility = PageInstanceLeft.Instance?.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed ? Visibility.Visible : Visibility.Collapsed;
-        BtnMmcExport.Visibility = visibility; BtnMmcHistory.Visibility = visibility;
+        BtnMmcExport.Visibility = visibility; BtnMmcHistory.Visibility = visibility; BtnMmcMove.Visibility = visibility;
     }
     private void BtnMmcExport_Click(object sender, MouseButtonEventArgs e) => MmcExportUi.Prompt(PageInstanceLeft.Instance);
     private void BtnMmcHistory_Click(object sender, MouseButtonEventArgs e) => MmcHistoryUi.Prompt(PageInstanceLeft.Instance);
+    private void BtnMmcMove_Click(object sender, MouseButtonEventArgs e) {
+        var original = PageInstanceLeft.Instance;
+        MmcLifecycleUi.PromptMove(original, _ => {
+            if (ReferenceEquals(PageInstanceLeft.Instance, original) && ReferenceEquals(ModMain.FrmMain?.PageRight, this)) ModMain.FrmMain.PageBack();
+        });
+    }
 }
