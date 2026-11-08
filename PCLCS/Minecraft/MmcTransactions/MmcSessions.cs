@@ -116,7 +116,9 @@ public static class MmcSessions {
         ProcessStartInfo copy = new(source.FileName) {
             WorkingDirectory = workingDirectory, UseShellExecute = false, CreateNoWindow = source.CreateNoWindow,
             RedirectStandardInput = source.RedirectStandardInput, RedirectStandardOutput = source.RedirectStandardOutput,
-            RedirectStandardError = source.RedirectStandardError, WindowStyle = source.WindowStyle
+            RedirectStandardError = source.RedirectStandardError, WindowStyle = source.WindowStyle,
+            StandardInputEncoding = source.StandardInputEncoding, StandardOutputEncoding = source.StandardOutputEncoding,
+            StandardErrorEncoding = source.StandardErrorEncoding
         };
         foreach (string argument in source.ArgumentList) {
             if (argument.StartsWith(NonceArgumentPrefix, StringComparison.Ordinal)) throw new IOException("包或用户参数不能覆盖内部会话 nonce。");

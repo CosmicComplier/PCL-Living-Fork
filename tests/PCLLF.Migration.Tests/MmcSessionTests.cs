@@ -100,8 +100,12 @@ internal static class MmcSessionTests {
     }
     private static void ReceiptPrivacy() {
         using Fixture fixture = new(); using var lease = fixture.Lease(); var request = fixture.Request();
+        request.StartInfo.RedirectStandardOutput = true; request.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+        request.StartInfo.RedirectStandardError = true; request.StartInfo.StandardErrorEncoding = Encoding.Unicode;
         request.StartInfo.ArgumentList.Add("synthetic-access-token-should-not-persist");
         using var session = MmcSessions.Launch(lease, request, () => { }, (_, image) => new FixturePin(image, fixture.PinFile));
+        Equal(Encoding.UTF8.CodePage, session.Process.StartInfo.StandardOutputEncoding?.CodePage ?? -1);
+        Equal(Encoding.Unicode.CodePage, session.Process.StartInfo.StandardErrorEncoding?.CodePage ?? -1);
         fixture.WaitChild();
         foreach (string record in Directory.GetFiles(fixture.Sessions, "*.record", SearchOption.AllDirectories))
             Equal(false, Encoding.UTF8.GetString(File.ReadAllBytes(record)).Contains("synthetic-access-token-should-not-persist", StringComparison.Ordinal));
