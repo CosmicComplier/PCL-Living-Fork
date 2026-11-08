@@ -109,14 +109,27 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
 
     public void StartDownload(TDownload owner, object? Input = null, bool IsForceRestart = false)
     {
-        if (Input is not null)
-            owner.CoreFiles = new ConcurrentQueue<TFile>((IEnumerable<TFile>)Input);
-        owner.CoreFiles = new ConcurrentQueue<TFile>(MeloongCore.Extensions.EnumerableExtensions.DistinctBy(owner.CoreFiles, file => PathUtils.ForCompare(file.LocalPath).Lower()));
-        lock (owner.CoreRecord.FileRemainLock)
-            owner.CoreRecord.FileRemain = checked(owner.CoreRecord.FileRemain + owner.CoreFiles.Count(file => NetCode(file.State) != 5));
-        IDisposable? startWork = owner.CoreRecord.IoWork.Enter()!;
+        IDisposable? startWork;
+        lock (owner.LockState) {
+            if (LoadCode(owner.State) == 1) {
+                if (!IsForceRestart && Input is null) return;
+                throw new InvalidOperationException("Cancel and drain the active download operation before restarting it.");
+            }
+            if (owner.CoreRecord.IoWork.Active != 0) throw new InvalidOperationException("Previous download workers have not drained.");
+            if (LoadCode(owner.State) >= 2 && owner.CoreFiles.Any(file => NetCode(file.State) < 5 || !file.IoWork.IsSealed || file.IoWork.Active != 0))
+                throw new InvalidOperationException("Previous download target writers have not reached their terminal completion barrier.");
+            var inputs = Input is null ? owner.CoreFiles.ToArray() : ((IEnumerable<TFile>)Input).ToArray();
+            if (inputs.Any(file => file is null || file.IoWork.IsSealed))
+                throw new InvalidOperationException("NetFile instances are single-operation inputs; create fresh files after terminal download/drain.");
+            owner.CoreFiles = new ConcurrentQueue<TFile>(MeloongCore.Extensions.EnumerableExtensions.DistinctBy(inputs, file => PathUtils.ForCompare(file.LocalPath).Lower()));
+            lock (owner.CoreRecord.FileRemainLock) owner.CoreRecord.FileRemain = owner.CoreFiles.Count;
+            lock (owner.CoreRecord.CandidateInitialization) owner.CoreRecord.CandidateSizes = null;
+            owner.CoreRecord.FailCount = 0; owner.CoreRecord.Progress = 0;
+            startWork = owner.CoreRecord.IoWork.Enter() ?? throw new InvalidOperationException("Download operation has closed registration.");
+            try { owner.State = LoadStateValue(1); }
+            catch { startWork.Dispose(); throw; }
+        }
         try {
-        owner.State = LoadStateValue(1);
         RunDownloadWorker(owner, () =>
         {
             try
@@ -158,9 +171,9 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
                         filesToCheck.Add(file);
                     else
                     {
-                        lock (owner.LockState)
+                        lock (file.LockState)
                         {
-                            file.State = NetStateValue(0);
+                            if (!file.IoWork.IsSealed) file.State = NetStateValue(0);
                             file.IsCopy = false;
                         }
                     }
@@ -234,7 +247,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
                     }
                 }
 
-                lock (owner.LockState)
+                lock (file.LockState)
                 {
                     if (!file.IoWork.IsSealed) file.State = NetStateValue(0);
                     file.IsCopy = false;
@@ -251,6 +264,9 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
     {
         if ((!FileUtils.Exists(file.LocalPath) || FileUtils.GetInfo(file.LocalPath).Length <= file.MaximumSizeBytes) && file.Check.Check(file.LocalPath)is null)
             return file.LocalPath;
+        // Cross-directory FileUtils.Copy has no streaming upper bound. Finite-limit requests
+        // use the ordinary bounded transfer path instead of this optional copy shortcut.
+        if (file.MaximumSizeBytes != long.MaxValue) return null;
         if (Host.BooleanSetting("SystemDebugSkipCopy"))
             return null;
         if (file.Check.Hash is null && file.Check.ActualSize < 0)

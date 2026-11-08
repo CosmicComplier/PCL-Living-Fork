@@ -32,6 +32,12 @@ internal static class MmcDownloadChecks {
             CopyCancel(retained); Console.WriteLine("DIAG MMC existing-file copy cancellation complete");
             MergeCancel(retained); Console.WriteLine("DIAG MMC merge cancellation complete");
             FailureAndLimit(retained); Console.WriteLine("DIAG MMC digest recovery/size limit complete");
+            ReuseInputs(retained); Console.WriteLine("DIAG MMC terminal reuse refusal/fresh restart complete");
+            SharedCancellation(retained); Console.WriteLine("DIAG MMC atomic sharing/cancellation complete");
+            StrictSharing(retained); Console.WriteLine("DIAG MMC strict sharing refusal complete");
+            FiniteCopyGrowth(retained); Console.WriteLine("DIAG MMC finite-copy source growth complete");
+            UiCancellation(retained); Console.WriteLine("DIAG MMC UI cancellation scheduling complete");
+            MetadataTransport(retained); Console.WriteLine("DIAG MMC standard metadata transport complete");
             retained.Finish();
             environment.AssertNoForbiddenIo();
             Native.Check(System.Windows.Application.Current.Windows.Count == 0, "MMC downloader opened a window.");
@@ -69,6 +75,11 @@ internal static class MmcDownloadChecks {
         scope.Until(() => entered.IsSet && file.ActiveIoProducerCount > 0, "owned transfer starts"); scope.Capture(file);
         token.Cancel();
         Native.Check(!run.IsCompleted && file.ActiveIoProducerCount > 0, "Canceled state was mistaken for transfer completion.");
+        scope.Until(() => loader!.State == ModBase.LoadState.Canceled, "cancel owner becomes terminal");
+        bool restartRefused = false;
+        try { loader!.Start(new[] { scope.File("/transfer-cancel", "must-not-start-before-drain.bin", bytes) }, true); }
+        catch (InvalidOperationException) { restartRefused = true; }
+        Native.Check(restartRefused, "A fresh operation reused an owner whose previous file writers were still active.");
         release.Set(); scope.Canceled(run); scope.NoWriters(loader!);
     }
 
@@ -79,7 +90,7 @@ internal static class MmcDownloadChecks {
         ImmutableArray<ModNet.NetFile> Files(string prefix) => Enumerable.Range(0, 80).Select(index => {
             string relative = "fixture/copy-" + index + ".bin";
             string source = Path.Combine(scope.SourceGame, "libraries", relative); Directory.CreateDirectory(Path.GetDirectoryName(source)!); File.WriteAllBytes(source, bytes);
-            return scope.File("/copy-never", prefix + "/libraries/" + relative, bytes);
+            return scope.File("/copy-never", prefix + "/libraries/" + relative, bytes, maximum: long.MaxValue);
         }).ToImmutableArray();
         var files = Files("copy-cancel"); ModNet.LoaderDownload? loader = null;
         Task run = MmcDownloads.RunBatchAsync(files, token.Token, onLoaderCreated: current => loader = current);
@@ -101,7 +112,8 @@ internal static class MmcDownloadChecks {
         ModNet.LoaderDownload? loader = null; Task run = MmcDownloads.RunBatchAsync([file], token.Token, onLoaderCreated: current => loader = current);
         scope.Until(() => entered.IsSet, "merge HTTP enters"); scope.Capture(file);
         body.Set(); scope.Until(() => mergeStarts.IsSet, "merge state before file publication");
-        token.Cancel(); Native.Check(!run.IsCompleted && file.ActiveIoProducerCount > 0, "Canceled merge phase was not retained.");
+        token.Cancel(); scope.Until(() => loader!.State == ModBase.LoadState.Canceled, "queued merge cancel becomes terminal");
+        Native.Check(!run.IsCompleted && file.ActiveIoProducerCount > 0, "Canceled merge phase was not retained.");
         continueMerge.Set();
         scope.Until(() => merge.IsSet, "merge cleanup callback");
         Native.Check(!run.IsCompleted && file.ActiveIoProducerCount > 0, "Merge cleanup escaped the I/O barrier.");
@@ -120,12 +132,104 @@ internal static class MmcDownloadChecks {
         scope.Failed(MmcDownloads.RunBatchAsync([maximum], onLoaderCreated: current => loader = current)); scope.NoWriters(loader!);
     }
 
+    private static void ReuseInputs(Scope scope) {
+        byte[] bytes = [1, 4, 9]; scope.Server.Add("/reuse", bytes);
+        var file = scope.File("/reuse", "reuse.bin", bytes); ModNet.LoaderDownload? owner = null;
+        scope.Complete(MmcDownloads.RunBatchAsync([file], onLoaderCreated: loader => owner = loader)); scope.NoWriters(owner!);
+        scope.Failed(MmcDownloads.RunBatchAsync([file]));
+        bool rejected = false; try { owner!.Start(IsForceRestart: true); } catch (InvalidOperationException) { rejected = true; }
+        Native.Check(rejected && owner!.State != ModBase.LoadState.Loading, "Terminal NetFile reuse silently entered Loading.");
+        var replacement = scope.File("/reuse", "reuse-new-operation.bin", bytes);
+        scope.Complete(Task.Run(async () => { owner!.Start(new[] { replacement }, true); owner.WaitForExit(StartIfNeeded: false); await MmcDownloads.DrainAsync(owner); }));
+        scope.NoWriters(owner!);
+        using ManualResetEventSlim entered = new(), release = new(); using CancellationTokenSource token = new();
+        scope.Server.Add("/reuse-cancel", bytes, entered, release); var canceled = scope.File("/reuse-cancel", "reuse-cancel.bin", bytes);
+        Task work = MmcDownloads.RunBatchAsync([canceled], token.Token, onLoaderCreated: loader => owner = loader);
+        scope.Until(() => entered.IsSet, "reuse cancellation enters"); token.Cancel(); release.Set(); scope.Canceled(work); scope.NoWriters(owner!);
+        scope.Failed(MmcDownloads.RunBatchAsync([canceled]));
+    }
+
+    private static void SharedCancellation(Scope scope) {
+        byte[] bytes = [2, 3, 5];
+        using ManualResetEventSlim entered = new(), body = new(), empty = new(), seal = new(); using CancellationTokenSource token = new();
+        scope.Server.Add("/share-last-owner", bytes, entered, body);
+        var first = scope.File("/share-last-owner", "shared-cancel.bin", bytes); ModNet.LoaderDownload? a = null, b = null;
+        first.LastOwnerCanceling += () => { empty.Set(); if (!seal.Wait(10000)) throw new TimeoutException("Last-owner cancellation barrier was not released."); };
+        Task original = MmcDownloads.RunBatchAsync([first], token.Token, onLoaderCreated: loader => a = loader);
+        scope.Until(() => entered.IsSet, "share source enters"); token.Cancel(); scope.Until(() => empty.IsSet, "last owner empty check");
+        var next = scope.File("/share-last-owner", "shared-cancel.bin", bytes);
+        Task attaching = MmcDownloads.RunBatchAsync([next], onLoaderCreated: loader => b = loader);
+        scope.Until(() => b is not null && b.State == ModBase.LoadState.Loading, "new owner attempts attachment");
+        Native.Check(!first.Tasks.Contains(b!), "A new owner crossed the old owner's empty-check/seal critical section.");
+        seal.Set(); scope.Failed(attaching); body.Set(); scope.Canceled(original); scope.NoWriters(a!); scope.NoWriters(b!);
+        // Attachment won before cancellation in this independent controlled case.
+        using ManualResetEventSlim sharedEntered = new(), sharedBody = new(); using CancellationTokenSource secondToken = new();
+        scope.Server.Add("/share-survivor", bytes, sharedEntered, sharedBody);
+        var shared = scope.File("/share-survivor", "shared-survivor.bin", bytes);
+        Task firstOwner = MmcDownloads.RunBatchAsync([shared], secondToken.Token, onLoaderCreated: loader => a = loader);
+        scope.Until(() => sharedEntered.IsSet, "shared survivor enters");
+        Task otherOwner = MmcDownloads.RunBatchAsync([scope.File("/share-survivor", "shared-survivor.bin", bytes)], onLoaderCreated: loader => b = loader);
+        scope.Until(() => shared.Tasks.Count == 2, "compatible owner attaches"); secondToken.Cancel();
+        scope.Until(() => a!.State == ModBase.LoadState.Canceled, "first owner cancels");
+        Native.Check(b!.State == ModBase.LoadState.Loading && shared.Tasks.Contains(b) && !firstOwner.IsCompleted, "Canceling one owner stopped the other or claimed early drain.");
+        sharedBody.Set(); scope.Complete(otherOwner); scope.Canceled(firstOwner); scope.NoWriters(a!); scope.NoWriters(b!);
+    }
+
+    private static void StrictSharing(Scope scope) {
+        foreach (bool weakChecker in new[] { false, true }) {
+            byte[] bytes = [6, 7, 8]; string route = weakChecker ? "/share-checker" : "/share-policy", name = weakChecker ? "share-checker.bin" : "share-policy.bin";
+            using ManualResetEventSlim entered = new(), release = new(); scope.Server.Add(route, bytes, entered, release);
+            var wide = new ModNet.NetFile([scope.Server.Url(route)], Path.Combine(scope.Root, name), new MeloongCore.FileChecker {
+                Hash = weakChecker ? null : Convert.ToHexStringLower(SHA256.HashData(bytes)), ActualSize = weakChecker ? -1 : bytes.Length
+            }) { MaximumSizeBytes = weakChecker ? 1024 * 1024 : long.MaxValue };
+            if (weakChecker) Native.Field(wide.GetType(), "AllowCredentialHeaders").SetValue(wide, false);
+            scope.PermitWideCredentials = !weakChecker;
+            var ordinary = new ModNet.LoaderDownload("controlled ordinary download", new[] { wide });
+            scope.Complete(Task.Run(() => ordinary.Start())); scope.Until(() => entered.IsSet, "wide owner enters");
+            Task strict = MmcDownloads.RunBatchAsync([scope.File(route, name, bytes)]); scope.Failed(strict);
+            Native.Check(ordinary.State == ModBase.LoadState.Loading && wide.Tasks.Count == 1, "Strict policy rejection modified the existing owner.");
+            release.Set(); scope.Complete(Task.Run(async () => { ordinary.WaitForExit(StartIfNeeded: false); await MmcDownloads.DrainAsync(ordinary); }));
+            scope.NoWriters(ordinary); scope.PermitWideCredentials = false;
+        }
+    }
+
+    private static void FiniteCopyGrowth(Scope scope) {
+        byte[] bytes = [1, 2, 3, 4]; string source = Path.Combine(scope.SourceGame, "libraries", "fixture", "growth.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!); File.WriteAllBytes(source, bytes);
+        using ManualResetEventSlim entered = new(), release = new(); scope.Server.Add("/finite-copy-growth", bytes, entered, release);
+        var file = scope.File("/finite-copy-growth", "growth-target/libraries/fixture/growth.bin", bytes, maximum: 8);
+        Task run = MmcDownloads.RunBatchAsync([file]); scope.Until(() => entered.IsSet, "finite request uses bounded transfer");
+        File.WriteAllBytes(source, new byte[4096]); release.Set(); scope.Complete(run);
+        Native.Check(File.ReadAllBytes(file.LocalPath).SequenceEqual(bytes), "Finite request copied a growing source through the unbounded shortcut.");
+    }
+
+    private static void UiCancellation(Scope scope) {
+        byte[] bytes = [4, 3, 2, 1]; using ManualResetEventSlim entered = new(), body = new(), held = new(), release = new(); using CancellationTokenSource token = new();
+        scope.Server.Add("/ui-cancel", bytes, entered, body); var file = scope.File("/ui-cancel", "ui-cancel.bin", bytes);
+        ModNet.LoaderDownload? owner = null; Task run = MmcDownloads.RunBatchAsync([file], token.Token, onLoaderCreated: loader => owner = loader);
+        scope.Until(() => entered.IsSet, "UI cancel source enters"); scope.Capture(file);
+        Task lockHolder = Task.Run(() => { lock (file.LockChain) { held.Set(); if (!release.Wait(10000)) throw new TimeoutException("Actual chain lock was not released."); } });
+        scope.Until(() => held.IsSet, "real chain lock held by worker");
+        Stopwatch watch = Stopwatch.StartNew(); token.Cancel(); watch.Stop();
+        Native.Check(watch.Elapsed < TimeSpan.FromMilliseconds(500) && !run.IsCompleted, "UI cancellation synchronously waited on actual download cleanup.");
+        release.Set(); body.Set(); scope.Complete(lockHolder); scope.Canceled(run); scope.NoWriters(owner!);
+    }
+
+    private static void MetadataTransport(Scope scope) {
+        byte[] bytes = Encoding.UTF8.GetBytes("{\"formatVersion\":1,\"uid\":\"net.minecraft\",\"version\":\"1\"}");
+        scope.Server.Add("/metadata/net.minecraft/1.json", bytes);
+        var store = MmcDownloads.CreateMetadataStore(Path.Combine(scope.Root, "metadata-cache"), new Uri(scope.Server.Url("/metadata/")));
+        Task<IReadOnlyList<MmcMetadataContent>> read = store.FetchBatchAsync([new("net.minecraft", "1")]); scope.Complete(read);
+        Native.Check(read.Result.Count == 1 && read.Result[0].ContentUtf8 == Encoding.UTF8.GetString(bytes), "Main metadata factory did not reuse the real bounded source service.");
+    }
+
     private sealed class Scope {
         internal readonly FixtureEnvironment Environment;
         internal readonly PackRootInstallChecksLoopback Server = new();
         internal readonly ConcurrentBag<Thread> Workers = new(), Transfers = new();
         internal readonly string Root, SourceGame;
         internal (ManualResetEventSlim Entered, ManualResetEventSlim Release)? CopyBarrier;
+        internal bool PermitWideCredentials;
         internal Scope(FixtureEnvironment environment) {
             Environment = environment; Root = Path.Combine(environment.Data, "mmc-download"); SourceGame = Path.Combine(Root, "existing-game");
             Directory.CreateDirectory(Path.Combine(SourceGame, "versions"));
@@ -134,7 +238,7 @@ internal static class MmcDownloadChecks {
             host.SignCdn = value => Server.Owns(value) ? value : throw new InvalidOperationException("MMC fixture transport escaped owned HTTP.");
             var sign = host.SignHeaders;
             host.SignHeaders = (string url, ref HttpRequestMessage request, bool browser, bool credentials) => {
-                Native.Check(Server.Owns(url) && !credentials, "MMC sent credential-enabled or external request."); sign(url, ref request, browser, credentials);
+                Native.Check(Server.Owns(url) && (!credentials || PermitWideCredentials), "MMC sent credential-enabled or external request."); sign(url, ref request, browser, credentials);
                 Native.Check(!request.Headers.Contains("Authorization") && !request.Headers.Contains("x-api-key"), "MMC loopback carried credentials.");
             };
             host.TempFolder = () => Path.Combine(Root, "network-temp") + Path.DirectorySeparatorChar;

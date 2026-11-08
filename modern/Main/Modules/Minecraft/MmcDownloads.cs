@@ -57,10 +57,12 @@ public static class MmcDownloads {
             var loader = new ModNet.LoaderDownload("下载 MMC 运行文件", files);
             Exception failure = null;
             CancellationTokenRegistration cancellation = default;
+            object cancellationGate = new(); Task cancelWork = null;
+            void QueueCancel() { lock (cancellationGate) cancelWork ??= Task.Run(loader.Cancel); }
             try {
                 onLoaderCreated?.Invoke(loader);
                 lock (loader.LockState) { token.ThrowIfCancellationRequested(); loader.Start(); }
-                cancellation = token.Register(loader.Cancel);
+                cancellation = token.Register(QueueCancel);
                 while (loader.State == ModBase.LoadState.Loading) {
                     foreach (var file in loader.Files) {
                         if (byPath.TryGetValue(Path.GetFullPath(file.LocalPath), out var spec) &&
@@ -76,7 +78,15 @@ public static class MmcDownloads {
                 if (loader.State is ModBase.LoadState.Waiting or ModBase.LoadState.Loading) loader.Failed(error);
             } finally {
                 cancellation.Dispose();
-                if (loader.State == ModBase.LoadState.Loading) loader.Cancel();
+                if (loader.State == ModBase.LoadState.Loading) QueueCancel();
+                Task pendingCancel; lock (cancellationGate) pendingCancel = cancelWork;
+                if (pendingCancel is not null) {
+                    try { await pendingCancel.ConfigureAwait(false); }
+                    catch (Exception cancelError) {
+                        failure ??= cancelError;
+                        if (loader.State is ModBase.LoadState.Waiting or ModBase.LoadState.Loading) loader.Failed(cancelError);
+                    }
+                }
                 await DrainAsync(loader).ConfigureAwait(false);
             }
             token.ThrowIfCancellationRequested();

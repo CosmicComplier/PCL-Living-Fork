@@ -42,7 +42,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
     where TLoader : LegacyLoaderBase<TLoader, TLoadState, TLoadingState>
     where TNetState : struct, Enum where TLoadState : struct, Enum {
     private void RunDownloadWorker(TDownload owner, Action work, string name, ThreadPriority priority, IDisposable? registeredLease = null) {
-        IDisposable lease = registeredLease ?? owner.CoreRecord.IoWork.Enter()!;
+        IDisposable lease = registeredLease ?? owner.CoreRecord.IoWork.Enter() ?? throw new InvalidOperationException("Download operation cannot register new work.");
         try { Host.RunNewThread(() => { try { work(); } finally { lease.Dispose(); } }, name, priority); }
         catch { lease.Dispose(); throw; }
     }
@@ -62,7 +62,7 @@ public sealed partial class LegacyNetworkRuntime<TSource, TThread, TFile, TDownl
             while (true) {
                 Task wait;
                 lock (file.LockState) {
-                    if (file.IoWork.IsSealed && file.IoWork.Active == 0) break;
+                    if (Convert.ToInt32(file.State) >= 5 && file.IoWork.IsSealed && file.IoWork.Active == 0) break;
                     wait = file.IoWork.WhenIdle();
                 }
                 if (!wait.IsCompleted) await wait.ConfigureAwait(false);
