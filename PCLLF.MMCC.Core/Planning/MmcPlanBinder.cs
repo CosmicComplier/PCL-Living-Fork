@@ -9,7 +9,7 @@ public static class MmcPlanBinder {
         IReadOnlyList<MmcMaterializedArtifactFact> facts, MmcBindOptions options,
         IReadOnlyList<MmcArtifactLockRecord>? priorLocks = null, IReadOnlyList<MmcDerivedOutputRecord>? derivedOutputs = null,
         IReadOnlyList<MmcAssetIndexInput>? assetIndexes = null, MmcReadLimits? limits = null,
-        MmcInstanceDefinition? publishedBaseline = null) {
+        MmcInstanceDefinition? publishedBaseline = null, MmcPackageBaselineInput? packageBaseline = null) {
         ArgumentNullException.ThrowIfNull(definition); ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(facts); ArgumentNullException.ThrowIfNull(options);
         limits ??= new();
@@ -29,14 +29,17 @@ public static class MmcPlanBinder {
                     definition.InstalledProjection is not null && definition.InstalledProjection.BoundFingerprint != authority.InstalledProjection!.BoundFingerprint)
                     Fail("MMC_BIND_AUTHORITY", "Candidate identity/generation or published projection differs from its prior baseline.");
                 var oldInventoryKeys = authority.ArtifactInventory.Select(i => i.ArtifactKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var oldPackageKeys = authority.PackageFileInventory.Select(i => i.ArtifactKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 if (!SameRecords(authority.ArtifactLocks, definition.ArtifactLocks, l => l.ArtifactKey) ||
                     !SameRecords(authority.ArtifactInventory, definition.ArtifactInventory.Where(i => oldInventoryKeys.Contains(i.ArtifactKey)).ToImmutableArray(), i => i.ArtifactKey) ||
-                    !SameRecords(authority.DerivedOutputs, definition.DerivedOutputs, d => d.TargetRelativePath))
+                    !SameRecords(authority.DerivedOutputs, definition.DerivedOutputs, d => d.TargetRelativePath) ||
+                    !SameRecords(authority.PackageFileInventory, definition.PackageFileInventory.Where(i => oldPackageKeys.Contains(i.ArtifactKey)).ToImmutableArray(), i => i.ArtifactKey) ||
+                    !SameRecords(authority.PackageFileLocks, definition.PackageFileLocks, l => l.ArtifactKey))
                     Fail("MMC_BIND_AUTHORITY", "Candidate cannot rewrite, omit or manufacture prior adopted authority.");
                 bool changedSources = SourceEnvelopeFingerprint(authority) != SourceEnvelopeFingerprint(definition);
                 if (options.Intent == MmcBindingIntent.UpdateDefinition ? !changedSources : changedSources)
                     Fail("MMC_BIND_SOURCE_CHANGE", "Source changes require an explicit new-definition intent; repair/variant adoption preserve the source envelope.");
-            } else if (authority is not null || !definition.DerivedOutputs.IsEmpty) Fail("MMC_BIND_AUTHORITY", "Initial import cannot inherit or manufacture published/derived prior authority.");
+            } else if (authority is not null || !definition.DerivedOutputs.IsEmpty || !definition.PackageFileLocks.IsEmpty) Fail("MMC_BIND_AUTHORITY", "Initial import cannot inherit or manufacture published/derived/package-file prior authority.");
             if (!MmcProfileFingerprints.Matches(plan)) Fail("MMC_BIND_PLAN_FINGERPRINT", "Compiled plan contents do not match their canonical fingerprints.");
             if (definition.Generation != options.ExpectedGeneration || options.ManifestGeneration != options.NewGeneration || !Enum.IsDefined(options.Intent)) Fail("MMC_BIND_GENERATION", "Binding generation/intent is inconsistent.");
             bool increment = definition.Generation < long.MaxValue && options.NewGeneration == definition.Generation + 1;
@@ -69,6 +72,19 @@ public static class MmcPlanBinder {
             var active = ActiveArtifacts(plan);
             var inventory = definition.ArtifactInventory.ToDictionary(x => x.ArtifactKey, StringComparer.OrdinalIgnoreCase);
             var locks = originalLocks.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+            var packageInventory = definition.PackageFileInventory.ToDictionary(x => x.ArtifactKey, StringComparer.OrdinalIgnoreCase);
+            var priorPackageLocks = (authority?.PackageFileLocks ?? definition.PackageFileLocks).ToDictionary(x => x.ArtifactKey, StringComparer.OrdinalIgnoreCase);
+            var packageLocks = priorPackageLocks.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, MmcPackageFileInventoryRecord> packageMembers = new(StringComparer.OrdinalIgnoreCase);
+            if (packageBaseline is not null) {
+                if (definition.AuthorFileBaseline is null) Fail("MMC_BIND_PACKAGE_BASELINE", "New preserved package files require an external measured baseline reference.");
+                var read = MmcPackageFileBaselineCodec.Read(packageBaseline, definition.AuthorFileBaseline, definition.Origin.PackageSha256, definition.SourceBundle.RelativeRoot,
+                    new() { ArchiveLimits = limits });
+                if (read.HasErrors || read.Baseline is null) Fail("MMC_BIND_PACKAGE_BASELINE", string.Join("; ", read.Diagnostics.Select(d => d.Message)));
+                if (read.Baseline.GameRootLeaf != definition.Layout.GameRootLeaf) Fail("MMC_BIND_PACKAGE_BASELINE", "Measured package game-root layout differs from its definition.");
+                packageMembers = MmcPackageFilePreservation.LibraryMembers(read.Baseline).ToDictionary(m => m.ArtifactKey, StringComparer.OrdinalIgnoreCase);
+            }
+            if (active.Keys.Any(key => packageInventory.ContainsKey(key) || packageMembers.ContainsKey(key))) Fail("MMC_BIND_PLAN", "Package-file preservation keys cannot be promoted into component execution authority.");
             foreach (var artifact in active.Values) {
                 string sourceObject = SourceObject(definition, artifact.ComponentUid, artifact.SourceRevision, artifact.Provenance.ComponentVersion);
                 if (!observations.TryGetValue(artifact.Key, out var fact)) Fail("MMC_BIND_FACT_MISSING", "Active launch input has no verified materialization fact.");
@@ -90,6 +106,22 @@ public static class MmcPlanBinder {
             // Explicitly preserved inactive inputs are allowed only through an
             // existing declaration; arbitrary extra facts cannot become libraries.
             foreach (var fact in observations.Values.Where(f => !active.ContainsKey(f.ArtifactKey) && !MmcDerivedProofs.IsAssetObjectKey(f.ArtifactKey))) {
+                if (packageMembers.TryGetValue(fact.ArtifactKey, out var member) || packageInventory.TryGetValue(fact.ArtifactKey, out member)) {
+                    if (!priorPackageLocks.ContainsKey(fact.ArtifactKey) && !packageMembers.ContainsKey(fact.ArtifactKey)) Fail("MMC_BIND_PACKAGE_BASELINE", "A new package-original key requires raw measured baseline membership.");
+                    if (packageInventory.TryGetValue(fact.ArtifactKey, out var oldMember) && oldMember != member) Fail("MMC_BIND_PACKAGE_SOURCE", "Existing package-original identity differs from measured membership.");
+                    if (!MmcDefinitionCodec.SameHash(member.SourceRevision, fact.SourceRevision) || !MmcDefinitionCodec.SameHash(member.Sha256, fact.ObservedSha256) ||
+                        fact.ObservedSha1 is null || !MmcDefinitionCodec.SameHash(member.Sha1, fact.ObservedSha1) || member.SizeBytes != fact.SizeBytes || fact.TargetRelativePath != "libraries/" + member.LibraryRelativePath)
+                        Fail("MMC_BIND_PACKAGE_DIGEST", "Package-original observation differs from its measured local-library member.");
+                    if (priorPackageLocks.TryGetValue(fact.ArtifactKey, out var oldLock)) {
+                        if (!MmcDefinitionCodec.SameHash(oldLock.AdoptedSha256, fact.ObservedSha256) || !MmcDefinitionCodec.SameHash(oldLock.SourceRevision, fact.SourceRevision) || oldLock.SizeBytes != fact.SizeBytes || !MmcDefinitionCodec.SameHash(oldLock.ObservedSha1, fact.ObservedSha1))
+                            Fail("MMC_BIND_REBIND", "A preserved package-file key cannot adopt different original bytes.");
+                    } else if (options.Intent == MmcBindingIntent.RepairExisting) Fail("MMC_BIND_ADOPTION_REQUIRED", "New package originals require explicit adoption.");
+                    if (observations.Values.Any(other => active.ContainsKey(other.ArtifactKey) && other.TargetRelativePath.Equals(fact.TargetRelativePath, StringComparison.OrdinalIgnoreCase) && !MmcDefinitionCodec.SameHash(other.ObservedSha256, fact.ObservedSha256)))
+                        Fail("MMC_BIND_PACKAGE_COLLISION", "Preservation and execution observations conflict at one live local-library target.");
+                    packageInventory[member.ArtifactKey] = member;
+                    packageLocks[member.ArtifactKey] = new(member.ArtifactKey, member.SourceRevision, fact.ObservedSha256, fact.ObservedSha1, fact.SizeBytes, fact.RecoveryObjectRelativePath, fact.TargetRelativePath);
+                    continue;
+                }
                 if (!inventory.TryGetValue(fact.ArtifactKey, out var item)) Fail("MMC_BIND_UNDECLARED", "Extra input has no preserved artifact declaration.");
                 SourceObject(definition, item.ComponentUid, item.SourceRevision, null);
                 BindStatic(item with { State = MmcArtifactAdoptionState.Adopted }, fact);
@@ -112,6 +144,8 @@ public static class MmcPlanBinder {
                 Generation = options.NewGeneration,
                 ArtifactInventory = inventory.Values.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).ToImmutableArray(),
                 ArtifactLocks = locks.Values.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).ToImmutableArray(),
+                PackageFileInventory = packageInventory.Values.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).ToImmutableArray(),
+                PackageFileLocks = packageLocks.Values.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).ToImmutableArray(),
                 DerivedOutputs = mergedDerived.Values.OrderBy(x => x.TargetRelativePath, StringComparer.Ordinal).ToImmutableArray(),
                 InstalledProjection = new(plan.ProfileFingerprint, options.OutputJsonSha256, options.NewGeneration, plan.RuntimePlanFingerprint, new string('0', 64))
             };

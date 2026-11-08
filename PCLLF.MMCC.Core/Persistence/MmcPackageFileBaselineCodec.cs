@@ -52,7 +52,7 @@ public static class MmcPackageFileBaselineCodec {
             var inspection = MmcPackageReader.InspectArchive(entries.Select(e => new MmcArchiveEntry(e.Path, e.SizeBytes, e.IsDirectory)).ToArray(), limits.ArchiveLimits);
             return new(new(digest, expectedReference, document, inspection.GameRootLeaf!), diagnostics);
         } catch (MmcInputException error) { return new(null, [new(error.Code, MmcDiagnosticSeverity.Error, "package-baseline", error.Message)]); }
-        catch (Exception error) when (error is JsonException or OverflowException or FormatException) {
+        catch (Exception error) when (error is JsonException or OverflowException or FormatException or InvalidOperationException) {
             return new(null, [new("MMC_PACKAGE_BASELINE_JSON", MmcDiagnosticSeverity.Error, "package-baseline", "Invalid package baseline JSON: " + error.Message)]);
         }
     }
@@ -142,7 +142,10 @@ public static class MmcPackageFileBaselineCodec {
             while (reader.Read() && reader.TokenType != JsonTokenType.EndObject) {
                 switch (Property(ref reader, fields)) {
                     case "relativePath": path = Path(ref reader, ref characters, limits); break;
-                    case "role": if (!Enum.TryParse(String(ref reader, 64), out role) || !Enum.IsDefined(role)) Fail("MMC_PACKAGE_BASELINE_ROLE", "Unknown package file role."); break;
+                    case "role":
+                        string roleName = String(ref reader, 64);
+                        if (!Enum.TryParse(roleName, out role) || !Enum.IsDefined(role) || Enum.GetName(role) != roleName) Fail("MMC_PACKAGE_BASELINE_ROLE", "Unknown package file role.");
+                        break;
                     case "targetRelativePath": target = reader.TokenType == JsonTokenType.Null ? null : Path(ref reader, ref characters, limits); break;
                     case "sha256": sha256 = String(ref reader, 64); break;
                     case "sha1": sha1 = String(ref reader, 40); break;

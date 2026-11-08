@@ -24,6 +24,8 @@ public sealed record MmcPackageBaselineReadResult(MmcValidatedPackageBaseline? B
 public sealed record MmcPackageFileOrigin(string PackageSha256, string BaselineSha256, string SourceRelativePath);
 public sealed record MmcPackageFileInventoryRecord(string ArtifactKey, string SourceRevision, string PackageSha256,
     MmcExternalBundleReference BaselineReference, string SourceRelativePath, string LibraryRelativePath,
-    string Sha256, string Sha1, long SizeBytes, uint Crc32);
+    string Sha256, string Sha1, long SizeBytes, uint Crc32) {
+    public string RelativeRoot { get; init; } = "";
+}
 public sealed record MmcPackageFileLockRecord(string ArtifactKey, string SourceRevision, string AdoptedSha256,
     string ObservedSha1, long SizeBytes, string RecoveryObjectRelativePath, string TargetRelativePath);

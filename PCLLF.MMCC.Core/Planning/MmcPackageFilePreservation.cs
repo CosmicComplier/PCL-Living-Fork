@@ -21,7 +21,7 @@ public static class MmcPackageFilePreservation {
             string key = ComputeArtifactKey(baseline.BaselineSha256, baseline.Baseline.PackageSha256, file.RelativePath);
             string revision = ComputeSourceRevision(baseline.BaselineSha256, baseline.Baseline.PackageSha256, file.RelativePath);
             return new MmcPackageFileInventoryRecord(key, revision, baseline.Baseline.PackageSha256, baseline.Reference,
-                file.RelativePath, file.TargetRelativePath["libraries/".Length..], file.Sha256, file.Sha1, file.SizeBytes, file.Crc32);
+                file.RelativePath, file.TargetRelativePath["libraries/".Length..], file.Sha256, file.Sha1, file.SizeBytes, file.Crc32) { RelativeRoot = baseline.Baseline.RelativeRoot };
         }).ToImmutableArray();
     }
     public static ImmutableArray<MmcArtifactReference> CreateLibraryArtifacts(MmcValidatedPackageBaseline baseline) =>

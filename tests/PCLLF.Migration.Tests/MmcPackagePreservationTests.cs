@@ -9,6 +9,8 @@ internal static class MmcPackagePreservationTests {
         yield return ("MMC persisted local metadata preserves missing raw versions and remote metadata remains exact", MetadataIdentity);
         yield return ("MMC external author baseline pins complete file membership and preserves only root-local libraries", BaselineMembership);
         yield return ("MMC external author baseline rejects missing checksums wrong roles forged members and duplicate JSON", BaselineRejections);
+        yield return ("MMC binder adopts independent package originals using measured baseline membership", PackageBinding);
+        yield return ("MMC binder rejects unproven game files and altered package-original locks", PackageBindingRejections);
     }
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
     private static MmcParseResult Package(string manifest, Dictionary<string, string> patches, bool omitOrphanContent = false) {
@@ -103,5 +105,84 @@ internal static class MmcPackagePreservationTests {
         uint crc = uint.MaxValue;
         foreach (byte value in bytes) { crc ^= value; for (int bit = 0; bit < 8; bit++) crc = crc >> 1 ^ ((crc & 1) == 0 ? 0 : 0xedb88320u); }
         return ~crc;
+    }
+    private sealed record BindingFixture(MmcCompiledProfile Plan, MmcInstanceDefinition Draft, MmcPackageBaselineInput Input,
+        ImmutableArray<MmcMaterializedArtifactFact> ActiveFacts, MmcMaterializedArtifactFact Original);
+    private static BindingFixture BindingData() {
+        Dictionary<string, byte[]> files = new() {
+            ["pack/mmc-pack.json"] = Encoding.UTF8.GetBytes("{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"}]}"),
+            ["pack/patches/net.minecraft.json"] = Encoding.UTF8.GetBytes("{\"uid\":\"net.minecraft\",\"version\":\"1\",\"mainClass\":\"fixture.Main\",\"mainJar\":{\"name\":\"fixture:client:1\"},\"libraries\":[{\"name\":\"fixture:common:1\"}]}"),
+            ["pack/libraries/private.jar"] = [1, 2, 3], ["pack/minecraft/config/fixture.cfg"] = Encoding.UTF8.GetBytes("author configuration")
+        };
+        byte[] zipBytes;
+        using (var stream = new MemoryStream()) {
+            using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, true)) {
+                archive.CreateEntry("pack/");
+                foreach (var file in files) { using var output = archive.CreateEntry(file.Key).Open(); output.Write(file.Value); }
+            }
+            zipBytes = stream.ToArray();
+        }
+        string packageSha = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(zipBytes));
+        var rows = files.Select(file => {
+            var placement = MmcPackageFileBaselineCodec.Classify("pack/", file.Key);
+            return new MmcPackageFileRecord(file.Key, placement.Role, placement.TargetRelativePath,
+                Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file.Value)), Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(file.Value)), file.Value.Length, Crc(file.Value));
+        }).ToImmutableArray();
+        var descriptors = ImmutableArray.Create(new MmcPackageArchiveDescriptor("pack/", true, 0, 0)).AddRange(rows.Select(file => new MmcPackageArchiveDescriptor(file.RelativePath, false, file.SizeBytes, file.Crc32)));
+        var baseline = new MmcPackageFileBaseline(1, packageSha, "pack/", descriptors, rows);
+        byte[] baselineBytes = MmcPackageFileBaselineCodec.Serialize(baseline);
+        var reference = Reference(baselineBytes, rows.Length);
+        var input = new MmcPackageBaselineInput(baselineBytes);
+        var read = MmcPackageFileBaselineCodec.Read(input, reference, packageSha, "pack/");
+        Require(!read.HasErrors, "Coherent synthetic baseline failed.");
+        var metadata = files.Where(file => file.Key.EndsWith(".json", StringComparison.Ordinal)).ToDictionary(file => file.Key, file => Encoding.UTF8.GetString(file.Value));
+        var parsed = MmcPackageReader.Parse(new(descriptors.Select(d => new MmcArchiveEntry(d.Path, d.SizeBytes, d.IsDirectory)).ToArray(), metadata));
+        var resolved = MmcComponentResolver.Resolve(parsed, []);
+        Require(resolved.IsComplete, "Coherent synthetic source package failed resolution.");
+        var compilation = MmcProfileCompiler.Compile(resolved.Profile!, new("windows", "amd64", 17));
+        Require(!compilation.HasErrors && compilation.Profile is not null, "Coherent synthetic source package failed compile.");
+        var plan = compilation.Profile!;
+        var draft = MmcDefinitionTests.Draft(plan.SourceFingerprint);
+        string prefix = "PCL/MmcSource/" + draft.SourceBundle.BundleSha256 + "/";
+        draft = draft with { Origin = draft.Origin with { PackageSha256 = packageSha }, SourceBundle = draft.SourceBundle with { RelativeRoot = "pack/", MetadataRecords = [
+            new("mmc-pack.json", rows[0].Sha256, prefix + "mmc-pack.json", MmcSourceRecordKind.Manifest),
+            new("patches/net.minecraft.json", rows[1].Sha256, prefix + "patches/net.minecraft.json", MmcSourceRecordKind.Component, "net.minecraft", "1", MmcComponentSourceKind.PackageLocal)
+        ] }, AuthorFileBaseline = reference };
+        string view = MmcDefinitionTests.Hash('9');
+        var active = plan.Classpath.Select(artifact => {
+            string hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("verified active fixture:" + artifact.Key)));
+            return new MmcMaterializedArtifactFact(artifact.Key, artifact.SourceRevision, hash, 10, "PCL/MmcArtifacts/sha256/" + hash, "PCL/MmcRuntime/" + view + "/libraries/" + artifact.RelativePath);
+        }).ToImmutableArray();
+        var member = MmcPackageFilePreservation.LibraryMembers(read.Baseline!)[0];
+        return new(plan, draft, input, active, new(member.ArtifactKey, member.SourceRevision, member.Sha256, member.SizeBytes, "PCL/MmcArtifacts/sha256/" + member.Sha256, "libraries/" + member.LibraryRelativePath, member.Sha1));
+    }
+    private static MmcBindOptions InitialOptions() => new(1, 1, MmcBindingIntent.InitialImport, MmcDefinitionTests.Hash('2'), 1);
+    private static void PackageBinding() {
+        var fixture = BindingData();
+        var result = MmcPlanBinder.Bind(fixture.Draft, fixture.Plan, fixture.ActiveFacts.Add(fixture.Original), InitialOptions(), packageBaseline: fixture.Input);
+        Require(!result.HasErrors && result.Definition!.PackageFileInventory is [{ SourceRelativePath: "pack/libraries/private.jar" }] && result.Definition.PackageFileLocks is [{ TargetRelativePath: "libraries/private.jar" }] &&
+            result.Definition.ArtifactInventory.All(item => item.ArtifactKey != fixture.Original.ArtifactKey), "Package original impersonated a component or did not acquire an independent lock: " + string.Join(";", result.Diagnostics.Select(d => d.Message)));
+        var repaired = MmcPlanBinder.Bind(result.Definition!, fixture.Plan, fixture.ActiveFacts.Add(fixture.Original), new(1, 1, MmcBindingIntent.RepairExisting, InitialOptions().OutputJsonSha256, 1));
+        Require(!repaired.HasErrors && MmcDefinitionCodec.Read(MmcDefinitionCodec.Serialize(repaired.Definition!)).Status == MmcDefinitionReadStatus.Valid, "Known original required the ZIP/baseline again instead of immutable published authority.");
+    }
+    private static void PackageBindingRejections() {
+        var fixture = BindingData();
+        Require(MmcPlanBinder.Bind(fixture.Draft, fixture.Plan, fixture.ActiveFacts.Add(fixture.Original), InitialOptions()).HasErrors, "Unproven private file fact was accepted without baseline bytes.");
+        var wrongDigest = fixture.Original with { ObservedSha256 = MmcDefinitionTests.Hash('7'), RecoveryObjectRelativePath = "PCL/MmcArtifacts/sha256/" + MmcDefinitionTests.Hash('7') };
+        Require(MmcPlanBinder.Bind(fixture.Draft, fixture.Plan, fixture.ActiveFacts.Add(wrongDigest), InitialOptions(), packageBaseline: fixture.Input).HasErrors, "Measured package-original contents were changed during adoption.");
+        string gamePath = "pack/minecraft/config/fixture.cfg";
+        var gameFact = fixture.Original with { ArtifactKey = MmcPackageFilePreservation.ComputeArtifactKey(fixture.Draft.AuthorFileBaseline!.ContentSha256, fixture.Draft.Origin.PackageSha256, gamePath),
+            SourceRevision = MmcPackageFilePreservation.ComputeSourceRevision(fixture.Draft.AuthorFileBaseline.ContentSha256, fixture.Draft.Origin.PackageSha256, gamePath) };
+        Require(MmcPlanBinder.Bind(fixture.Draft, fixture.Plan, fixture.ActiveFacts.Add(gameFact), InitialOptions(), packageBaseline: fixture.Input).HasErrors, "Author game/config data became a package-library original.");
+        var result = MmcPlanBinder.Bind(fixture.Draft, fixture.Plan, fixture.ActiveFacts.Add(fixture.Original), InitialOptions(), packageBaseline: fixture.Input);
+        Require(!result.HasErrors, "Valid prior package-original binding failed.");
+        var published = result.Definition!;
+        var tampered = published with { PackageFileLocks = [published.PackageFileLocks[0] with { AdoptedSha256 = wrongDigest.ObservedSha256, RecoveryObjectRelativePath = wrongDigest.RecoveryObjectRelativePath }] };
+        Require(MmcPlanBinder.Bind(tampered, fixture.Plan, fixture.ActiveFacts.Add(wrongDigest), new(1, 1, MmcBindingIntent.RepairExisting, InitialOptions().OutputJsonSha256, 1)).HasErrors, "Changed package-original old lock was washed through repair.");
+        var artifact = MmcPackageFilePreservation.CreateLibraryArtifacts(MmcPackageFileBaselineCodec.Read(fixture.Input, fixture.Draft.AuthorFileBaseline!, fixture.Draft.Origin.PackageSha256, "pack/").Baseline!)[0];
+        var altered = fixture.Plan with { DownloadOnlyArtifacts = [artifact] };
+        var fingerprints = MmcProfileFingerprints.Compute(altered);
+        altered = altered with { ProfileFingerprint = fingerprints.ProfileFingerprint, RuntimePlanFingerprint = fingerprints.RuntimePlanFingerprint };
+        Require(MmcPlanBinder.Bind(fixture.Draft, altered, fixture.ActiveFacts.Add(fixture.Original), InitialOptions(), packageBaseline: fixture.Input).HasErrors, "A refreshed fingerprint promoted a preservation-only input into active execution/download authority.");
     }
 }

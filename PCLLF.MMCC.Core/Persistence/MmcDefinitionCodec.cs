@@ -88,7 +88,8 @@ public static class MmcDefinitionCodec {
             RequireArray(definition.ArtifactInventory, limits.MaxArchiveEntries);
             RequireArray(definition.ArtifactLocks, limits.MaxArchiveEntries);
             RequireArray(definition.DerivedOutputs, limits.MaxArchiveEntries * 2L);
-            estimated += 512L * (sources.MetadataRecords.Length + definition.ComponentOverrides.Length + definition.ArtifactInventory.Length + definition.ArtifactLocks.Length + definition.DerivedOutputs.Length);
+            RequireArray(definition.PackageFileInventory, limits.MaxArchiveEntries); RequireArray(definition.PackageFileLocks, limits.MaxArchiveEntries);
+            estimated += 512L * (sources.MetadataRecords.Length + definition.ComponentOverrides.Length + definition.ArtifactInventory.Length + definition.ArtifactLocks.Length + definition.DerivedOutputs.Length + definition.PackageFileInventory.Length + definition.PackageFileLocks.Length);
             if (estimated > limits.MaxMetadataBytes) throw new MmcInputException("MMC_DEFINITION_BUDGET", "definition", "Definition record budget exceeded; large file baselines belong in external bundles.");
             HashSet<string> metadataKeys = new(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, string> sourceObjects = new(StringComparer.OrdinalIgnoreCase);
@@ -179,6 +180,7 @@ public static class MmcDefinitionCodec {
             }
             if (inventory.Values.Any(item => item.State == MmcArtifactAdoptionState.Adopted && !locks.ContainsKey(item.ArtifactKey))) MmcJson.Fail("definition", "Adopted inventory record has no immutable lock.");
             ValidateDerived(definition, inventory, locks, limits, Text);
+            ValidatePackageFiles(definition, mode, limits, Text);
             if (definition.AuthorFileBaseline is { } baseline) {
                 CheckHash(baseline.ContentSha256); Text(baseline.ObjectRelativePath); ObjectPath(baseline.ObjectRelativePath, "PCL/MmcSource/" + sources.BundleSha256.ToLowerInvariant() + "/");
                 if (baseline.FormatVersion != 1 || baseline.EntryCount < 0 || baseline.EntryCount > limits.MaxArchiveEntries) MmcJson.Fail("definition", "Invalid external author-file baseline envelope.");
@@ -206,7 +208,50 @@ public static class MmcDefinitionCodec {
             .Concat(definition.ComponentOverrides.OrderBy(x => x.Uid, StringComparer.Ordinal).SelectMany(x => new[] { x.Uid, x.Enabled?.ToString(), x.Version, x.PatchReference?.Sha256, x.PatchReference?.ObjectRelativePath }))
             .Concat(definition.ArtifactInventory.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.ComponentUid, x.Role.ToString(), x.Scope.ToString(), x.VariantTag, x.SourceRevision, x.RelativePath, x.State.ToString(), x.DeclaredSha1, x.DeclaredSha256, x.SourceObject?.Sha256, x.SourceObject?.ObjectRelativePath, x.SourceMetadataObjectRelativePath }))
             .Concat(definition.ArtifactLocks.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.AdoptedSha256, x.SizeBytes.ToString(), x.RecoveryObjectRelativePath, x.TargetRelativePath, x.ObservedSha1 }))
-            .Concat(definition.DerivedOutputs.OrderBy(x => x.TargetRelativePath, StringComparer.Ordinal).SelectMany(x => new[] { x.Kind.ToString(), x.ParentArtifactKey, x.ParentSha256, x.ProducerVersion, x.SourceSetFingerprint, x.RuntimePlanFingerprint, x.ContextFingerprint, x.ViewKey, x.RelativePath, x.TargetRelativePath, x.Sha256, x.SizeBytes.ToString(), x.ArtifactKey, x.ObservedSha1, x.RecoveryObjectRelativePath })));
+            .Concat(definition.DerivedOutputs.OrderBy(x => x.TargetRelativePath, StringComparer.Ordinal).SelectMany(x => new[] { x.Kind.ToString(), x.ParentArtifactKey, x.ParentSha256, x.ProducerVersion, x.SourceSetFingerprint, x.RuntimePlanFingerprint, x.ContextFingerprint, x.ViewKey, x.RelativePath, x.TargetRelativePath, x.Sha256, x.SizeBytes.ToString(), x.ArtifactKey, x.ObservedSha1, x.RecoveryObjectRelativePath }))
+            .Concat(definition.PackageFileInventory.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.PackageSha256, x.RelativeRoot,
+                x.BaselineReference.ContentSha256, x.BaselineReference.ObjectRelativePath, x.BaselineReference.EntryCount.ToString(), x.BaselineReference.FormatVersion.ToString(), x.SourceRelativePath,
+                x.LibraryRelativePath, x.Sha256, x.Sha1, x.SizeBytes.ToString(), x.Crc32.ToString() }))
+            .Concat(definition.PackageFileLocks.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.AdoptedSha256, x.ObservedSha1, x.SizeBytes.ToString(), x.RecoveryObjectRelativePath, x.TargetRelativePath })));
+    }
+
+    private static void ValidatePackageFiles(MmcInstanceDefinition definition, MmcDefinitionValidationMode mode, MmcReadLimits limits, Action<string?, int> text) {
+        Dictionary<string, MmcPackageFileInventoryRecord> inventory = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in definition.PackageFileInventory) {
+            if (item is null || item.BaselineReference is null) MmcJson.Fail("definition", "Null package-original inventory/reference.");
+            CheckHash(item.ArtifactKey); CheckHash(item.SourceRevision); CheckHash(item.PackageSha256); CheckHash(item.Sha256); CheckHash(item.Sha1, 40); CheckHash(item.BaselineReference.ContentSha256);
+            text(item.RelativeRoot, 4096); text(item.SourceRelativePath, 4096); text(item.LibraryRelativePath, 4096); text(item.BaselineReference.ObjectRelativePath, 4096);
+            MetadataObjectPath(item.BaselineReference.ObjectRelativePath);
+            if (!item.BaselineReference.ObjectRelativePath.StartsWith("PCL/MmcSource/", StringComparison.Ordinal) || item.BaselineReference.FormatVersion != 1 || item.BaselineReference.EntryCount < 0 || item.BaselineReference.EntryCount > limits.MaxArchiveEntries)
+                MmcJson.Fail("definition", "Invalid package-original baseline reference.");
+            if (item.RelativeRoot.Length > 0) { if (!item.RelativeRoot.EndsWith('/')) MmcJson.Fail("definition", "Package-original root must be an archive prefix."); MmcArtifactRules.Relative(item.RelativeRoot[..^1], "package-original"); }
+            var placement = MmcPackageFileBaselineCodec.Classify(item.RelativeRoot, item.SourceRelativePath);
+            if (placement.Role != MmcPackageFileRole.LocalLibrary || placement.TargetRelativePath != "libraries/" + item.LibraryRelativePath ||
+                item.ArtifactKey != MmcPackageFilePreservation.ComputeArtifactKey(item.BaselineReference.ContentSha256, item.PackageSha256, item.SourceRelativePath) ||
+                item.SourceRevision != MmcPackageFilePreservation.ComputeSourceRevision(item.BaselineReference.ContentSha256, item.PackageSha256, item.SourceRelativePath))
+                MmcJson.Fail("definition", "Package-original key/role/path differs from its independent source identity.");
+            if (item.SizeBytes < 0 || item.SizeBytes > limits.MaxEntryBytes || !inventory.TryAdd(item.ArtifactKey, item)) MmcJson.Fail("definition", "Invalid or duplicate package-original record.");
+            if (SameHash(item.PackageSha256, definition.Origin.PackageSha256) && (definition.AuthorFileBaseline is null || item.BaselineReference == definition.AuthorFileBaseline && item.RelativeRoot != definition.SourceBundle.RelativeRoot))
+                MmcJson.Fail("definition", "Current package originals require a measured author baseline and a coherent current root.");
+        }
+        HashSet<string> locked = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> currentTargets = new(StringComparer.OrdinalIgnoreCase);
+        long bytes = 0;
+        foreach (var item in definition.PackageFileLocks) {
+            if (item is null) MmcJson.Fail("definition", "Null package-original lock.");
+            CheckHash(item.ArtifactKey); CheckHash(item.SourceRevision); CheckHash(item.AdoptedSha256); CheckHash(item.ObservedSha1, 40);
+            if (!inventory.TryGetValue(item.ArtifactKey, out var member) || !locked.Add(item.ArtifactKey) || !SameHash(item.SourceRevision, member.SourceRevision) || !SameHash(item.AdoptedSha256, member.Sha256) || !SameHash(item.ObservedSha1, member.Sha1) || item.SizeBytes != member.SizeBytes)
+                MmcJson.Fail("definition", "Package-original lock does not match its measured source membership.");
+            text(item.TargetRelativePath, 4096); text(item.RecoveryObjectRelativePath, 4096); RecoveryPath(item.RecoveryObjectRelativePath, item.AdoptedSha256);
+            MmcArtifactRules.Relative(item.TargetRelativePath, "package-original");
+            if (item.TargetRelativePath != "libraries/" + member.LibraryRelativePath || bytes > limits.MaxArchiveBytes - item.SizeBytes) MmcJson.Fail("definition", "Package-original target/total byte budget is invalid.");
+            bytes += item.SizeBytes;
+            if (SameHash(member.PackageSha256, definition.Origin.PackageSha256)) {
+                if (currentTargets.TryGetValue(item.TargetRelativePath, out var old) && !SameHash(old, item.AdoptedSha256)) MmcJson.Fail("definition", "Current package originals collide at one target with different measured bytes.");
+                currentTargets[item.TargetRelativePath] = item.AdoptedSha256;
+            }
+        }
+        if (mode == MmcDefinitionValidationMode.Published && inventory.Keys.Any(key => !locked.Contains(key))) MmcJson.Fail("definition", "Published package-original inventory requires immutable adopted locks.");
     }
 
     private static void ValidateDerived(MmcInstanceDefinition definition, Dictionary<string, MmcArtifactInventoryRecord> inventory,

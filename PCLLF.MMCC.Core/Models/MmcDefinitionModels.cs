@@ -35,6 +35,8 @@ public sealed record MmcInstanceDefinition(int SchemaVersion, string ManagementK
     MmcInstalledProjection? InstalledProjection = null, Guid? ParentInstanceId = null,
     MmcExternalBundleReference? AuthorFileBaseline = null) {
     public ImmutableArray<MmcDerivedOutputRecord> DerivedOutputs { get; init; } = [];
+    public ImmutableArray<MmcPackageFileInventoryRecord> PackageFileInventory { get; init; } = [];
+    public ImmutableArray<MmcPackageFileLockRecord> PackageFileLocks { get; init; } = [];
 }
 public enum MmcDefinitionValidationMode { Draft, Published }
 public enum MmcDefinitionReadStatus { Valid, Invalid, Unsupported }
