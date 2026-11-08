@@ -19,6 +19,8 @@ namespace PCL;
 public static class MmcDownloads {
     private static readonly ConditionalWeakTable<ModNet.NetFile, MmcArtifactDownloadSpec> Specifications = new();
     public static Task DrainAsync(ModNet.LoaderDownload loader) => DownloadRuntime.WaitForDownloadQuiescenceAsync(loader);
+    public static MmcMetadataStore CreateMetadataStore(string cacheRoot, Uri endpoint = null, MmcMetadataStoreOptions options = null) =>
+        new(cacheRoot, endpoint ?? new Uri("https://meta.prismlauncher.org/v1/"), ModNet.StandardMetadataClient, options);
 
     public static MmcArtifactPrefetchAdapter<ModNet.NetFile> CreatePrefetcher(MmcArtifactCacheRoots roots,
         ProgressProvider progress = null, Action<ModNet.LoaderDownload> onLoaderCreated = null, MmcArtifactLimits limits = null) =>
