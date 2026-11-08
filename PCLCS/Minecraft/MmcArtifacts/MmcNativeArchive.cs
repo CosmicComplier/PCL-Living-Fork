@@ -16,7 +16,7 @@ namespace PCLCS;
 public sealed partial class MmcArtifactMaterializer {
     private async Task<ImmutableArray<MmcNativeFileBinding>> ExtractNativesAsync(IEnumerable<PreparedInput> sources,
         string viewKey, MmcInstancePaths paths, MmcArtifactWorkspace workspace, MmcArtifactIo io,
-        Dictionary<string, MmcArtifactStagedMutation> mutations, Dictionary<string, string> targetClaims, CancellationToken token) {
+        Dictionary<string, MmcArtifactStagedMutation> mutations, MmcRuntimeTargetClaims targetClaims, CancellationToken token) {
         var result = ImmutableArray.CreateBuilder<MmcNativeFileBinding>();
         long extracted = 0; int count = 0;
         foreach (PreparedInput source in sources) {
@@ -63,7 +63,7 @@ public sealed partial class MmcArtifactMaterializer {
             string after = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token).ConfigureAwait(false));
             if (after != source.Lock.AdoptedSha256) throw new IOException("Native input changed during extraction.");
         }
-        return result.ToImmutable();
+        return result.ToImmutable().DistinctBy(x => x.TargetPath, StringComparer.OrdinalIgnoreCase).ToImmutableArray();
     }
 
     private static int NativeZipPreflight(Stream stream, int maximumEntries, long maximumOutput) =>

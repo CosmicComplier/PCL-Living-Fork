@@ -236,6 +236,18 @@ internal static class MmcArtifactTests {
         fixture.Source(a.Key, left); fixture.Source(b.Key, right);
         await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(fixture.Request([a, b]), fixture.Access()));
         Equal(0, fixture.ActiveStages());
+        using var roleFixture = new Fixture();
+        byte[] parentJar = Jar(("parent", [1])), childJar = Jar(("parent/child.dll", [2]));
+        var parent = Artifact("parent-native", "parent.jar", parentJar) with { Role = MmcArtifactRole.Native };
+        var child = Artifact("child-native", "child.jar", childJar) with { Role = MmcArtifactRole.Native };
+        roleFixture.Source(parent.Key, parentJar); roleFixture.Source(child.Key, childJar);
+        await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(roleFixture.Request([parent, child]), roleFixture.Access()));
+        using var sameFixture = new Fixture();
+        var sameA = Artifact("same-a", "a.jar", left) with { Role = MmcArtifactRole.Native };
+        var sameB = Artifact("same-b", "b.jar", left) with { Role = MmcArtifactRole.Native };
+        sameFixture.Source(sameA.Key, left); sameFixture.Source(sameB.Key, left);
+        using var sharedBytes = await new MmcArtifactMaterializer().PrepareAsync(sameFixture.Request([sameA, sameB]), sameFixture.Access());
+        Equal(1, sharedBytes.NativeFiles.Length); Equal(1, sharedBytes.NativeCache!.CompleteFiles.Length);
     }
 
     private static async Task AssetViews() {
@@ -252,6 +264,8 @@ internal static class MmcArtifactTests {
         Equal(true, prepared.GameAssetsRoot!.EndsWith(Path.Combine("assets", "virtual", "example"), StringComparison.Ordinal));
         Equal(false, File.Exists(prepared.AssetFiles[0].ObjectPath));
         Equal(true, prepared.AssetFiles.All(x => x.VirtualPath is not null && x.MappedResourcePath is null));
+        Equal(index.Sha256, prepared.AssetIndexContents.Single().ObservedSha256);
+        Equal(index.Sha256, Hash(prepared.AssetIndexContents.Single().Utf8Content.ToArray()));
         var objectMutation = prepared.StagedMutations.Single(x => x.TargetRelativePath.Contains("/assets/objects/", StringComparison.Ordinal));
         Equal(Hash(bytes), Hash(File.ReadAllBytes(objectMutation.StagedPath)));
         fixture.AssetSource([9, 9]);
@@ -345,6 +359,9 @@ internal static class MmcArtifactTests {
         Equal(false, repaired.NativeCacheReused);
         Equal(true, repaired.StagedMutations.Any(x => x.TargetRelativePath.EndsWith("/natives/same.dll", StringComparison.Ordinal)));
         Equal(Hash([1, 2, 3]), repaired.NativeFiles.Single().Sha256);
+        fixture.Write(Path.Combine(repaired.NativeDirectory!, "unrecorded.dll"), [5]);
+        await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(request));
+        Equal(true, File.Exists(Path.Combine(repaired.NativeDirectory!, "unrecorded.dll")));
     }
 
     private static async Task BindingAdapterInitial() {
@@ -454,7 +471,7 @@ internal static class MmcArtifactTests {
     }
 
     private static MmcArtifactReference Artifact(string key, string relative, byte[] bytes, MmcArtifactScope scope = MmcArtifactScope.Shared) =>
-        new(key, "example.component", "revision-1", MmcArtifactRole.Classpath, scope, null, relative,
+        new(Hash(Encoding.UTF8.GetBytes(key)), "example.component", Hash(Encoding.UTF8.GetBytes("revision-1")), MmcArtifactRole.Classpath, scope, null, relative,
             scope == MmcArtifactScope.Shared ? ["https://example.invalid/" + key] : [],
             Convert.ToHexStringLower(SHA1.HashData(bytes)), Hash(bytes), bytes.Length, null, [],
             new("example.component", "1", "self-authored-fixture", "source-hash", "libraries", 0));

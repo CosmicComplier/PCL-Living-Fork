@@ -75,7 +75,7 @@ public sealed partial class MmcArtifactMaterializer {
             string viewKey = ViewKey(request.LogicalContext, artifacts.Select(x => inputs[x.Key]).Concat(
                 assetPlan is null ? [] : assetPlan.Objects.Select(x => inputs[x.Key])));
             var bindings = ImmutableArray.CreateBuilder<MmcArtifactBinding>();
-            var targetClaims = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var targetClaims = new MmcRuntimeTargetClaims(2L * (limits.MaxArtifacts + (long)limits.MaxNativeEntries + limits.MaxAssetObjects));
             foreach (var artifact in artifacts) {
                 PreparedInput input = inputs[artifact.Key];
                 string relative = TargetRelative(input.Artifact, viewKey);
@@ -91,6 +91,7 @@ public sealed partial class MmcArtifactMaterializer {
             var cachedNativeFiles = await ReuseNativeCacheAsync(request.TrustedNativeCache, nativeInputs, viewKey, paths, targetClaims, cancellationToken).ConfigureAwait(false);
             var nativeFiles = cachedNativeFiles ?? await ExtractNativesAsync(nativeInputs,
                 viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
+            ValidateNativeTree(nativeFiles, viewKey, paths, cancellationToken);
             var assetFiles = await StageAssetsAsync(assetPlan, inputs, viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
             string? assetsRoot = assetPlan is null ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/assets");
             string? mappedRoot = assetPlan is { MapToResources: true, Virtual: false } ? paths.ResolveRelative(MmcPathRole.Game, "resources") : null;
@@ -101,7 +102,7 @@ public sealed partial class MmcArtifactMaterializer {
                 nativeFiles, assetFiles, gameAssetsRoot, mappedRoot,
                 inputs.Values.Select(x => new MmcArtifactObservation(x.Artifact.Key, x.Lock.AdoptedSha256, x.ObservedSha1, x.Lock.SizeBytes)).ToImmutableArray(),
                 nativeInputs.Length == 0 ? null : new(viewKey, NativeSourceSet(nativeInputs), nativeFiles.Select(x => new MmcNativeFileFact(x.SourceArtifactKey, x.RelativePath, x.Sha256, x.SizeBytes)).ToImmutableArray()),
-                cachedNativeFiles is not null);
+                cachedNativeFiles is not null, assetPlan is null ? [] : [assetPlan.SourceContent]);
         } catch (Exception failure) {
             try { workspace.Dispose(); }
             catch (Exception cleanup) { throw new AggregateException("Artifact preparation failed; owned workspace cleanup also failed.", failure, cleanup); }
@@ -233,7 +234,7 @@ public sealed partial class MmcArtifactMaterializer {
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
     private static void ValidateReference(MmcArtifactReference artifact) {
-        if (string.IsNullOrEmpty(artifact.Key) || artifact.Key.Length > 4096 || string.IsNullOrEmpty(artifact.SourceRevision) || artifact.SourceRevision.Length > 4096)
+        if ((!MmcArtifactIo.Digest(artifact.Key, 64) && !IsAssetObjectReference(artifact)) || !MmcArtifactIo.Digest(artifact.SourceRevision, 64))
             throw new IOException("Artifact identity or source revision is invalid.");
         if (!Enum.IsDefined(artifact.Role) || !Enum.IsDefined(artifact.Scope)) throw new IOException("Unknown artifact role or scope.");
         MmcArtifactIo.Relative(artifact.RelativePath);

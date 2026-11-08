@@ -36,6 +36,7 @@ public sealed record MmcNativeFileFact(string SourceArtifactKey, string Relative
 public sealed record MmcNativeViewCache(string ViewKey, string SourceSetFingerprint, ImmutableArray<MmcNativeFileFact> CompleteFiles);
 public sealed record MmcAssetFileBinding(string Name, string ArtifactKey, string Sha1, string Sha256, long SizeBytes,
     string ObjectPath, string? VirtualPath, string? MappedResourcePath);
+public sealed record MmcAssetIndexContent(string ArtifactKey, string ObservedSha256, ImmutableArray<byte> Utf8Content);
 
 /// <summary>Publication is exclusively the instance transaction executor's responsibility.</summary>
 public sealed record MmcArtifactStagedMutation(string StagedPath, string NewSourceRelativePath, string TargetRelativePath,
@@ -69,13 +70,15 @@ public sealed class MmcPreparedArtifacts : IDisposable {
     public ImmutableArray<MmcArtifactObservation> Observations { get; }
     public MmcNativeViewCache? NativeCache { get; }
     public bool NativeCacheReused { get; }
+    public ImmutableArray<MmcAssetIndexContent> AssetIndexContents { get; }
 
     internal MmcPreparedArtifacts(MmcArtifactWorkspace workspace, string viewKey,
         ImmutableArray<MmcArtifactBinding> bindings, ImmutableArray<MmcArtifactLock> locks,
         ImmutableArray<MmcArtifactStagedMutation> mutations, bool nativeComplete, bool assetsMaterialized,
         string? nativeDirectory = null, string? assetsRoot = null, ImmutableArray<MmcNativeFileBinding> nativeFiles = default,
         ImmutableArray<MmcAssetFileBinding> assetFiles = default, string? gameAssetsRoot = null, string? mappedResourcesRoot = null,
-        ImmutableArray<MmcArtifactObservation> observations = default, MmcNativeViewCache? nativeCache = null, bool nativeCacheReused = false) {
+        ImmutableArray<MmcArtifactObservation> observations = default, MmcNativeViewCache? nativeCache = null, bool nativeCacheReused = false,
+        ImmutableArray<MmcAssetIndexContent> assetIndexContents = default) {
         this.workspace = workspace; ViewKey = viewKey; OrderedBindings = bindings; AdoptedLocks = locks;
         StagedMutations = mutations; NativeExtractionComplete = nativeComplete; AssetsMaterialized = assetsMaterialized;
         NativeDirectory = nativeDirectory; AssetsRoot = assetsRoot;
@@ -84,6 +87,7 @@ public sealed class MmcPreparedArtifacts : IDisposable {
         GameAssetsRoot = gameAssetsRoot; MappedResourcesRoot = mappedResourcesRoot;
         Observations = observations.IsDefault ? [] : observations;
         NativeCache = nativeCache; NativeCacheReused = nativeCacheReused;
+        AssetIndexContents = assetIndexContents.IsDefault ? [] : assetIndexContents;
     }
     public void Dispose() => workspace.Dispose();
 }

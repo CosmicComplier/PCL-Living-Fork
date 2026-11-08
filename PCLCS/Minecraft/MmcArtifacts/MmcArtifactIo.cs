@@ -104,7 +104,7 @@ internal sealed class MmcArtifactIo {
             throw new IOException("Artifact logical path exceeds its segment budget.");
     }
 
-    internal static bool Digest(string value, int length) => value.Length == length && value.All(Uri.IsHexDigit);
+    internal static bool Digest(string? value, int length) => value is not null && value.Length == length && value.All(Uri.IsHexDigit);
 
     internal static async Task<(string Sha256, long Size, string Sha1)> HashAsync(string path, long maximum, CancellationToken token, string? expectedSha1 = null) {
         MmcInstancePaths.EnsureNoLinks(path);
