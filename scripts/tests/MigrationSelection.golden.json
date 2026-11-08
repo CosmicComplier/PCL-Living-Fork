@@ -153,7 +153,8 @@
         "mmc-variants",
         "mmc-clone",
         "mmc-lifecycle",
-        "mmc-history"
+        "mmc-history",
+        "mmc-definition-change"
       ],
       "windows_scripts": [],
       "world_checks": false,
@@ -301,6 +302,11 @@
       "groups": ["mmc-history"], "windows_scripts": [],
       "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
     },
+    "mmc-definition-change-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-definition-change"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
     "mmc-package-stage-tests": {
       "full": false, "product_build": false, "migration_run": true,
       "groups": ["mmc-archive", "mmc-backend"], "windows_scripts": [],
@@ -354,7 +360,8 @@
         "mmc-variants",
         "mmc-clone",
         "mmc-lifecycle",
-        "mmc-history"
+        "mmc-history",
+        "mmc-definition-change"
       ],
       "windows_scripts": [
         "Test-Release",
