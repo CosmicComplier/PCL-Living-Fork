@@ -280,7 +280,7 @@ public static class MmcFileTransactions {
         ArgumentNullException.ThrowIfNull(relative);
         string normalized = relative.Replace('\\', '/');
         string first = normalized.Split('/').Take(2).Aggregate((a, b) => a + "/" + b);
-        if (new[] { "PCL/MmcTransactions", "PCL/MmcTransactionHistory", "PCL/MmcSessions" }.Any(p => string.Equals(first, p, StringComparison.OrdinalIgnoreCase)))
+        if (new[] { "PCL/MmcTransactions", "PCL/MmcTransactionHistory", "PCL/MmcSessions", "PCL/MmcSessionHistory" }.Any(p => string.Equals(first, p, StringComparison.OrdinalIgnoreCase)))
             throw new IOException("事务不能修改自己的日志或会话控制目录。");
         return normalized;
     }
