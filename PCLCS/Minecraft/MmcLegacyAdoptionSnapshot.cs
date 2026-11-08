@@ -106,7 +106,9 @@ internal static class MmcLegacyAdoptionSnapshot {
         gamePath = gameRelative.Length == 0 ? relative : relative.Length >= gameRelative.Length ? relative[gameRelative.Length..] : "";
         if (gamePath.Equals("logs", StringComparison.OrdinalIgnoreCase) || gamePath.StartsWith("logs/", StringComparison.OrdinalIgnoreCase) ||
             gamePath.Equals("crash-reports", StringComparison.OrdinalIgnoreCase) || gamePath.StartsWith("crash-reports/", StringComparison.OrdinalIgnoreCase) ||
-            gamePath is "accounts.json" or "launcher_accounts.json" or "launcher_profiles.json") { gamePath = null; return MmcLegacyAdoptionFileRole.HostBackupOnly; }
+            new[] { "accounts.json", "accounts.cfg", "launcher_accounts.json", "launcher_profiles.json", "multimc.cfg", "prismlauncher.cfg" }.Contains(gamePath, StringComparer.OrdinalIgnoreCase)) {
+            gamePath = null; return MmcLegacyAdoptionFileRole.HostBackupOnly;
+        }
         return MmcLegacyAdoptionFileRole.Game;
     }
 }

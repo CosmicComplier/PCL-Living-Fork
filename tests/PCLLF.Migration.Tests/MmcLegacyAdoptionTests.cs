@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
@@ -33,7 +34,7 @@ internal static class MmcLegacyAdoptionTests {
         using var settings = new InstanceConfigProvider(created.Paths.InstanceRoot);
         Require(settings.Read<string>("UnknownPreference", "", false) == "kept", "Unknown instance preference was lost.");
         string ini = File.ReadAllText(Path.Combine(created.Paths.InstanceRoot, "PCL", "Setup.ini"));
-        Require(ini.Contains("MmcJvmArgsMode:Custom", StringComparison.Ordinal) && LegacyBaseOperations.ParseIni(ini)["VersionAdvanceJvm"] == "", "Explicit empty JVM preference was replaced by a package/global value.");
+        Require(ini.Contains("MmcJvmArgsMode:Custom", StringComparison.Ordinal) && ini.Split('\n').Any(line => line.TrimEnd('\r') == "VersionAdvanceJvm:"), "Explicit empty JVM preference was replaced by a package/global value.");
         var saved = MmcSavedSourceStore.LoadAsync(created.Paths, created.Definition).GetAwaiter().GetResult();
         Require(saved.Baseline.Baseline.Files.Single(file => file.RelativePath == "minecraft/config/user.cfg").Sha256 == Hash(Encoding.UTF8.GetBytes("author config")), "Personal bytes were made into author baseline.");
         old.Set("LateSourceOnly", "source", false); old.Save();
@@ -42,6 +43,7 @@ internal static class MmcLegacyAdoptionTests {
         var prepared = fixture.Backend().PrepareLaunchAsync(new(created.Paths.InstanceRoot, fixture.Environment, created.Definition.InstanceId, 1)).GetAwaiter().GetResult();
         Require(prepared.Status == MmcInstanceBackendStatus.Succeeded && prepared.Snapshot is not null && !prepared.Repaired && fixture.Downloads == downloads, "Copy could not prepare offline from its own preserved originals.");
         Denied(() => MmcArchiveSourceReader.ReadAsync(created.BackupPath!).GetAwaiter().GetResult());
+        fixture.Complete();
     }
     private static void ExplicitRebinding() {
         using Fixture fixture = new(retainedMetadata: false); string before = Tree(fixture.Source);
@@ -52,6 +54,7 @@ internal static class MmcLegacyAdoptionTests {
         Require(hiddenFallback.Status == MmcInstanceBackendStatus.Rejected, "A strict confirmation was silently changed to rebinding.");
         var created = fixture.Create(preview, MmcLegacyAdoptionIntent.CreateCopyWithExplicitSourceRebinding); fixture.Success(created);
         Require(created.Definition!.Origin.PackageSha256 == preview.PackageSha256 && Tree(fixture.Source) == before, "Explicit new source did not stay separate from current personal bytes.");
+        fixture.Complete();
     }
     private static void RefusalsAndCancellation() {
         using (Fixture fixture = new(true)) {
@@ -62,11 +65,13 @@ internal static class MmcLegacyAdoptionTests {
             using var preview = fixture.Preview(); string before = Tree(fixture.Source); using CancellationTokenSource cancel = new();
             var result = fixture.Create(preview, MmcLegacyAdoptionIntent.StrictVerified, cancel.Token, (phase, _) => { if (phase == MmcLegacyAdoptionCheckpoint.BeforeDecision) cancel.Cancel(); });
             Require(result.Status == MmcInstanceBackendStatus.Cancelled && !Directory.Exists(fixture.Target) && Tree(fixture.Source) == before && File.Exists(result.BackupPath), "Predecision cancellation changed or published the old instance.");
+            fixture.Complete();
         }
         using (Fixture fixture = new(true)) {
             using var preview = fixture.Preview(); string world = Path.Combine(fixture.Source, "saves", "world", "level.dat");
             var changed = fixture.Create(preview, MmcLegacyAdoptionIntent.StrictVerified, checkpoint: (phase, _) => { if (phase == MmcLegacyAdoptionCheckpoint.PersonalSnapshotApplied) File.WriteAllText(world, "new player data"); });
             Require(changed.Status == MmcInstanceBackendStatus.NeedsRecovery && !Directory.Exists(fixture.Target) && File.ReadAllText(world) == "new player data", "A changed source was published or rolled back over newer player data.");
+            fixture.Complete();
         }
     }
     private static void Recovery() {
@@ -85,6 +90,7 @@ internal static class MmcLegacyAdoptionTests {
         var recovered = fixture.Service.RecoverAsync(failed.OperationDirectory!).GetAwaiter().GetResult(); fixture.Success(recovered);
         Require(Tree(fixture.Source) == before && File.ReadAllText(Path.Combine(recovered.Paths!.GameRoot, "saves", "world", "level.dat")) == "player world", "Forward recovery changed old source or copied world data.");
         Require(fixture.Service.RecoverAsync(failed.OperationDirectory!).GetAwaiter().GetResult().Status == MmcInstanceBackendStatus.Succeeded, "Completed recovery was not idempotent.");
+        fixture.Complete();
     }
     private sealed class Fixture : IDisposable {
         private readonly HttpClient client = new(new NoNetwork());
@@ -97,6 +103,8 @@ internal static class MmcLegacyAdoptionTests {
         internal readonly MmcLegacyAdoptionService<MmcArtifactDownloadSpec> Service;
         internal MmcLegacyAdoptionActivity Activity = MmcLegacyAdoptionActivity.Idle;
         internal int Downloads;
+        private bool completed;
+        internal void Complete() => completed = true;
         internal Fixture(bool retainedMetadata) {
             Root = Path.Combine(Path.GetTempPath(), "PCLLF-LegacyAdoptionTests", Guid.NewGuid().ToString("N")); Game = Path.Combine(Root, "minecraft");
             Source = Path.Combine(Game, "versions", "old"); Target = Path.Combine(Game, "versions", "managed-copy"); Archive = Path.Combine(Root, "original.zip"); Directory.CreateDirectory(Source);
@@ -143,6 +151,7 @@ internal static class MmcLegacyAdoptionTests {
         private void Put(string relative, string value) { string path = Path.Combine(Source, relative.Replace('/', Path.DirectorySeparatorChar)); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, value, new UTF8Encoding(false)); }
         public void Dispose() {
             InstanceConfigProviders.FlushAndDisposeWithin(Root); client.Dispose();
+            if (!completed) { Console.Error.WriteLine("Retained failed owned adoption fixture: " + Root); return; }
             string parent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "PCLLF-LegacyAdoptionTests")), root = Path.GetFullPath(Root);
             Require(root.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && Guid.TryParseExact(Path.GetFileName(root), "N", out _), "Fixture cleanup escaped its owned GUID root.");
             if (Directory.Exists(root)) Directory.Delete(root, true);
