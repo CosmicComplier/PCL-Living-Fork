@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+import unicodedata
 import zipfile
 
 MAX_ENTRIES = 100_000
@@ -25,7 +26,14 @@ MAX_METADATA_BYTES = 16 * 1024**2
 MAX_METADATA_TOTAL = 128 * 1024**2
 MAX_COMPONENTS = 4096
 MAX_JSON_DEPTH = 128
-DEVICE = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", re.I)
+MAX_PATH_CHARS = 32767
+MAX_PATH_DEPTH = 128
+MAX_SEGMENT_CHARS = 255
+MAX_PATH_INPUT_CHARS = 16 * 1024**2
+MAX_PATH_NODES = MAX_ENTRIES * 2
+MAX_PATH_NODE_CHARS = 32 * 1024**2
+PATH_CASE_PROFILE = "lf-audit-python-simple-uppercase-v1"
+DEVICE = re.compile(r"^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)", re.I | re.ASCII)
 PATCH_FIELDS = {
     "formatVersion", "uid", "fileId", "name", "version", "order", "releaseTime",
     "mainClass", "mainJar", "minecraftArguments", "+jvmArgs", "+tweakers",
@@ -50,21 +58,50 @@ def evidence_on_failure(report: dict):
         raise
 
 
+def utf16_length(value: str) -> int:
+    return len(value.encode("utf-16-le", errors="surrogatepass")) // 2
+
+
+def target_key(value: str) -> str:
+    """Explicit bounded audit profile, not a full .NET/NTFS comparison oracle.
+
+    The exceptions below are fixed against .NET 10 OrdinalIgnoreCase vectors.
+    Unknown multi-character uppercase mappings are rejected, never guessed.
+    No Unicode normalization or full casefold expansion is performed.
+    """
+    result = []
+    for char in value:
+        if char in {"ß", "ﬃ", "ı", "ſ"}:
+            result.append(char)
+            continue
+        upper = char.upper()
+        if len(upper) != 1 or (ord(char) > 127 and ord(upper) < 128):
+            raise AuditError(f"Unsupported path casing in {PATH_CASE_PROFILE}: U+{ord(char):04X}")
+        result.append(upper)
+    return "".join(result)
+
+
 def entry_path(raw: str) -> tuple[str, bool]:
+    if len(raw) > MAX_PATH_CHARS or utf16_length(raw) > MAX_PATH_CHARS:
+        raise AuditError("Archive path exceeds length budget")
     value = raw.replace("\\", "/")
     directory = value.endswith("/")
     value = value[:-1] if directory else value
     parts = value.split("/")
+    if len(parts) > MAX_PATH_DEPTH:
+        raise AuditError("Archive path exceeds segment depth budget")
     if not value or value.startswith("/") or any(part in {"", ".", ".."} for part in parts):
         raise AuditError(f"Unsafe archive path: {raw!r}")
     for part in parts:
+        if len(part) > MAX_SEGMENT_CHARS or utf16_length(part) > MAX_SEGMENT_CHARS:
+            raise AuditError("Archive path segment exceeds length budget")
         if (part.endswith((" ", ".")) or DEVICE.match(part)
                 or any(ord(c) < 32 or c in ':<>"|?*' for c in part)):
             raise AuditError(f"Unsafe Windows archive path: {raw!r}")
     return "/".join(parts), directory
 
 
-def index_archive(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo], dict]:
+def index_archive(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo], dict, set[str]]:
     entries = archive.infolist()
     if len(entries) > MAX_ENTRIES:
         raise AuditError("Archive exceeds entry count budget")
@@ -74,15 +111,21 @@ def index_archive(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo],
     directory_names: dict[str, set[str]] = {}
     repeated_directories: list[str] = []
     declared_bytes = 0
+    input_path_chars = 0
+    node_path_chars = 0
     for info in entries:
+        input_path_chars += utf16_length(info.orig_filename)
+        if input_path_chars > MAX_PATH_INPUT_CHARS:
+            raise AuditError("Archive exceeds aggregate input path character budget")
         path, directory = entry_path(info.orig_filename)
+        path_key = target_key(path)
         entry_role = "directory" if directory else "file"
-        old_explicit = explicit.get(path.casefold())
+        old_explicit = explicit.get(path_key)
         if old_explicit is not None:
             if old_explicit != "directory" or entry_role != "directory":
                 raise AuditError(f"Duplicate or case-colliding file target: {path}")
             repeated_directories.append(path)
-        explicit[path.casefold()] = entry_role
+        explicit[path_key] = entry_role
         mode = info.external_attr >> 16
         if stat.S_ISLNK(mode):
             raise AuditError(f"Symbolic-link entry is unsupported: {path}")
@@ -94,16 +137,26 @@ def index_archive(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo],
         if declared_bytes > MAX_TOTAL_BYTES:
             raise AuditError("Archive exceeds declared unpacked total budget")
         parts = path.split("/")
+        key_parts = path_key.split("/")
+        prefix_chars = 0
         for count in range(1, len(parts) + 1):
+            prefix_chars += utf16_length(parts[count - 1]) + (1 if count > 1 else 0)
+            node_path_chars += prefix_chars
+            if node_path_chars > MAX_PATH_NODE_CHARS:
+                raise AuditError("Archive exceeds aggregate target node character budget")
             current = "/".join(parts[:count])
+            current_key = "/".join(key_parts[:count])
             role = "directory" if count < len(parts) or directory else "file"
-            old = roles.get(current.casefold())
+            old = roles.get(current_key)
             if old is not None and old[1] != role:
                 raise AuditError(f"File/directory role collision: {current}")
             if role == "directory":
-                directory_names.setdefault(current.casefold(), set()).add(current)
+                names = directory_names.setdefault(current_key, set())
+                names.add(current)
             if old is None:
-                roles[current.casefold()] = (current, role)
+                if len(roles) >= MAX_PATH_NODES:
+                    raise AuditError("Archive exceeds implicit target node count budget")
+                roles[current_key] = (current, role)
         if not directory:
             files[path] = info
     return files, {
@@ -113,7 +166,9 @@ def index_archive(archive: zipfile.ZipFile) -> tuple[dict[str, zipfile.ZipInfo],
         "payloadCrcVerified": False,
         "directoryAliases": [sorted(names) for _, names in sorted(directory_names.items()) if len(names) > 1],
         "repeatedDirectoryEntries": repeated_directories,
-    }
+        "inputPathUtf16Chars": input_path_chars,
+        "targetNodeCount": len(roles), "targetPrefixCandidateUtf16Chars": node_path_chars,
+    }, {key for key, (_, role) in roles.items() if role == "directory"}
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:
@@ -199,6 +254,9 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
         "schemaVersion": 1, "auditStatus": "rejected", "compatibilityStatus": "not-evaluated",
         "source": {"fileName": source.name, "url": source_url, "completeLocalFile": True},
         "scope": "Full local file SHA256 and bounded metadata inventory; no extraction, install, repair or game launch.",
+        "pathCaseProfile": {"name": PATH_CASE_PROFILE, "pythonUnicodeVersion": unicodedata.unidata_version,
+                            "productionAuthority": False, "normalization": "none",
+                            "scope": "Restricted audit comparison; production Core uses .NET OrdinalIgnoreCase and host path validation."},
         "diagnostics": [],
     }
     with evidence_on_failure(report), source.open("rb") as stream:
@@ -206,21 +264,27 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
         report["source"].update(sizeBytes=before.st_size, sha256=hashlib.file_digest(stream, "sha256").hexdigest())
         stream.seek(0)
         with zipfile.ZipFile(stream) as archive:
-            files, counts = index_archive(archive)
+            files, counts, directory_keys = index_archive(archive)
             report["archive"] = counts
-            roots = [x[:-len("mmc-pack.json")] for x in files if x.rsplit("/", 1)[-1] == "mmc-pack.json"]
+            manifests = [x for x in files if target_key(x.rsplit("/", 1)[-1]) == "MMC-PACK.JSON"]
+            roots = [x[:-len("mmc-pack.json")] for x in manifests]
             if len(roots) != 1:
                 raise AuditError(f"Expected exactly one mmc-pack.json root, found {len(roots)}")
             root = roots[0]
-            relative_files = {x[len(root):]: info for x, info in files.items() if x.startswith(root)}
+            root_key = target_key(root)
+            lookup = {target_key(path): path for path in files}
+            relative_files = {x[len(root):]: info for x, info in files.items() if target_key(x).startswith(root_key)}
+            relative_lookup = {target_key(path): path for path in relative_files}
             for path in relative_files:
-                folded = path.casefold()
-                if folded == "pcl/instancedefinition.json" or folded.startswith(("pcl/mmcsource/", "pcl/mmcartifacts/", "pcl/mmctransactions/")):
+                folded = target_key(path)
+                if folded == "PCL/INSTANCEDEFINITION.JSON" or folded.startswith(("PCL/MMCSOURCE/", "PCL/MMCARTIFACTS/", "PCL/MMCTRANSACTIONS/")):
                     raise AuditError(f"Package contains reserved LF management metadata: {path}")
-            selected = [root + "mmc-pack.json"]
-            if root + "instance.cfg" in files:
-                selected.append(root + "instance.cfg")
-            selected += [x for x in files if x.startswith(root + "patches/") and x.endswith(".json")]
+            manifest_path = manifests[0]
+            cfg_path = lookup.get(root_key + "INSTANCE.CFG")
+            selected = [manifest_path]
+            if cfg_path is not None:
+                selected.append(cfg_path)
+            selected += [x for x in files if target_key(x).startswith(root_key + "PATCHES/") and target_key(x).endswith(".JSON")]
             total_metadata = 0
             metadata: dict[str, bytes] = {}
             for path in selected:
@@ -235,7 +299,7 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
                     if len(data) != info.file_size or len(data) > MAX_METADATA_BYTES:
                         raise AuditError(f"Metadata actual size mismatch or budget exceeded: {path}")
                     metadata[path] = data
-            manifest = parse_json(metadata[root + "mmc-pack.json"], "mmc-pack.json")
+            manifest = parse_json(metadata[manifest_path], "mmc-pack.json")
             if type(manifest.get("formatVersion")) is not int or manifest["formatVersion"] != 1:
                 raise AuditError("Unsupported mmc-pack formatVersion (expected integer 1)")
             components = manifest.get("components")
@@ -260,7 +324,7 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
             patches = []
             patch_uids: set[str] = set()
             for path, data in metadata.items():
-                if not path.startswith(root + "patches/"):
+                if not target_key(path).startswith(root_key + "PATCHES/"):
                     continue
                 summary = patch_summary(parse_json(data, path), path[len(root):], hashlib.sha256(data).hexdigest())
                 if summary["uid"] in patch_uids:
@@ -269,10 +333,9 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
                 summary["referencedByManifest"] = summary["uid"] in uids
                 patches.append(summary)
             trees = [name for name in ("minecraft", ".minecraft")
-                     if any(x.startswith(name + "/") for x in relative_files)
-                     or root + name + "/" in {x.filename for x in archive.infolist()}]
+                     if root_key + target_key(name) in directory_keys]
             for name in ("minecraft", ".minecraft", "libraries", "patches"):
-                if name in relative_files:
+                if target_key(name) in relative_lookup:
                     raise AuditError(f"File occupies required directory role: {name}")
             report.update(
                 auditStatus="metadata-audited", instanceRoot=root.rstrip("/"),
@@ -281,11 +344,11 @@ def audit_archive(source: Path, source_url: str | None = None) -> dict:
                 components=summaries, patches=patches,
                 metadata={"fileCount": len(metadata), "totalBytes": total_metadata,
                           "digests": {x[len(root):]: hashlib.sha256(data).hexdigest() for x, data in metadata.items()}},
-                localLibraryFiles=[x for x in relative_files if x.startswith("libraries/")],
-                gameLibraryFiles=[x for x in relative_files if any(x.startswith(t + "/libraries/") for t in trees)],
+                localLibraryFiles=[x for x in relative_files if target_key(x).startswith("LIBRARIES/")],
+                gameLibraryFiles=[x for x in relative_files if any(target_key(x).startswith(target_key(t) + "/LIBRARIES/") for t in trees)],
                 remoteMetadataRequired=[x["uid"] for x in summaries if x["uid"] not in patch_uids],
             )
-            cfg = metadata.get(root + "instance.cfg")
+            cfg = metadata.get(cfg_path)
             report["cfg"] = {"present": cfg is not None, "semanticsEvaluated": False}
             if cfg is not None:
                 try:
@@ -310,10 +373,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("--source-url", help="Provenance only; no network requests are made")
-    parser.add_argument("--output", type=Path, required=True, help="JSON destination; prefer ignored artifacts/")
+    parser.add_argument("--output", type=Path, required=True, help="New JSON destination; existing files are never overwritten")
     args = parser.parse_args(argv)
     if args.archive.resolve() == args.output.resolve():
         parser.error("Report must not overwrite the input archive")
+    if args.output.exists() or args.output.is_symlink():
+        if args.output.exists() and args.archive.exists() and args.output.samefile(args.archive):
+            parser.error("Report must not overwrite a hardlink or alias of the input archive")
+        parser.error("Report already exists; choose a new output path")
     try:
         report = audit_archive(args.archive, args.source_url)
     except (AuditError, OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
@@ -323,8 +390,13 @@ def main(argv: list[str] | None = None) -> int:
         code = 1
     else:
         code = 0
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    serialized = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        with args.output.open("x", encoding="utf-8") as destination:
+            destination.write(serialized)
+    except OSError as exc:
+        parser.error(f"Cannot create a new report without overwriting an existing file: {exc}")
     print(json.dumps({"auditStatus": report["auditStatus"], "compatibilityStatus": "not-evaluated",
                       "output": str(args.output)}, ensure_ascii=False))
     return code

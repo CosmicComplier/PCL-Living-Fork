@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import redirect_stderr
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -97,7 +100,8 @@ class ArchiveTests(unittest.TestCase):
 
     def test_unsafe_paths_rejected(self):
         for name in ("../escape", "/rooted", "C:/drive", "safe/../escape", "safe\\..\\escape",
-                     "safe//empty", "safe/./dot", "file:stream", "NUL.txt", "a/trailing.", "a/trailing "):
+                     "safe//empty", "safe/./dot", "file:stream", "NUL.txt", "a/trailing.", "a/trailing ",
+                     "COM¹.log", "safe/lpt²", "LPT³.cfg", "CONIN$", "conout$.txt"):
             with self.subTest(name=name), self.assertRaises(audit.AuditError):
                 audit.audit_archive(self.archive([(name, "x")]))
 
@@ -118,6 +122,58 @@ class ArchiveTests(unittest.TestCase):
     def test_same_bytes_file_alias_still_rejected(self):
         with self.assertRaisesRegex(audit.AuditError, "file target"):
             audit.audit_archive(self.archive([('Mods/a', 'same'), ('mods/A', 'same')]))
+
+    def test_metadata_lookup_uses_target_key_and_preserves_source_spelling(self):
+        observed = audit.audit_archive(self.archive([
+            ('pack/Instance.CFG', 'name=Mixed'), ('PACK/Patches/X.JSON', {'uid': 'example'}),
+            ('pack/MineCraft/a', 'game'), ('PACK/Libraries/a.jar', 'local')], prefix='Pack/'))
+        self.assertEqual('Pack', observed['instanceRoot'])
+        self.assertTrue(observed['cfg']['present'])
+        self.assertEqual(['Patches/X.JSON'], [item['path'] for item in observed['patches']])
+        self.assertEqual(['Libraries/a.jar'], observed['localLibraryFiles'])
+        self.assertEqual('minecraft', observed['gameRoot']['selected'])
+
+    def test_mixed_case_manifest_and_directory_role_collision(self):
+        observed = audit.audit_archive(self.archive([('Pack/MMC-Pack.JSON', MANIFEST)], manifest=None))
+        self.assertEqual('Pack', observed['instanceRoot'])
+        for path in ('Minecraft', '.MineCraft', 'PATCHES', 'Libraries'):
+            with self.subTest(path=path), self.assertRaisesRegex(audit.AuditError, 'directory role'):
+                audit.audit_archive(self.archive([(path, 'file')]))
+
+    def test_unicode_profile_uses_fixed_dotnet_oracle_vectors_without_normalization(self):
+        # Values checked against .NET 10.0.14 StringComparison.OrdinalIgnoreCase.
+        for left, right, equal in [('ß', 'ss', False), ('ß', 'ẞ', False), ('ı', 'I', False),
+                                   ('ſ', 'S', False), ('K', 'K', False), ('σ', 'ς', True),
+                                   ('é', 'e\u0301', False), ('ﬃ', 'ffi', False), ('µ', 'Μ', True)]:
+            with self.subTest(left=left, right=right):
+                self.assertEqual(equal, audit.target_key(left) == audit.target_key(right))
+        observed = audit.audit_archive(self.archive([('minecraft/ß', 'one'), ('minecraft/ss', 'two'),
+                                                     ('minecraft/é', 'three'), ('minecraft/e\u0301', 'four')]))
+        self.assertEqual(audit.PATH_CASE_PROFILE, observed['pathCaseProfile']['name'])
+        self.assertFalse(observed['pathCaseProfile']['productionAuthority'])
+
+    def test_unknown_expanding_unicode_case_is_explicitly_unsupported(self):
+        with self.assertRaisesRegex(audit.AuditError, 'Unsupported path casing'):
+            audit.audit_archive(self.archive([('minecraft/ᾳ', 'unknown simple uppercase mapping')]))
+
+    def test_deep_zero_byte_path_rejected_before_prefix_tree_growth(self):
+        with self.assertRaisesRegex(audit.AuditError, 'depth budget'):
+            audit.audit_archive(self.archive([('a/' * 129 + 'empty', b'')]))
+
+    def test_single_path_segment_and_character_budgets(self):
+        with self.assertRaisesRegex(audit.AuditError, 'segment exceeds'):
+            audit.audit_archive(self.archive([('a' * 256, b'')]))
+        with patch.object(audit, 'MAX_PATH_CHARS', 40), self.assertRaisesRegex(audit.AuditError, 'length budget'):
+            audit.audit_archive(self.archive([('a/' * 21 + 'end', b'')]))
+        with patch.object(audit, 'MAX_PATH_INPUT_CHARS', 30), self.assertRaisesRegex(audit.AuditError, 'input path character'):
+            audit.audit_archive(self.archive([('path-one', b''), ('path-two', b''), ('path-three', b'')]))
+
+    def test_target_node_count_and_cumulative_prefix_character_budget(self):
+        result = self.archive([('folder/subfolder/empty', b'')])
+        with patch.object(audit, 'MAX_PATH_NODES', 2), self.assertRaisesRegex(audit.AuditError, 'node count'):
+            audit.audit_archive(result)
+        with patch.object(audit, 'MAX_PATH_NODE_CHARS', 35), self.assertRaisesRegex(audit.AuditError, 'node character'):
+            audit.audit_archive(result)
 
     def test_directory_role_is_not_flat_file(self):
         for name in ("minecraft", ".minecraft", "libraries", "patches"):
@@ -193,16 +249,61 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(2, completed.returncode)
         self.assertEqual(original, source.read_bytes())
 
+    def test_cli_rejects_hardlink_output_without_modifying_zip(self):
+        source = self.archive()
+        original = source.read_bytes()
+        alias = self.root / 'alias-report.json'
+        os.link(source, alias)
+        completed = subprocess.run([sys.executable, str(SCRIPT), str(source), '--output', str(alias)], capture_output=True)
+        self.assertEqual(2, completed.returncode)
+        self.assertIn(b'hardlink', completed.stderr)
+        self.assertEqual(original, source.read_bytes())
+        self.assertEqual(original, alias.read_bytes())
+
+    def test_cli_preserves_existing_unrelated_output(self):
+        source = self.archive()
+        output = self.root / 'already-exists.json'
+        output.write_bytes(b'preserve existing user data')
+        completed = subprocess.run([sys.executable, str(SCRIPT), str(source), '--output', str(output)], capture_output=True)
+        self.assertEqual(2, completed.returncode)
+        self.assertEqual(b'preserve existing user data', output.read_bytes())
+
+    def test_cli_output_created_after_audit_is_not_overwritten(self):
+        source = self.archive()
+        output = self.root / 'concurrent-report.json'
+        run_audit = audit.audit_archive
+
+        def concurrent_writer(*args, **kwargs):
+            report = run_audit(*args, **kwargs)
+            output.write_bytes(b'concurrent owner')
+            return report
+
+        with patch.object(audit, 'audit_archive', concurrent_writer), redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as observed:
+                audit.main([str(source), '--output', str(output)])
+        self.assertEqual(2, observed.exception.code)
+        self.assertEqual(b'concurrent owner', output.read_bytes())
+
     def test_cli_valid_and_rejected_reports(self):
         for files, expected in (([], 0), ([("../bad", "bad")], 1)):
             with self.subTest(expected=expected):
                 source = self.archive(files)
-                report = self.root / "evidence" / "audit.json"
+                report = self.root / "evidence" / f"audit-{expected}.json"
                 completed = subprocess.run([sys.executable, str(SCRIPT), str(source), "--output", str(report)], capture_output=True)
                 self.assertEqual(expected, completed.returncode, completed.stderr)
                 observed = json.loads(report.read_text(encoding="utf-8"))
                 self.assertEqual("not-evaluated", observed["compatibilityStatus"])
                 self.assertEqual("rejected" if expected else "metadata-audited", observed["auditStatus"])
+
+    def test_cli_unknown_unicode_mapping_reports_rejected_profile(self):
+        source = self.archive([('minecraft/ᾳ', 'unknown casing')])
+        output = self.root / 'unsupported-unicode.json'
+        completed = subprocess.run([sys.executable, str(SCRIPT), str(source), '--output', str(output)], capture_output=True)
+        self.assertEqual(1, completed.returncode)
+        observed = json.loads(output.read_text(encoding='utf-8'))
+        self.assertEqual('rejected', observed['auditStatus'])
+        self.assertEqual(audit.PATH_CASE_PROFILE, observed['pathCaseProfile']['name'])
+        self.assertTrue(any('Unsupported path casing' in x for x in observed['diagnostics']))
 
 
 if __name__ == "__main__":

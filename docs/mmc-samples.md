@@ -54,6 +54,12 @@ Java 8 包只声明 `org.lwjgl:2.9.4-nightly-20150209`、`net.minecraft:1.7.10`�
 
 工具[AuditArchive.py](../scripts/mmc/AuditArchive.py)仅使用 Python 标准库，不联网，不执行包内内容，不抽取游戏数据，不访问玩家目录。它读取完整文件计算 SHA256，建立一次 ZIP 索引，限制条目/声明体积与元数据实际读取体积，检查唯一根、重复文件目标、目录角色、链接和保留的 LF 管理路径，再输出组件、补丁字段、Java 声明和来源摘要。未知字段/执行器会列出，`compatibilityStatus` 始终为 `not-evaluated`。
 
+树构建前限制单条路径 32767 个 UTF-16 单元、深度 128、单片段 255；所有原始路径累计限制 16 Mi 单元。隐式目标节点最多 200000，所有目标路径与父前缀候选累计限制 32 Mi UTF-16 单元，重复前缀也计数，在构造前缀字符串前扣除预算，避免零字节 payload 配合深路径占用巨量树内存。元数据路径和目录角色查找使用同一比较 key，原始大小写仍保留，不会漏读 `Patches/X.JSON`、`Instance.CFG` 或漏判占目录位置的 `Minecraft` 普通文件。设备名拒绝包含 `CONIN$`、`CONOUT$` 及 `COM/LPT¹²³`。
+
+Python 工具采用显式受限的 `lf-audit-python-simple-uppercase-v1` 比较配置，JSON 同时记录 Python Unicode 表版本；它不是完整的 .NET/NTFS Unicode 等价判定器，也不授权后续提取。已用 .NET 10.0.14 `OrdinalIgnoreCase` 对照固定向量：不把 `ß/ss`、`ß/ẞ`、`ı/I`、`ſ/S`、`K/K`、`ﬃ/ffi` 或预组合/分解的 `é` 合并；允许 `σ/ς`、`µ/Μ` 等已核对的单字符大写关系，不做 NFC/NFKC。未登记的多字符大写映射（例如希腊 `ᾳ`）明确拒绝并在 JSON 标为 `rejected`，不猜测 title/casefold 结果。生产路径判定以 Core 的 .NET `OrdinalIgnoreCase` 和宿主真实路径验证为准。
+
+输出必须是新文件，工具拒绝覆盖已有报告、原包路径及指向原包的 hardlink/symlink；最终通过独占创建再次防止检查后出现的目标被覆盖。重复审计时选择新的报告名，保留旧证据。
+
 ```powershell
 python -X utf8 scripts/mmc/AuditArchive.py 'D:\User\Downloads\GT_New_Horizons_2.9.0_Java_8.zip' --source-url https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_8.zip --output artifacts/mmc-baseline/java8.audit.json
 python -X utf8 scripts/mmc/AuditArchive.py 'D:\User\Downloads\GT_New_Horizons_2.9.0_Java_17-26.zip' --source-url https://downloads.gtnewhorizons.com/Multi_mc_downloads/GT_New_Horizons_2.9.0_Java_17-26.zip --output artifacts/mmc-baseline/java17-26.audit.json
