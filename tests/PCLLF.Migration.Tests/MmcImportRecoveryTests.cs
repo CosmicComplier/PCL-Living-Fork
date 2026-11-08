@@ -49,6 +49,12 @@ internal static class MmcImportRecoveryTests {
         var wrong = fixture.Backend().RetryInitialImportAsync(entry, new(different, retryRoot, "retry", fixture.Environment)).GetAwaiter().GetResult();
         Require(wrong.Status == MmcInstanceBackendStatus.Rejected && !Directory.Exists(retryRoot), "Fresh retry accepted a different original ZIP.");
         string parked = Tree(temporary);
+        var changedSha = fixture.Backend().RetryInitialImportAsync(entry with { PackageSha256 = Hash(File.ReadAllBytes(different)) }, new(different, retryRoot, "retry", fixture.Environment)).GetAwaiter().GetResult();
+        Require(changedSha.Status == MmcInstanceBackendStatus.Rejected && !Directory.Exists(retryRoot) && !Directory.Exists(fixture.Final) && Tree(temporary) == parked,
+            "A with-edited preview SHA overrode the durable package owner.");
+        var changedFinal = fixture.Backend().RetryInitialImportAsync(entry with { FinalRoot = Path.Combine(fixture.Game, "versions", "pretend-final") }, fixture.Request()).GetAwaiter().GetResult();
+        Require(changedFinal.Status == MmcInstanceBackendStatus.Rejected && !Directory.Exists(fixture.Final) && !Directory.Exists(retryRoot) && Tree(temporary) == parked,
+            "A with-edited preview FinalRoot authorized retry into the original reserved final name.");
         var retried = fixture.Backend().RetryInitialImportAsync(entry, new(fixture.Archive, retryRoot, "retry", fixture.Environment)).GetAwaiter().GetResult();
         Require(retried.Status == MmcInstanceBackendStatus.Succeeded && Tree(temporary) == parked && MmcInstanceInspector.Read(retryRoot).IsConsistent, "Same-SHA fresh retry touched old parked data or failed publication: " + retried.Failure);
         fixture.Complete();
@@ -65,7 +71,11 @@ internal static class MmcImportRecoveryTests {
         var legacy = fixture.Catalog().Entries.Single(value => value.State == MmcImportRecoveryState.LegacyUnproven);
         Require(!legacy.CanRecover && legacy.CanRetry && legacy.PackageSha256 == package, "Old marker alone was treated as producer death proof.");
         var denied = MmcImportRecovery.RecoverAsync(legacy with { CanRecover = true }).GetAwaiter().GetResult();
-        Require(denied.Status == MmcInstanceBackendStatus.NeedsRecovery && Directory.Exists(old), "Unproven old residual was recovered or deleted."); fixture.Complete();
+        Require(denied.Status == MmcInstanceBackendStatus.NeedsRecovery && Directory.Exists(old), "Unproven old residual was recovered or deleted.");
+        string oldBytes = Tree(old), legacyFinal = Path.Combine(fixture.Game, "versions", "legacy-final");
+        var changedLegacyFinal = fixture.Backend().RetryInitialImportAsync(legacy with { FinalRoot = Path.Combine(fixture.Game, "versions", "forged-final") }, new(fixture.Archive, legacyFinal, "legacy-final", fixture.Environment)).GetAwaiter().GetResult();
+        Require(changedLegacyFinal.Status == MmcInstanceBackendStatus.Rejected && !Directory.Exists(legacyFinal) && !Directory.Exists(fixture.Final) && Tree(old) == oldBytes && File.ReadAllText(player) == "foreign player bytes",
+            "Legacy preview FinalRoot overrode the freshly read legacy marker or changed either parked source."); fixture.Complete();
     }
     private static void MovedFinal() {
         using Fixture fixture = new(); FileStream? held = null;
