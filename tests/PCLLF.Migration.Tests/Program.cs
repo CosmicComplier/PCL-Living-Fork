@@ -15,6 +15,7 @@ internal static class Program {
         if (MmcTransactionTests.TryRunChild(args, out int mmcTransactionExitCode)) return mmcTransactionExitCode;
         if (MmcSessionTests.TryRunChild(args, out int mmcSessionExitCode)) return mmcSessionExitCode;
         if (MmcConfigurationTests.TryRunChild(args, out int mmcConfigurationExitCode)) return mmcConfigurationExitCode;
+        if (MmcInstanceLifecycleTests.TryRunChild(args, out int mmcLifecycleExitCode)) return mmcLifecycleExitCode;
         // Factories keep unselected groups from constructing or enumerating cases.
         // Canonical order matches the original all-tests runner; aliases only
         // select groups, so overlapping/repeated selectors cannot duplicate cases.
