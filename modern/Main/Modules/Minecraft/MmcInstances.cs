@@ -111,7 +111,7 @@ public static class MmcInstances {
         return ModMain.MyMsgBoxInput("输入版本名称", "", "", new Collection<Validate> { rule });
     });
 
-    private static async Task<MmcRuntimeEnvironment> SelectJavaAsync(MmcPackage package, MmcResolvedProfile resolved, CancellationToken token) {
+    internal static async Task<MmcRuntimeEnvironment> SelectJavaAsync(MmcPackage package, MmcResolvedProfile resolved, CancellationToken token) {
         var provisional = MmcProfileCompiler.Compile(resolved, new("windows", "x86_64", 0));
         if (provisional.HasErrors || provisional.Profile is null) throw new InvalidDataException("整合包启动配置无法解析。" + string.Join("；", provisional.Diagnostics.Select(value => value.Message)));
         var policy = provisional.Profile.JavaPolicy;
