@@ -73,10 +73,38 @@ public static class MmcComponentResolver {
             foreach (string uid in user.Keys) if (!nodes.ContainsKey(uid)) MmcJson.Fail("overrides", "Override does not identify an existing component.");
             Dictionary<(string Uid, string Version, bool Enabled), MmcPatch> parsed = [];
             List<MmcVersionRecommendation> adoptedRecommendations = [];
+            int persistentDiagnostics = diagnostics.Count;
             for (int pass = 0; pass <= limits.MaxComponents; pass++) {
                 bool changed = false;
                 requests.Clear();
-                foreach (Node node in order) Adopt(node);
+                diagnostics.RemoveRange(persistentDiagnostics, diagnostics.Count - persistentDiagnostics);
+                // Fixed declarations can constrain automatic roots before those
+                // roots consume metadata for a version that is already obsolete.
+                foreach (Node root in order.Where(n => n.Declaration is not null && !n.Automatic)) Adopt(root);
+                var fixedConstraints = order.Where(n => n.Declaration is not null && !n.Automatic && n.Resolved is not null)
+                    .SelectMany(n => n.Resolved!.Patch.Requires).Where(r => r.EqualsVersion is not null).GroupBy(r => r.Uid, StringComparer.Ordinal);
+                foreach (var constraint in fixedConstraints) {
+                    string[] versions = constraint.Select(r => r.EqualsVersion!).Distinct(StringComparer.Ordinal).ToArray();
+                    if (versions.Length == 1 && nodes.TryGetValue(constraint.Key, out Node? automatic) && automatic.Automatic && automatic.Version != versions[0]) {
+                        automatic.Version = versions[0]; automatic.Resolved = null; changed = true;
+                    }
+                }
+                // Rebuild reachability from every author declaration. Only
+                // discovered nodes can disappear; author roots remain intact.
+                HashSet<string> reachable = new(StringComparer.Ordinal);
+                Queue<Node> visit = new(order.Where(n => n.Declaration is not null));
+                long reachableEdges = 0;
+                while (visit.TryDequeue(out Node? node)) {
+                    if (!reachable.Add(node.Uid)) continue;
+                    Adopt(node);
+                    reachableEdges += (node.Resolved?.Patch.Requires.Length ?? 0) + (long)(node.Resolved?.Patch.Conflicts.Length ?? 0);
+                    if (reachableEdges > limits.MaxDependencyEdges) throw new MmcInputException("MMC_DEPENDENCY_BUDGET", node.Uid, "Dependency traversal budget exceeded.");
+                    foreach (var dependency in node.Resolved?.Patch.Requires ?? [])
+                        if (nodes.TryGetValue(dependency.Uid, out Node? target)) visit.Enqueue(target);
+                }
+                foreach (Node obsolete in order.Where(n => n.Declaration is null && !reachable.Contains(n.Uid)).ToArray()) {
+                    order.Remove(obsolete); nodes.Remove(obsolete.Uid); changed = true;
+                }
                 var requirements = new Dictionary<string, List<(Node Consumer, MmcRequirement Requirement)>>(StringComparer.Ordinal);
                 long edges = 0;
                 foreach (Node node in order) if (node.Resolved is { } resolved) {
@@ -87,18 +115,33 @@ public static class MmcComponentResolver {
                         consumers.Add((node, requirement));
                     }
                 }
+                // Select all unambiguous existing automatic versions first.
+                // Conflicts from old patches are not final until reselection
+                // has converged, and stale dependencies are never inserted.
+                List<MmcInputException> pendingConflicts = [];
+                bool reselected = false;
                 foreach ((string uid, var consumers) in requirements) {
                     string[] exacts = consumers.Select(x => x.Requirement.EqualsVersion).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
-                    if (exacts.Length > 1) throw new MmcInputException("MMC_EXACT_VERSION", uid, "Consumers require conflicting exact versions.");
+                    if (exacts.Length > 1) { pendingConflicts.Add(new("MMC_EXACT_VERSION", uid, "Consumers require conflicting exact versions.")); continue; }
                     string? exact = exacts.SingleOrDefault();
                     if (nodes.TryGetValue(uid, out Node? existing)) {
                         if (exact is not null && existing.Version != exact) {
-                            if (!existing.Automatic || existing.Declaration?.LocalPatch is not null || existing.User?.PatchContentUtf8 is not null)
-                                throw new MmcInputException("MMC_EXACT_VERSION", uid, "An exact dependency conflicts with a local or explicit component version.");
+                            if (!existing.Automatic || existing.Declaration?.LocalPatch is not null || existing.User?.PatchContentUtf8 is not null) {
+                                pendingConflicts.Add(new("MMC_EXACT_VERSION", uid, "An exact dependency conflicts with a local or explicit component version."));
+                                continue;
+                            }
                             existing.Version = exact;
                             existing.Resolved = null;
-                            changed = true;
+                            reselected = true;
                         }
+                    }
+                }
+                if (reselected) continue;
+                foreach ((string uid, var consumers) in requirements) {
+                    string[] exacts = consumers.Select(x => x.Requirement.EqualsVersion).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+                    if (exacts.Length > 1) continue;
+                    string? exact = exacts.SingleOrDefault();
+                    if (nodes.TryGetValue(uid, out Node? existing)) {
                         if (existing.Declaration is null) {
                             int firstConsumer = consumers.Min(c => order.IndexOf(c.Consumer));
                             int current = order.IndexOf(existing);
@@ -114,11 +157,12 @@ public static class MmcComponentResolver {
                     changed = true;
                 }
                 if (changed) continue;
+                if (pendingConflicts.Count != 0) throw pendingConflicts[0];
                 ValidateGraph(order, nodes, limits);
                 if (requests.Count != 0) return Finish(null);
                 if (order.Any(n => n.Resolved is null)) throw new MmcInputException("MMC_RESOLUTION", "resolution", "Unresolved component without a metadata request.");
                 var components = order.Select(n => n.Resolved!).ToImmutableArray();
-                var actualRecommendations = adoptedRecommendations.Where(r => nodes[r.Uid].Version == r.Version).Distinct().ToImmutableArray();
+                var actualRecommendations = adoptedRecommendations.Where(r => nodes.TryGetValue(r.Uid, out var node) && node.Version == r.Version).Distinct().ToImmutableArray();
                 string fingerprint = MmcFingerprint.Of(new[] { "mmc-prism-v1-resolver-1", package.ManifestSha256 }
                     .Concat(components.SelectMany(c => new[] { c.Uid, c.Version, c.Enabled.ToString(), c.SourceKind.ToString(), c.Patch.Source, c.Patch.ContentSha256 }))
                     .Concat(actualRecommendations.SelectMany(r => new[] { r.Uid, r.Version, r.Source, r.IndexSha256 })));
@@ -127,7 +171,7 @@ public static class MmcComponentResolver {
             throw new MmcInputException("MMC_RESOLUTION", "resolution", "Resolution did not converge within the component budget.");
 
             void Adopt(Node node) {
-                if (node.Resolved is not null) return;
+                if (node.Resolved is not null) { MmcPatchReader.ValidateCapabilities(node.Resolved.Patch, node.Enabled, diagnostics); return; }
                 if (node.User?.PatchContentUtf8 is { } userText) {
                     string source = node.User.PatchSource ?? "user:" + node.Uid;
                     CheckTextBudget(userText, source, limits.MaxMetadataBytes);
@@ -166,7 +210,7 @@ public static class MmcComponentResolver {
                     remote = MmcPatchReader.Parse(snapshot.ContentUtf8, snapshot.Source, limits, node.Enabled, diagnostics);
                     CheckIdentity(remote, node.Uid, node.Version);
                     parsed.Add(key, remote);
-                }
+                } else MmcPatchReader.ValidateCapabilities(remote, node.Enabled, diagnostics);
                 node.Resolved = new(node.Uid, node.Version, node.Enabled, node.Automatic, MmcComponentSourceKind.RemoteMetadata, remote, node.Declaration);
             }
         } catch (MmcInputException e) {

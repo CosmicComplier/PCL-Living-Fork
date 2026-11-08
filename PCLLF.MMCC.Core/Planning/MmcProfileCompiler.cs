@@ -17,6 +17,7 @@ public static class MmcProfileCompiler {
             environment = MmcArtifactRules.Normalize(environment);
             string? mainClass = null, minecraftVersion = null, versionType = null, gameArgumentString = null, recommendedRuntime = null;
             MmcFieldSource? gameArgumentSource = null;
+            MmcFieldSource? mainClassSource = null;
             MmcArtifactReference? mainJar = null, logging = null;
             MmcAssetIndex? assets = null;
             MmcArgumentToken? loggingArgument = null;
@@ -28,6 +29,8 @@ public static class MmcProfileCompiler {
             List<MmcArtifactDeclaration> inventory = [];
             List<MmcFieldSource> provenance = [];
             List<MmcOverrideEffect> effects = [];
+            Dictionary<string, MmcResolvedComponent> localDefinitions = new(StringComparer.Ordinal);
+            Dictionary<string, List<string>> contributedLibraries = new(StringComparer.Ordinal);
             long declaredArtifacts = 0;
             int fieldPosition = 0;
             foreach (MmcResolvedComponent component in resolved.Components) {
@@ -43,7 +46,7 @@ public static class MmcProfileCompiler {
                     }
                 }
                 if (!component.Enabled) continue;
-                if (fields.TryGetValue("mainClass", out var main) && Nonempty(main) is { } entry) { mainClass = entry; Source(component, "mainClass"); }
+                if (fields.TryGetValue("mainClass", out var main) && Nonempty(main) is { } entry) { mainClass = entry; mainClassSource = Source(component, "mainClass"); }
                 if (fields.TryGetValue("minecraftArguments", out var args) && Nonempty(args) is { } argumentString) {
                     gameArgumentString = argumentString; gameArgumentSource = Source(component, "minecraftArguments");
                 }
@@ -88,7 +91,13 @@ public static class MmcProfileCompiler {
                         var artifact = MmcArtifactRules.Library(library, component, role, environment, Source(component, field), diagnostics);
                         if (artifact is null) continue;
                         if (artifact.Role == MmcArtifactRole.DownloadOnly) maven.Add(artifact);
-                        else Apply(artifact.Role == MmcArtifactRole.Native ? native : ordinary, artifact);
+                        else {
+                            if (artifact.Role == MmcArtifactRole.Classpath) {
+                                if (!contributedLibraries.TryGetValue(component.Uid, out var keys)) contributedLibraries.Add(component.Uid, keys = []);
+                                keys.Add(artifact.Key);
+                            }
+                            Apply(artifact.Role == MmcArtifactRole.Native ? native : ordinary, artifact);
+                        }
                     }
                 }
                 if (fields.TryGetValue("mainJar", out var jar) && jar.ValueKind != JsonValueKind.Null) {
@@ -107,15 +116,29 @@ public static class MmcProfileCompiler {
                     inventory.Add(new(component.Uid, true, MmcArtifactRole.LoggingConfiguration, file.Clone(), source));
                 }
                 if (component.SourceKind != MmcComponentSourceKind.RemoteMetadata) {
-                    string[] owned = fields.Keys.Where(k => k is "mainClass" or "mainJar" or "minecraftArguments" or "+jvmArgs" or "+tweakers" or "libraries" or "+libraries" or "compatibleJavaMajors").Order(StringComparer.Ordinal).ToArray();
-                    bool completeBuiltin = component.Uid is "net.minecraft" or "net.minecraftforge" && fields.ContainsKey("mainClass") &&
-                        (fields.ContainsKey("libraries") || fields.ContainsKey("+libraries")) &&
-                        (component.Uid != "net.minecraft" || fields.ContainsKey("mainJar"));
-                    effects.Add(new(component.Uid, owned.ToImmutableArray(), completeBuiltin));
+                    string[] owned = fields.Where(field => field.Key switch {
+                        "mainClass" or "minecraftArguments" => Nonempty(field.Value) is not null,
+                        "mainJar" => field.Value.ValueKind == JsonValueKind.Object,
+                        "+jvmArgs" or "+tweakers" or "libraries" or "+libraries" or "compatibleJavaMajors" => field.Value.GetArrayLength() > 0,
+                        _ => false
+                    }).Select(field => field.Key).Order(StringComparer.Ordinal).ToArray();
+                    localDefinitions.Add(component.Uid, component);
+                    effects.Add(new(component.Uid, owned.ToImmutableArray(), false));
                 }
             }
             if (string.IsNullOrEmpty(mainClass) || mainClass.Contains('\0') || mainJar is null || minecraftVersion is null)
                 throw new MmcInputException("MMC_INCOMPLETE_LAUNCH", "profile", "Minecraft version, entry class and main JAR must all be explicitly resolved.");
+            HashSet<string> finalLibraries = ordinary.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
+            for (int i = 0; i < effects.Count; i++) {
+                var effect = effects[i];
+                var component = localDefinitions[effect.ComponentUid];
+                bool finalEntryFromComponent = mainClassSource?.ComponentUid == component.Uid && mainClassSource.SourceSha256 == component.Patch.ContentSha256;
+                bool finalJarFromComponent = mainJar.Provenance.ComponentUid == component.Uid && mainJar.SourceRevision == component.Patch.ContentSha256;
+                bool adoptedLibraryContribution = contributedLibraries.TryGetValue(component.Uid, out var keys) && keys.Count > 0 && keys.All(finalLibraries.Contains);
+                bool complete = component.Uid is "net.minecraft" or "net.minecraftforge" && finalEntryFromComponent && adoptedLibraryContribution &&
+                    effect.Fields.Contains("mainClass") && (component.Uid != "net.minecraft" || effect.Fields.Contains("mainJar") && finalJarFromComponent);
+                effects[i] = effect with { ReplacesBuiltinLaunchDefinition = complete };
+            }
             assets ??= new("legacy", null, new("net.minecraft", minecraftVersion, "profile:legacy-assets", resolved.SourceFingerprint, "assets", fieldPosition++));
             if (loggingArgument is not null) jvm.Add(loggingArgument);
             List<MmcArgumentToken> gameArguments = [];

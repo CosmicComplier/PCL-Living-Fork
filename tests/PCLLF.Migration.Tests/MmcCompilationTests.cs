@@ -17,6 +17,7 @@ internal static class MmcCompilationTests {
         yield return ("MMC compiler keeps Java candidates discrete and distinguishes missing installed Java", JavaPolicy);
         yield return ("MMC compiler models logging configuration as an owned auxiliary artifact", Logging);
         yield return ("MMC compiler tracks local launch override effects and deterministic fingerprints", Provenance);
+        yield return ("MMC compiler only flags a complete builtin replacement with final adopted launch contributions", CompleteOverrides);
         yield return ("MMC command string tokenizer preserves empty arguments quotes and trailing backslashes", Tokenization);
     }
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
@@ -138,5 +139,17 @@ internal static class MmcCompilationTests {
     private static void Tokenization() {
         Require(MmcArgumentTokenizer.Tokenize("\"\" plain '中文 path' C:\\trailing\\").SequenceEqual(["", "plain", "中文 path", "C:\\trailing\\"]), "Token boundaries changed.");
         try { MmcArgumentTokenizer.Tokenize("\"unterminated"); throw new Exception("Missing quote error"); } catch (FormatException) { }
+    }
+    private static void CompleteOverrides() {
+        var emptyEntry = Good(Compile(patches: [Patch("net.minecraftforge", ("mainClass", ""), ("libraries", Array.Empty<object>()))]));
+        Require(!emptyEntry.OverrideEffects.Single(e => e.ComponentUid == "net.minecraftforge").ReplacesBuiltinLaunchDefinition, "Empty Forge fields were mistaken for a complete launch definition.");
+        var emptyLibraries = Good(Compile(patches: [Patch("net.minecraftforge", ("mainClass", "fixture.Forge"), ("libraries", Array.Empty<object>()))]));
+        Require(!emptyLibraries.OverrideEffects.Single(e => e.ComponentUid == "net.minecraftforge").ReplacesBuiltinLaunchDefinition, "Empty Forge library list proved completeness.");
+        var nullJar = Good(Compile(new() { ["mainJar"] = null, ["libraries"] = new[] { Library("fixture:base:1") } }, [Patch("jar-provider", ("mainJar", Library("fixture:main:1")))]));
+        Require(!nullJar.OverrideEffects.Single(e => e.ComponentUid == "net.minecraft").ReplacesBuiltinLaunchDefinition, "Null Minecraft mainJar proved completeness.");
+        var laterEntry = Good(Compile(new() { ["libraries"] = new[] { Library("fixture:base:1") } }, [Patch("partial", ("mainClass", "fixture.Partial"))]));
+        Require(laterEntry.OverrideEffects.All(e => !e.ReplacesBuiltinLaunchDefinition), "Later partial entry inherited an earlier complete-chain flag.");
+        var replacedLibrary = Good(Compile(new() { ["libraries"] = new[] { Library("fixture:base:1") } }, [Patch("partial", ("libraries", new[] { Library("fixture:base:2") }))]));
+        Require(!replacedLibrary.OverrideEffects.Single(e => e.ComponentUid == "net.minecraft").ReplacesBuiltinLaunchDefinition, "A superseded library contribution was counted as adopted.");
     }
 }

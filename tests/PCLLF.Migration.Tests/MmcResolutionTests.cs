@@ -9,6 +9,7 @@ internal static class MmcResolutionTests {
         yield return ("MMC resolution collects disabled dependencies but rejects enabled consumers of disabled providers", DisabledGraph);
         yield return ("MMC resolution keeps local overrides and refuses conflicting explicit versions", LocalPriority);
         yield return ("MMC resolution reselects only automatic providers for consistent exact requirements", AutomaticReselection);
+        yield return ("MMC resolution discards dependencies and false conflicts from superseded automatic metadata", SupersededDependencies);
         yield return ("MMC resolution uses first source suggestion and rejects conflicting exact versions", Suggestions);
         yield return ("MMC resolution adopts a unique index recommendation and fixes its content digest", Recommendations);
         yield return ("MMC resolution rejects forged or ambiguous metadata identities and hashes", SnapshotIdentity);
@@ -69,6 +70,24 @@ internal static class MmcResolutionTests {
         var result = Resolve(package, [Snapshot("a", requires: [new { uid = "dep", suggests = "first" }]), Snapshot("b", requires: [new { uid = "dep", suggests = "second" }]), Snapshot("dep", "first")]);
         Require(result.IsComplete && result.Profile!.Components[0].Version == "first", "First suggestion ordering changed.");
         Error(Resolve(package, [Snapshot("a", requires: [new { uid = "dep", equals = "one" }]), Snapshot("b", requires: [new { uid = "dep", equals = "two" }])]), "MMC_EXACT_VERSION");
+    }
+    private static void SupersededDependencies() {
+        var package = Package([new { uid = "consumer", version = "1" }, new { uid = "a", version = "1", dependencyOnly = true }]);
+        var obsolete = Resolve(package, [Snapshot("consumer", requires: [new { uid = "a", equals = "2" }]),
+            Snapshot("a", "1", requires: [new { uid = "obsolete", equals = "1" }]), Snapshot("a", "2")]);
+        Require(obsolete.IsComplete && obsolete.Profile!.Components.All(c => c.Uid != "obsolete") && obsolete.MissingMetadata.IsEmpty, "Superseded dependency was retained or requested.");
+        var changed = Resolve(package, [Snapshot("consumer", requires: [new { uid = "a", equals = "2" }]),
+            Snapshot("a", "1", requires: [new { uid = "dep", equals = "1" }]), Snapshot("a", "2", requires: [new { uid = "dep", equals = "2" }]), Snapshot("dep", "2")]);
+        Require(changed.IsComplete && changed.Profile!.Components.Single(c => c.Uid == "dep").Version == "2", "Superseded exact dependency was not replaced.");
+        var noFalseConflict = Resolve(package, [Snapshot("consumer", requires: [new { uid = "a", equals = "2" }, new { uid = "b", equals = "2" }]),
+            Snapshot("a", "1", requires: [new { uid = "b", equals = "1" }]), Snapshot("a", "2"), Snapshot("b", "2")]);
+        Require(noFalseConflict.IsComplete && noFalseConflict.Profile!.Components.Single(c => c.Uid == "b").Version == "2", "Old metadata created a false exact conflict.");
+        // A transitive consumer is only discovered on the next pass; its
+        // requirement must also evict an earlier discovered obsolete subtree.
+        var transitive = Package([new { uid = "consumer", version = "1" }, new { uid = "a", version = "1", dependencyOnly = true }]);
+        var pruned = Resolve(transitive, [Snapshot("consumer", requires: [new { uid = "bridge", equals = "1" }]), Snapshot("bridge", requires: [new { uid = "a", equals = "2" }]),
+            Snapshot("a", "1", requires: [new { uid = "obsolete", equals = "1" }]), Snapshot("a", "2"), Snapshot("obsolete")]);
+        Require(pruned.IsComplete && pruned.Profile!.Components.All(c => c.Uid != "obsolete"), "Discovered obsolete subtree survived reachability rebuilding.");
     }
     private static void Recommendations() {
         var package = Package([new { uid = "base" }]);
