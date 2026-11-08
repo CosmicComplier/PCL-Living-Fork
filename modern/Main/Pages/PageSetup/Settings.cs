@@ -225,6 +225,14 @@ namespace PCL
         {
             Backend.Set(Key, Value, Instance);
         }
+        public static void SetInstanceUserPreference(string Key, object Value, ModMinecraft.McInstance Instance = null)
+        {
+            if (!MmcLaunchPreferences.TrySaveUserPreference(Instance, Key, Value, reset: false)) Backend.Set(Key, Value, Instance);
+        }
+        public static void ResetInstanceUserPreference(string Key, ModMinecraft.McInstance Instance = null)
+        {
+            if (!MmcLaunchPreferences.TrySaveUserPreference(Instance, Key, null, reset: true)) Backend.Reset(Key, Instance);
+        }
         private static void SetCore(string Key, object Value, ModMinecraft.McInstance Instance)
         {
             Backend.SetCore(Key, Value, Instance);

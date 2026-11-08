@@ -33,6 +33,7 @@ public sealed class InstanceSettingsHost<TInstance> where TInstance : class {
     public Func<string,TInstance,bool> Boolean = null!, HasSaved = null!;
     public Action<string,object,TInstance> Set = null!;
     public Action<string,TInstance> Reset = null!;
+    public Action<TInstance,Java?>? SetForcedJava;
     public Action ApplyVisibility = null!, RefreshSettings = null!, ResetSettings = null!;
     public Func<int> Animation = null!;
     public Action<int> AddAnimation = null!;

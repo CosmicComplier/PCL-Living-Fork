@@ -32,7 +32,9 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
     }
     public void Reset() {
         try {
-            host.ResetSettings(); host.Reset("VersionServerLogin",host.Instance()); host.Reset("VersionArgumentIndieV2",host.Instance()); host.Reset("VersionAdvanceAssets",host.Instance()); Configs.JavaForced.Reset(host.Instance().Config); host.JavaRefresh().Start();
+            host.ResetSettings(); host.Reset("VersionServerLogin",host.Instance()); host.Reset("VersionArgumentIndieV2",host.Instance()); host.Reset("VersionAdvanceAssets",host.Instance());
+            if (host.SetForcedJava is not null) host.SetForcedJava(host.Instance(),null); else Configs.JavaForced.Reset(host.Instance().Config);
+            host.JavaRefresh().Start();
             host.Info("已初始化版本独立设置"); host.HintGreen("已初始化版本独立设置！",false);
         } catch (Exception ex) { host.ErrorAlert(ex,"初始化版本独立设置失败"); }
         Reload();
@@ -88,7 +90,7 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
         try {
             foreach (Java entry in Configs.JavaList.Get()!) {
                 TItem item=view.CreateJavaItem(entry,entry.ToString()); item.MouseLeftButtonUp+=(_,e)=>e.Handled=true;
-                view.OnJavaClick(item,()=> { Configs.JavaForced.Set(entry,host.Instance().Config); UpdateJavaList(); view.JavaSelect.IsDropDownOpen=false; }); view.JavaSelect.Items.Add(item);
+                view.OnJavaClick(item,()=> { if (host.SetForcedJava is not null) host.SetForcedJava(host.Instance(),entry); else Configs.JavaForced.Set(entry,host.Instance().Config); UpdateJavaList(); view.JavaSelect.IsDropDownOpen=false; }); view.JavaSelect.Items.Add(item);
                 bool official=PathUtils.IsParentOf($@"{Paths.AppData}.minecraft\runtime\",entry.Folder);
                 TButton delete=view.CreateJavaButton(false); delete.IsEnabled=!official; delete.ToolTip=delete.IsEnabled ? "从列表中移除" : "无法移除官方 Java"; view.OnButtonClick(delete,()=>host.RemoveJava(entry)); ToolTipService.SetShowOnDisabled(delete,true);
                 TButton open=view.CreateJavaButton(true); open.ToolTip="打开文件夹"; view.OnButtonClick(open,()=>host.Explorer(entry.JavaExePath)); view.SetButtons(item,new List<TButton>{delete,open});

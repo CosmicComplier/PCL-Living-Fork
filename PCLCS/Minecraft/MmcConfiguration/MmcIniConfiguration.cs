@@ -10,7 +10,7 @@ namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies. Reuses LF's existing INI codec.
 internal sealed record MmcIniPatch(long Sequence, string? Value, MmcConfigurationContextStamp Context);
-public static class MmcIniConfiguration {
+public static partial class MmcIniConfiguration {
     [ThreadStatic] private static MmcConfigurationContextStamp? writeContext;
     [ThreadStatic] private static string? contextNamespace;
     [ThreadStatic] private static string? contextRoot;

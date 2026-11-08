@@ -159,7 +159,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
     }
     private static void SetInitialPreferences(MmcConfigurationWriteScope scope, MmcConfiguration configuration) {
         var values = configuration.Values;
-        bool Enabled(string key) => values.TryGetValue(key, out string? value) && bool.TryParse(value, out bool enabled) && enabled;
+        bool Enabled(string key) => values.TryGetValue(key, out string? value) && (value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase));
         scope.SetIni("VersionArgumentIndieV2", "True");
         foreach (var (mode, flag) in new[] { ("MmcJavaLocationMode", "OverrideJavaLocation"), ("MmcJvmArgsMode", "OverrideJavaArgs"), ("MmcMemoryMode", "OverrideMemory"), ("MmcWindowMode", "OverrideWindow") })
             scope.SetIni(mode, Enabled(flag) ? "UsePackage" : "InheritGlobal");
