@@ -33,6 +33,7 @@ public static class MmcInstanceCapabilities {
     /// <summary>Protect direct old file helpers when the destination is below a versions instance.</summary>
     public static void RequireLegacyContainingInstance(string path, string operation) {
         string absolute = Path.GetFullPath(path);
+        MmcInstancePackageUpdateCapabilities.AssertOutsideStore(absolute, operation);
         var attributes = MmcInstancePaths.Attributes(absolute);
         // Existing ordinary root junctions remain supported, while an alias to a descendant
         // of a managed instance must not hide the actual owning versions directory.
@@ -53,6 +54,7 @@ public static class MmcInstanceCapabilities {
         string physical = MmcConfigurationPaths.PhysicalRoot(gameRoot);
         RequireLegacyContainingInstance(physical, operation);
         RequireLegacy(physical, operation);
+        MmcInstancePackageUpdateCapabilities.AssertFolderHasNoCandidates(physical, operation);
         string versions = MmcConfigurationPaths.Target(physical, "versions");
         var attributes = MmcInstancePaths.Attributes(versions);
         if (attributes is null) return;
