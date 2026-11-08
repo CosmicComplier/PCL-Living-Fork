@@ -27,7 +27,9 @@ public sealed record MmcReadLimits {
 
 public enum MmcDiagnosticSeverity { Information, Warning, Error }
 public sealed record MmcDiagnostic(string Code, MmcDiagnosticSeverity Severity, string Source, string Message);
-public sealed record MmcMetadataRequest(string Uid, string Version, string RequestedBy);
+public enum MmcMetadataRequestKind { Component, Recommendation }
+public sealed record MmcMetadataRequest(string Uid, string Version, string RequestedBy,
+    MmcMetadataRequestKind Kind = MmcMetadataRequestKind.Component, string SourceIdentity = "prism-meta");
 public sealed record MmcRequirement(string Uid, string? EqualsVersion, string? SuggestedVersion);
 
 /// <summary>Cloned JSON values remain immutable and usable after the parsing document is disposed.</summary>
@@ -53,7 +55,7 @@ public sealed record MmcPackage(
     string RelativeRoot, string GameRootLeaf, string ManifestSha256,
     ImmutableArray<MmcComponent> Components, MmcConfiguration Configuration,
     ImmutableArray<MmcMetadataRequest> MissingMetadata,
-    ImmutableArray<MmcArchiveEntry> ArchiveEntries);
+    ImmutableArray<MmcArchiveEntry> ArchiveEntries, long MetadataUtf8ByteCount = 0);
 
 /// <summary>Read diagnostics only. HasErrors=false is neither a complete semantic profile nor install/launch authorization.</summary>
 public sealed record MmcParseResult(MmcPackage? Package, ImmutableArray<MmcDiagnostic> Diagnostics) {

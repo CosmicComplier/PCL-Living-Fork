@@ -11,7 +11,7 @@ internal static class MmcPatchReader {
     private static readonly HashSet<string> Fields = new(StringComparer.Ordinal) {
         "formatVersion", "uid", "fileId", "version", "name", "description", "releaseTime", "type", "order", "volatile",
         "requires", "conflicts", "mainClass", "mainJar", "assetIndex", "assets", "minecraftArguments", "+jvmArgs",
-        "+tweakers", "libraries", "+libraries", "mavenFiles", "compatibleJavaMajors", "compatibleJavaName", "+traits", "traits"
+        "+tweakers", "libraries", "+libraries", "mavenFiles", "compatibleJavaMajors", "compatibleJavaName", "+traits", "traits", "logging"
     };
     private static readonly HashSet<string> LibraryFields = new(StringComparer.Ordinal) {
         "name", "url", "MMC-hint", "MMC-filename", "MMC-absoluteUrl", "absoluteUrl", "downloads", "natives", "rules", "extract"
@@ -62,6 +62,9 @@ internal static class MmcPatchReader {
                         foreach (string name in new[] { "id", "url", "sha1" }) MmcJson.String(field.Value, name, source);
                         CheckSizes(field.Value, source);
                     }
+                    break;
+                case "logging":
+                    Logging(field.Value, source, enabled, diagnostics);
                     break;
                 case "+traits": case "traits":
                     foreach (string trait in MmcJson.Strings(field.Value, source, field.Name))
@@ -123,6 +126,18 @@ internal static class MmcPatchReader {
         CheckSizes(value, source);
     }
 
+    private static void Logging(JsonElement value, string source, bool enabled, List<MmcDiagnostic> diagnostics) {
+        CheckObjectFields(value, ["argument", "file", "type"], "logging", source, enabled, diagnostics);
+        MmcJson.String(value, "argument", source, true);
+        string type = MmcJson.String(value, "type", source, true)!;
+        if (type != "log4j2-xml") Unsupported("logging:" + type, source, enabled, diagnostics);
+        if (!value.TryGetProperty("file", out var file)) MmcJson.Fail(source, "logging requires a file descriptor.");
+        CheckObjectFields(file, ["id", "url", "sha1", "sha256", "size"], "logging.file", source, enabled, diagnostics);
+        foreach (string key in new[] { "id", "url" }) MmcJson.String(file, key, source, true);
+        foreach (string key in new[] { "sha1", "sha256" }) MmcJson.String(file, key, source);
+        CheckSizes(file, source);
+    }
+
     private static void CheckSizes(JsonElement value, string source) {
         foreach (string key in new[] { "size", "totalSize" })
             if (value.TryGetProperty(key, out JsonElement size) && (size.ValueKind != JsonValueKind.Number || !size.TryGetInt64(out long bytes) || bytes < 0))
@@ -160,6 +175,18 @@ internal static class MmcPatchReader {
     }
 
     internal static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    internal static void ValidateCapabilities(MmcPatch patch, bool enabled, List<MmcDiagnostic> diagnostics) {
+        bool deferred = false;
+        foreach ((string name, JsonElement value) in patch.Fields) {
+            if (!Fields.Contains(name)) Unsupported(name, patch.Source, enabled, diagnostics);
+            if (name is "+traits" or "traits") foreach (string trait in MmcJson.Strings(value, patch.Source, name))
+                if (!Traits.Contains(trait)) Unsupported("trait:" + trait, patch.Source, enabled, diagnostics);
+            if (name is "libraries" or "+libraries" or "mavenFiles") foreach (JsonElement library in value.EnumerateArray()) Library(library, patch.Source, enabled, diagnostics, ref deferred);
+            if (name == "mainJar" && value.ValueKind != JsonValueKind.Null) Library(value, patch.Source, enabled, diagnostics, ref deferred);
+            if (name == "logging") Logging(value, patch.Source, enabled, diagnostics);
+        }
+    }
 
     internal static void Unsupported(string field, string source, bool enabled, List<MmcDiagnostic> diagnostics) =>
         diagnostics.Add(new("MMC_UNSUPPORTED_REQUIRED", enabled ? MmcDiagnosticSeverity.Error : MmcDiagnosticSeverity.Warning,

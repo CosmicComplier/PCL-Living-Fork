@@ -161,7 +161,7 @@ internal static class MmcProfileTests {
             ["consumer.json"] = Patch("consumer", requires: [new { uid = "dep", equals = "", suggests = "1" }])
         }));
         Require(emptyExactMissing.MissingMetadata is [{ Uid: "dep", Version: "1" }], "Empty exact version suppressed a valid suggestion.");
-        Error(Input(Pack(new { uid = "unknown" })), "MMC_VERSION_REQUIRED");
+        Require(Good(Input(Pack(new { uid = "unknown" }))).MissingMetadata is [{ Kind: MmcMetadataRequestKind.Recommendation, Version: "" }], "Unspecified version must request a fixed recommendation index.");
     }
     private static void InvalidGraphs() {
         string pack = Pack(new { uid = "a", version = "1" }, new { uid = "b", version = "1" });

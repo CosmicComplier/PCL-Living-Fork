@@ -102,7 +102,7 @@ public static class MmcPackageReader {
             MmcConfiguration configuration = MmcConfigurationReader.Parse(cfg, cfgPath, diagnostics);
             string gameRoot = SelectGameRoot(root, entries);
             var package = new MmcPackage(root, gameRoot, MmcPatchReader.Hash(manifest), components.ToImmutable(), configuration,
-                requests.DistinctBy(r => (r.Uid, r.Version)).ToImmutableArray(), input.Entries.ToImmutableArray());
+                requests.DistinctBy(r => (r.Uid, r.Version, r.Kind)).ToImmutableArray(), input.Entries.ToImmutableArray(), metadata.Values.Sum(text => (long)Encoding.UTF8.GetByteCount(text)));
             return new(package, diagnostics.ToImmutableArray());
         } catch (MmcInputException e) {
             diagnostics.Add(new(e.Code, MmcDiagnosticSeverity.Error, e.SourcePath, e.Message));
@@ -148,8 +148,9 @@ public static class MmcPackageReader {
     }
 
     private static void Request(string uid, string? version, string source, List<MmcMetadataRequest> requests) {
-        if (string.IsNullOrWhiteSpace(version)) throw new MmcInputException("MMC_VERSION_REQUIRED", source, $"{uid} has no local patch or explicit/recommended version; index resolution is not implemented in this slice.");
-        requests.Add(new(uid, version, source));
+        requests.Add(string.IsNullOrWhiteSpace(version)
+            ? new(uid, "", source, MmcMetadataRequestKind.Recommendation)
+            : new(uid, version, source));
     }
 
     private static Dictionary<string, MmcArchiveEntry> Index(IReadOnlyList<MmcArchiveEntry> source, MmcReadLimits limits, List<MmcDiagnostic> diagnostics, ref long rawPathCharacters) {
