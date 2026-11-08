@@ -118,7 +118,7 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
             instance = ResolveDeleteTarget(item, instance);
             if (instance.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && host.BeginManagedDelete is not null) {
                 TInstance managed = instance;
-                host.BeginManagedDelete(managed, host.Shift(), () => RefreshAfterDeletion(host, managed));
+                host.BeginManagedDelete(managed, host.Shift(), () => RefreshAfterDeletion(host, managed, managed.Config.ContextStamp.InstanceId));
                 return;
             }
             MmcInstanceCapabilities.RequireLegacy(instance.PathVersion, "删除");
@@ -137,12 +137,16 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
         } catch (OperationCanceledException error) { Logger.Warn(error, "删除版本 " + (instance?.Name ?? "未知版本") + " 被主动取消"); }
         catch (Exception error) { Logger.Error(error, "删除版本 " + (instance?.Name ?? "未知版本") + " 失败", LogBehavior.Alert); }
     }
-    private static void RefreshAfterDeletion(InstanceSelectionPageHost<TInstance, TCard> host, TInstance target) {
-        host.SetInstances(WithoutDeletedInstance(host.Instances(), target.PathVersion));
+    private static void RefreshAfterDeletion(InstanceSelectionPageHost<TInstance, TCard> host, TInstance target, Guid? managedId = null) {
+        bool Deleted(TInstance value) => PathUtils.IsSame(value.PathVersion, target.PathVersion) &&
+            (managedId is null || value.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && value.Config.ContextStamp.InstanceId == managedId);
+        var cards = new Dictionary<TCard, List<TInstance>>();
+        foreach (var card in host.Instances()) { var remaining = card.Value.Where(value => !Deleted(value)).ToList(); if (remaining.Count != 0) cards.Add(card.Key, remaining); }
+        host.SetInstances(cards);
         TInstance? current = host.SelectedInstance();
-        TInstance? next = SelectionAfterDelete(current, target.PathVersion);
+        TInstance? next = current is not null && Deleted(current) ? null : current;
         if (!ReferenceEquals(next, current)) host.SetSelectedInstance(next);
-        if (host.InstancePage() is TInstance shown && PathUtils.IsSame(shown.PathVersion, target.PathVersion)) host.SetInstancePage(null);
+        if (host.InstancePage() is TInstance shown && Deleted(shown)) host.SetInstancePage(null);
         host.ForceRefresh(); host.RefreshInstances(true);
     }
     public static TInstance ResolveDeleteTarget(FrameworkElement? item, TInstance? expected) {

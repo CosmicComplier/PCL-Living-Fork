@@ -8,19 +8,22 @@ using System.Windows;
 using System.Windows.Controls;
 using PCL;
 using PCLCS;
-using Selection = PCLCS.InstanceSelectionPageController<PCL.ModMinecraft.McInstance, PCL.ModMinecraft.McInstance.McInstanceState, PCL.ModMinecraft.McInstanceCardType, PCL.InstanceCloneGroupNode, PCL.InstanceCloneGroupSet>;
-using Overall = PCLCS.InstanceOverallPageController<PCL.ModMinecraft.McInstance, PCL.ModMinecraft.McInstance.McInstanceState, PCL.ModMinecraft.McInstanceCardType, System.Windows.Controls.Grid, object>;
+using PCLCS.Loaders;
+using Overall = PCLCS.InstanceOverallPageController<PCL.ModMinecraft.McInstance, PCL.ModMinecraft.McInstance.McInstanceState, PCL.ModMinecraft.McInstanceCardType, PCL.MyListItem, PCL.ModLoader.LoaderCombo<string>>;
 
 namespace PCLLF.Native.Facade.Tests;
 
 internal static class MmcDeleteUiChecks {
-    internal static void Run(FixtureEnvironment environment) {
+    internal static void Run(FixtureEnvironment environment) => RunChecks(environment, false);
+    internal static void RunAdmission(FixtureEnvironment environment) => RunChecks(environment, true);
+    private static void RunChecks(FixtureEnvironment environment, bool admission) {
         using FileTaskScope files = new(environment);
         using var scope = new Scope(files);
-        scope.Bindings(); scope.SelectionDeleteAndEmptyRecovery(); scope.OverallAndNavigation();
-        scope.Cancellation(); scope.StaleConfirmation(); scope.BlockedSessionsAndPending(); scope.IncompleteRecovery();
+        void Check(string name, Action action) { action(); Console.WriteLine("PASS MMC delete UI " + name); }
+        if (admission) { Check("session/pending refusals", scope.BlockedSessionsAndPending); Check("recovery/catalog authority", scope.IncompleteRecovery); }
+        else { Check("bindings", scope.Bindings); Check("selection/empty-list/restore", scope.SelectionDeleteAndEmptyRecovery); Check("overall/navigation", scope.OverallAndNavigation); Check("cancellation", scope.Cancellation); Check("stale confirmation", scope.StaleConfirmation); }
         InstanceConfigProviders.FlushAndDisposeWithin(files.Root); environment.AssertNoForbiddenIo();
-        Console.WriteLine("PASS mmc-delete-ui: both real Main deletion bindings, Shift capability, empty-list recovery, preview identity, before/after-decision cancel, active/unknown/pending refusal, exact catalog conflicts and real quarantine/recovery/restore; no game or user data.");
+        Console.WriteLine(admission ? "PASS mmc-delete-admission: active/unknown/pending refusal, exact catalog conflicts and real decided recovery/restore." : "PASS mmc-delete-ui: both real Main deletion bindings, Shift capability, empty-list recovery, preview identity and before/after-decision cancel; no game or user data.");
     }
     private sealed class Scope : IDisposable {
         private readonly FileTaskScope files;
@@ -29,6 +32,8 @@ internal static class MmcDeleteUiChecks {
         private readonly ConcurrentQueue<ModLoader.LoaderCombo<string>> tasks = new();
         private readonly ConcurrentQueue<MmcInstanceLifecycleResult> results = new();
         private readonly ConcurrentQueue<Exception> errors = new();
+        private readonly LegacyLoaderHost<ModLoader.LoaderBase, ModBase.LoadState, MyLoading.MyLoadingState> scheduler;
+        private readonly Action previousRefresh;
         private int sequence;
         internal Func<string, int> Confirmation = _ => 1;
         internal Action<MmcLifecycleCheckpoint>? Checkpoint;
@@ -36,6 +41,9 @@ internal static class MmcDeleteUiChecks {
         internal Action? Completed;
         internal Scope(FileTaskScope files) {
             this.files = files;
+            scheduler = (LegacyLoaderHost<ModLoader.LoaderBase, ModBase.LoadState, MyLoading.MyLoadingState>)Native.Field(typeof(ModLoader), "NativeLoaderHost").GetValue(null)!;
+            previousRefresh = scheduler.RefreshExtraDownload;
+            scheduler.RefreshExtraDownload = () => { }; // Only the absent offscreen download button presentation is replaced.
             Set("RegisterTask", new Action<ModLoader.LoaderCombo<string>>(task => { tasks.Enqueue(task); ModLoader.LoaderTaskbar.Add(task); Registered?.Invoke(task); }));
             Set("Published", new Action<MmcInstanceLifecycleResult>(result => { results.Enqueue(result); if (Completed is { } complete) ModBase.RunInUi(complete); }));
             Set("Confirm", new Func<string, string, bool, int>((text, _, _) => Confirmation(text)));
@@ -82,7 +90,8 @@ internal static class MmcDeleteUiChecks {
             host.BeginManagedDelete = (target, shift, complete) => { shifted = shift; callback = complete; actual(target, shift, complete); };
             Confirmation = text => { Native.Check(text.Contains("仅支持可恢复删除", StringComparison.Ordinal) && text.Contains("不会释放", StringComparison.Ordinal), "Shift silently entered permanent deletion or claimed reclaimed space."); return 1; };
             Completed = () => callback!();
-            Selection.Delete(new Grid { Tag = instance }, instance, host); Wait(before);
+            var controllerType = typeof(InstanceSelectionPageController<,,,,>).MakeGenericType(typeof(ModMinecraft.McInstance), typeof(ModMinecraft.McInstance.McInstanceState), typeof(ModMinecraft.McInstanceCardType), Native.Type("PCL.InstanceCloneGroupNode"), Native.Type("PCL.InstanceCloneGroupSet"));
+            Native.Call(controllerType, "Delete", null, new Grid { Tag = instance }, instance, host); Wait(before);
             Native.Check(shifted && Current.State == ModBase.LoadState.Finished && cards.Count == 0 && selected is null && pageInstance is null, "Managed list deletion did not update its last-instance state.");
             var quarantined = results.Single(); Native.Check(quarantined.Quarantined && !Directory.Exists(instance.PathVersion), "Managed list deletion did not quarantine the source.");
             Native.Check(File.ReadAllText(Path.Combine(quarantined.CurrentRoot!, "minecraft", "saves", "player-world", "level.dat")) == "current player world", "Quarantine changed the player's world.");
@@ -94,7 +103,7 @@ internal static class MmcDeleteUiChecks {
                 "The last-instance deletion hid the recovery entry with the empty list.");
             bool catalogSeen = false;
             Set("SelectEntry", new Func<ImmutableArray<MmcLifecycleCatalogEntry>, int?>(entries => { catalogSeen = entries.Any(entry => entry.CanRestore && entry.InstanceId == quarantined.Definition!.InstanceId); return null; }));
-            Native.Call(view.GetType(), "BtnMmcRecovery_Click", view, button, EventArgs.Empty); Until(() => catalogSeen, "The empty-list recovery button did not read the current folder's real catalog.");
+            Native.Call(view.GetType(), "BtnMmcRecovery_Click", view, button, null); Until(() => catalogSeen, "The empty-list recovery button did not read the current folder's real catalog.");
             var preview = MmcInstanceLifecycleCatalog.Read(ModMinecraft.McFolderSelected).Entries.Single(entry => entry.CanRestore);
             string foreign = Path.Combine(instance.PathVersion, "keep.txt"); Directory.CreateDirectory(instance.PathVersion); File.WriteAllText(foreign, "foreign replacement");
             try { MmcInstanceLifecycleCatalog.Execute(preview, true); throw new Exception("Occupied restore path was overwritten."); } catch (IOException) { }
@@ -108,7 +117,7 @@ internal static class MmcDeleteUiChecks {
         }
         internal void OverallAndNavigation() {
             var instance = Import(); int before = tasks.Count; Action? callback = null; int backed = 0, refreshed = 0; bool currentPage = true;
-            var host = (InstanceOverallPageHost<ModMinecraft.McInstance, Grid, object>)Native.Call(typeof(PageInstanceOverall), "CreateHost", RuntimeHelpers.GetUninitializedObject(typeof(PageInstanceOverall)))!;
+            var host = (InstanceOverallPageHost<ModMinecraft.McInstance, MyListItem, ModLoader.LoaderCombo<string>>)Native.Call(typeof(PageInstanceOverall), "CreateHost", RuntimeHelpers.GetUninitializedObject(typeof(PageInstanceOverall)))!;
             var actual = host.BeginManagedDelete!;
             host.Instance = () => instance; host.ModpackEnabled = () => false; host.Shift = () => false; host.IsCurrentPage = () => currentPage;
             host.RefreshInstanceList = () => refreshed++; host.PageBack = () => backed++;
@@ -148,6 +157,7 @@ internal static class MmcDeleteUiChecks {
         internal void BlockedSessionsAndPending() {
             foreach (string mode in new[] { "active", "unknown", "pending", "primary" }) {
                 var instance = Import(); int before = tasks.Count;
+                Console.WriteLine("MMC deletion refusal checking " + mode);
                 using var idle = mode == "active" ? new BackupResourceChecks.IdleProcess() : null;
                 if (idle is not null) {
                     var source = MmcInstanceInspector.Read(instance.PathVersion); Guid sessionId = Guid.NewGuid(); string directory = Path.Combine(instance.PathVersion, "PCL", "MmcSessions", sessionId.ToString("N")); Directory.CreateDirectory(directory);
@@ -166,6 +176,7 @@ internal static class MmcDeleteUiChecks {
                 else Until(() => !errors.IsEmpty, "Pending/damaged instance did not show its refusal.");
                 Native.Check(results.IsEmpty && HashTree(instance.PathVersion) == bytes && !Busy, "A refused deletion changed source bytes or retained busy.");
                 idle?.Finish();
+                Console.WriteLine("PASS MMC deletion refusal " + mode);
             }
         }
         internal void IncompleteRecovery() {
@@ -188,6 +199,11 @@ internal static class MmcDeleteUiChecks {
         }
         private static string Record<T>(string path, T value) => (string)typeof(MmcSessions).Assembly.GetType("PCLCS.MmcDurableFiles")!.GetMethod("WriteRecord", BindingFlags.NonPublic | BindingFlags.Static)!.MakeGenericMethod(typeof(T)).Invoke(null, [path, value])!;
         private static string HashTree(string root) => string.Join("|", Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal).Select(file => Path.GetRelativePath(root, file) + ":" + Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)))));
-        public void Dispose() { Native.Check(!Busy && tasks.All(task => task.State != ModBase.LoadState.Loading), "Refusing to release test hooks with a real MMC worker still active."); foreach (var value in previous) value.Key.SetValue(null, value.Value); }
+        public void Dispose() {
+            Native.Check(!Busy && tasks.All(task => task.State != ModBase.LoadState.Loading), "Refusing to release test hooks with a real MMC worker still active.");
+            Native.Call(typeof(FileTaskScope), "FinishActualTasks", files);
+            foreach (var value in previous) value.Key.SetValue(null, value.Value);
+            scheduler.RefreshExtraDownload = previousRefresh;
+        }
     }
 }

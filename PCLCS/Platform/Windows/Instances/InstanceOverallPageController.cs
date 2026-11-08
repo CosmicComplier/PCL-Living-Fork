@@ -140,9 +140,11 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
             target = host.Instance();
             if (target.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && host.BeginManagedDelete is not null) {
                 string managedPath = target.PathVersion;
+                Guid managedId = target.Config.ContextStamp.InstanceId;
                 host.BeginManagedDelete(target, host.Shift(), () => {
                     host.RefreshInstanceList();
-                    if (host.IsCurrentPage() && host.Instance() is TInstance shown && PathUtils.IsSame(shown.PathVersion, managedPath)) host.PageBack();
+                    if (host.IsCurrentPage() && host.Instance() is TInstance shown && PathUtils.IsSame(shown.PathVersion, managedPath) &&
+                        shown.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && shown.Config.ContextStamp.InstanceId == managedId) host.PageBack();
                 });
                 return;
             }

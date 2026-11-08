@@ -93,7 +93,8 @@ internal static class MmcDeleteUi {
                 throw new IOException("MMC 操作尚未完成，内容已保留。请从 MMC 隔离区与恢复继续处理：" + result.Failure);
             if (Published is not null) Published(result);
             else ModBase.RunInUi(() => {
-                if (!recovery && ModMinecraft.McInstanceSelected is { } selected && MeloongCore.PathUtils.IsSame(selected.PathVersion, input))
+                if (!recovery && ModMinecraft.McInstanceSelected is { } selected && MeloongCore.PathUtils.IsSame(selected.PathVersion, input) &&
+                    selected.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && selected.Config.ContextStamp.InstanceId == result.Definition?.InstanceId)
                     ModMinecraft.McInstanceSelected = null;
                 ModMinecraft.McInstanceListForceRefresh = true;
                 ModMinecraft.McInstanceListLoader.Start(ModMinecraft.McFolderSelected, IsForceRestart: true);
