@@ -21,6 +21,7 @@ internal static class MmcManagementTests {
         yield return ("MMC management disk probe retains ownership after definition deletion", DeletedDefinition);
         yield return ("MMC management disk probe observes pending entries and orphan sources", PendingAndSourceProbe);
         yield return ("MMC management reserved override artifact and runtime remnants prevent legacy fallback", ReservedStoreRemnants);
+        yield return ("MMC management private import payload remnants remain positive ownership evidence", PayloadRemnant);
         yield return ("MMC management disk probe duplicate hints remain positive ownership evidence", DuplicateHints);
         yield return ("MMC management disk probe rejects malformed UTF8 reserved files", InvalidUtf8);
     }
@@ -117,6 +118,16 @@ internal static class MmcManagementTests {
             Equal(false, result.CanUseLegacyBackend);
             Equal(false, result.ObservationComplete);
         }
+    }
+    private static void PayloadRemnant() {
+        using Fixture fixture = new();
+        Directory.CreateDirectory(fixture.Pcl);
+        string path = Path.Combine(fixture.Pcl, "MmcImportPayload.json");
+        File.WriteAllText(path, "damaged payload record");
+        Equal(false, MmcManagementProbe.Read(fixture.Root).CanUseLegacyBackend);
+        File.Delete(path); Directory.CreateDirectory(path);
+        var wrongRole = MmcManagementProbe.Read(fixture.Root);
+        Equal(false, wrongRole.CanUseLegacyBackend); Equal(false, wrongRole.ObservationComplete);
     }
     private static void ReadOnlyProbe() {
         using Fixture fixture = new();

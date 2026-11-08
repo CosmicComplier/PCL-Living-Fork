@@ -55,6 +55,14 @@ public static class MmcManagementProbe {
             }
         }
         try {
+            string payload = Path.Combine(pcl, "MmcImportPayload.json");
+            MmcInstancePaths.EnsureNoLinks(pcl);
+            FileAttributes? attributes = MmcInstancePaths.Attributes(payload);
+            sources |= attributes is not null;
+            MmcInstancePaths.EnsureNoLinks(payload);
+            if (attributes is not null && (attributes.Value & FileAttributes.Directory) != 0) complete = false;
+        } catch (Exception error) when (IsObservationFailure(error)) { complete = false; }
+        try {
             string transactions = Path.Combine(pcl, "MmcTransactions");
             MmcInstancePaths.EnsureNoLinks(pcl);
             FileAttributes? attributes = MmcInstancePaths.Attributes(transactions);
