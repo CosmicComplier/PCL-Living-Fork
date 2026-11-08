@@ -39,6 +39,9 @@ internal static class MmcGtnhAcceptance {
         Sample[] chosen = selected is null or "both" ? Samples : Samples.Where(x => x.Id == selected).ToArray();
         if (chosen.Length == 0) throw new ArgumentException("--gtnh-case must be java8, java21 or both.");
         string repository = FindRepository();
+        string? reuseRun = Option(args, "--gtnh-reuse-cache-run");
+        string acceptanceBase = Path.Combine(repository, "artifacts", "mmc-gtnh-acceptance");
+        var cacheCases = chosen.ToDictionary(sample => sample.Id, sample => reuseRun is null ? null : OwnedCacheCase(reuseRun, sample.Id, acceptanceBase));
         string run = Path.Combine(repository, "artifacts", "mmc-gtnh-acceptance", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(run);
         File.WriteAllText(Path.Combine(run, OwnerName), JsonSerializer.Serialize(new { SchemaVersion = 1, Kind = "PCLLF.GtnhImportAcceptance", Root = run, Keep = true, Samples = chosen.Select(x => x.Id) }));
@@ -46,7 +49,7 @@ internal static class MmcGtnhAcceptance {
         int failed = 0;
         foreach (Sample sample in chosen) {
             string caseRoot = Path.Combine(run, sample.Id); Directory.CreateDirectory(caseRoot);
-            try { RunOwnedSample(sample, caseRoot); }
+            try { RunOwnedSample(sample, caseRoot, cacheCases[sample.Id]); }
             catch (Exception error) { failed++; File.WriteAllText(Path.Combine(caseRoot, "parent-error.txt"), error.ToString()); Console.Error.WriteLine("GTNH " + sample.Id + " import failed; evidence retained: " + error.Message); }
         }
         File.WriteAllText(Path.Combine(run, "summary.json"), JsonSerializer.Serialize(new { SchemaVersion = 1, TestedPhase = "actual-managed-import-only", Root = run,
@@ -54,7 +57,7 @@ internal static class MmcGtnhAcceptance {
         return failed == 0 ? 0 : 1;
     }
 
-    private static void RunOwnedSample(Sample sample, string caseRoot) {
+    private static void RunOwnedSample(Sample sample, string caseRoot, string? cacheCaseRoot) {
         if (!File.Exists(sample.Archive) || !File.Exists(Path.Combine(sample.JavaBin, "java.exe"))) throw new FileNotFoundException("Required existing sample/Java is absent; this runner does not download them.");
         string fixture = Path.Combine(Path.GetTempPath(), "PclNativeFacade-" + Guid.NewGuid().ToString("N"));
         string nonce = Guid.NewGuid().ToString("N"); Directory.CreateDirectory(fixture); Program.ValidateRoot(fixture);
@@ -64,6 +67,7 @@ internal static class MmcGtnhAcceptance {
             UseShellExecute = false, WorkingDirectory = fixture, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
         };
         foreach (string arg in new[] { ChildFlag, "--gtnh-case", sample.Id, "--case-root", caseRoot, "--nonce", nonce, "--isolated", "--fixture", fixture }) start.ArgumentList.Add(arg);
+        if (cacheCaseRoot is not null) { start.ArgumentList.Add("--cache-case-root"); start.ArgumentList.Add(cacheCaseRoot); }
         using var child = Process.Start(start) ?? throw new IOException("GTNH acceptance child did not start.");
         Task stdout = Pump(child.StandardOutput, Path.Combine(caseRoot, "stdout.log"), sample.Id, false);
         Task stderr = Pump(child.StandardError, Path.Combine(caseRoot, "stderr.log"), sample.Id, true);
@@ -105,7 +109,13 @@ internal static class MmcGtnhAcceptance {
         retainedEnvironment = new(fixture); ModpackUpdateCleanup.VerifyIsolatedChild();
         Scope? scope = null;
         try {
-            scope = new(retainedEnvironment, sample, caseRoot); retainedScope = scope;
+            string? cachedCase = Option(args, "--cache-case-root");
+            if (cachedCase is not null) {
+                string acceptanceBase = Directory.GetParent(Directory.GetParent(caseRoot)!.FullName)!.FullName;
+                if (Native.Full(OwnedCacheCase(Directory.GetParent(cachedCase)!.FullName, sample.Id, acceptanceBase)) != Native.Full(cachedCase))
+                    throw new IOException("Cache case does not belong to its retained acceptance run.");
+            }
+            scope = new(retainedEnvironment, sample, caseRoot, cachedCase); retainedScope = scope;
             scope.Import(); scope.WriteSuccess(nonce);
         } catch (Exception error) {
             WriteReceipt(caseRoot, new { SchemaVersion = 1, Status = "Failed", Nonce = nonce, Pid = Environment.ProcessId, CaseRoot = caseRoot,
@@ -122,7 +132,7 @@ internal static class MmcGtnhAcceptance {
     private sealed class Scope {
         private readonly FixtureEnvironment environment;
         private readonly Sample sample;
-        private readonly string root, game, name;
+        private readonly string root, game, name, cacheRoot, cacheGame;
         private readonly ConcurrentBag<ModNet.LoaderDownload> downloads = new();
         private readonly ConcurrentBag<Thread> networkWorkers = new();
         private readonly Java[] installed;
@@ -131,8 +141,9 @@ internal static class MmcGtnhAcceptance {
         private MmcInstanceBackendResult? result;
         private ModLoader.LoaderCombo<string>? loader;
         private string packageDigest = "";
-        internal Scope(FixtureEnvironment environment, Sample sample, string root) {
+        internal Scope(FixtureEnvironment environment, Sample sample, string root, string? cacheCaseRoot) {
             this.environment = environment; this.sample = sample; this.root = root; game = Path.Combine(root, "game");
+            cacheRoot = cacheCaseRoot ?? root; cacheGame = Path.Combine(cacheRoot, "game");
             name = "GTNH-2.9.0-" + sample.Id; Directory.CreateDirectory(game);
             File.WriteAllText(Path.Combine(root, OwnerName), JsonSerializer.Serialize(new { Kind = "PCLLF.GtnhImportCase", Root = root, MinecraftRoot = game, Sample = sample.Id, Keep = true }));
             ModBase.RunInUi(); Native.Field(typeof(ModMinecraft), "_McFolderSelected").SetValue(null, game + Path.DirectorySeparatorChar);
@@ -152,8 +163,8 @@ internal static class MmcGtnhAcceptance {
             object packHost = Native.Get(Native.Field(typeof(ModModpack), "Service").GetValue(null)!, "host")!;
             Native.Set(packHost, "InstallGame", new Func<string, string, McComponents, List<ModLoader.LoaderBase>>((_, _, _) => throw new IOException("GTNH managed import fell back to ordinary install.")));
             Native.Property(typeof(MmcInstances), "ServicesFactory").SetValue(null, new Func<ModpackMmcInstallRequest, MmcImportServices>(_ => new() {
-                Metadata = MmcDownloads.CreateMetadataStore(Path.Combine(root, "metadata-cache")),
-                CacheRoots = new(Path.Combine(game, "libraries"), Path.Combine(game, "assets"), Path.Combine(root, "source-cache"), Path.Combine(game, "versions")),
+                Metadata = MmcDownloads.CreateMetadataStore(Path.Combine(cacheRoot, "metadata-cache")),
+                CacheRoots = new(Path.Combine(cacheGame, "libraries"), Path.Combine(cacheGame, "assets"), Path.Combine(cacheRoot, "source-cache"), Path.Combine(cacheGame, "versions")),
                 SelectName = _ => name,
                 RegisterTask = value => { loader = value; ModLoader.LoaderTaskbar.Add(value); },
                 DownloadCreated = value => downloads.Add(value),
@@ -165,7 +176,7 @@ internal static class MmcGtnhAcceptance {
             packageDigest = HashSource(sample.Archive);
             if (packageDigest != sample.Sha256) throw new IOException("The local ZIP differs from the pinned original sample; refusing to infer authenticity.");
             File.WriteAllText(Path.Combine(root, "source-and-java.json"), JsonSerializer.Serialize(new { sample.Id, sample.Archive, SizeBytes = new FileInfo(sample.Archive).Length,
-                Sha256 = packageDigest, MainSha256 = MainHash(), MainMvid = Native.Main.ManifestModule.ModuleVersionId,
+                Sha256 = packageDigest, CacheSourceCaseRoot = cacheRoot, MainSha256 = MainHash(), MainMvid = Native.Main.ManifestModule.ModuleVersionId,
                 Java = installed.Select(value => new { value.JavaExePath, Version = value.Version!.ToString() }) }, JsonOptions));
             loader = ModModpack.ModpackInstall(sample.Archive) ?? throw new IOException("Actual modpack dispatcher did not start an import.");
             while (loader.State is ModBase.LoadState.Loading or ModBase.LoadState.Waiting ||
@@ -193,7 +204,7 @@ internal static class MmcGtnhAcceptance {
                 return new { item.Key, Role = item.Role.ToString(), Scope = item.Scope.ToString(), item.RelativePath, record.TargetRelativePath, record.AdoptedSha256, record.SizeBytes };
             }).ToArray();
             var report = new { SchemaVersion = 1, Status = "Succeeded", Nonce = nonce, Pid = Environment.ProcessId, CaseRoot = root, Sample = sample.Id,
-                Archive = sample.Archive, ArchiveSha256 = packageDigest, MainSha256 = MainHash(), MainMvid = Native.Main.ManifestModule.ModuleVersionId,
+                Archive = sample.Archive, ArchiveSha256 = packageDigest, CacheSourceCaseRoot = cacheRoot, MainSha256 = MainHash(), MainMvid = Native.Main.ManifestModule.ModuleVersionId,
                 InstanceRoot = paths.InstanceRoot, paths.GameRoot, paths.LocalLibraryRoot, paths.RuntimeRoot, definition.InstanceId, definition.Generation,
                 plan.MainClass, MainJarKey = plan.MainJar.Key, Environment = plan.Environment, JavaPolicy = plan.JavaPolicy,
                 SelectedJava = installed.Single(java => java.Version!.Major == sample.JavaMajor).JavaExePath,
@@ -240,6 +251,21 @@ internal static class MmcGtnhAcceptance {
         string temporary = Path.Combine(root, ReceiptName + ".pending");
         using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { JsonSerializer.Serialize(file, value, JsonOptions); file.Flush(true); }
         File.Move(temporary, Path.Combine(root, ReceiptName), false);
+    }
+    private static string OwnedCacheCase(string runRoot, string sample, string acceptanceBase) {
+        string run = Path.GetFullPath(runRoot), expectedBase = Path.GetFullPath(acceptanceBase);
+        if (Native.Full(Directory.GetParent(run)?.FullName ?? "") != Native.Full(expectedBase)) throw new IOException("Cache run must be a direct retained acceptance child.");
+        string caseRoot = Path.Combine(run, sample);
+        for (DirectoryInfo? directory = new(caseRoot); directory is not null; directory = directory.Parent)
+            if (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Retained cache ancestors must not be reparse points.");
+        using var owner = JsonDocument.Parse(File.ReadAllText(Path.Combine(run, OwnerName)));
+        using var caseOwner = JsonDocument.Parse(File.ReadAllText(Path.Combine(caseRoot, OwnerName)));
+        var runRecord = owner.RootElement; var caseRecord = caseOwner.RootElement;
+        if (runRecord.GetProperty("Kind").GetString() != "PCLLF.GtnhImportAcceptance" || Native.Full(runRecord.GetProperty("Root").GetString()!) != Native.Full(run) || !runRecord.GetProperty("Keep").GetBoolean() ||
+            caseRecord.GetProperty("Kind").GetString() != "PCLLF.GtnhImportCase" || Native.Full(caseRecord.GetProperty("Root").GetString()!) != Native.Full(caseRoot) ||
+            Native.Full(caseRecord.GetProperty("MinecraftRoot").GetString()!) != Native.Full(Path.Combine(caseRoot, "game")) || caseRecord.GetProperty("Sample").GetString() != sample || !caseRecord.GetProperty("Keep").GetBoolean())
+            throw new IOException("Retained cache ownership marker mismatch.");
+        return caseRoot;
     }
     private static string MainHash() => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Native.Main.Location)));
     private static string? Option(string[] args, string key) { int position = Array.IndexOf(args, key); return position < 0 ? null : position + 1 < args.Length ? args[position + 1] : throw new ArgumentException("Missing value: " + key); }
