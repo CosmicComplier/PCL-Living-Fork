@@ -80,6 +80,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 mutations.AddRange(sources.Mutations); mutations.AddRange(ArtifactMutations(prepared));
                 mutations.Add(new(request.InstanceName + ".json", null, projection, Hash(projection)));
                 mutations.Add(new("PCL/InstanceDefinition.json", null, definition, Hash(definition)));
+                reservation.RecordRecoveryPreparation(packageFiles.StageRoot, sources.StageRoot, prepared.StageRoot);
                 progress?.Report(new("publishing-instance"));
                 using var quiet = MmcConfigurationCoordinator.Quiesce(paths.InstanceRoot, cancellationToken);
                 using var gate = MmcAdmissionGate.Acquire(paths.InstanceRoot, reservation.InstanceId, TimeSpan.Zero, cancellationToken);
@@ -101,6 +102,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
         catch (Exception error) when (IsExpectedFailure(error)) {
             return new(reservation is null ? MmcInstanceBackendStatus.Rejected : MmcInstanceBackendStatus.NeedsRecovery, WorkingRoot: WorkingRoot(reservation), Failure: error.Message);
         }
+        finally { reservation?.Dispose(); }
     }
 
     private static MmcCompiledProfile Compile(MmcResolutionResult resolution, MmcRuntimeEnvironment environment) {

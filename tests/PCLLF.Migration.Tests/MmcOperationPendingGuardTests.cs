@@ -18,7 +18,7 @@ internal static class MmcOperationPendingGuardTests {
     }
     private static void OwnedPermit() {
         using Fixture fixture = new(); string target = Path.Combine(fixture.Root, "versions", "target");
-        var owner = MmcOwnedImportReservation.Create(target, Guid.NewGuid(), new string('a',64));
+        using var owner = MmcOwnedImportReservation.Create(target, Guid.NewGuid(), new string('a',64));
         using var lease = MmcAdmissionGate.Acquire(owner.TemporaryRoot, owner.InstanceId, TimeSpan.Zero);
         Rejected(() => MmcFileTransactions.AssertNoPending(lease));
         using var permit = owner.EnterPending(lease);

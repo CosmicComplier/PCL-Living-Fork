@@ -8,7 +8,7 @@ namespace PCLCS;
 internal sealed record MmcClonePreparedManifest(int SchemaVersion, Guid InstanceId, Guid SourceInstanceId, long SourceGeneration,
     string SourcePrimarySha256, string SourcePreferencesSha256, string SourceRoot, string FinalRoot, MmcInstanceCloneOptions Options, MmcCloneInventory Inventory);
 
-internal sealed class MmcInstanceCloneReservation {
+internal sealed class MmcInstanceCloneReservation : IDisposable {
     private readonly MmcOwnedImportReservation owned;
     private readonly string markerHash, ignoreHash;
     private string? snapshotHash;
@@ -17,11 +17,13 @@ internal sealed class MmcInstanceCloneReservation {
     internal Guid InstanceId => owned.InstanceId;
     internal MmcInstanceCloneReservation(string sourceRoot, string targetRoot, string packageSha256) {
         ValidateRoots(sourceRoot, targetRoot);
-        owned = MmcOwnedImportReservation.Create(targetRoot, Guid.NewGuid(), packageSha256);
-        ValidateRoots(sourceRoot, targetRoot, owned.TemporaryRoot);
-        var paths = MmcInstancePaths.Resolve(TemporaryRoot);
-        markerHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcImportPending.json"))!;
-        ignoreHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, ".pclignore"))!;
+        owned = MmcOwnedImportReservation.Create(targetRoot, Guid.NewGuid(), packageSha256, MmcImportReservationPurpose.Clone);
+        try {
+            ValidateRoots(sourceRoot, targetRoot, owned.TemporaryRoot);
+            var paths = MmcInstancePaths.Resolve(TemporaryRoot);
+            markerHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcImportPending.json"))!;
+            ignoreHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, ".pclignore"))!;
+        } catch { owned.Dispose(); throw; }
     }
     internal static void ValidateRoots(string sourceRoot, string targetRoot, string? privateRoot = null) {
         string source = MmcCanonicalPaths.ForAdmission(MmcInstancePaths.ValidateVersionRoot(sourceRoot));
@@ -74,4 +76,5 @@ internal sealed class MmcInstanceCloneReservation {
     }
     internal string? RecoveryRoot => owned.RecoveryRoot;
     internal MmcPendingOperationPermit EnterPending(MmcAdmissionLease lease) => owned.EnterPending(lease);
+    public void Dispose() => owned.Dispose();
 }

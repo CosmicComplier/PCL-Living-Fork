@@ -96,7 +96,7 @@ public sealed class MmcInstanceCloneBackend {
         } catch (OperationCanceledException error) { return new(decided ? MmcInstanceBackendStatus.NeedsRecovery : MmcInstanceBackendStatus.Cancelled, WorkingRoot: reservation?.RecoveryRoot, Failure: error.Message); }
         catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException or AggregateException) {
             return new(reservation is null ? MmcInstanceBackendStatus.Rejected : MmcInstanceBackendStatus.NeedsRecovery, WorkingRoot: reservation?.RecoveryRoot, Failure: error.Message);
-        } finally { for (int index = leases.Count - 1; index >= 0; index--) leases[index].Dispose(); for (int index = quiet.Count - 1; index >= 0; index--) quiet[index].Dispose(); }
+        } finally { for (int index = leases.Count - 1; index >= 0; index--) leases[index].Dispose(); for (int index = quiet.Count - 1; index >= 0; index--) quiet[index].Dispose(); reservation?.Dispose(); }
     }
     private static void AssertExpected(MmcStoredPrimaryDefinition value, MmcInstanceCloneRequest request) {
         if (value.Sha256 != request.ExpectedSourcePrimarySha256 || value.Definition.InstanceId != request.ExpectedSourceInstanceId || value.Definition.Generation != request.ExpectedSourceGeneration)

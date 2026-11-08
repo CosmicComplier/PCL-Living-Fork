@@ -64,7 +64,7 @@ internal static class MmcInstanceBackendTests {
     private static async Task SourcePreparationAsync() {
         using Fixture fixture = new();
         using var source = await MmcArchiveSourceReader.ReadAsync(fixture.Archive);
-        var reservation = MmcOwnedImportReservation.Create(fixture.VersionRoot, Guid.NewGuid(), source.PackageSha256);
+        using var reservation = MmcOwnedImportReservation.Create(fixture.VersionRoot, Guid.NewGuid(), source.PackageSha256);
         var paths = MmcInstancePaths.Resolve(reservation.TemporaryRoot, source.Package.GameRootLeaf);
         using var prepared = await MmcPackageFileStager.PrepareInitialAsync(source, paths);
         Equal(source.ArchiveEntries.Count(entry => !entry.IsDirectory), prepared.Files.Length);
@@ -208,7 +208,7 @@ internal static class MmcInstanceBackendTests {
         foreach (string mode in new[] { "complete", "cancel", "conflict" }) {
             using Fixture fixture = new();
             using var source = await MmcArchiveSourceReader.ReadAsync(fixture.Archive);
-            var reservation = MmcOwnedImportReservation.Create(fixture.VersionRoot, Guid.NewGuid(), source.PackageSha256);
+            using var reservation = MmcOwnedImportReservation.Create(fixture.VersionRoot, Guid.NewGuid(), source.PackageSha256);
             var paths = MmcInstancePaths.Resolve(reservation.TemporaryRoot, source.Package.GameRootLeaf);
             using var prepared = await MmcPackageFileStager.PrepareInitialAsync(source, paths);
             byte[] bytes = MmcPackageFileBaselineCodec.Serialize(Baseline(source, prepared));

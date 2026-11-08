@@ -10,7 +10,15 @@ namespace PCLCS;
 
 // Original LF host implementation, under the repository LICENCE.
 /// <summary>A private sibling root. Failure never recursively removes a version root; its pending ownership survives.</summary>
-public sealed partial class MmcOwnedImportReservation {
+public sealed partial class MmcOwnedImportReservation : IDisposable {
+    private MmcImportOperation? operation;
+    private FileStream? producerUse;
+    public string? OperationDirectory => operation?.DirectoryPath;
+    public void Dispose() { producerUse?.Dispose(); producerUse = null; }
+    private void AssertProducerUse() {
+        if (producerUse is null || !producerUse.CanRead || operation is null) throw new IOException("Import reservation has no live producer/recovery use lease.");
+        operation.VerifySameOwner();
+    }
     private readonly byte[] marker, ignore;
     public string FinalRoot { get; }
     public string TemporaryRoot { get; }
@@ -29,7 +37,7 @@ public sealed partial class MmcOwnedImportReservation {
     private MmcOwnedImportReservation(string finalRoot, string temporaryRoot, Guid id, string packageSha256, byte[] marker, byte[] ignore) {
         FinalRoot = finalRoot; TemporaryRoot = temporaryRoot; InstanceId = id; this.packageSha256 = packageSha256; this.marker = marker; this.ignore = ignore;
     }
-    public static MmcOwnedImportReservation Create(string finalRoot, Guid instanceId, string packageSha256) {
+    public static MmcOwnedImportReservation Create(string finalRoot, Guid instanceId, string packageSha256, MmcImportReservationPurpose purpose = MmcImportReservationPurpose.InitialImport) {
         if (instanceId == Guid.Empty || !MmcDurableFiles.IsHash(packageSha256)) throw new ArgumentException("New import needs an identity and package digest.");
         string target = MmcCanonicalPaths.ForAdmission(MmcInstancePaths.ValidateVersionRoot(finalRoot));
         using var gate = MmcAdmissionGate.Acquire(target, instanceId, TimeSpan.Zero);
@@ -38,18 +46,27 @@ public sealed partial class MmcOwnedImportReservation {
         string root = Path.Combine(parent, ".pcllf-mmc-import-" + Guid.NewGuid().ToString("N"));
         MmcInstancePaths.ValidateVersionRoot(root);
         if (MmcInstancePaths.Attributes(root) is not null) throw new IOException("Private import reservation unexpectedly exists.");
-        CreateExclusiveDirectory(root); Directory.CreateDirectory(Path.Combine(root, "PCL"));
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(new { SchemaVersion = 1, InstanceId = instanceId, PackageSha256 = packageSha256, FinalRoot = target, TemporaryRoot = root });
         byte[] ignore = Encoding.UTF8.GetBytes("PCLLF.MmcImport/v1\n" + instanceId.ToString("D") + "\n" + packageSha256);
-        MmcDurableFiles.WriteNew(Path.Combine(root, "PCL", "MmcImportPending.json"), marker); MmcDurableFiles.WriteNew(Path.Combine(root, ".pclignore"), ignore);
-        return new(target, root, instanceId, packageSha256, marker, ignore);
+        var reservation = new MmcOwnedImportReservation(target, root, instanceId, packageSha256, marker, ignore);
+        var owned = MmcImportOperation.Create(root, target, instanceId, packageSha256, marker, ignore, purpose);
+        reservation.operation = owned.Operation; reservation.producerUse = owned.Use;
+        try {
+            CreateExclusiveDirectory(root); Directory.CreateDirectory(Path.Combine(root, "PCL"));
+            MmcDurableFiles.WriteNew(Path.Combine(root, "PCL", "MmcImportPending.json"), marker); MmcDurableFiles.WriteNew(Path.Combine(root, ".pclignore"), ignore);
+            return reservation;
+        } catch { reservation.Dispose(); throw; }
     }
     /// <summary>Call only after all preparation workspaces have been consumed and disposed.</summary>
     public MmcInstancePaths Publish(string gameRootLeaf, IProgress<MmcInstanceBackendProgress>? progress = null) {
-        using var quiet = MmcConfigurationCoordinator.Quiesce(TemporaryRoot);
+        AssertProducerUse();
+        List<MmcConfigurationQuiescence> pauses = [];
         List<MmcAdmissionLease> gates = [];
         try {
+            foreach (string root in new[] { TemporaryRoot, FinalRoot }.Order(StringComparer.OrdinalIgnoreCase)) pauses.Add(MmcConfigurationCoordinator.Quiesce(root));
             foreach (string root in new[] { TemporaryRoot, FinalRoot }.Order(StringComparer.OrdinalIgnoreCase)) gates.Add(MmcAdmissionGate.Acquire(root, InstanceId, TimeSpan.Zero));
+            var quiet = pauses.Single(value => value.State.Root.Equals(TemporaryRoot, StringComparison.OrdinalIgnoreCase));
+            var finalQuiet = pauses.Single(value => value.State.Root.Equals(FinalRoot, StringComparison.OrdinalIgnoreCase));
             VerifyMarker(TemporaryRoot);
             if (MmcInstancePaths.Attributes(FinalRoot) is not null) throw new IOException("The final name was claimed by another instance; preserving both roots.");
             var paths = MmcInstancePaths.Resolve(TemporaryRoot, gameRootLeaf);
@@ -73,6 +90,8 @@ public sealed partial class MmcOwnedImportReservation {
             // Both absolute roots are strict children of this same verified versions parent. This is
             // an atomic no-overwrite sibling rename, not a recursive cleanup of player directories.
             if (Path.GetDirectoryName(TemporaryRoot) != Path.GetDirectoryName(FinalRoot)) throw new IOException("Import publication must stay under its reserved parent.");
+            operation!.SealPublication(primary.Sha256, payloadManifestHash ?? throw new IOException("Import payload was not sealed."), gameRootLeaf);
+            lock (finalQuiet.State.Sync) if (finalQuiet.State.Patches.Count != 0 || finalQuiet.State.IniPatches.Count != 0) throw new IOException("Final name has pending preferences from an older identity.");
             for (int attempt = 0; ; attempt++) {
                 lock (quiet.State.Sync) {
                     if (quiet.State.PauseCount == 0 || quiet.State.Inflight != 0) throw new IOException("Import publication requires drained configuration writers.");
@@ -94,21 +113,36 @@ public sealed partial class MmcOwnedImportReservation {
                 }
             }
             VerifyMarker(FinalRoot);
-            File.Delete(Path.Combine(FinalRoot, ".pclignore")); File.Delete(Path.Combine(FinalRoot, "PCL", "MmcImportPending.json"));
+            progress?.Report(new("private-import-moved"));
+            var finalGate = gates.Single(gate => gate.VersionRoot.Equals(FinalRoot, StringComparison.OrdinalIgnoreCase));
+            using (var finalPermit = EnterPending(finalGate)) {
+                MmcConfigurationCoordinator.CompletePathRelocation(quiet, finalQuiet, ownGate, finalGate, InstanceId, primary.Sha256);
+                MmcConfigurationCoordinator.FlushRelocatedPreferences(finalQuiet, finalGate, InstanceId, primary.Sha256);
+                operation.Complete();
+                File.Delete(Path.Combine(FinalRoot, ".pclignore"));
+                progress?.Report(new("private-import-marker-cleanup"));
+                File.Delete(Path.Combine(FinalRoot, "PCL", "MmcImportPending.json"));
+            }
             return MmcInstancePaths.Resolve(FinalRoot, gameRootLeaf);
-        } finally { for (int i = gates.Count - 1; i >= 0; i--) gates[i].Dispose(); }
+        } finally { for (int i = gates.Count - 1; i >= 0; i--) gates[i].Dispose(); for (int i = pauses.Count - 1; i >= 0; i--) pauses[i].Dispose(); }
     }
-    private void VerifyMarker(string root) {
+    private void VerifyMarker(string root, bool allowMissingIgnore = false) {
         var paths = MmcInstancePaths.Resolve(root);
+        string? ignoreHash = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, ".pclignore"));
         if (MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcImportPending.json")) != Convert.ToHexStringLower(SHA256.HashData(marker)) ||
-            MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, ".pclignore")) != Convert.ToHexStringLower(SHA256.HashData(ignore)))
+            !(allowMissingIgnore && ignoreHash is null) && ignoreHash != Convert.ToHexStringLower(SHA256.HashData(ignore)))
             throw new IOException("Import ownership markers changed; preserving the directory for recovery.");
     }
     internal MmcPendingOperationPermit EnterPending(MmcAdmissionLease lease) => MmcPendingOperationPermit.ForReservation(lease, this);
     internal string ValidatePendingPermit(MmcAdmissionLease lease) {
+        AssertProducerUse();
         lease.AssertHeld();
-        if (lease.VersionRoot != TemporaryRoot || lease.InstanceId != InstanceId) throw new IOException("初始发布许可不属于该准入租约。");
-        VerifyMarker(TemporaryRoot);
+        if (lease.InstanceId != InstanceId || lease.VersionRoot != TemporaryRoot && lease.VersionRoot != FinalRoot) throw new IOException("初始发布许可不属于该准入租约。");
+        if (lease.VersionRoot == FinalRoot) {
+            var publication = operation!.Publication() ?? throw new IOException("Final import has no sealed publication.");
+            if (MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(FinalRoot, publication.Value.GameRootLeaf)).Sha256 != publication.Value.PrimarySha256) throw new IOException("Final import definition changed.");
+            VerifyMarker(FinalRoot, allowMissingIgnore: true);
+        } else VerifyMarker(TemporaryRoot);
         return MmcDurableFiles.Hash(marker);
     }
     internal static void CreateExclusiveDirectory(string path) {
