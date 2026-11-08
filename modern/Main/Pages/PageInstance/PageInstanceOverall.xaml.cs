@@ -140,16 +140,19 @@ namespace PCL
         private void PageSetupLaunch_Loaded(global::System.Object sender, global::System.Windows.RoutedEventArgs e)
         {
             this.Controller.Loaded();
+            RefreshMmcActions();
         }
 
         internal void RefreshModpackVisibility()
         {
             this.Controller.RefreshModpackVisibility();
+            RefreshMmcActions();
         }
 
         private void Reload()
         {
             this.Controller.Reload();
+            RefreshMmcActions();
         }
 
         private void ComboDisplayType_SelectionChanged(global::System.Object sender, global::System.Windows.Controls.SelectionChangedEventArgs e)

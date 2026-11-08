@@ -1,0 +1,17 @@
+using System.Windows;
+using System.Windows.Input;
+using PCLCS;
+
+namespace PCL;
+
+// Original LF host integration; repository LICENCE applies.
+public partial class PageInstanceOverall {
+    private void RefreshMmcActions() {
+        // ContextStamp is already attached by the normal instance reader. Avoid
+        // re-reading settings with side effects merely to decide button visibility.
+        var visibility = PageInstanceLeft.Instance?.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed ? Visibility.Visible : Visibility.Collapsed;
+        BtnMmcExport.Visibility = visibility; BtnMmcHistory.Visibility = visibility;
+    }
+    private void BtnMmcExport_Click(object sender, MouseButtonEventArgs e) => MmcExportUi.Prompt(PageInstanceLeft.Instance);
+    private void BtnMmcHistory_Click(object sender, MouseButtonEventArgs e) => MmcHistoryUi.Prompt(PageInstanceLeft.Instance);
+}

@@ -83,6 +83,12 @@
                         <local:MyButton x:Name="BtnManageCheck" Text="补全文件" MinWidth="140" Padding="13,0" Margin="0,0,20,0" Grid.Column="1" ToolTip="校验版本依赖文件是否完整，并重新下载 Assets 索引与缺失、校验失败的文件。&#xa;若游戏缺失音效，请尝试此项。" />
                         <local:MyButton x:Name="BtnManageDelete" Text="删除版本" MinWidth="140" Padding="13,0" Margin="0,0,20,0" Grid.Column="2" ColorType="Red" />
                     </Grid>
+                    <WrapPanel>
+                        <local:MyButton x:Name="BtnMmcExport" Text="导出 MMC 整合包" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"
+                                        Visibility="Collapsed" Click="BtnMmcExport_Click" />
+                        <local:MyButton x:Name="BtnMmcHistory" Text="MMC 环境记录" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"
+                                        Visibility="Collapsed" Click="BtnMmcHistory_Click" />
+                    </WrapPanel>
                 </StackPanel>
             </local:MyCard>
         </StackPanel>

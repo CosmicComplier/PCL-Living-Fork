@@ -50,6 +50,8 @@ internal static class Program
         ["mmc-delete-ui"] = MmcDeleteUiChecks.Run,
         ["mmc-delete-admission"] = MmcDeleteUiChecks.RunAdmission,
         ["mmc-restore-finalization"] = MmcDeleteUiChecks.RunRestoreFinalization,
+        ["mmc-export-ui"] = MmcExportUiChecks.Run,
+        ["mmc-history-ui"] = MmcHistoryUiChecks.Run,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
