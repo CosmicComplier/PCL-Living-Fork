@@ -81,7 +81,7 @@ public static class MmcRuntimeLaunchBuilder {
         }
         if (settings.Fullscreen && !game.Any(a => a.Actual == "--fullscreen")) game.Add(new("--fullscreen", "--fullscreen"));
         var required = RequiredClasses(compiled.MainClass, logicalJvm.Select(a => a.Actual), game.Select(a => a.Actual));
-        if (settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper) await MmcClasspathInspector.VerifySupportDoesNotShadowAsync(request, required, cancellationToken).ConfigureAwait(false);
+        if (settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper) await MmcClasspathInspector.VerifySupportDoesNotShadowAsync(request, required, logicalJvm.Select(a => a.Actual).ToArray(), cancellationToken).ConfigureAwait(false);
         List<string> actual = logicalJvm.Select(a => a.Actual).ToList(), redacted = logicalJvm.Select(a => a.Redacted).ToList();
         List<string> sensitive = Secrets(request.Account).ToList();
         string vmClasspath = settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper
@@ -108,7 +108,7 @@ public static class MmcRuntimeLaunchBuilder {
             .Concat(inputs.SelectMany(i => new[] { i.Identity, i.ActualPath, i.Sha256, i.SizeBytes.ToString(CultureInfo.InvariantCulture) })));
         InitializeMutablePaths(mutable, request);
         return new(request, actual.ToImmutableArray(), redacted.ToImmutableArray(), game.Select(a => a.Redacted).ToImmutableArray(), logicalJvm.Select(a => a.Redacted).ToImmutableArray(),
-            userJvm.Select(a => a.Redacted).ToImmutableArray(), required, classpath, inputs.ToImmutableArray(), mutable, argumentFingerprint, inputFingerprint, sensitive.Distinct().ToImmutableArray());
+            userJvm.Select(a => a.Redacted).ToImmutableArray(), required, classpath, inputs.ToImmutableArray(), mutable, argumentFingerprint, inputFingerprint, sensitive.Distinct().ToImmutableArray(), logicalJvm.Select(a => a.Actual).ToImmutableArray());
     }
 
     public static async Task RevalidateFilesAsync(MmcRuntimeLaunchPlan launch, CancellationToken cancellationToken = default) {

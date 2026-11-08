@@ -30,7 +30,7 @@ internal static class MmcRuntimeLaunchTests {
         return path;
     }
     private static readonly Lazy<Jars> Compiled = new(BuildJars);
-    private sealed record Jars(byte[] First, byte[] Second, byte[] Main, byte[] MultiRelease, byte[] Wrapper);
+    private sealed record Jars(byte[] First, byte[] Second, byte[] Main, byte[] MultiRelease, byte[] UnmarkedVersions, byte[] Wrapper);
     private const string ProbeSource = """
 package fixture;
 import java.nio.charset.StandardCharsets;
@@ -66,7 +66,8 @@ public final class Probe {
         byte[] wrapper = File.ReadAllBytes(Path.Combine(repo, "PCLCS", "Launch", "JavaWrapper.jar"));
         return new(Jar(new() { ["fixture/Probe.class"] = first, ["fixture/TestLoader.class"] = loader, ["fixture/Tweak.class"] = tweak }),
             Jar(new() { ["fixture/Probe.class"] = second }), Jar(new() { ["fixture/Probe.class"] = main }),
-            Jar(new() { ["fixture/Probe.class"] = first, ["META-INF/versions/17/fixture/Probe.class"] = mr }, "Manifest-Version: 1.0\r\nMulti-Release: true\r\n\r\n"), wrapper);
+            Jar(new() { ["fixture/Probe.class"] = first, ["META-INF/versions/17/fixture/Probe.class"] = mr }, "Manifest-Version: 1.0\r\nMulti-Release: true\r\n\r\n"),
+            Jar(new() { ["fixture/Probe.class"] = first, ["META-INF/versions/17/fixture/Probe.class"] = mr }), wrapper);
     }
     private static byte[] Jar(Dictionary<string, byte[]> files, string? manifest = null) {
         using MemoryStream output = new();
@@ -87,18 +88,22 @@ public final class Probe {
     private sealed class Fixture : IDisposable {
         internal string Root { get; }
         internal MmcRuntimeLaunchRequest Request { get; }
-        internal Fixture(int javaMajor = 17, bool multiRelease = false, bool loader = true, string? unknownArgument = null, MmcRuntimeWrapperMode wrapperMode = MmcRuntimeWrapperMode.JavaWrapper) {
+        internal Fixture(int javaMajor = 17, bool multiRelease = false, bool loader = true, string? unknownArgument = null, MmcRuntimeWrapperMode wrapperMode = MmcRuntimeWrapperMode.JavaWrapper,
+            bool unmarkedVersions = false, bool laterTooNew = false, bool firstTooNew = false) {
             Root = Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests", "run-" + Guid.NewGuid().ToString("N"));
             string instance = Path.Combine(Root, "versions", "实例 space"); Directory.CreateDirectory(Path.Combine(instance, "minecraft"));
             var paths = MmcInstancePaths.Resolve(instance, "minecraft"); string view = new('f', 64);
-            byte[] first = multiRelease ? Compiled.Value.MultiRelease : Compiled.Value.First;
-            var jarBytes = new Dictionary<string, byte[]> { ["first"] = first, ["second"] = Compiled.Value.Second, ["main"] = Compiled.Value.Main };
+            byte[] first = unmarkedVersions ? Compiled.Value.UnmarkedVersions : multiRelease ? Compiled.Value.MultiRelease : Compiled.Value.First;
+            if (firstTooNew) first = WithClassVersion(first, 99);
+            byte[] second = laterTooNew ? WithClassVersion(Compiled.Value.Second, 99) : Compiled.Value.Second;
+            byte[] main = laterTooNew ? WithClassVersion(Compiled.Value.Main, 99) : Compiled.Value.Main;
+            var jarBytes = new Dictionary<string, byte[]> { ["first"] = first, ["second"] = second, ["main"] = main };
             object Library(string name, byte[] bytes) => new { name, downloads = new { artifact = new { url = "https://example.invalid/" + name.Replace(':', '-'), sha1 = Convert.ToHexStringLower(SHA1.HashData(bytes)), sha256 = Hash(bytes), size = bytes.Length } } };
             string game = "--username ${auth_player_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --session ${auth_session} --userType ${user_type} --userProperties ${user_properties} --profile ${profile_name} --mc ${version_name} --type ${version_type} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --libraries ${library_directory} --primary ${primary_jar} --width ${resolution_width} --height ${resolution_height} --value '' --trail 'tail\\' --中文 '中文 path'";
             if (unknownArgument is not null) game += " " + unknownArgument;
             string patch = JsonSerializer.Serialize(new Dictionary<string, object?> {
-                ["uid"] = "net.minecraft", ["version"] = "1.7.10", ["type"] = "release", ["mainClass"] = "fixture.Probe", ["mainJar"] = Library("fixture:main:1:client", Compiled.Value.Main),
-                ["libraries"] = new[] { Library("fixture:first:1", first), Library("fixture:second:1", Compiled.Value.Second) },
+                ["uid"] = "net.minecraft", ["version"] = "1.7.10", ["type"] = "release", ["mainClass"] = "fixture.Probe", ["mainJar"] = Library("fixture:main:1:client", main),
+                ["libraries"] = new[] { Library("fixture:first:1", first), Library("fixture:second:1", second) },
                 ["minecraftArguments"] = game, ["compatibleJavaMajors"] = new[] { 8, 17, 21, 24, 26 },
                 ["+jvmArgs"] = loader ? new[] { "-Djava.system.class.loader=fixture.TestLoader" } : [], ["+tweakers"] = loader ? new[] { "fixture.Tweak" } : []
             });
@@ -217,6 +222,53 @@ public final class Probe {
             var output = Run(plan);
             Require(selected.Release == (major == 8 ? 0 : 17) && output.Mode == (major == 8 ? "first" : "mr17"), "Manifest MR flag/actual Java release did not match observed and executed class selection.");
         }
+        (string[] Flags, int Release, string Mode, bool Marked)[] properties = [
+            (["-Djdk.util.jar.enableMultiRelease=false"], 0, "first", true),
+            (["-Djdk.util.jar.version=8"], 0, "first", true),
+            (["-Djdk.util.jar.version=-1"], 0, "first", true),
+            (["-Djdk.util.jar.version=99"], 17, "mr17", true),
+            (["-Djdk.util.jar.enableMultiRelease=false", "-Djdk.util.jar.enableMultiRelease=force"], 17, "mr17", true),
+            (["-Djdk.util.jar.enableMultiRelease=FALSE"], 17, "mr17", true),
+            (["-Djdk.util.jar.enableMultiRelease=force"], 0, "first", false)
+        ];
+        foreach (var property in properties) {
+            using Fixture fixture = new(17, multiRelease: property.Marked, unmarkedVersions: !property.Marked, loader: false);
+            var request = fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = fixture.Request.Settings.UserJvmTokens.AddRange(property.Flags) } };
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(request).GetAwaiter().GetResult();
+            var inspection = MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult();
+            var output = Run(plan);
+            Require(inspection.EffectiveClasses.Single(c => c.ClassName == "fixture.Probe").Release == property.Release && output.Mode == property.Mode,
+                "Effective JVM MR properties diverged from actual JarFile class selection.");
+        }
+        using (Fixture fixture = new(17, multiRelease: true, loader: false)) {
+            var request = fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = fixture.Request.Settings.UserJvmTokens.Add("-Djdk.util.jar.version=not-an-integer") } };
+            Expect("MMC_CLASSPATH_MR_VERSION", () => MmcRuntimeLaunchBuilder.BuildAsync(request).GetAwaiter().GetResult());
+        }
+        foreach (int major in new[] { 8, 17 }) {
+            using Fixture fixture = new(major, laterTooNew: true);
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
+            var inspected = MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult();
+            Require(inspected.EffectiveClasses.Single(c => c.ClassName == "fixture.Probe").ClasspathPosition == 0 &&
+                inspected.CoreObservations.Count(j => j.Classes.Any(c => c.ClassName == "fixture.Probe" && c.Present)) == 3 && Run(plan).Mode == "first",
+                "Unused later bytecode rejected a valid first-wins classpath or lost explicit presence facts.");
+        }
+        using (Fixture fixture = new(17, firstTooNew: true)) {
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
+            Expect("MMC_CLASSPATH_CLASS_VERSION", () => MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult());
+            using var process = Process.Start(plan.CreateStartInfo()) ?? throw new Exception("Controlled incompatible-class Java did not start.");
+            var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(30000)) { process.Kill(true); throw new Exception("Controlled incompatible-class Java timeout."); }
+            Task.WaitAll(stdout, stderr);
+            Require(process.ExitCode != 0 && stderr.Result.Contains("UnsupportedClassVersionError", StringComparison.Ordinal), "Effective first-winner rejection did not match actual JVM behavior.");
+        }
+    }
+    private static byte[] WithClassVersion(byte[] originalJar, ushort major) {
+        Dictionary<string, byte[]> files = new(StringComparer.Ordinal);
+        using (var input = new MemoryStream(originalJar)) using (var jar = new ZipArchive(input, ZipArchiveMode.Read)) foreach (var entry in jar.Entries) {
+            using var body = entry.Open(); using var copy = new MemoryStream(); body.CopyTo(copy); files.Add(entry.FullName, copy.ToArray());
+        }
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(files["fixture/Probe.class"].AsSpan(6, 2), major);
+        return Jar(files);
     }
     private static void Expect(string code, Action operation) { try { operation(); } catch (MmcRuntimeLaunchException error) when (error.Code == code) { return; } throw new Exception("Expected runtime refusal " + code); }
 }

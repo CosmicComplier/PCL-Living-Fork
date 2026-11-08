@@ -41,3 +41,5 @@ Wrapper 本体没有修改或重打包。`MmcRuntimeBridgeTransport.JavaSource` 
 原 Wrapper 会重新解析 Windows 原始命令行，遗漏空参数并折叠字面双反斜杠。bridge 恢复完整游戏 argv 与 `-D` 属性的末值；VM 在初始化 system loader 前已通过已绑定 `java.class.path` 属性取得完整 CP，从而避开原 Wrapper 对自定义 loader 的 BuiltinClassLoader 注入假定。
 
 多版本 JAR 的观察按 manifest 与实际 Java major 选取真实 entry，并保留 MR entry 路径。当前 Core 结构证明对 MR class 仍可保守拒绝；观察通过不表示所有自定义 classloader 都按标准 JarFile 规则工作，也不表示实际 Minecraft 启动、世界、修复已验收。隐式 manifest Class-Path 与未建立执行输入绑定的 agent/argfile/替代模块模式明确拒绝。
+
+窄审查回归还按 [Java 17 JarFile 实现属性](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/jar/JarFile.html)核对最终生效的 `jdk.util.jar.enableMultiRelease` 与 `jdk.util.jar.version`：包/用户的 `-D` 顺序不改写，支持 JAR 与游戏 JAR 使用同一策略；`false` 禁用，`force` 不会给缺少 manifest 标记的 JAR 凭空开启 MR，版本上限按实际 Java 夹到 8～当前 major。Java 8 忽略这些 MR 属性。类观察保留每个 JAR 的显式存在/缺失，只有 classpath 最早实际命中的版本需要通过字节码兼容检查；后面的被遮蔽副本不阻止有效启动。`classpath` 组会与真实 Java 8/17 进程对照上述行为，并验证真正首个不兼容版本仍被拒绝。

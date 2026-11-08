@@ -62,6 +62,9 @@ public sealed class MmcRuntimeLaunchPlan {
     public ImmutableArray<string> RedactedArguments { get; }
     public ImmutableArray<string> RedactedLogicalGameArguments { get; }
     public ImmutableArray<string> LogicalJvmArguments { get; }
+    // Live values may contain credentials. Inspection uses them internally;
+    // they are never public/log-safe fields or persistence/fingerprint inputs.
+    internal ImmutableArray<string> EffectiveJvmArguments { get; }
     public ImmutableArray<string> NonSensitiveAdditionalJvmArguments { get; }
     public ImmutableArray<string> RequiredClassNames { get; }
     public ImmutableArray<string> OrderedGameClasspath { get; }
@@ -72,13 +75,14 @@ public sealed class MmcRuntimeLaunchPlan {
     internal MmcRuntimeLaunchPlan(MmcRuntimeLaunchRequest request, ImmutableArray<string> arguments,
         ImmutableArray<string> redactedArguments, ImmutableArray<string> redactedGameArguments, ImmutableArray<string> logicalJvmArguments,
         ImmutableArray<string> additionalJvm, ImmutableArray<string> requiredClasses, ImmutableArray<string> classpath, ImmutableArray<MmcRuntimeInputObservation> inputs, MmcRuntimeMutableDirectories mutable,
-        string argumentFingerprint, string inputFingerprint, ImmutableArray<string> secrets) {
+        string argumentFingerprint, string inputFingerprint, ImmutableArray<string> secrets, ImmutableArray<string> effectiveJvmArguments) {
         Request = request; this.arguments = arguments; RedactedArguments = redactedArguments;
         RedactedLogicalGameArguments = redactedGameArguments; LogicalJvmArguments = logicalJvmArguments;
         NonSensitiveAdditionalJvmArguments = additionalJvm; RequiredClassNames = requiredClasses;
         OrderedGameClasspath = classpath; Inputs = inputs; MutableDirectories = mutable;
         NonSensitiveArgumentFingerprint = argumentFingerprint; RuntimeInputFingerprint = inputFingerprint;
         this.secrets = secrets; encodingName = request.Settings.StreamEncodingName;
+        EffectiveJvmArguments = effectiveJvmArguments;
     }
     public ProcessStartInfo CreateStartInfo() {
         var start = new ProcessStartInfo(Request.Java.ExecutablePath) {
