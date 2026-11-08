@@ -5,7 +5,13 @@
     mc:Ignorable="d" x:Class="PCL.PageSelectRight"
     PanScroll="PanBack">
     <Grid>
-        <Grid x:Name="PanAllBack">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <local:MyButton x:Name="BtnMmcRecovery" Grid.Row="0" HorizontalAlignment="Right" Height="30" Margin="25,15,25,0" Padding="13,0"
+                        Text="MMC 隔离区与恢复" ToolTip="查看可恢复删除及未完成的改名、移动和恢复操作。" Click="BtnMmcRecovery_Click" />
+        <Grid x:Name="PanAllBack" Grid.Row="1">
             <local:MyScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="PanBack">
                 <StackPanel Name="PanMain" Margin="25,25,25,10" Grid.IsSharedSizeScope="True" />
             </local:MyScrollViewer>
@@ -18,7 +24,7 @@
                 </StackPanel>
             </local:MyCard>
         </Grid>
-        <local:MyCard HorizontalAlignment="Center" VerticalAlignment="Center" SnapsToDevicePixels="True" x:Name="PanLoad" Margin="40">
+        <local:MyCard HorizontalAlignment="Center" VerticalAlignment="Center" SnapsToDevicePixels="True" x:Name="PanLoad" Margin="40" Grid.Row="1">
             <local:MyLoading Text="正在获取版本列表" Margin="20,20,20,17" x:Name="Load" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" AutoRun="False" />
         </local:MyCard>
     </Grid>

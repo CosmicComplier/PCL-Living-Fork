@@ -38,6 +38,7 @@ public sealed class InstanceSelectionPageHost<TInstance, TCard> where TInstance 
     public Action<FrameworkElement, Action> BindRightClick = null!;
     public Action<string, string, object> WriteIni = null!;
     public Action<TInstance, bool, Action> DeleteConfirmed = null!;
+    public Action<TInstance, bool, Action>? BeginManagedDelete;
 }
 // Complete LF PageSelectRight workflow, including clone groups and guarded deletion.
 // LF source and LICENCE; C012 clone presenter is reused directly, not reconstructed or copied.
@@ -115,6 +116,11 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
         if (host.ModpackEnabled()) return;
         try {
             instance = ResolveDeleteTarget(item, instance);
+            if (instance.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && host.BeginManagedDelete is not null) {
+                TInstance managed = instance;
+                host.BeginManagedDelete(managed, host.Shift(), () => RefreshAfterDeletion(host, managed));
+                return;
+            }
             MmcInstanceCapabilities.RequireLegacy(instance.PathVersion, "删除");
             if (host.Locked(instance)) { host.Hint("该版本正在被修改，请稍后再删除！", SelectionPageHint.Red); return; }
             bool shift = host.Shift(), hintIndie = Convert.ToInt32(instance.State) != 0 && !Same(instance.PathIndie, host.MinecraftFolder());
@@ -126,15 +132,18 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
             target.ResetSettingsCache();
             host.DeleteConfirmed(target, !shift, () => {
                 host.Hint("版本 " + target.Name + " 已删除！", SelectionPageHint.Green);
-                host.SetInstances(WithoutDeletedInstance(host.Instances(), target.PathVersion));
-                TInstance? current = host.SelectedInstance();
-                TInstance? next = SelectionAfterDelete(current, target.PathVersion);
-                if (!ReferenceEquals(next, current)) host.SetSelectedInstance(next);
-                if (host.InstancePage() is TInstance shown && PathUtils.IsSame(shown.PathVersion, target.PathVersion)) host.SetInstancePage(null);
-                host.ForceRefresh(); host.RefreshInstances(true);
+                RefreshAfterDeletion(host, target);
             });
         } catch (OperationCanceledException error) { Logger.Warn(error, "删除版本 " + (instance?.Name ?? "未知版本") + " 被主动取消"); }
         catch (Exception error) { Logger.Error(error, "删除版本 " + (instance?.Name ?? "未知版本") + " 失败", LogBehavior.Alert); }
+    }
+    private static void RefreshAfterDeletion(InstanceSelectionPageHost<TInstance, TCard> host, TInstance target) {
+        host.SetInstances(WithoutDeletedInstance(host.Instances(), target.PathVersion));
+        TInstance? current = host.SelectedInstance();
+        TInstance? next = SelectionAfterDelete(current, target.PathVersion);
+        if (!ReferenceEquals(next, current)) host.SetSelectedInstance(next);
+        if (host.InstancePage() is TInstance shown && PathUtils.IsSame(shown.PathVersion, target.PathVersion)) host.SetInstancePage(null);
+        host.ForceRefresh(); host.RefreshInstances(true);
     }
     public static TInstance ResolveDeleteTarget(FrameworkElement? item, TInstance? expected) {
         TInstance? actual = item?.Tag as TInstance;

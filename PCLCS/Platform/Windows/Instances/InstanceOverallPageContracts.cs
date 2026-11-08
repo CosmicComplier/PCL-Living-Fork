@@ -34,6 +34,7 @@ public sealed class InstanceOverallPageHost<TInstance, TItem, TCombo>
     public Func<string, TInstance> LoadInstance = null!;
     public Func<TInstance, string?, TInstance> Rename = null!;
     public Action<TInstance>? BeginManagedRename;
+    public Action<TInstance, bool, Action>? BeginManagedDelete;
     public Func<string, string, string, string> ReadIni = null!;
     public Action<string, string, string> WriteIni = null!;
     public Func<string, string> ReadLogo = null!, StorageLogo = null!;

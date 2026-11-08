@@ -332,7 +332,7 @@ namespace PCL
                 LeftPage = LeftPagePort, RightPage = RightPageElement, NewBlankLeft = () => new MyPageLeft(),
                 HelpTitle = value => ((ModMain.HelpEntry)value).Title,
                 HasDownloadingTask = () => ModNet.HasDownloadingTask(), HasLaunchOperation = () => ModLaunch.McLaunchLoaderReal != null,
-                HasBlockingFileOperation = () => InstanceDeletionOperation.HasActiveOperations || MmcOperationLoaders.HasBlockingCommit || MmcCloneUi.HasActiveOperation || MmcLifecycleUi.HasActiveOperation,
+                HasBlockingFileOperation = () => InstanceDeletionOperation.HasActiveOperations || MmcOperationLoaders.HasBlockingCommit || MmcCloneUi.HasActiveOperation || MmcLifecycleUi.HasActiveOperation || MmcDeleteUi.HasActiveOperation,
                 HasRunningMinecraft = () => ModWatcher.HasRunningMinecraft,
                 TaskbarCancels = () => ModLoader.LoaderTaskbar.Select(value => (Action)(() => value.Cancel())),
                 WatcherKills = () => ModWatcher.McWatcherList.Select(value => (Action)(() => value.Kill())), CancelLaunchOperation = () => ModLaunch.McLaunchLoaderReal.Cancel(),

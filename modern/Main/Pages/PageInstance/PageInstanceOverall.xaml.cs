@@ -132,6 +132,7 @@ namespace PCL
                 ErrorAlert = new Action<global::System.Exception, global::System.String>((Err, Text) => global::MeloongCore.Logger.Error(Err, Text, global::MeloongCore.LogBehavior.Alert)),
                 Warn = new Action<global::System.Exception, global::System.String>((Err, Text) => global::MeloongCore.Logger.Warn(Err, Text)),
                 DeleteConfirmed = PageSelectRight.DeleteInstanceInBackground,
+                BeginManagedDelete = MmcDeleteUi.PromptDelete,
                 IsCurrentPage = () => ReferenceEquals(ModMain.FrmMain?.PageRight, this)
             };
         }

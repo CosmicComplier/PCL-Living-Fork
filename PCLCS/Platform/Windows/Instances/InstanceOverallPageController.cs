@@ -138,6 +138,14 @@ public sealed class InstanceOverallPageController<TInstance, TState, TCard, TIte
         TInstance? target = null;
         try {
             target = host.Instance();
+            if (target.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed && host.BeginManagedDelete is not null) {
+                string managedPath = target.PathVersion;
+                host.BeginManagedDelete(target, host.Shift(), () => {
+                    host.RefreshInstanceList();
+                    if (host.IsCurrentPage() && host.Instance() is TInstance shown && PathUtils.IsSame(shown.PathVersion, managedPath)) host.PageBack();
+                });
+                return;
+            }
             MmcInstanceCapabilities.RequireLegacy(target.PathVersion, "删除");
             if (host.Locked(target)) { host.HintRed("该版本正在被修改，请稍后再删除！"); return; }
             bool shift = host.Shift(); bool hintIndie = Convert.ToInt32(target.State) != 0 && !Same(target.PathIndie, host.MinecraftFolder());
