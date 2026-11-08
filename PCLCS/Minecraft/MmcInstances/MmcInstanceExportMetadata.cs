@@ -27,13 +27,16 @@ internal static class MmcInstanceExportMetadata {
             var declaration=new JsonObject { ["uid"]=component.Uid, ["disabled"]=!component.Enabled };
             if(component.Version is not null) declaration["version"]=component.Version;
             if(component.OriginalDeclaration?.Important==true) declaration["important"]=true;
-            // Freeze automatic dependencies into explicit, exact declarations. Their position and
-            // requires edges remain; dependencyOnly must not silently select newer metadata later.
+            if(component.OriginalDeclaration?.DependencyOnly==true) declaration["dependencyOnly"]=true;
+            // Exact local patches freeze adopted dependency versions; original important/dependencyOnly
+            // roles and requires edges remain, without selecting recommendation metadata later.
             components.Add(declaration);
         }
+        var declaredPositions=current.ArtifactInventory.GroupBy(item=>(item.ComponentUid,item.Provenance.Field)).ToDictionary(group=>group.Key,group=>group.Select(item=>item.Provenance.Position).ToHashSet());
+        var declarationIndices=current.FieldProvenance.GroupBy(source=>(source.ComponentUid,source.Field)).ToDictionary(group=>group.Key,group=>group.Where(source=>!declaredPositions.TryGetValue(group.Key,out var positions)||!positions.Contains(source.Position)).Select(source=>source.Position).Distinct().Order().Select((position,index)=>(position,index)).ToDictionary(pair=>pair.position,pair=>pair.index));
         foreach(var artifact in Active(current).Where(a=>a.Scope==MmcArtifactScope.Shared)) {
             if(!originals.TryGetValue(artifact.Key,out var bytes)) throw new InvalidDataException("An adopted shared original is unavailable for export pinning.");
-            JsonObject patch=patches[artifact.ComponentUid]; JsonObject declaration=Declaration(current,artifact,patch);
+            JsonObject patch=patches[artifact.ComponentUid]; JsonObject declaration=Declaration(declarationIndices,artifact,patch);
             JsonObject download;
             if(artifact.Role==MmcArtifactRole.AssetIndex || artifact.Role==MmcArtifactRole.LoggingConfiguration) download=declaration;
             else {
@@ -80,15 +83,13 @@ internal static class MmcInstanceExportMetadata {
         transformations.Add("Effective local/user/remote component metadata frozen into exact local patches; current shared downloads pinned by adopted original SHA1/size.");
         return new(files.ToImmutable(),transformations.ToImmutable(),portable.Profile);
     }
-    private static JsonObject Declaration(MmcCompiledProfile plan,MmcArtifactReference artifact,JsonObject patch) {
+    private static JsonObject Declaration(IReadOnlyDictionary<(string ComponentUid,string Field),Dictionary<int,int>> indices,MmcArtifactReference artifact,JsonObject patch) {
         string field=artifact.Provenance.Field;
         if(field=="logging") return patch["logging"]?["file"] as JsonObject??throw new InvalidDataException("Logging source provenance is incomplete.");
         if(field is "mainJar" or "assetIndex") return patch[field] as JsonObject??throw new InvalidDataException("Artifact source declaration is incomplete.");
         var array=patch[field] as JsonArray??throw new InvalidDataException("Artifact source array is incomplete.");
-        var inventory=plan.ArtifactInventory.Where(item=>item.ComponentUid==artifact.ComponentUid&&item.Provenance.Field==field).Select(item=>item.Provenance.Position).ToHashSet();
-        int[] positions=plan.FieldProvenance.Where(source=>source.ComponentUid==artifact.ComponentUid&&source.Field==field&&!inventory.Contains(source.Position)).Select(source=>source.Position).Distinct().Order().ToArray();
-        int index=Array.IndexOf(positions,artifact.Provenance.Position);
-        if(positions.Length!=array.Count||index<0) throw new InvalidDataException("Artifact declaration provenance cannot be mapped uniquely for export pinning.");
+        if(!indices.TryGetValue((artifact.ComponentUid,field),out var positions)||positions.Count!=array.Count||!positions.TryGetValue(artifact.Provenance.Position,out int index))
+            throw new InvalidDataException("Artifact declaration provenance cannot be mapped uniquely for export pinning.");
         return array[index] as JsonObject??throw new InvalidDataException("Artifact declaration is not an object.");
     }
     private static void ValidateNativeGameContract(MmcResolvedProfile profile,MmcCompiledProfile compiled) {

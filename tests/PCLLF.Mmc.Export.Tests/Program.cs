@@ -26,6 +26,7 @@ internal static class ExportChecks {
         yield return ("portable preferences preserve empty JVM override and disclose machine-dependent conversions",Preferences);
         yield return ("active/pending receipts, stale previews and a held real ZIP writer remain protected",AdmissionAndDrain);
         yield return ("published user component patch survives portable export and fresh reimport",UserPatch);
+        yield return ("extra game and fullscreen become native component arguments without host identity",ExtraGameAndFullscreen);
     }
     private static void RoundTrip() {
         foreach(int major in new[]{8,21}) using(var fixture=new Fixture(major)) {
@@ -103,6 +104,16 @@ internal static class ExportChecks {
         var options=new MmcInstanceExportOptions(){DiscardMachineJavaSelection=true,PortableMinimumMemoryMiB=512,PortableMaximumMemoryMiB=2048};
         var portable=exporter.ExportAsync(fixture.Request(source,"portable.zip",options)).GetAwaiter().GetResult();Success(portable);Check(portable.Preview!.Transformations.Any(x=>x.Contains("Java selection"))&&portable.Preview.Transformations.Any(x=>x.Contains("memory policy")),"Portable losses were not recorded in preview.");
     }
+    private static void ExtraGameAndFullscreen() {
+        using var fixture=new Fixture(21,tweaks:false);var source=fixture.Import("source");using var provider=new InstanceConfigProvider(source.Paths!.InstanceRoot);
+        MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]="--custom value",["MmcWindowMode"]="Custom",["MmcWindowWidth"]="1024",["MmcWindowHeight"]="768",["MmcWindowFullscreen"]="True",["MmcWindowMaximized"]="False"});
+        var result=new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"extra-game.zip")).GetAwaiter().GetResult();Success(result);
+        var imported=fixture.Import("extra-game-target",result.OutputZipPath!);string[] values=imported.BoundPlan!.CompiledProfile.GameArguments.Select(a=>a.Value).ToArray();
+        Check(values.SequenceEqual(new[]{"--sample","value","--custom","value","--fullscreen"}),"Portable extra/fullscreen changed native argument sequence.");
+        Check(imported.BoundPlan.CompiledProfile.MainClass==source.BoundPlan!.CompiledProfile.MainClass,"Preference conversion changed main entry.");
+        MmcIniConfiguration.QueuePreferenceBatch(provider,new Dictionary<string,string?>{["VersionAdvanceGame"]="--title \"literal space\""});
+        Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"cannot-encode-legacy-token.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Native legacy whitespace token was exported with wrong quote semantics.");
+    }
     private static void UserPatch() {
         using var fixture=new Fixture(21,userComponent:true);var source=fixture.Import("source");
         string user="""{"uid":"fixture.user","version":"1","mainClass":"fixture.UserGame","+jvmArgs":["-Duser=changed"],"+tweakers":["fixture.Tweak"]}""";
@@ -141,7 +152,7 @@ internal static class ExportChecks {
         internal string Root{get;}=Path.Combine(Path.GetTempPath(),"PCLLF-MmcExportTests-"+Guid.NewGuid().ToString("N"));
         internal string Archive=>Path.Combine(Root,"original.zip");private readonly HttpClient client;private readonly int major;
         private readonly byte[] index=Encoding.UTF8.GetBytes("{\"objects\":{}}");private readonly byte[] shared=JarResource("remote-resource.txt","self-authored remote bytes");
-        internal Fixture(int major,bool userComponent=false) {
+        internal Fixture(int major,bool userComponent=false,bool tweaks=true) {
             this.major=major;Directory.CreateDirectory(Root);File.WriteAllText(Path.Combine(Root,"export-test-owner.json"),"PCLLF owned export fixture / "+Path.GetFileName(Root));Directory.CreateDirectory(Path.Combine(Root,"outputs"));
             string indexSha=Convert.ToHexStringLower(SHA1.HashData(index));string sharedSha=Convert.ToHexStringLower(SHA1.HashData(shared));
             string remote=new JObject{["formatVersion"]=1,["uid"]="fixture.remote",["version"]="1",["+jvmArgs"]=new JArray("-Dremote=yes"),["libraries"]=new JArray(new JObject{["name"]="fixture:shared:1",["downloads"]=new JObject{["artifact"]=new JObject{["url"]="https://download.invalid/shared.jar",["sha1"]=sharedSha,["size"]=shared.Length}}})}.ToString(Newtonsoft.Json.Formatting.None);
@@ -150,7 +161,7 @@ internal static class ExportChecks {
             var declarations=new JArray(new JObject{["uid"]="net.minecraft",["version"]="1.7.10"},new JObject{["uid"]="fixture.remote",["version"]="1"});if(userComponent)declarations.Add(new JObject{["uid"]="fixture.user",["version"]="1"});Add("mmc-pack.json",new JObject{["formatVersion"]=1,["components"]=declarations}.ToString(Newtonsoft.Json.Formatting.None));
             if(userComponent)Add("patches/fixture.user.json","""{"uid":"fixture.user","version":"1","+jvmArgs":["-Duser=author"]}""");
             Add("instance.cfg","name=Source\nOverrideJavaArgs=true\nJvmArgs=-Dpackage=yes\nOverrideMemory=true\nMinMemAlloc=512\nMaxMemAlloc=2048\n");
-            Add("patches/net.minecraft.json",new JObject{["uid"]="net.minecraft",["version"]="1.7.10",["mainClass"]="fixture.Game",["minecraftArguments"]="--sample value",["+jvmArgs"]=new JArray("-Dcustom=yes"),["+tweakers"]=new JArray("fixture.Tweak"),["compatibleJavaMajors"]=major==8?new JArray(8):new JArray(17,21),["mainJar"]=new JObject{["name"]="fixture:client:1",["MMC-hint"]="local",["MMC-filename"]="client.jar"},["libraries"]=new JArray(new JObject{["name"]="fixture:local:1",["MMC-hint"]="local",["MMC-filename"]="same.jar"}),["assetIndex"]=new JObject{["id"]="fixture",["url"]="https://download.invalid/index.json",["sha1"]=indexSha,["size"]=index.Length}}.ToString(Newtonsoft.Json.Formatting.None));
+            Add("patches/net.minecraft.json",new JObject{["uid"]="net.minecraft",["version"]="1.7.10",["mainClass"]="fixture.Game",["minecraftArguments"]="--sample value",["+jvmArgs"]=new JArray("-Dcustom=yes"),["+tweakers"]=tweaks?new JArray("fixture.Tweak"):new JArray(),["compatibleJavaMajors"]=major==8?new JArray(8):new JArray(17,21),["mainJar"]=new JObject{["name"]="fixture:client:1",["MMC-hint"]="local",["MMC-filename"]="client.jar"},["libraries"]=new JArray(new JObject{["name"]="fixture:local:1",["MMC-hint"]="local",["MMC-filename"]="same.jar"}),["assetIndex"]=new JObject{["id"]="fixture",["url"]="https://download.invalid/index.json",["sha1"]=indexSha,["size"]=index.Length}}.ToString(Newtonsoft.Json.Formatting.None));
             AddBytes("libraries/client.jar",JarBytes());AddBytes("libraries/same.jar",JarResource("local-resource.txt","private adopted library"));AddBytes("libraries/orphan.jar",JarResource("orphan-resource.txt","preserved inactive library"));Add("minecraft/config/personal.cfg","author configuration");
             void Add(string path,string value)=>AddBytes(path,Encoding.UTF8.GetBytes(value));
             void AddBytes(string path,byte[] value){using var output=zip.CreateEntry(path).Open();output.Write(value);}

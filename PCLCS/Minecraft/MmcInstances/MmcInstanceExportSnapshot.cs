@@ -31,12 +31,13 @@ internal static class MmcInstanceExportSnapshot {
         var zipped=new Dictionary<string,MmcExportMeasuredFile>(StringComparer.OrdinalIgnoreCase);
         var directories=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var pins=new Dictionary<string,MmcExportMeasuredFile>(StringComparer.Ordinal);
+        var locksByKey=primary.Definition.ArtifactLocks.ToDictionary(value=>value.ArtifactKey,StringComparer.Ordinal);
         long measuredBytes=0,traversalCharacters=0;
         foreach(var record in primary.Definition.SourceBundle.MetadataRecords) Authority(record.ObjectRelativePath,record.ContentSha256);
         if(primary.Definition.AuthorFileBaseline is { } baseline) Authority(baseline.ObjectRelativePath,baseline.ContentSha256);
         foreach(var change in primary.Definition.ComponentOverrides) if(change.PatchReference is { } patch) Authority(patch.ObjectRelativePath,patch.Sha256);
         foreach(var artifact in MmcInstanceExportMetadata.Active(compiled)) {
-            var locked=primary.Definition.ArtifactLocks.SingleOrDefault(record=>record.ArtifactKey==artifact.Key)??throw new InvalidDataException("An active export input has no adopted lock.");
+            if(!locksByKey.TryGetValue(artifact.Key,out var locked))throw new InvalidDataException("An active export input has no adopted lock.");
             pins.Add(artifact.Key,Authority(locked.RecoveryObjectRelativePath,locked.AdoptedSha256,locked.SizeBytes));
         }
         var activeLocal=MmcInstanceExportMetadata.Active(compiled).Where(a=>a.Scope==MmcArtifactScope.InstanceLocal).ToDictionary(a=>"libraries/"+a.RelativePath,StringComparer.OrdinalIgnoreCase);
@@ -107,7 +108,7 @@ internal static class MmcInstanceExportSnapshot {
                     if(!known.TryGetValue(relative,out var candidates))throw new InvalidDataException("An unadopted private-library file has no export authority: "+relative);
                     var match=candidates.FirstOrDefault(candidate=>candidate.Sha==measured.Sha256&&candidate.Size==measured.SizeBytes);
                     if(match.Original is null)throw new InvalidDataException("A private-library file changed outside an adopted definition.");
-                    if(activeLocal.TryGetValue(relative,out var active)&&primary.Definition.ArtifactLocks.Single(locking=>locking.ArtifactKey==active.Key).AdoptedSha256!=measured.Sha256)throw new InvalidDataException("An active private library differs from its current lock.");
+                    if(activeLocal.TryGetValue(relative,out var active)&&locksByKey[active.Key].AdoptedSha256!=measured.Sha256)throw new InvalidDataException("An active private library differs from its current lock.");
                     Authority(match.Original,match.Sha,match.Size);
                 }
                 if(!zipped.TryAdd(relative,measured)||zipped.Count>Limits.MaxArchiveEntries)throw new IOException("Duplicate export target or file budget exceeded.");
