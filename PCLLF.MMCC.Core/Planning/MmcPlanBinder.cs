@@ -103,6 +103,13 @@ public static class MmcPlanBinder {
                 BindStatic(item, fact);
             }
             foreach (var provenance in plan.FieldProvenance.Where(p => !p.Source.StartsWith("profile:", StringComparison.Ordinal))) SourceObject(definition, provenance.ComponentUid, provenance.SourceSha256, provenance.ComponentVersion);
+            Dictionary<string, string> executingTargets = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string key in active.Keys) {
+                var fact = observations[key];
+                if (executingTargets.TryGetValue(fact.TargetRelativePath, out var previous) && !MmcDefinitionCodec.SameHash(previous, fact.ObservedSha256))
+                    Fail("MMC_BIND_IDENTITY", "Active inputs conflict at one owned target.");
+                executingTargets[fact.TargetRelativePath] = fact.ObservedSha256;
+            }
             // Explicitly preserved inactive inputs are allowed only through an
             // existing declaration; arbitrary extra facts cannot become libraries.
             foreach (var fact in observations.Values.Where(f => !active.ContainsKey(f.ArtifactKey) && !MmcDerivedProofs.IsAssetObjectKey(f.ArtifactKey))) {
@@ -116,7 +123,7 @@ public static class MmcPlanBinder {
                         if (!MmcDefinitionCodec.SameHash(oldLock.AdoptedSha256, fact.ObservedSha256) || !MmcDefinitionCodec.SameHash(oldLock.SourceRevision, fact.SourceRevision) || oldLock.SizeBytes != fact.SizeBytes || !MmcDefinitionCodec.SameHash(oldLock.ObservedSha1, fact.ObservedSha1))
                             Fail("MMC_BIND_REBIND", "A preserved package-file key cannot adopt different original bytes.");
                     } else if (options.Intent == MmcBindingIntent.RepairExisting) Fail("MMC_BIND_ADOPTION_REQUIRED", "New package originals require explicit adoption.");
-                    if (observations.Values.Any(other => active.ContainsKey(other.ArtifactKey) && other.TargetRelativePath.Equals(fact.TargetRelativePath, StringComparison.OrdinalIgnoreCase) && !MmcDefinitionCodec.SameHash(other.ObservedSha256, fact.ObservedSha256)))
+                    if (executingTargets.TryGetValue(fact.TargetRelativePath, out var executingHash) && !MmcDefinitionCodec.SameHash(executingHash, fact.ObservedSha256))
                         Fail("MMC_BIND_PACKAGE_COLLISION", "Preservation and execution observations conflict at one live local-library target.");
                     packageInventory[member.ArtifactKey] = member;
                     packageLocks[member.ArtifactKey] = new(member.ArtifactKey, member.SourceRevision, fact.ObservedSha256, fact.ObservedSha1, fact.SizeBytes, fact.RecoveryObjectRelativePath, fact.TargetRelativePath);
