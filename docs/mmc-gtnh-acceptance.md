@@ -50,14 +50,15 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 | 项目 | 已取得的证据 |
 | --- | --- |
 | 首轮主菜单、进入世界 | 用户明确确认“成功，进入主界面并且进入世界”；日志出现实际本地服务端和维度加载，建立 `New World` 存档 |
-| 正常退出 | 第一轮 Java 退出码 0；`Exited.record` 已归档，mutable 临时目录清理、Java pin 释放均为 true |
+| 正常退出 | 两轮 Java 退出码均为 0；两次 `Exited.record` 已归档，mutable 临时目录清理、Java pin 释放均为 true |
 | 修复 | 在实际退出及收尾后执行专用后端，`repair-2.json` 记录同 ID、generation 2 成功 |
-| 再次启动 | 第二个真实 Java 进程及 LWJGL 窗口已创建；重开同一世界仍待用户确认 |
-| 现代 Java 包 | 导入及最终制品核对已通过；本节不代表其游戏验收 |
+| 再次启动与原世界 | 用户重开 `New World`；第二轮日志记录同名世界加载、本地玩家加入及保存，随后正常退出，Watcher 为 Ended |
+| 现代 Java 包 | 导入及最终制品核对已通过；下节记录其启动失败，尚未完成游戏验收 |
 
 当前证据根是集成工作树的
 `artifacts/mmc-gtnh-launch-acceptance/20261108-114527-a1eae77059834dd2a49c48c63c816948/`，
-保留两轮真实进程/脱敏计划、游戏日志、首轮退出、修复及用户确认记录。
+保留两轮真实进程/脱敏计划、游戏日志、两轮退出、修复及用户确认记录，
+`java8-actual-closed-loop.json` 汇总同一实例/存档、退出与清理事实，验收宿主随后也以 0 退出。
 用户按 Esc 停止电脑操作后，明确选择自行操作游戏界面；后续代理只读进程与日志，不再控制界面。
 
 此前另一次在子代理持有的验收链中，游戏与宿主同时突然退出，未出现正常退出收据或明确崩溃报告。
@@ -65,3 +66,21 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 已用真实进程身份检查和会话恢复流程确认退出并收尾，再由主代理持有本轮命令。
 原中断证据位于子工作树 `mmc-core-parsing` 的
 `artifacts/mmc-gtnh-launch-acceptance/20261108-113335-9cf8bf9390c541a18df05bb8cfc544a7/`。
+
+## 现代 Java 21 的实测缺口
+
+第一轮在创建 Java 进程前被旧 Forge Java 上限拦截。只读对照确认包内 Minecraft 原始声明的 Guava 15
+已由 Forge 的 Guava 17 正常替代，而完整启动链证明误要求被替代的旧 JAR 仍在最终 classpath。
+已按编译器相同的 Maven identity、extension、role 与较高版本关系修复；原有最终输入锁、类观察、
+入口归属和其他硬约束仍检查。最小回归由 30/31 变为 31/31，独立只读复核未发现新增 P1/P2。
+
+第二轮真实 Java 21 和 RFB 已启动，但 LWJGL3 加载 SDL3 时退出：错误为 Windows `206`，
+实际 session/extract 路径超过原生加载器可接受长度。该轮 Java 返回 0，但 Watcher 为 Crashed、
+未进入主菜单，因此明确计为失败；退出后的会话、临时目录和 pin 已正常收尾，宿主也已收到 finish。
+没有通过挪动样本目录或改变包内容把失败计为成功，通用短 mutable/native 目录修复正在独立子分支实现。
+机制对照 [LWJGL 3.4.3 WindowsLibrary](https://github.com/LWJGL/lwjgl3/blob/3.4.3/modules/lwjgl/core/src/main/java/org/lwjgl/system/windows/WindowsLibrary.java)。
+
+证据分别保留于集成工作树：
+
+- `artifacts/mmc-gtnh-launch-acceptance/20261108-121713-e67c536f106f420ebb26c4b08bda10b9/`：旧约束拦截、无游戏进程。
+- `artifacts/mmc-gtnh-launch-acceptance/20261108-122816-1a0c2367ad6b45d9a511f137e217e977/`：实际 RFB/native 加载失败、Watcher/退出与清理记录。
