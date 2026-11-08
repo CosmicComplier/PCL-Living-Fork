@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace PCLLF.MMCC.Core;
 
@@ -24,7 +25,11 @@ public sealed record MmcArtifactInventoryRecord(string ArtifactKey, string Compo
 public sealed record MmcArtifactLockRecord(string ArtifactKey, string SourceRevision, string AdoptedSha256,
     long SizeBytes, string RecoveryObjectRelativePath, string TargetRelativePath, string? ObservedSha1 = null);
 public sealed record MmcInstalledProjection(string ProfileFingerprint, string OutputJsonSha256, long ManifestGeneration,
-    string RuntimePlanFingerprint, string BoundFingerprint);
+    string RuntimePlanFingerprint, string BoundFingerprint) {
+    /// <summary>Exact compiled environment. Absence retains historical schema-1 binding semantics.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MmcRuntimeEnvironment? RuntimeEnvironment { get; init; }
+}
 /// <summary>The large author-file list is stored independently; this envelope pins only its object and count.</summary>
 public sealed record MmcExternalBundleReference(string ContentSha256, string ObjectRelativePath, int EntryCount, int FormatVersion = 1);
 /// <summary>Player preferences and authentication never belong in this structural definition.</summary>

@@ -14,6 +14,8 @@ internal static class MmcDefinitionTests {
         yield return ("MMC asset index reader binds raw parent bytes before accepting object membership", AssetIndexMembership);
         yield return ("MMC derived input protocols bind ordered native sources exclusions and context", DerivedProtocols);
         yield return ("MMC definition keeps native output authority under immutable parent locks", DerivedPersistence);
+        yield return ("MMC historical schema-1 bindings retain their exact fingerprint without runtime environment", HistoricalEnvironment);
+        yield return ("MMC published runtime environment roundtrips strictly and binds every recorded dimension", PublishedEnvironment);
     }
     internal static string Hash(char digit) => new(digit, 64);
     internal static MmcInstanceDefinition Draft(string? resolutionFingerprint = null) {
@@ -83,6 +85,48 @@ internal static class MmcDefinitionTests {
         Invalid(definition with { InstalledProjection = definition.InstalledProjection! with { ManifestGeneration = 2 } });
         Invalid(definition with { InstalledProjection = definition.InstalledProjection! with { BoundFingerprint = Hash('9') } });
         Invalid(definition with { Origin = definition.Origin with { OriginalName = "Changed.zip" } });
+    }
+    private static void HistoricalEnvironment() {
+        var old = Published();
+        const string historicalFingerprint = "863f0acf400e957d0cb467302097b105a7108eb1ec5d076727439a235f1f99bb";
+        Require(old.InstalledProjection!.BoundFingerprint == historicalFingerprint,"Historical binding protocol changed when the optional environment was absent.");
+        string json=MmcDefinitionCodec.Serialize(old);
+        Require(!json.Contains("runtimeEnvironment",StringComparison.Ordinal),"An absent historical environment was silently written into its JSON.");
+        var read=MmcDefinitionCodec.Read(json);
+        Require(read.Status==MmcDefinitionReadStatus.Valid && read.Definition!.InstalledProjection!.RuntimeEnvironment is null &&
+            read.Definition.InstalledProjection.BoundFingerprint==historicalFingerprint && MmcDefinitionCodec.Serialize(read.Definition)==json,
+            "Historical no-environment schema-1 JSON/fingerprint failed its exact roundtrip.");
+    }
+    private static void PublishedEnvironment() {
+        var environment=new MmcRuntimeEnvironment("windows","x86_64",21,64,"10.0.22631");
+        var definition=WithEnvironment(environment);
+        string json=MmcDefinitionCodec.Serialize(definition);
+        var read=MmcDefinitionCodec.Read(json);
+        Require(read.Status==MmcDefinitionReadStatus.Valid && read.Definition!.InstalledProjection!.RuntimeEnvironment==environment,
+            "Published environment dimensions were omitted or normalized during persistence.");
+        var changed=new MmcRuntimeEnvironment?[] { null, environment with { OperatingSystem="linux" },environment with { Architecture="arm64" },
+            environment with { JavaMajor=17 },environment with { Architecture="x86",JavaBitness=32 },environment with { OsVersion=null },environment with { OsVersion="10.0.26100" } };
+        foreach(var value in changed) {
+            var tampered=definition with { InstalledProjection=definition.InstalledProjection! with { RuntimeEnvironment=value } };
+            Require(MmcDefinitionCodec.ComputeBoundFingerprint(tampered)!=definition.InstalledProjection!.BoundFingerprint,"A published environment dimension was outside its binding fingerprint.");
+            Invalid(tampered);
+        }
+        foreach(var invalid in new[] { environment with { OperatingSystem="Windows" },environment with { Architecture="amd64" },
+            environment with { JavaMajor=0 },environment with { JavaMajor=-1 },environment with { JavaBitness=16 },environment with { JavaBitness=32 },
+            environment with { OsVersion="" },environment with { OsVersion=" " },environment with { OsVersion="10\n0" },environment with { OsVersion=new string('a',257) } })
+            Invalid(WithEnvironment(invalid));
+        foreach(string required in new[]{"operatingSystem","architecture","javaMajor","javaBitness"}) {
+            var broken=JsonNode.Parse(json)!.AsObject();broken["installedProjection"]!["runtimeEnvironment"]!.AsObject().Remove(required);
+            Require(MmcDefinitionCodec.Read(broken.ToJsonString()).Status==MmcDefinitionReadStatus.Invalid,"Missing explicit environment field was silently defaulted: "+required);
+        }
+        var extra=JsonNode.Parse(json)!.AsObject();extra["installedProjection"]!["runtimeEnvironment"]!["javaPath"]="not-a-runtime-descriptor";
+        Require(MmcDefinitionCodec.Read(extra.ToJsonString()).Status==MmcDefinitionReadStatus.Invalid,"An unknown runtime path field entered the structural definition.");
+        Require(MmcDefinitionCodec.Read(json.Replace("\"javaMajor\":21","\"javaMajor\":21,\"javaMajor\":21",StringComparison.Ordinal)).Status==MmcDefinitionReadStatus.Invalid,
+            "Duplicate environment dimensions were accepted.");
+    }
+    private static MmcInstanceDefinition WithEnvironment(MmcRuntimeEnvironment environment) {
+        var value=Published();value=value with { InstalledProjection=value.InstalledProjection! with { RuntimeEnvironment=environment } };
+        return value with { InstalledProjection=value.InstalledProjection! with { BoundFingerprint=MmcDefinitionCodec.ComputeBoundFingerprint(value) } };
     }
     private static void Budgets() {
         string json = MmcDefinitionCodec.Serialize(Published());

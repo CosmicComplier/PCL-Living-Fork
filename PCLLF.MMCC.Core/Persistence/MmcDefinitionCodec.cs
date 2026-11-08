@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -29,6 +30,7 @@ public static class MmcDefinitionCodec {
                 return new(null, MmcDefinitionReadStatus.Unsupported, [new("MMC_DEFINITION_UNSUPPORTED", MmcDiagnosticSeverity.Error, "definition", "Unsupported managed definition schema/kind/profile.")]);
             ValidateGuidJson(root, "instanceId", true);
             ValidateGuidJson(root, "parentInstanceId", false);
+            ValidateEnvironmentJson(root);
             var definition = JsonSerializer.Deserialize<MmcInstanceDefinition>(root, Options);
             if (definition is null) MmcJson.Fail("definition", "Missing definition object.");
             var diagnostics = Validate(definition, MmcDefinitionValidationMode.Published, limits);
@@ -187,6 +189,15 @@ public static class MmcDefinitionCodec {
             }
             if (definition.InstalledProjection is { } projection) {
                 CheckHash(projection.ProfileFingerprint); CheckHash(projection.OutputJsonSha256); CheckHash(projection.RuntimePlanFingerprint); CheckHash(projection.BoundFingerprint);
+                if (projection.RuntimeEnvironment is { } environment) {
+                    if (MmcArtifactRules.Normalize(environment) != environment || environment.JavaMajor <= 0)
+                        MmcJson.Fail("definition", "Published runtime environment requires canonical OS/architecture and a known positive Java major.");
+                    Text(environment.OperatingSystem,16); Text(environment.Architecture,16);
+                    if (environment.OsVersion is { } osVersion) {
+                        Text(osVersion,256);
+                        if (string.IsNullOrWhiteSpace(osVersion)) MmcJson.Fail("definition", "An explicitly stored OS version cannot be empty.");
+                    }
+                }
                 if (projection.ManifestGeneration != definition.Generation) MmcJson.Fail("definition", "Projection generation does not match its definition.");
                 if (mode == MmcDefinitionValidationMode.Published && !SameHash(projection.BoundFingerprint, ComputeBoundFingerprint(definition))) MmcJson.Fail("definition", "Bound definition fingerprint is inconsistent.");
             } else if (mode == MmcDefinitionValidationMode.Published) MmcJson.Fail("definition", "Published definition requires a bound installed projection.");
@@ -212,7 +223,24 @@ public static class MmcDefinitionCodec {
             .Concat(definition.PackageFileInventory.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.PackageSha256, x.RelativeRoot,
                 x.BaselineReference.ContentSha256, x.BaselineReference.ObjectRelativePath, x.BaselineReference.EntryCount.ToString(), x.BaselineReference.FormatVersion.ToString(), x.SourceRelativePath,
                 x.LibraryRelativePath, x.Sha256, x.Sha1, x.SizeBytes.ToString(), x.Crc32.ToString() }))
-            .Concat(definition.PackageFileLocks.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.AdoptedSha256, x.ObservedSha1, x.SizeBytes.ToString(), x.RecoveryObjectRelativePath, x.TargetRelativePath })));
+            .Concat(definition.PackageFileLocks.OrderBy(x => x.ArtifactKey, StringComparer.Ordinal).SelectMany(x => new[] { x.ArtifactKey, x.SourceRevision, x.AdoptedSha256, x.ObservedSha1, x.SizeBytes.ToString(), x.RecoveryObjectRelativePath, x.TargetRelativePath }))
+            // No null marker is appended for historical definitions. Their original binding
+            // protocol and published fingerprints must remain byte-for-byte compatible.
+            .Concat(projection.RuntimeEnvironment is { } environment ? new[] {
+                "mmc-published-runtime-environment-v1",environment.OperatingSystem,environment.Architecture,
+                environment.JavaMajor.ToString(CultureInfo.InvariantCulture),environment.JavaBitness.ToString(CultureInfo.InvariantCulture),environment.OsVersion
+            } : []));
+    }
+
+    private static void ValidateEnvironmentJson(JsonElement root) {
+        if (!root.TryGetProperty("installedProjection",out var projection) || projection.ValueKind != JsonValueKind.Object ||
+            !projection.TryGetProperty("runtimeEnvironment",out var environment) || environment.ValueKind == JsonValueKind.Null) return;
+        if (environment.ValueKind != JsonValueKind.Object) MmcJson.Fail("definition", "Published runtime environment must be an object.");
+        _=MmcJson.String(environment,"operatingSystem","definition",true);
+        _=MmcJson.String(environment,"architecture","definition",true);
+        foreach (string field in new[]{"javaMajor","javaBitness"})
+            if (!environment.TryGetProperty(field,out var number) || number.ValueKind != JsonValueKind.Number || !number.TryGetInt32(out _))
+                MmcJson.Fail("definition", "Published runtime environment requires explicit integer "+field+".");
     }
 
     private static void ValidatePackageFiles(MmcInstanceDefinition definition, MmcDefinitionValidationMode mode, MmcReadLimits limits, Action<string?, int> text) {
