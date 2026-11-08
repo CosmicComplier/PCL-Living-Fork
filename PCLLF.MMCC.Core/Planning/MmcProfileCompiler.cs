@@ -124,6 +124,8 @@ public static class MmcProfileCompiler {
                 catch (FormatException e) { throw new MmcInputException("MMC_ARGUMENTS", gameArgumentSource!.Source, e.Message); }
             }
             foreach (var tweaker in tweakers) { gameArguments.Add(new("--tweakClass", tweaker.Source)); gameArguments.Add(new(tweaker.Value, tweaker.Source)); }
+            if (jvm.Concat(gameArguments).Any(argument => argument.Value.Contains('\0')))
+                throw new MmcInputException("MMC_ARGUMENTS", "profile", "NUL is not a valid process argument.");
             var javaPolicy = MmcJavaPolicyEvaluator.Create(majors, recommendedRuntime, hardConstraints);
             if (javaPolicy.Kind == MmcJavaPolicyKind.Unsatisfiable) throw new MmcInputException("MMC_JAVA_UNSATISFIABLE", "profile", "Declared Java candidates and hard constraints are unsatisfiable.");
             if (environment.JavaMajor != 0 && !javaPolicy.Allows(environment.JavaMajor)) throw new MmcInputException("MMC_JAVA_SELECTION", "environment", "Selected Java is outside the compiled policy.");

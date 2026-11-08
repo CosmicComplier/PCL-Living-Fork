@@ -29,7 +29,7 @@ public static class MmcComponentResolver {
         try {
             if (limits.MaxComponents < 1 || limits.MaxDependencyEdges < 1 || limits.MaxDepth is < 1 or > 256 || limits.MaxMetadataBytes < 1 || limits.MaxTotalMetadataBytes < 1)
                 throw new ArgumentOutOfRangeException(nameof(limits));
-            if (package.Components.Length > limits.MaxComponents || snapshots.Count > limits.MaxComponents * 4L || (overrides?.Count ?? 0) > limits.MaxComponents)
+            if (package.Components.Length > limits.MaxComponents || snapshots.Count > limits.MaxComponents * 4L || (overrides?.Count ?? 0) > limits.MaxComponents || (recommendations?.Count ?? 0) > limits.MaxComponents)
                 throw new MmcInputException("MMC_COMPONENT_BUDGET", "resolution", "Component/snapshot budget exceeded.");
             long metadataBytes = package.MetadataUtf8ByteCount;
             if (metadataBytes < 0 || metadataBytes > limits.MaxTotalMetadataBytes) throw new MmcInputException("MMC_METADATA_BUDGET", "package", "Source metadata budget exceeded.");
@@ -118,10 +118,11 @@ public static class MmcComponentResolver {
                 if (requests.Count != 0) return Finish(null);
                 if (order.Any(n => n.Resolved is null)) throw new MmcInputException("MMC_RESOLUTION", "resolution", "Unresolved component without a metadata request.");
                 var components = order.Select(n => n.Resolved!).ToImmutableArray();
+                var actualRecommendations = adoptedRecommendations.Where(r => nodes[r.Uid].Version == r.Version).Distinct().ToImmutableArray();
                 string fingerprint = MmcFingerprint.Of(new[] { "mmc-prism-v1-resolver-1", package.ManifestSha256 }
                     .Concat(components.SelectMany(c => new[] { c.Uid, c.Version, c.Enabled.ToString(), c.SourceKind.ToString(), c.Patch.Source, c.Patch.ContentSha256 }))
-                    .Concat(adoptedRecommendations.SelectMany(r => new[] { r.Uid, r.Version, r.Source, r.IndexSha256 })));
-                return Finish(new("prism-v1", fingerprint, package, components, adoptedRecommendations.Distinct().ToImmutableArray()));
+                    .Concat(actualRecommendations.SelectMany(r => new[] { r.Uid, r.Version, r.Source, r.IndexSha256 })));
+                return Finish(new("prism-v1", fingerprint, package, components, actualRecommendations));
             }
             throw new MmcInputException("MMC_RESOLUTION", "resolution", "Resolution did not converge within the component budget.");
 
@@ -188,7 +189,7 @@ public static class MmcComponentResolver {
     private static Dictionary<(string, string, MmcMetadataRequestKind), MmcMetadataSnapshot> IndexSnapshots(IReadOnlyList<MmcMetadataSnapshot> source, MmcReadLimits limits, ref long total) {
         Dictionary<(string, string, MmcMetadataRequestKind), MmcMetadataSnapshot> index = [];
         foreach (var item in source) {
-            if (item is null || string.IsNullOrEmpty(item.Source) || item.Kind == MmcMetadataRequestKind.Component && string.IsNullOrEmpty(item.Version) ||
+            if (item is null || !Enum.IsDefined(item.Kind) || string.IsNullOrEmpty(item.Source) || item.Kind == MmcMetadataRequestKind.Component && string.IsNullOrEmpty(item.Version) ||
                 item.Kind == MmcMetadataRequestKind.Recommendation && item.Version != "") MmcJson.Fail("metadata", "Snapshot must have an exact identity, kind and source.");
             MmcPatchReader.ValidateUid(item.Uid, item.Source);
             int size = CheckTextBudget(item.ContentUtf8, item.Source, limits.MaxMetadataBytes);

@@ -58,6 +58,8 @@ internal static partial class MmcArtifactRules {
         var scope = hint == "local" ? MmcArtifactScope.InstanceLocal : MmcArtifactScope.Shared;
         string classifier = nativeClassifier ?? coordinate.Classifier;
         string filename = Text(declaration, "MMC-filename") ?? coordinate.Artifact + "-" + coordinate.Version + (classifier.Length == 0 ? "" : "-" + classifier) + "." + coordinate.Extension;
+        if (native) filename = filename.Replace("${arch}", environment.JavaBitness.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        if (filename.Contains("${", StringComparison.Ordinal)) throw new MmcInputException("MMC_ARTIFACT_PATH", source.Source, "Unknown filename placeholder.");
         Segment(filename, source.Source);
         string mavenPath = coordinate.Group.Replace('.', '/') + "/" + coordinate.Artifact + "/" + coordinate.Version + "/" + filename;
         Relative(mavenPath, source.Source);
@@ -78,7 +80,9 @@ internal static partial class MmcArtifactRules {
         ImmutableArray<string> urls = [];
         if (scope == MmcArtifactScope.Shared) {
             string? url = hasDownload ? Text(download, "url") : Text(declaration, "MMC-absoluteUrl") ?? Text(declaration, "absoluteUrl");
+            if (hasDownload && string.IsNullOrEmpty(url)) throw new MmcInputException("MMC_LIBRARY_DOWNLOAD", source.Source, "Explicit download descriptor has no URL.");
             if (string.IsNullOrEmpty(url)) url = (Text(declaration, "url") ?? "https://libraries.minecraft.net/").TrimEnd('/') + "/" + mavenPath;
+            if (native) url = url.Replace("${arch}", environment.JavaBitness.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
             urls = [Url(url, source.Source)];
         }
         if (hasDownload && Text(download, "path") is { Length: > 0 } declaredPath && declaredPath != mavenPath)
@@ -123,7 +127,7 @@ internal static partial class MmcArtifactRules {
         if (value.Length is 0 or > 255 || value is "." or ".." || value.EndsWith('.') || value.EndsWith(' ') ||
             value.Any(c => c < 32 || c is '/' or '\\' or ':' or '<' or '>' or '"' or '|' or '?' or '*') ||
             stem is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$" ||
-            stem.Length == 4 && (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal)) && stem[3] is >= '1' and <= '9' or '¹' or '²' or '³')
+            stem.Length == 4 && (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal)) && (stem[3] is >= '1' and <= '9' or '¹' or '²' or '³'))
             throw new MmcInputException("MMC_ARTIFACT_PATH", source, "Unsafe artifact path segment.");
     }
     private static string? Digest(JsonElement value, string key, int size, string source) {

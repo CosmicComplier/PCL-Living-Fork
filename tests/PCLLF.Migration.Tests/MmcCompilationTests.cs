@@ -60,6 +60,7 @@ internal static class MmcCompilationTests {
             [Patch("second", ("+jvmArgs", new[] { "--add-opens", "java.base/java.lang=ALL-UNNAMED" }), ("+tweakers", new[] { "A", "A" }))]));
         Require(profile.JvmArguments.Select(a => a.Value).SequenceEqual(["-Dpath=中文 space", "", "-Dsame=1", "-Dsame=1", "--add-opens", "java.base/java.lang=ALL-UNNAMED"]), "Array tokens were split or deduplicated.");
         Require(profile.Tweakers.SequenceEqual(["B", "A", "A"]) && profile.GameArguments[1].Value == "" && profile.GameArguments[3].Value == "中文 path", "Tweaker move or empty game argument changed.");
+        Error(Compile(new() { ["+jvmArgs"] = new[] { "bad\0argument" } }), "MMC_ARGUMENTS");
     }
     private static void AssetOwnership() {
         var result = Compile(patches: [Patch("custom", ("assetIndex", new { id = "wrong", url = "https://example.invalid/wrong" }), ("type", "wrong"))]);
@@ -107,6 +108,8 @@ internal static class MmcCompilationTests {
         Error(Compile(new() { ["libraries"] = new[] { traversal } }), "MMC_ARTIFACT_PATH");
         var url = Library("fixture:a:1"); url["MMC-absoluteUrl"] = "file:///bad";
         Error(Compile(new() { ["libraries"] = new[] { url } }), "MMC_ARTIFACT_URL");
+        var missingUrl = Library("fixture:no-url:1"); missingUrl["downloads"] = new { artifact = new { size = 1 } };
+        Error(Compile(new() { ["libraries"] = new[] { missingUrl } }), "MMC_LIBRARY_DOWNLOAD");
         var first = Library("fixture:a:1"); first["downloads"] = new { artifact = new { url = "https://example.invalid/a", sha1 = new string('1', 40) } };
         var second = Library("fixture:a:1"); second["downloads"] = new { artifact = new { url = "https://example.invalid/a", sha1 = new string('2', 40) } };
         Error(Compile(new() { ["libraries"] = new[] { first, second } }), "MMC_LIBRARY_CONFLICT");
