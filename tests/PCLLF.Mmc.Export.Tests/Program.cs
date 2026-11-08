@@ -67,6 +67,9 @@ internal static class ExportChecks {
         fixture.Put(source.Paths.InstanceRoot,".minecraft/config/inactive.cfg","separate inactive role");
         Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"dual.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Inactive data silently merged or disappeared.");
         var excluded=new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"active-only.zip",new(){InactiveGameTree=MmcExportInactiveTree.Exclude})).GetAwaiter().GetResult();Success(excluded);
+        fixture.Put(source.Paths.GameRoot,"personal-unrecognized.bin","personal unknown data");
+        Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"unknown-game.zip",new(){InactiveGameTree=MmcExportInactiveTree.Exclude})).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Unknown personal game data was silently exported.");
+        Success(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"explicit-unknown-game.zip",new(){InactiveGameTree=MmcExportInactiveTree.Exclude,IncludeUnrecognizedGameFiles=true})).GetAwaiter().GetResult());
         fixture.Put(source.Paths.InstanceRoot,"libraries/unadopted.jar","unadopted");
         Check(new MmcInstanceExportBackend().ExportAsync(fixture.Request(source,"unknown-library.zip",new(){InactiveGameTree=MmcExportInactiveTree.Exclude})).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Unadopted private library was promoted into a pack.");
     }
@@ -125,6 +128,10 @@ internal static class ExportChecks {
         fixture.Put(source.Paths.InstanceRoot,"PCL/MmcSessions/unknown.record","uncertain receipt");
         Check(exporter.ExportAsync(fixture.Request(source,"active.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Unknown/active session receipt was ignored.");
         Check(File.ReadAllText(Path.Combine(source.Paths.InstanceRoot,"PCL","MmcSessions","unknown.record"))=="uncertain receipt","Export changed an uncertain receipt.");
+        File.Delete(Path.Combine(source.Paths.InstanceRoot,"PCL","MmcSessions","unknown.record"));
+        fixture.Put(source.Paths.InstanceRoot,"PCL/MmcTransactions/unknown.record","pending transaction");
+        Check(exporter.ExportAsync(fixture.Request(source,"pending.zip")).GetAwaiter().GetResult().Status==MmcInstanceExportStatus.Rejected,"Pending transaction was ignored.");
+        Check(File.ReadAllText(Path.Combine(source.Paths.InstanceRoot,"PCL","MmcTransactions","unknown.record"))=="pending transaction","Export changed pending transaction data.");
     }
     private static string Read(ZipArchive zip,string path){using var reader=new StreamReader(zip.GetEntry(path)!.Open());return reader.ReadToEnd();}
     private static void Success(MmcInstanceExportResult result){if(result.Status!=MmcInstanceExportStatus.Completed)throw new Exception(result.Status+": "+result.Failure);}
