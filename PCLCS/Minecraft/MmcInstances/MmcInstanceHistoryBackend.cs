@@ -51,11 +51,13 @@ public sealed class MmcInstanceHistoryBackend {
             var point = MmcInstanceHistoryStore.Read(paths, request.PointId, request.ExpectedPointManifestSha256, token);
             if (point.Definition.InstanceId != current.InstanceId || point.Definition.Layout != current.Layout)
                 throw new IOException("The selected point belongs to another identity or game-tree layout.");
+            AssertPrivateLibraryReplacements(paths, current, point.Definition);
             var compiled = MmcInstanceCloneBackend.CompileEnvironment(point.Saved.Resolved.Resolution, point.Definition, request.LegacyEnvironmentCandidates);
             var currentSaved = MmcSavedSourceStore.LoadAsync(paths, current, token).GetAwaiter().GetResult();
             // Complete rollback environment, including all current original lock bindings, before any live mutation.
             undo = MmcInstanceHistoryStore.Capture(lease, primary, currentSaved, "恢复前自动保存", token, request.Checkpoint);
             request.Checkpoint?.Invoke(MmcInstanceHistoryCheckpoint.BeforeRestorePreparation); token.ThrowIfCancellationRequested();
+            AssertPrivateLibraryReplacements(paths, current, point.Definition);
             using var sources = new MmcArtifactWorkspace(paths);
             var active = Active(compiled);
             var declared = active.Where(value => value.Scope == MmcArtifactScope.InstanceLocal).Select(value => "libraries/" + value.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -102,6 +104,7 @@ public sealed class MmcInstanceHistoryBackend {
             request.Checkpoint?.Invoke(MmcInstanceHistoryCheckpoint.BeforeRestoreTransaction);
             MmcInstanceHistoryStore.AssertCurrent(lease, current.InstanceId, current.Generation, primary.Sha256);
             _ = MmcInstanceHistoryStore.Read(paths, request.PointId, request.ExpectedPointManifestSha256, token);
+            AssertPrivateLibraryReplacements(paths, current, point.Definition);
             if (!currentEnvironment.SequenceEqual(MmcInstanceHistoryFiles.Environment(paths, current, token))) throw new IOException("Current environment changed while restore was preparing.");
             using var scope = quiet.OpenStructuralWrite(lease, current.Generation);
             SetManifest(scope, point.Saved.Resolved.Resolution.Profile!, compiled, current.InstanceId, next);
@@ -112,6 +115,7 @@ public sealed class MmcInstanceHistoryBackend {
                     if (!point.Manifest.EnvironmentFiles.SequenceEqual(MmcInstanceHistoryFiles.Environment(paths, bound.Definition, token)))
                         throw new IOException("Restored environment namespace differs before the commit decision.");
                     MmcInstanceHistoryFiles.Verify(paths, point.Manifest.SourceFiles.Where(value => value.RelativePath != "PCL/InstanceDefinition.json"), token);
+                    MmcInstanceHistoryFiles.Verify(paths, MmcInstanceHistoryFiles.PrivateLibraries(point.Definition).Values, token);
                     MmcInstanceHistoryFiles.Verify(paths, prepared.OrderedBindings.Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes))
                         .Concat(observations.DerivedOutputs.Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes)))
                         .GroupBy(value => value.RelativePath, StringComparer.OrdinalIgnoreCase).Select(group => group.First()), token);
@@ -165,10 +169,21 @@ public sealed class MmcInstanceHistoryBackend {
                 throw new IOException("Current private library has unknown bytes; preserve it before restoring.");
             if (!after.TryGetValue(relative, out var next)) { if (old is not null) yield return new(relative, old, null, null); continue; }
             if (old == next.Sha256) continue;
+            if (old is not null && !before.ContainsKey(relative))
+                throw new IOException("A selected private library path contains unknown unowned bytes; preserve it before restoring.");
             string staged = workspace.NewFile();
             io.CopyAsync(point.SourcePaths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcArtifacts/sha256/" + next.Sha256), staged,
                 relative, next.Sha256, null, next.SizeBytes, token).GetAwaiter().GetResult();
             yield return new(relative, old, null, next.Sha256, Relative(paths, staged));
+        }
+    }
+    private static void AssertPrivateLibraryReplacements(MmcInstancePaths paths, MmcInstanceDefinition current, MmcInstanceDefinition selected) {
+        var before = MmcInstanceHistoryFiles.PrivateLibraries(current);
+        foreach (var target in MmcInstanceHistoryFiles.PrivateLibraries(selected)) {
+            string? actual = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, target.Key));
+            if (actual is not null && actual != target.Value.Sha256 &&
+                (!before.TryGetValue(target.Key, out var owned) || actual != owned.Sha256))
+                throw new IOException("A selected private library path contains unknown bytes without current authority; preserve it before restoring.");
         }
     }
     private static MmcFileMutation[] Merge(IEnumerable<MmcFileMutation> input) {

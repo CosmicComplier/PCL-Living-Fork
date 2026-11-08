@@ -12,6 +12,89 @@ internal static class MmcInstanceHistoryTests {
         yield return ("MMC history rejects damaged point objects, unanchored references and missing adopted originals before live mutations", Damaged);
         yield return ("MMC history refuses active sessions, pending operations, old coverage and a different instance identity", Barriers);
         yield return ("MMC history cancels before decision and recovers controlled interrupted transactions on either side of the decision", Transactions);
+        yield return ("MMC history preserves an unknown private library when a later point reintroduces its old path", UnknownReintroducedLibrary);
+    }
+    private static void UnknownReintroducedLibrary() {
+        using Fixture fixture = new(); fixture.Import(); var history = new MmcInstanceHistoryBackend();
+        var early = Capture(fixture, history, "before library addition");
+        PublishLibraryAddition(fixture);
+        var late = Capture(fixture, history, "after library addition");
+        Equal(early.InstanceId, late.InstanceId); Equal(2L, late.Generation);
+        var restored = history.RestoreAsync(Request(fixture, early)).GetAwaiter().GetResult();
+        if (restored.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(restored.Failure);
+        Equal(3L, fixture.Primary().Definition.Generation); Equal(false, File.Exists(Path.Combine(fixture.VersionRoot, "libraries", "later.jar")));
+        fixture.Put("libraries/later.jar", "unknown personal replacement");
+        string primary = fixture.Primary().Sha256;
+        var refused = history.RestoreAsync(Request(fixture, late)).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, refused.Status);
+        Equal(primary, fixture.Primary().Sha256); Equal(3L, fixture.Primary().Definition.Generation);
+        Equal("unknown personal replacement", fixture.Read("libraries/later.jar"));
+        // Identical bytes at an otherwise unowned path can be safely reused, and an absent
+        // path can still be rebuilt from the point's immutable original.
+        fixture.Put("libraries/later.jar", "declared later library");
+        var reused = history.RestoreAsync(Request(fixture, late)).GetAwaiter().GetResult();
+        if (reused.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(reused.Failure);
+        Equal(4L, fixture.Primary().Definition.Generation);
+        var back = history.RestoreAsync(Request(fixture, early)).GetAwaiter().GetResult();
+        if (back.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(back.Failure);
+        var rebuilt = history.RestoreAsync(Request(fixture, late)).GetAwaiter().GetResult();
+        if (rebuilt.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(rebuilt.Failure);
+        Equal(6L, fixture.Primary().Definition.Generation); Equal("declared later library", fixture.Read("libraries/later.jar"));
+    }
+
+    // A real explicit Core definition update plus the production transaction creates the
+    // later point; no handwritten published definition or synthetic artifact lock is accepted.
+    private static void PublishLibraryAddition(Fixture fixture) {
+        var primary = fixture.Primary(); var definition = primary.Definition; var paths = MmcInstancePaths.Resolve(fixture.VersionRoot, definition.Layout.GameRootLeaf);
+        var saved = MmcSavedSourceStore.LoadAsync(paths, definition).GetAwaiter().GetResult();
+        var originalPatch = definition.SourceBundle.MetadataRecords.Single(value => value.Kind == MmcSourceRecordKind.Component && value.Uid == "net.minecraft");
+        var patch = JObject.Parse(Encoding.UTF8.GetString(MmcSavedSourceStore.ReadBounded(paths, originalPatch.ObjectRelativePath, 16 * 1024 * 1024)));
+        byte[] laterBytes = Encoding.UTF8.GetBytes("declared later library");
+        patch["+libraries"] = new JArray(new JObject { ["name"] = "fixture:later:1", ["MMC-hint"] = "local", ["MMC-filename"] = "later.jar",
+            ["downloads"] = new JObject { ["artifact"] = new JObject { ["sha256"] = Convert.ToHexStringLower(SHA256.HashData(laterBytes)), ["size"] = laterBytes.Length } } });
+        byte[] patchBytes = Encoding.UTF8.GetBytes(patch.ToString(Newtonsoft.Json.Formatting.None)); string patchHash = MmcDurableFiles.Hash(patchBytes);
+        string patchPath = "PCL/MmcOverrides/" + patchHash + ".json";
+        var resolution = MmcComponentResolver.Resolve(saved.Package, saved.Resolved.Snapshots,
+            [new MmcComponentOverride("net.minecraft", PatchContentUtf8: Encoding.UTF8.GetString(patchBytes))]);
+        if (!resolution.IsComplete) throw new Exception(string.Join("; ", resolution.Diagnostics));
+        var compilation = MmcProfileCompiler.Compile(resolution.Profile!, definition.InstalledProjection!.RuntimeEnvironment!);
+        if (compilation.HasErrors || compilation.Profile is null) throw new Exception(string.Join("; ", compilation.Diagnostics));
+        var compiled = compilation.Profile;
+        using var quiet = MmcConfigurationCoordinator.Quiesce(fixture.VersionRoot);
+        using var lease = MmcAdmissionGate.Acquire(fixture.VersionRoot, definition.InstanceId, TimeSpan.Zero);
+        MmcInstanceHistoryStore.AssertCurrent(lease, definition.InstanceId, definition.Generation, primary.Sha256);
+        fixture.Put("libraries/later.jar", Encoding.UTF8.GetString(laterBytes));
+        var active = compiled.Classpath.Concat(compiled.NativeArtifacts).Concat(compiled.DownloadOnlyArtifacts).Concat(compiled.AuxiliaryArtifacts)
+            .GroupBy(value => value.Key, StringComparer.Ordinal).Select(group => group.First()).ToImmutableArray();
+        var declared = active.Where(value => value.Scope == MmcArtifactScope.InstanceLocal).Select(value => "libraries/" + value.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var artifactRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, active,
+            MmcPackageFilePreservation.CreateLibraryArtifacts(saved.Baseline).Where(value => !declared.Contains("libraries/" + value.RelativePath)).ToImmutableArray(),
+            MmcPublishedArtifactLocks.Create(definition), MmcArtifactIntent.AdoptDeclaredVariant, compiled.Assets);
+        var index = definition.ArtifactLocks.Single(value => definition.ArtifactInventory.Single(item => item.ArtifactKey == value.ArtifactKey).Role == MmcArtifactRole.AssetIndex);
+        using var prepared = new MmcArtifactMaterializer().PrepareAsync(artifactRequest, new((artifact, _) => ValueTask.FromResult<MmcArtifactSource?>(
+            artifact.Role == MmcArtifactRole.AssetIndex ? new(paths.InstanceRoot, paths.ResolveRelative(MmcPathRole.Instance, index.RecoveryObjectRelativePath)) : null))).GetAwaiter().GetResult();
+        var observations = MmcArtifactBindingAdapter.Create(artifactRequest, compiled, prepared); long next = definition.Generation + 1;
+        byte[] projection = MmcVersionProjection.Render("fixture", definition.InstanceId, next, compiled,
+            prepared.OrderedBindings.ToDictionary(value => value.Artifact.Key, value => value.TargetRelativePath),
+            nativeDirectoryRelative: null, assetsRootRelative: "PCL/MmcRuntime/" + prepared.ViewKey + "/assets");
+        var candidate = definition with { InstalledProjection = null,
+            SourceBundle = definition.SourceBundle with { ResolutionFingerprint = resolution.Profile!.SourceFingerprint },
+            ComponentOverrides = [new("net.minecraft", PatchReference: new(patchHash, patchPath))] };
+        var bound = MmcPlanBinder.Bind(candidate, compiled, observations.Facts,
+            observations.ApplyTo(new(definition.Generation, next, MmcBindingIntent.UpdateDefinition, MmcDurableFiles.Hash(projection), next)),
+            definition.ArtifactLocks, observations.DerivedOutputs, observations.AssetIndexes, publishedBaseline: definition, packageBaseline: saved.BaselineInput);
+        if (bound.HasErrors || bound.Definition is null) throw new Exception(string.Join("; ", bound.Diagnostics));
+        byte[] primaryBytes = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition));
+        using var workspace = new MmcArtifactWorkspace(paths); string patchInput = workspace.NewFile(); MmcDurableFiles.WriteNew(patchInput, patchBytes);
+        var mutations = prepared.StagedMutations.Select(value => new MmcFileMutation(value.TargetRelativePath, value.ExpectedMissing ? null : value.ExpectedExistingSha256,
+                null, value.NewSha256, value.NewSourceRelativePath)).Append(new(patchPath, null, null, patchHash, Path.GetRelativePath(paths.InstanceRoot, patchInput).Replace('\\', '/')))
+            .Append(new("fixture.json", definition.InstalledProjection.OutputJsonSha256, projection, MmcDurableFiles.Hash(projection)))
+            .Append(new("PCL/InstanceDefinition.json", primary.Sha256, primaryBytes, MmcDurableFiles.Hash(primaryBytes))).ToArray();
+        using var scope = quiet.OpenStructuralWrite(lease, definition.Generation);
+        var manifest = scope.ConfigSnapshot["MinecraftInstallManifest"] as JObject ?? new();
+        manifest["pcllfManagement"] = JObject.Parse(MmcVersionProjection.ManagementHint(definition.InstanceId, next, compiled).ToJsonString());
+        scope.SetConfig("MinecraftInstallManifest", manifest);
+        Equal(MmcTransactionOutcome.Committed, scope.Execute(new(definition.InstanceId, definition.Generation, next, mutations)).Outcome);
     }
     private static void RoundTrip() {
         using Fixture fixture = new(); var imported = fixture.Import(); var history = new MmcInstanceHistoryBackend();

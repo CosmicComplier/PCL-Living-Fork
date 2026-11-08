@@ -52,7 +52,10 @@ restoration provenance receipt. The configuration write scope starts from
 fresh current disk and accepted preference overlays. Current Java/JVM/memory/
 window values, explicit empty overrides and unknown preference keys survive.
 Unknown modified private libraries refuse restoration rather than becoming
-new adopted bytes. Unknown unowned library neighbors remain untouched.
+new adopted bytes. A selected point also cannot overwrite an unowned
+same-name library with different bytes, including when an earlier restore
+removed that path's current authority. Identical selected bytes can be reused
+and missing targets rebuilt. Unknown unowned library neighbors remain untouched.
 
 Cancellation before the commit decision rolls back; cancellation afterward
 finishes the decided publication. The normal file-transaction recovery API
@@ -69,6 +72,11 @@ and pending barriers, unsupported coverage, foreign/future definitions,
 predecision cancellation, postdecision cancellation and controlled interrupted
 transaction recovery on both sides of the decision. These are backend tests,
 not Minecraft/GUI or actual process-kill acceptance.
+An additional real Core definition-update/transaction case creates two same-ID
+points with different private-library inventories. Restoring the earlier point
+and placing an unknown library at the removed path makes the later restore
+refuse with the current bytes and generation unchanged; matching-byte reuse
+and missing-target rebuild still succeed.
 
 The current copy store is bounded to 100000 files and 64 GiB per point and
 keeps every published point immutable through this API. It streams files and
