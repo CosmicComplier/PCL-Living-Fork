@@ -45,7 +45,7 @@ def documentation_only(paths: list[str]) -> bool:
     return bool(paths) and all(is_documentation_path(name) for name in paths)
 
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java", "mmc-backend", "mmc-variants", "mmc-clone")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java", "mmc-backend", "mmc-variants", "mmc-clone", "mmc-lifecycle")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -302,7 +302,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mmc-profile",), (), build=False)
             elif stem == "MmcMetadata":
                 include(("mmc-metadata",), (), build=False)
-            elif stem in {"MmcTransaction", "MmcSession"}:
+            elif stem in {"MmcTransaction", "MmcSession", "MmcOperationPendingGuard"}:
                 include(("mmc-transactions",), (), build=False)
             elif stem == "MmcArtifact":
                 include(("mmc-artifacts",), (), build=False)
@@ -318,6 +318,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mmc-backend", "mmc-variants"), (), build=False)
             elif stem == "MmcInstanceClone":
                 include(("mmc-clone",), (), build=False)
+            elif stem == "MmcInstanceLifecycle":
+                include(("mmc-lifecycle",), (), build=False)
             elif stem.startswith("WorldMetadata"):
                 include(("world-metadata",), (), build=False)
             elif stem == "LocalGameData":
@@ -411,7 +413,11 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             elif name.startswith("PCLCS/Minecraft/MmcArchive/"):
                 include(("mmc-archive",), (), build=False)
             elif name.startswith("PCLCS/Minecraft/MmcInstances/"):
-                if leaf.startswith("MmcInstanceClone"):
+                if leaf.startswith("MmcInstanceLifecycle"):
+                    include(("mmc-lifecycle",), (), build=False)
+                elif leaf.startswith("MmcOperationPending"):
+                    include(("mmc-transactions",), (), build=False)
+                elif leaf.startswith("MmcInstanceClone"):
                     include(("mmc-clone",), (), build=False)
                 elif leaf == "MmcPackageFileStager.cs":
                     include(("mmc-archive", "mmc-backend"), (), build=False)

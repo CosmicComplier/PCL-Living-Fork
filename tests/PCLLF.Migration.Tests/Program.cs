@@ -52,7 +52,7 @@ internal static class Program {
                 .Concat(MmcResolutionTests.Cases()).Concat(MmcCompilationTests.Cases())
                 .Concat(MmcManagementTests.Cases()).Concat(MmcInstancePathsTests.Cases())),
             ("mmc-metadata", MmcMetadataTests.Cases),
-            ("mmc-transactions", () => MmcTransactionTests.Cases().Concat(MmcSessionTests.Cases())),
+            ("mmc-transactions", () => MmcTransactionTests.Cases().Concat(MmcSessionTests.Cases()).Concat(MmcOperationPendingGuardTests.Cases())),
             ("mmc-artifacts", MmcArtifactTests.Cases),
             ("mmc-configuration", MmcConfigurationTests.Cases),
             ("mmc-archive", () => MmcArchiveInspectionTests.Cases().Concat(MmcPackagePreservationTests.Cases()).Concat(MmcArchiveTests.Cases())),
@@ -60,7 +60,8 @@ internal static class Program {
             ("mmc-java", MmcJavaPinTests.Cases),
             ("mmc-backend", MmcInstanceBackendTests.Cases),
             ("mmc-variants", MmcInstanceBackendTests.VariantCases),
-            ("mmc-clone", MmcInstanceCloneTests.Cases)
+            ("mmc-clone", MmcInstanceCloneTests.Cases),
+            ("mmc-lifecycle", MmcInstanceLifecycleTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

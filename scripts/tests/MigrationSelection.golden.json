@@ -151,7 +151,8 @@
         "mmc-java",
         "mmc-backend",
         "mmc-variants",
-        "mmc-clone"
+        "mmc-clone",
+        "mmc-lifecycle"
       ],
       "windows_scripts": [],
       "world_checks": false,
@@ -289,6 +290,11 @@
       "groups": ["mmc-clone"], "windows_scripts": [],
       "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
     },
+    "mmc-lifecycle-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-lifecycle"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
     "mmc-package-stage-tests": {
       "full": false, "product_build": false, "migration_run": true,
       "groups": ["mmc-archive", "mmc-backend"], "windows_scripts": [],
@@ -340,7 +346,8 @@
         "mmc-java",
         "mmc-backend",
         "mmc-variants",
-        "mmc-clone"
+        "mmc-clone",
+        "mmc-lifecycle"
       ],
       "windows_scripts": [
         "Test-Release",
