@@ -285,3 +285,14 @@ Root Main 编译 78 个既有警告／0 错误；使用该真实 DLL 的 Native 
 删除原 ZIP 后离线补全，再 `RepairIncomplete=false` 准备成功；入口类／JVM、世界、个人配置和未知偏好保留。
 实际调度早取消、迟到 Start、提交前配置身份变更、pending／未知会话以及 Unresolved 旧对象重载约束均已验证。
 独立 high 静态复核已关闭配置身份 TOCTOU，未发现新增可证 P1/P2。这些测试没有执行 Minecraft。
+
+## 2026-11-09 旧实例副本接线
+
+主动选择原 MMC ZIP 的副本入口、严格核实与显式新来源重绑定、私有备份及恢复目录已接入 Main。
+普通版本不自动获得新 ID；源实例、世界、个人删除状态及偏好保留。后端四项自有文件测试通过；
+根 Main 构建 78 个既有警告／0 错误，Native 构建 0／0，`mmc-legacy-adoption-ui` 真正走过
+按钮、预览、Java 选择、Loader 与完整副本发布，并验证旧源删除／列表空时恢复入口仍可用。
+这不是转换后 Minecraft 的实机结论。
+
+相邻删除 UI 组在最后的异身份确认竞争用例超过 60 秒；该用例单列为 `mmc-delete-confirmation` 后，
+它与原 `mmc-delete-ui` 分别在原 60 秒子进程内通过，全部断言保留。未延长超时或放松失败现场清理。

@@ -17,6 +17,13 @@ namespace PCLLF.Native.Facade.Tests;
 internal static class MmcDeleteUiChecks {
     internal static void Run(FixtureEnvironment environment) => RunChecks(environment, false);
     internal static void RunAdmission(FixtureEnvironment environment) => RunChecks(environment, true);
+    internal static void RunConfirmation(FixtureEnvironment environment) {
+        using FileTaskScope files = new(environment);
+        using var scope = new Scope(files);
+        scope.StaleConfirmation();
+        InstanceConfigProviders.FlushAndDisposeWithin(files.Root); environment.AssertNoForbiddenIo();
+        Console.WriteLine("PASS mmc-delete-confirmation: a different identity installed during the real confirmation remains preserved; no stale deletion is published.");
+    }
     internal static void RunRestoreFinalization(FixtureEnvironment environment) {
         using FileTaskScope files = new(environment);
         using var scope = new Scope(files);
@@ -29,7 +36,7 @@ internal static class MmcDeleteUiChecks {
         using var scope = new Scope(files);
         void Check(string name, Action action) { action(); Console.WriteLine("PASS MMC delete UI " + name); }
         if (admission) { Check("session/pending refusals", scope.BlockedSessionsAndPending); Check("recovery/catalog authority", scope.IncompleteRecovery); }
-        else { Check("bindings", scope.Bindings); Check("selection/empty-list/restore", scope.SelectionDeleteAndEmptyRecovery); Check("overall/navigation", scope.OverallAndNavigation); Check("cancellation", scope.Cancellation); Check("stale confirmation", scope.StaleConfirmation); }
+        else { Check("bindings", scope.Bindings); Check("selection/empty-list/restore", scope.SelectionDeleteAndEmptyRecovery); Check("overall/navigation", scope.OverallAndNavigation); Check("cancellation", scope.Cancellation); }
         InstanceConfigProviders.FlushAndDisposeWithin(files.Root); environment.AssertNoForbiddenIo();
         Console.WriteLine(admission ? "PASS mmc-delete-admission: active/unknown/pending refusal, exact catalog conflicts and real decided recovery/restore." : "PASS mmc-delete-ui: both real Main deletion bindings, Shift capability, empty-list recovery, preview identity and before/after-decision cancel; no game or user data.");
     }

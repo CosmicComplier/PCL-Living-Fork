@@ -49,6 +49,7 @@ internal static class Program
         ["mmc-rename-admission"] = MmcRenameAdmissionChecks.Run,
         ["mmc-delete-ui"] = MmcDeleteUiChecks.Run,
         ["mmc-delete-admission"] = MmcDeleteUiChecks.RunAdmission,
+        ["mmc-delete-confirmation"] = MmcDeleteUiChecks.RunConfirmation,
         ["mmc-restore-finalization"] = MmcDeleteUiChecks.RunRestoreFinalization,
         ["mmc-export-ui"] = MmcExportUiChecks.Run,
         ["mmc-history-ui"] = MmcHistoryUiChecks.Run,
