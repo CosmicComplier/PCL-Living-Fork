@@ -51,6 +51,8 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
     private Action? afterStopped;
     private Func<string, string>? logRedactor;
     private int? windowTypeOverride;
+    private Action? monitoringFinished;
+    private bool requireVerifiedExit, deferredCancellation;
     private string? environmentPoint;
     private bool reachedRunning, isWindowAppeared, isWindowFinished;
     private IntPtr windowHandle;
@@ -61,11 +63,19 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
     private bool Is(TState value, TState expected) => group.Is(value, expected);
     public TState State {
         get => state;
-        set { if (Is(state, value)) return; state = value; if (Is(value, host.Running)) reachedRunning = true; group.StateChanged(); }
+        set {
+            if (requireVerifiedExit && (Is(value, host.Ended) || Is(value, host.Canceled)) && owner.CoreGameProcess is Process current && !current.HasExited) {
+                if (Is(value, host.Canceled)) deferredCancellation = true;
+                return;
+            }
+            if (Is(state, value)) return; state = value; if (Is(value, host.Running)) reachedRunning = true; group.StateChanged();
+        }
     }
-    public void Initialize(TLoader Loader, TInstance Instance, string? WindowTitle, Action<Process>? BeforeMonitoring = null, Action? OnStopped = null, string? EnvironmentPoint = null, Func<string, string>? LogRedactor = null, int? WindowTypeOverride = null) {
+    public void Initialize(TLoader Loader, TInstance Instance, string? WindowTitle, Action<Process>? BeforeMonitoring = null, Action? OnStopped = null, string? EnvironmentPoint = null, Func<string, string>? LogRedactor = null, int? WindowTypeOverride = null, Action? OnMonitoringFinished = null, bool RequireVerifiedExit = false) {
         logRedactor = LogRedactor;
         windowTypeOverride = WindowTypeOverride;
+        monitoringFinished = OnMonitoringFinished;
+        requireVerifiedExit = RequireVerifiedExit;
         owner.CoreLoader = Loader; owner.CoreInstance = Instance; windowTitle = WindowTitle; pid = host.LoaderInput(Loader).Id;
         afterStopped = OnStopped; environmentPoint = EnvironmentPoint;
         WatcherLog("开始 Minecraft 日志监控");
@@ -88,7 +98,8 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
         }
         host.RunInNewThread(() => {
             try {
-                while (!Is(State, host.Ended) && !Is(State, host.Canceled) &&
+                while (requireVerifiedExit ? !owner.CoreGameProcess.HasExited || Volatile.Read(ref stopCallbackCompleted) == 0 :
+                    !Is(State, host.Ended) && !Is(State, host.Canceled) &&
                     (!host.LoaderCanceled(owner.CoreLoader) || Is(State, host.Crashed)) &&
                     (!Is(State, host.Crashed) || !owner.CoreGameProcess.HasExited)) {
                     TimerWindow(); TimerLog();
@@ -102,7 +113,16 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
                 }
                 if (Is(State, host.Crashed)) group.StateChanged();
                 WatcherLog("Minecraft 日志监控已退出");
-            } catch (Exception error) { Logger.Error(error, "Minecraft 日志监控主循环出错"); State = host.Ended; }
+            } catch (Exception error) {
+                Logger.Error(error, "Minecraft 日志监控主循环出错");
+                if (requireVerifiedExit) {
+                    State = host.Crashed;
+                    try { owner.CoreGameProcess.WaitForExit(); CompleteStopCallbacks(); }
+                    catch (Exception exitError) { Logger.Warn(exitError, "MMC 日志监控退出仍待进程确认"); }
+                } else State = host.Ended;
+            } finally {
+                if (!requireVerifiedExit || Volatile.Read(ref stopCallbackCompleted) != 0) monitoringFinished?.Invoke();
+            }
         }, "Minecraft Watcher PID " + pid);
     }
     private void LogReceived(object sender, DataReceivedEventArgs e) {
@@ -110,27 +130,31 @@ public sealed class LegacyWatcher<TWatcher, TInstance, TLoader, TState>
         if (text is not null && logRedactor is not null) text = logRedactor(text);
         lock (waitingLogLock) owner.CoreWaitingLog.Add(text!);
     }
-    private bool IsNormalExit() => reachedRunning && owner.CoreGameProcess.ExitCode == 0 && !Is(State, host.Crashed) && !Is(State, host.Canceled);
+    private bool IsNormalExit() => reachedRunning && !deferredCancellation && owner.CoreGameProcess.ExitCode == 0 && !Is(State, host.Crashed) && !Is(State, host.Canceled);
+    private void CompleteStopCallbacks() {
+        if (!owner.CoreGameProcess.HasExited) return;
+        if (Interlocked.Exchange(ref stopCallbackCompleted, 1) != 0) return;
+        try { host.ProcessStopped(owner.CoreInstance, owner.CoreGameProcess, IsNormalExit()); }
+        catch (Exception error) { Logger.Warn(error, "游戏退出后的存档自动备份失败"); }
+        try { host.MarkHealthy(host.InstancePath(owner.CoreInstance), environmentPoint, IsNormalExit()); }
+        catch (Exception error) { Logger.Warn(error, "标记正常运行的环境还原点失败"); }
+        try { afterStopped?.Invoke(); }
+        catch (Exception error) { Logger.Warn(error, "处理游戏退出后的本机资料失败"); }
+    }
     private void TimerLog() {
         try {
             List<string> copied = new();
             lock (waitingLogLock) {
-                if (!owner.CoreWaitingLog.Any()) return;
+                if (!owner.CoreWaitingLog.Any() && (!requireVerifiedExit || !owner.CoreGameProcess.HasExited)) return;
                 copied = owner.CoreWaitingLog; owner.CoreWaitingLog = new List<string>(1000);
             }
             foreach (string text in copied) GameLog(text);
             if (Is(State, host.Loading)) ProgressUpdate();
             if (owner.CoreGameProcess.HasExited) {
-                if (Interlocked.Exchange(ref stopCallbackCompleted, 1) == 0) {
-                    try { host.ProcessStopped(owner.CoreInstance, owner.CoreGameProcess, IsNormalExit()); }
-                    catch (Exception error) { Logger.Warn(error, "游戏退出后的存档自动备份失败"); }
-                    try { host.MarkHealthy(host.InstancePath(owner.CoreInstance), environmentPoint, IsNormalExit()); }
-                    catch (Exception error) { Logger.Warn(error, "标记正常运行的环境还原点失败"); }
-                    try { afterStopped?.Invoke(); }
-                    catch (Exception error) { Logger.Warn(error, "处理游戏退出后的本机资料失败"); }
-                }
+                CompleteStopCallbacks();
                 WatcherLog("Minecraft 已退出，返回值：" + owner.CoreGameProcess.ExitCode);
-                if (Is(State, host.Loading)) { WatcherLog("Minecraft 尚未加载完成，可能已崩溃", LogLevel.Error); Crashed(); }
+                if (deferredCancellation) State = host.Canceled;
+                else if (Is(State, host.Loading)) { WatcherLog("Minecraft 尚未加载完成，可能已崩溃", LogLevel.Error); Crashed(); }
                 else if (owner.CoreGameProcess.ExitCode != 0 && Is(State, host.Running) && host.ReleaseTime(owner.CoreInstance).Year >= 2012) { WatcherLog("Minecraft 返回值异常，可能已崩溃", LogLevel.Error); Crashed(); }
                 else if (!Is(State, host.Crashed)) State = host.Ended;
             }

@@ -23,6 +23,7 @@ public static class MmcLaunch {
     // Observes a genuinely registered child; tests may request cancellation here,
     // but cannot replace process creation, the session receipt, or Java pinning.
     internal static Action<Guid, Process> ProcessCreated { get; set; }
+    internal static Func<MmcJavaPinStore> JavaPins { get; set; } = () => ModJava.MmcPins;
     public static bool KeepAliveWhileSessionsFinish() {
         if (Active.IsEmpty) return false;
         Interlocked.Exchange(ref closeAfterSessions, 1);
@@ -50,7 +51,9 @@ public static class MmcLaunch {
         private MmcInstanceLaunchSupport[] support;
         private ModWatcher.Watcher watcher;
         private MmcRunningSession session;
+        private MmcJavaPinStore pins;
         private int canceled;
+        private readonly TaskCompletionSource monitoringFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void Prepare(LegacyLaunchTask<int, int> task) => PrepareAsync(task.CreateCancellationToken(), task.CreateSyncProgressProvider()).GetAwaiter().GetResult();
         private async Task PrepareAsync(CancellationToken token, ProgressProvider progress) {
@@ -62,9 +65,10 @@ public static class MmcLaunch {
             }
             if (options.SaveBatch is not null) throw new InvalidOperationException("MMC 启动参数包含会话绑定信息，当前不能导出普通启动脚本。");
             var paths = MmcInstancePaths.Resolve(instance.PathVersion);
+            pins = JavaPins() ?? throw new IOException("MMC Java 保护服务不可用。");
             var primary = MmcSavedSourceStore.ReadPrimary(paths);
             paths = MmcInstancePaths.Resolve(instance.PathVersion, primary.Definition.Layout.GameRootLeaf);
-            ReconcilePrevious(paths, primary.Definition.InstanceId, token);
+            ReconcilePrevious(paths, primary.Definition.InstanceId, pins, token);
             saved = await MmcSavedSourceStore.LoadAsync(paths, primary.Definition, token).ConfigureAwait(false);
             preferences = MmcLaunchPreferences.Capture(instance, saved.PackageConfiguration, sessionId);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
@@ -80,7 +84,7 @@ public static class MmcLaunch {
                 primary.Definition.Generation), token).ConfigureAwait(false);
             if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(token);
             prepared = result.Snapshot ?? throw new IOException("MMC 环境准备未完成：" + result.Failure);
-            if (result.Repaired) instance.Load();
+            instance.Load();
             support = preferences.RuntimeSettings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper
                 ? (await MmcInstanceBackend<ModNet.NetFile>.PrepareLaunchSupportAsync(prepared,
                     new[] { new MmcInstanceLaunchSupportInput("JavaWrapper.jar", WrapperBytes(), WrapperSha256),
@@ -138,6 +142,9 @@ public static class MmcLaunch {
                     }, classes.CoreObservations);
                 if (authority.Diagnostics.Any(value => value.Severity == MmcDiagnosticSeverity.Error))
                     throw new IOException("MMC 启动链校验失败：" + string.Join("；", authority.Diagnostics.Select(value => value.Message)));
+                var retainedJava = ModJava.GetManagedJavaRequirement(instance, authority, login.Type == "Nide");
+                if (!retainedJava.Range.Contains(java.Java.Version))
+                    throw new IOException("选定的 Java 不满足尚未被完整启动链证明替代的约束：" + retainedJava.Range);
                 if (authority.HasAuthority) ModLaunch.McLaunchLog("MMC 自定义启动链已核对：" + string.Join("、", authority.Proof.Targets.Select(value => value.ComponentUid).Distinct()));
                 token.ThrowIfCancellationRequested();
                 session = MmcSessions.Launch(admission, new(prepared.Definition.InstanceId, prepared.Definition.Generation, runtime.RuntimeInputFingerprint,
@@ -148,7 +155,7 @@ public static class MmcLaunch {
                         MmcInstanceBackend<ModNet.NetFile>.ValidatePreparedLaunch(admission, prepared);
                         MmcLaunchPreferences.Revalidate(instance, preferences);
                         MmcRuntimeLaunchBuilder.RevalidateFilesAsync(runtime, token).GetAwaiter().GetResult();
-                    }, (id, identity) => ModJava.MmcPins.Acquire(id, identity, prepared.Definition.InstanceId, prepared.Paths.InstanceRoot, token));
+                    }, (id, identity) => pins.Acquire(id, identity, prepared.Definition.InstanceId, prepared.Paths.InstanceRoot, token));
             } catch {
                 // A durable Launching intent may already represent a live process. Abandon only
                 // when the session service confirms no active or uncertain record exists.
@@ -161,7 +168,7 @@ public static class MmcLaunch {
                 throw;
             }
             Active.TryAdd(sessionId, session);
-            _ = MonitorExitAsync(session, prepared.Paths.InstanceRoot, prepared.Definition.InstanceId);
+            _ = MonitorExitAsync(session, prepared.Paths.InstanceRoot, prepared.Definition.InstanceId, monitoringFinished.Task);
             ModLaunch.McLaunchProcess = session.Process;
             try {
                 ProcessCreated?.Invoke(sessionId, session.Process);
@@ -173,13 +180,15 @@ public static class MmcLaunch {
                 }, () => {
                     TryOptional(() => PersonalGameSettings.Finish((PersonalOptionsSession)options.PersonalOptions), "保存 MMC 个人游戏设置失败");
                     TryOptional(() => QuickPlayWorlds.Finish((QuickPlaySession)options.QuickPlay), "保存 MMC 最近存档记录失败");
-                }, LogRedactor: runtime.Redact, WindowTypeOverride: preferences.MaximizeWindow ? 4 : 0);
+                }, LogRedactor: runtime.Redact, WindowTypeOverride: preferences.MaximizeWindow ? 4 : 0,
+                    OnMonitoringFinished: () => monitoringFinished.TrySetResult(), RequireVerifiedExit: true);
                 ModLaunch.McLaunchWatcher = watcher;
                 if ((task.IsCanceled || Volatile.Read(ref canceled) != 0) && !session.Process.HasExited) session.Process.Kill(entireProcessTree: true);
                 task.Output = session.Process;
                 ModLaunch.McLaunchLog("已启动 MMC 受管理游戏会话：" + sessionId.ToString("N"));
             } catch {
                 if (!session.Process.HasExited) session.Process.Kill(entireProcessTree: true);
+                monitoringFinished.TrySetResult();
                 throw;
             }
         }
@@ -214,7 +223,7 @@ public static class MmcLaunch {
         if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != WrapperSha256) throw new IOException("MMC JavaWrapper 资源摘要不符。");
         return bytes;
     }
-    private static void ReconcilePrevious(MmcInstancePaths paths, Guid instanceId, CancellationToken token) {
+    private static void ReconcilePrevious(MmcInstancePaths paths, Guid instanceId, MmcJavaPinStore pins, CancellationToken token) {
         using var admission = MmcAdmissionGate.Acquire(paths.InstanceRoot, instanceId, TimeSpan.Zero, token);
         MmcFileTransactions.AssertNoPending(admission);
         string directory = paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessions");
@@ -223,17 +232,18 @@ public static class MmcLaunch {
         if (entries.Length > 1024) throw new IOException("MMC 会话记录超过恢复预算。");
         foreach (string entry in entries) {
             if (!Guid.TryParseExact(Path.GetFileName(entry), "N", out Guid id)) throw new IOException("MMC 存在无法识别的会话记录，需要恢复确认。");
-            var result = MmcSessions.Reconcile(admission, id, new MmcSessionProcessInspector(), ModJava.MmcPins.ReleaseVerified);
+            var result = MmcSessions.Reconcile(admission, id, new MmcSessionProcessInspector(), pins.ReleaseVerified);
             if (result.Observation != MmcSessionObservation.ProvenExited)
                 throw new IOException("此 MMC 实例仍在运行或会话尚待确认：" + result.Diagnostic);
         }
     }
-    private static async Task MonitorExitAsync(MmcRunningSession session, string root, Guid instanceId) {
+    private static async Task MonitorExitAsync(MmcRunningSession session, string root, Guid instanceId, Task monitoringFinished) {
         bool reported = false;
         while (true) {
             try {
                 await session.Process.WaitForExitAsync().ConfigureAwait(false);
                 using (var admission = MmcAdmissionGate.Acquire(root, instanceId, TimeSpan.FromSeconds(10))) session.CompleteVerifiedExit(admission);
+                await monitoringFinished.ConfigureAwait(false);
                 Active.TryRemove(session.Receipt.SessionId, out _);
                 if (Active.IsEmpty && Interlocked.Exchange(ref closeAfterSessions, 0) != 0)
                     ModBase.RunInUi(() => ModMain.FrmMain?.EndProgram(false));
