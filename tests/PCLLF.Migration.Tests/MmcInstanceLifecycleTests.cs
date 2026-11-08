@@ -17,6 +17,29 @@ internal static class MmcInstanceLifecycleTests {
         yield return ("MMC exclusive primary file locks preserve the source and allow safe relocation retry", LockedDirectory);
         yield return ("MMC killed lifecycle producers recover exact predecision rollback and postdecision forward publication", KilledProducer);
         yield return ("MMC terminal recovery rejects another valid instance primary without attributing or changing it", TerminalReplacement);
+        yield return ("MMC lists hide only exactly completed owned quarantines while unknown or damaged names stay visible", QuarantineVisibility);
+    }
+    private static void QuarantineVisibility() {
+        using Fixture fixture = new(); var imported = fixture.Import();
+        string versions = Path.GetDirectoryName(fixture.Source)!;
+        string foreign = Path.Combine(versions, ".pcllf-mmc-quarantine-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(foreign); File.WriteAllText(Path.Combine(foreign, "keep.txt"), "unknown user data");
+        Equal(false, MmcInstanceLifecycleVisibility.IsCompletedQuarantine(foreign));
+        var service = new MmcInstanceLifecycleBackend();
+        var deleted = service.DeleteAsync(new(fixture.Source, imported.Definition!.InstanceId, 1,
+            MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256)).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.Succeeded, deleted.Status);
+        string root = deleted.CurrentRoot!;
+        Equal(true, MmcInstanceLifecycleVisibility.IsCompletedQuarantine(root));
+        string marker = Path.Combine(root, "PCL", "MmcLifecyclePending.json"); byte[] original = File.ReadAllBytes(marker);
+        File.WriteAllText(marker, "{}"); Equal(false, MmcInstanceLifecycleVisibility.IsCompletedQuarantine(root)); File.WriteAllBytes(marker, original);
+        string pending = Path.Combine(root, "PCL", "MmcImportPending.json"); File.WriteAllText(pending, "{}");
+        Equal(false, MmcInstanceLifecycleVisibility.IsCompletedQuarantine(root)); File.Delete(pending);
+        string primary = Path.Combine(root, "PCL", "InstanceDefinition.json"); byte[] primaryBytes = File.ReadAllBytes(primary);
+        File.AppendAllText(primary, " "); Equal(false, MmcInstanceLifecycleVisibility.IsCompletedQuarantine(root)); File.WriteAllBytes(primary, primaryBytes);
+        var restored = service.RestoreDeletedAsync(deleted.OperationDirectory!).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.Succeeded, restored.Status); Equal(false, MmcInstanceLifecycleVisibility.IsCompletedQuarantine(fixture.Source));
+        Equal("unknown user data", File.ReadAllText(Path.Combine(foreign, "keep.txt")));
     }
     internal static bool TryRunChild(string[] args,out int exitCode){
         exitCode=0;if(args.Length==0||args[0]!="--mmc-lifecycle-child")return false;
