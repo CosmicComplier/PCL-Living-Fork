@@ -63,6 +63,7 @@ internal sealed class MmcArtifactWorkspace : IDisposable {
 }
 
 internal sealed class MmcArtifactIo {
+    private static readonly uint[] CrcTable = BuildCrcTable();
     private readonly MmcArtifactLimits limits;
     private readonly IProgress<MmcArtifactProgress>? progress;
     private long copied;
@@ -143,5 +144,35 @@ internal sealed class MmcArtifactIo {
             (expectedSize is not null && expectedSize != size))
             throw new IOException("Artifact content does not match the locked/declared digest or size: " + key);
         return (digest, size);
+    }
+
+    internal async Task<(string Sha256, long Size)> ExtractAsync(Stream input, string target, string key,
+        long expectedSize, uint expectedCrc32, long maximum, CancellationToken token) {
+        MmcInstancePaths.EnsureNoLinks(target); Directory(Path.GetDirectoryName(target)!);
+        await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, true);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = new byte[131072]; long size = 0; uint crc = uint.MaxValue;
+        int read;
+        while ((read = await input.ReadAsync(buffer, token).ConfigureAwait(false)) != 0) {
+            size = checked(size + read); copied = checked(copied + read);
+            if (size > maximum || size > expectedSize || copied > limits.MaxCopiedBytes) throw new IOException("Native actual output budget or declared size exceeded.");
+            hash.AppendData(buffer, 0, read);
+            for (int index = 0; index < read; index++) crc = CrcTable[(crc ^ buffer[index]) & 255] ^ (crc >> 8);
+            await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+            progress?.Report(new("native-extract", key, copied));
+        }
+        if (size != expectedSize || ~crc != expectedCrc32) throw new IOException("Native actual output differs from its declared size or CRC32.");
+        await output.FlushAsync(token).ConfigureAwait(false); output.Flush(true);
+        return (Convert.ToHexStringLower(hash.GetHashAndReset()), size);
+    }
+
+    private static uint[] BuildCrcTable() {
+        var table = new uint[256];
+        for (uint index = 0; index < 256; index++) {
+            uint value = index;
+            for (int bit = 0; bit < 8; bit++) value = (value & 1) != 0 ? 0xedb88320U ^ (value >> 1) : value >> 1;
+            table[index] = value;
+        }
+        return table;
     }
 }

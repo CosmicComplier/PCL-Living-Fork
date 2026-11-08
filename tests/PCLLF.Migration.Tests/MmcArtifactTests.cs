@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using PCLCS;
@@ -16,6 +17,10 @@ internal static class MmcArtifactTests {
         yield return ("MMC artifact source boundaries and runtime target collisions fail closed", () => Run(BoundariesAndCollisions));
         yield return ("MMC artifact view keys depend on content not absolute target paths", () => Run(ViewIdentity));
         yield return ("MMC artifact damaged originals require a staged repair transaction", () => Run(OriginalRepair));
+        yield return ("MMC native jars extract into owned staged views with excludes and digests", () => Run(NativeExtraction));
+        yield return ("MMC native jars reject traversal duplicate targets and links", () => Run(NativeUnsafe));
+        yield return ("MMC native jars enforce entry declared and actual output budgets", () => Run(NativeBudgets));
+        yield return ("MMC native collisions across jars reject different contents", () => Run(NativeCollisions));
     }
 
     private static void Run(Func<Task> action) => action().GetAwaiter().GetResult();
@@ -154,6 +159,85 @@ internal static class MmcArtifactTests {
         var mutation = repaired.StagedMutations.Single(m => m.TargetRelativePath == locks[0].RecoveryObjectRelativePath);
         Equal(Hash(bytes), Hash(File.ReadAllBytes(mutation.StagedPath)));
         Equal(Hash([9, 9, 9]), mutation.ExpectedExistingSha256);
+    }
+
+    private static async Task NativeExtraction() {
+        using var fixture = new Fixture();
+        byte[] jar = Jar(("META-INF/notice", [9]), ("x64/example.dll", [1, 2, 3]));
+        var a = Artifact("native", "example/native.jar", jar) with { Role = MmcArtifactRole.Native, NativeClassifier = "windows-64", ExtractExcludes = ["META-INF/"] };
+        fixture.Source(a.Key, jar);
+        using var prepared = await new MmcArtifactMaterializer().PrepareAsync(fixture.Request([a]), fixture.Access());
+        Equal(true, prepared.NativeExtractionComplete); Equal(1, prepared.NativeFiles.Length);
+        var native = prepared.NativeFiles.Single();
+        Equal("x64/example.dll", native.RelativePath); Equal(Hash([1, 2, 3]), native.Sha256);
+        Equal(false, File.Exists(native.TargetPath));
+        var mutation = prepared.StagedMutations.Single(x => x.TargetRelativePath.EndsWith("/natives/x64/example.dll", StringComparison.Ordinal));
+        Equal(Hash([1, 2, 3]), Hash(File.ReadAllBytes(mutation.StagedPath)));
+        Equal(true, prepared.NativeDirectory!.StartsWith(fixture.Paths.RuntimeRoot, StringComparison.Ordinal));
+    }
+
+    private static async Task NativeUnsafe() {
+        foreach (var entries in new[] {
+            new[] { ("../escape.dll", new byte[] { 1 }) },
+            new[] { ("META-INF/../../escape.dll", new byte[] { 1 }) },
+            new[] { ("a.dll", new byte[] { 1 }), ("A.dll", new byte[] { 1 }) },
+            new[] { ("folder", new byte[] { 1 }), ("folder/a.dll", new byte[] { 2 }) }
+        }) {
+            using var fixture = new Fixture(); byte[] jar = Jar(entries);
+            var a = Artifact("unsafe-native", "native.jar", jar) with { Role = MmcArtifactRole.Native, ExtractExcludes = ["META-INF/"] };
+            fixture.Source(a.Key, jar);
+            await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(fixture.Request([a]), fixture.Access()));
+            Equal(0, fixture.ActiveStages());
+        }
+        using var linkFixture = new Fixture();
+        byte[] linked;
+        using (var bytes = new MemoryStream()) {
+            using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, true)) {
+                var entry = zip.CreateEntry("link.dll"); entry.ExternalAttributes = unchecked((int)(0xa1ffU << 16));
+                using var content = entry.Open(); content.Write([1]);
+            }
+            linked = bytes.ToArray();
+        }
+        var linkArtifact = Artifact("link-native", "native.jar", linked) with { Role = MmcArtifactRole.Native };
+        linkFixture.Source(linkArtifact.Key, linked);
+        await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(linkFixture.Request([linkArtifact]), linkFixture.Access()));
+    }
+
+    private static async Task NativeBudgets() {
+        using var fixture = new Fixture(); byte[] jar = Jar(("one.dll", [1, 2]), ("two.dll", [3, 4]));
+        var a = Artifact("bounded-native", "native.jar", jar) with { Role = MmcArtifactRole.Native };
+        fixture.Source(a.Key, jar);
+        await Throws<IOException>(() => new MmcArtifactMaterializer(new(MaxNativeEntries: 1)).PrepareAsync(fixture.Request([a]), fixture.Access()));
+        await Throws<IOException>(() => new MmcArtifactMaterializer(new(MaxNativeBytes: 3)).PrepareAsync(fixture.Request([a]), fixture.Access()));
+        byte[] malformed = Jar(("bomb.dll", new byte[1024]));
+        int central = FindSignature(malformed, [0x50, 0x4b, 0x01, 0x02]);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(malformed.AsSpan(central + 24, 4), 1);
+        var bomb = Artifact("actual-output-native", "bomb.jar", malformed) with { Role = MmcArtifactRole.Native };
+        fixture.Source(bomb.Key, malformed);
+        await Throws<IOException>(() => new MmcArtifactMaterializer(new(MaxNativeBytes: 16)).PrepareAsync(fixture.Request([bomb]), fixture.Access()));
+        Equal(0, fixture.ActiveStages());
+    }
+
+    private static async Task NativeCollisions() {
+        using var fixture = new Fixture();
+        byte[] left = Jar(("same.dll", [1])), right = Jar(("same.dll", [2]));
+        var a = Artifact("native-a", "a.jar", left) with { Role = MmcArtifactRole.Native };
+        var b = Artifact("native-b", "b.jar", right) with { Role = MmcArtifactRole.Native };
+        fixture.Source(a.Key, left); fixture.Source(b.Key, right);
+        await Throws<IOException>(() => new MmcArtifactMaterializer().PrepareAsync(fixture.Request([a, b]), fixture.Access()));
+        Equal(0, fixture.ActiveStages());
+    }
+
+    private static byte[] Jar(params (string Name, byte[] Content)[] entries) {
+        using var bytes = new MemoryStream();
+        using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, true)) {
+            foreach (var item in entries) { var entry = zip.CreateEntry(item.Name); using var content = entry.Open(); content.Write(item.Content); }
+        }
+        return bytes.ToArray();
+    }
+    private static int FindSignature(byte[] bytes, byte[] signature) {
+        for (int index = 0; index <= bytes.Length - signature.Length; index++) if (bytes.AsSpan(index, signature.Length).SequenceEqual(signature)) return index;
+        throw new Exception("Fixture ZIP signature missing.");
     }
 
     private static MmcArtifactReference Artifact(string key, string relative, byte[] bytes, MmcArtifactScope scope = MmcArtifactScope.Shared) =>

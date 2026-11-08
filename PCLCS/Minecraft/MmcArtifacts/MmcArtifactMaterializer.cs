@@ -80,9 +80,11 @@ public sealed partial class MmcArtifactMaterializer {
                     input.Lock.SizeBytes, artifact.Key, paths, workspace, io, mutations, cancellationToken).ConfigureAwait(false);
                 bindings.Add(new(artifact, input.Lock.AdoptedSha256, input.Lock.SizeBytes, relative, target, verified));
             }
+            var nativeFiles = await ExtractNativesAsync(artifacts.Where(x => x.Role == MmcArtifactRole.Native).Select(x => inputs[x.Key]),
+                viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
             return new(workspace, viewKey, bindings.ToImmutable(), inputs.Values.Select(x => x.Lock).ToImmutableArray(),
-                mutations.Values.ToImmutableArray(), !artifacts.Any(x => x.Role == MmcArtifactRole.Native),
-                !artifacts.Any(x => x.Role == MmcArtifactRole.AssetIndex));
+                mutations.Values.ToImmutableArray(), true, !artifacts.Any(x => x.Role == MmcArtifactRole.AssetIndex),
+                nativeFiles.IsEmpty ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/natives"), nativeFiles: nativeFiles);
         } catch (Exception failure) {
             try { workspace.Dispose(); }
             catch (Exception cleanup) { throw new AggregateException("Artifact preparation failed; owned workspace cleanup also failed.", failure, cleanup); }
@@ -206,9 +208,9 @@ public sealed partial class MmcArtifactMaterializer {
     }
     private static string ReferenceFingerprint(MmcArtifactReference value) => JsonSerializer.Serialize(value);
     private static string ViewKey(string context, IEnumerable<PreparedInput> inputs) {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { Format = "PCLLF.MmcRuntimeView/v1", Context = context,
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { Format = "PCLLF.MmcRuntimeView/v2", NativeExtraction = "bounded-native-v1", Context = context,
             Inputs = inputs.Select(x => new { x.Artifact.Key, x.Artifact.SourceRevision, x.Artifact.Role, x.Artifact.Scope,
-                x.Artifact.RelativePath, x.Artifact.NativeClassifier, x.Lock.AdoptedSha256, x.Lock.SizeBytes }).ToArray() });
+                x.Artifact.RelativePath, x.Artifact.NativeClassifier, x.Artifact.ExtractExcludes, x.Lock.AdoptedSha256, x.Lock.SizeBytes }).ToArray() });
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
     private static void ValidateReference(MmcArtifactReference artifact) {

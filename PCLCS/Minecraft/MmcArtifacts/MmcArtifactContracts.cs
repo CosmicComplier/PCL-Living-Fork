@@ -28,6 +28,7 @@ public sealed record MmcArtifactRequest(MmcInstancePaths Paths, string LogicalCo
 
 public sealed record MmcArtifactBinding(MmcArtifactReference Artifact, string Sha256, long SizeBytes,
     string TargetRelativePath, string TargetPath, string VerifiedInputPath);
+public sealed record MmcNativeFileBinding(string SourceArtifactKey, string RelativePath, string TargetPath, string Sha256, long SizeBytes);
 
 /// <summary>Publication is exclusively the instance transaction executor's responsibility.</summary>
 public sealed record MmcArtifactStagedMutation(string StagedPath, string NewSourceRelativePath, string TargetRelativePath,
@@ -54,14 +55,16 @@ public sealed class MmcPreparedArtifacts : IDisposable {
     public bool AssetsMaterialized { get; }
     public string? NativeDirectory { get; }
     public string? AssetsRoot { get; }
+    public ImmutableArray<MmcNativeFileBinding> NativeFiles { get; }
 
     internal MmcPreparedArtifacts(MmcArtifactWorkspace workspace, string viewKey,
         ImmutableArray<MmcArtifactBinding> bindings, ImmutableArray<MmcArtifactLock> locks,
         ImmutableArray<MmcArtifactStagedMutation> mutations, bool nativeComplete, bool assetsMaterialized,
-        string? nativeDirectory = null, string? assetsRoot = null) {
+        string? nativeDirectory = null, string? assetsRoot = null, ImmutableArray<MmcNativeFileBinding> nativeFiles = default) {
         this.workspace = workspace; ViewKey = viewKey; OrderedBindings = bindings; AdoptedLocks = locks;
         StagedMutations = mutations; NativeExtractionComplete = nativeComplete; AssetsMaterialized = assetsMaterialized;
         NativeDirectory = nativeDirectory; AssetsRoot = assetsRoot;
+        NativeFiles = nativeFiles.IsDefault ? [] : nativeFiles;
     }
     public void Dispose() => workspace.Dispose();
 }
