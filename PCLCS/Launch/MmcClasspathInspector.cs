@@ -48,9 +48,11 @@ public static class MmcClasspathInspector {
     internal static async Task VerifySupportDoesNotShadowAsync(MmcRuntimeLaunchRequest request, ImmutableArray<string> required, CancellationToken token) {
         ValidateNames(required);
         foreach (var item in new[] { ("support:wrapper", request.Wrapper!), ("support:bridge", request.Bridge!) }) {
-            var observed = await ReadJarAsync(item.Item1, item.Item2.ActualPath, item.Item2.Sha256, item.Item2.SizeBytes, required.ToArray(),
+            string ownClass = item.Item1 == "support:wrapper" ? "oolloo.jlw.Wrapper" : MmcRuntimeBridgeTransport.EntryPoint;
+            var observed = await ReadJarAsync(item.Item1, item.Item2.ActualPath, item.Item2.Sha256, item.Item2.SizeBytes, required.Append(ownClass).Distinct(StringComparer.Ordinal).ToArray(),
                 request.Java.Major, false, token).ConfigureAwait(false);
-            if (observed.Found.Count != 0) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_SUPPORT_SHADOW", "A host support JAR shadows a required game launch class.");
+            if (required.Any(observed.Found.ContainsKey)) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_SUPPORT_SHADOW", "A host support JAR shadows a required game launch class.");
+            if (!observed.Found.ContainsKey(ownClass)) throw new MmcRuntimeLaunchException("MMC_RUNTIME_SUPPORT_ENTRY", "An owned support JAR is missing its required host entrypoint.");
         }
     }
 
@@ -81,7 +83,8 @@ public static class MmcClasspathInspector {
             if (candidate.StartsWith("META-INF/versions/", StringComparison.Ordinal)) {
                 if (!multiRelease) continue;
                 int separator = candidate.IndexOf('/', "META-INF/versions/".Length);
-                if (separator < 0 || !int.TryParse(candidate.AsSpan("META-INF/versions/".Length, separator - "META-INF/versions/".Length), out release) || release < 9 || release > javaMajor) continue;
+                if (separator < 0 || !int.TryParse(candidate.AsSpan("META-INF/versions/".Length, separator - "META-INF/versions/".Length), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out release) ||
+                    release < 9 || release > javaMajor || !candidate.AsSpan("META-INF/versions/".Length, separator - "META-INF/versions/".Length).SequenceEqual(release.ToString(System.Globalization.CultureInfo.InvariantCulture))) continue;
                 candidate = candidate[(separator + 1)..];
             }
             if (!names.TryGetValue(candidate, out string? name)) continue;

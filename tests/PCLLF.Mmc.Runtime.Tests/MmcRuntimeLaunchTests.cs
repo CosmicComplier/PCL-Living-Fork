@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,7 +11,7 @@ using PCLLF.MMCC.Core;
 internal static class MmcRuntimeLaunchTests {
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC exact bridge has deterministic owned support bytes and reviewed source", BridgeIdentity);
-        yield return ("MMC production runtime preserves actual Java8 and Java17 argv through original Wrapper and exact bridge", ActualArgv);
+        yield return ("MMC production runtime preserves actual Java8 Java17 and Java21 argv through original Wrapper and exact bridge", ActualArgv);
         yield return ("MMC runtime macros distinguish Minecraft version instance name session and owned paths", MacrosAndPrivacy);
         yield return ("MMC runtime refuses unbound execution variables account overrides Java conflicts and changed inputs", Refusals);
         yield return ("MMC classpath inspector preserves shadow order and resolves Java multi-release entries", ClasspathAndMultiRelease);
@@ -20,8 +21,14 @@ internal static class MmcRuntimeLaunchTests {
         string digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
         if (digest != MmcRuntimeBridgeTransport.JarSha256() || !MmcRuntimeBridgeTransport.JavaSource.Contains("getSystemClassLoader", StringComparison.Ordinal)) throw new Exception("Bridge identity/source missing.");
     }
-    private static readonly string Java17 = Environment.GetEnvironmentVariable("MMC_TEST_JAVA17") ?? "C:/Program Files/Java/jdk-17.0.21.0.3/bin/java.exe";
-    private static readonly string Java8 = Environment.GetEnvironmentVariable("MMC_TEST_JAVA8") ?? "C:/Program Files/Java/jre1.8.0_491/bin/java.exe";
+    private static string Java17 => RequiredJava("PCLLF_MMC_TEST_JAVA17");
+    private static string Java8 => RequiredJava("PCLLF_MMC_TEST_JAVA8");
+    private static string Java21 => RequiredJava("PCLLF_MMC_TEST_JAVA21");
+    private static string RequiredJava(string variable) {
+        string? path = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path) || !File.Exists(path)) throw new InvalidOperationException("Required explicit Java fixture executable is missing: " + variable + ". Runtime acceptance is not passed or skipped.");
+        return path;
+    }
     private static readonly Lazy<Jars> Compiled = new(BuildJars);
     private sealed record Jars(byte[] First, byte[] Second, byte[] Main, byte[] MultiRelease, byte[] Wrapper);
     private const string ProbeSource = """
@@ -32,7 +39,7 @@ public final class Probe {
   public static void main(String[] args) {
     for (String arg : args) System.out.println("MARG:" + Base64.getEncoder().encodeToString(arg.getBytes(StandardCharsets.UTF_8)));
     System.out.println("MMODE:__MODE__");
-    for (String key : new String[]{"fixture.value","java.class.path","user.dir","java.io.tmpdir","oolloo.jlw.tmpdir","org.lwjgl.system.SharedLibraryExtractPath"})
+    for (String key : new String[]{"fixture.value","java.class.path","user.dir","java.io.tmpdir","oolloo.jlw.tmpdir","org.lwjgl.system.SharedLibraryExtractPath","java.specification.version"})
       System.out.println("MPROP:" + key + ":" + Base64.getEncoder().encodeToString(System.getProperty(key, "").getBytes(StandardCharsets.UTF_8)));
     System.out.println("MLOADER:" + ClassLoader.getSystemClassLoader().getClass().getName());
   }
@@ -42,7 +49,8 @@ public final class Probe {
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static Jars BuildJars() {
         string root = Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests", "compile-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-        string javac = Path.Combine(Path.GetDirectoryName(Java17)!, "javac.exe");
+        string javac = Environment.GetEnvironmentVariable("PCLLF_MMC_TEST_JAVAC") ?? Path.Combine(Path.GetDirectoryName(Java17)!, OperatingSystem.IsWindows() ? "javac.exe" : "javac");
+        Require(File.Exists(javac), "Explicit Java17 fixture compiler is missing.");
         byte[] CompileProbe(string mode, int release) {
             string folder = Path.Combine(root, mode); Directory.CreateDirectory(Path.Combine(folder, "fixture"));
             string source = Path.Combine(folder, "fixture", "Probe.java"); File.WriteAllText(source, ProbeSource.Replace("__MODE__", mode, StringComparison.Ordinal), new UTF8Encoding(false));
@@ -118,7 +126,7 @@ public final class Probe {
             string supportRoot = paths.ResolveRelative(MmcPathRole.Runtime, view + "/support"); Directory.CreateDirectory(supportRoot);
             string wrapper = Path.Combine(supportRoot, "JavaWrapper.jar"), bridge = Path.Combine(supportRoot, "MmcRuntimeBridge.jar");
             File.WriteAllBytes(wrapper, Compiled.Value.Wrapper); byte[] bridgeBytes = MmcRuntimeBridgeTransport.CreateJarBytes(); File.WriteAllBytes(bridge, bridgeBytes);
-            string java = javaMajor == 8 ? Java8 : Java17; string javaHash = Hash(File.ReadAllBytes(java));
+            string java = javaMajor switch { 8 => Java8, 17 => Java17, 21 => Java21, _ => throw new ArgumentOutOfRangeException(nameof(javaMajor)) }; string javaHash = Hash(File.ReadAllBytes(java));
             var settings = new MmcRuntimeSettingsSnapshot("Instance Display", "PCLLF", "test", 16, 64, 640, 360, Guid.NewGuid()) {
                 WrapperMode = wrapperMode, UserJvmTokens = ["-Dfixture.value=regex\\\\d+ trailing\\"], ExtraGameTokens = ["", "中文 supplementary 😀", "double\\\\slashes", "trailing\\", "quoted\"value"], AppendResolutionArguments = false
             };
@@ -155,10 +163,11 @@ public final class Probe {
         return new(arguments.ToImmutable(), properties, mode, loader);
     }
     private static void ActualArgv() {
-        foreach (int major in new[] { 8, 17 }) {
+        foreach (int major in new[] { 8, 17, 21 }) {
             using Fixture fixture = new(major);
             var plan = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
             var observed = Run(plan);
+            Require(observed.Properties["java.specification.version"] == (major == 8 ? "1.8" : major.ToString()), "Explicit fixture executable does not actually run the requested Java major.");
             Require(observed.Mode == "first" && observed.Loader == "fixture.TestLoader", "Actual VM CP order or startup system loader differs from the bound plan.");
             Require(observed.Arguments.TakeLast(5).SequenceEqual(fixture.Request.Settings.ExtraGameTokens), "Actual Wrapper/bridge argv lost empty, Unicode, slash or quote semantics.");
             Require(observed.Properties["fixture.value"] == "regex\\\\d+ trailing\\", "Wrapper reparsing corrupted JVM property values.");
@@ -177,7 +186,7 @@ public final class Probe {
         Require(!string.Join("|", first.RedactedArguments).Contains(fixture.Request.Account.AccessToken, StringComparison.Ordinal) && first.RedactedArguments[^1] == "[sensitive argv frame]", "Sensitive frame/token leaked to log-safe arguments.");
         string frame = first.CreateStartInfo().ArgumentList[^1]; Require(first.Redact("frame=" + frame) == "frame=[redacted]", "Sensitive opaque transport frame was not redacted.");
         fixture.RemoveMutable(first);
-        var second = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Account = new("PlayerTwo", new string('2', 32), "synthetic-secret-token-two", "different-session-token", "msa", "{\"different\":\"properties\"}") }).GetAwaiter().GetResult();
+        var second = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Account = new("Player${not_reparsed}", new string('2', 32), "synthetic-secret-token-two", "different-session-token", "msa", "{\"literal\":\"${not_reparsed}\"}") }).GetAwaiter().GetResult();
         Require(first.NonSensitiveArgumentFingerprint == second.NonSensitiveArgumentFingerprint && first.RuntimeInputFingerprint == second.RuntimeInputFingerprint, "Account values influenced a persisted non-sensitive runtime fingerprint.");
         Require(!first.CreateStartInfo().Environment.ContainsKey("JDK_JAVA_OPTIONS") && !first.CreateStartInfo().Environment.ContainsKey("JAVA_TOOL_OPTIONS"), "Unobserved environment JVM options were inherited.");
     }
@@ -187,6 +196,8 @@ public final class Probe {
             Expect("MMC_RUNTIME_UNBOUND_INPUT", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = ["@unbound.args"] } }).GetAwaiter().GetResult());
             Expect("MMC_RUNTIME_UNBOUND_INPUT", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Settings = fixture.Request.Settings with { UserJvmTokens = ["-javaagent:unbound.jar"] } }).GetAwaiter().GetResult());
             Expect("MMC_RUNTIME_JAVA", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Account = new("Player", "uuid", "token", "session", "legacy", "{}", javaConstraints: [new("account", MaximumMajor: 8)]) }).GetAwaiter().GetResult());
+            string shadow = Path.Combine(Path.GetDirectoryName(fixture.Request.Wrapper!.ActualPath)!, "shadow.jar"); File.WriteAllBytes(shadow, Compiled.Value.First);
+            Expect("MMC_CLASSPATH_SUPPORT_SHADOW", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with { Wrapper = new(shadow, Hash(Compiled.Value.First), Compiled.Value.First.Length) }).GetAwaiter().GetResult());
             string jar = fixture.Request.Targets[0].ActualPath; File.AppendAllText(jar, "tamper");
             Expect("MMC_RUNTIME_INPUT_CHANGED", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult());
         }
