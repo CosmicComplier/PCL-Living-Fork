@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using PCLCS;
@@ -16,6 +17,7 @@ internal static class MmcSessionTests {
         yield return ("MMC session host termination retains running receipt and blocks structural writes", KilledHost);
         yield return ("MMC unlaunched mutable runtime cleanup validates ownership and preserves receipts", AbandonMutable);
         yield return ("MMC mutable cleanup failure retains pin and exit evidence for reconciliation retry", RetryMutableCleanup);
+        if (OperatingSystem.IsWindows()) yield return ("MMC observes a suspended child image before its module list initializes", SuspendedImage);
     }
 
     internal static bool TryRunChild(string[] args, out int exitCode) {
@@ -168,6 +170,41 @@ internal static class MmcSessionTests {
         Equal(false, File.Exists(fixture.PinFile)); Equal(false, Directory.Exists(mutable));
         MmcSessions.AssertNoActive(lease);
     }
+    private static void SuspendedImage() {
+        using Fixture fixture = new();
+        string image = AppHost();
+        StartupInfo startup = new() { Size = (uint)Marshal.SizeOf<StartupInfo>() };
+        if (!CreateProcessW(image, new StringBuilder('"' + image + "\" --never-resumed"), IntPtr.Zero, IntPtr.Zero, false,
+            0x08000004, IntPtr.Zero, Path.Combine(fixture.Root, "minecraft"), ref startup, out var created))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        try {
+            using Process suspended = Process.GetProcessById((int)created.ProcessId);
+            Equal(MmcSessions.ObserveExecutable(image), MmcSessions.ObserveProcessExecutable(suspended));
+        } finally {
+            try {
+                if (!TerminateProcess(created.Process, 0)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                if (WaitForSingleObject(created.Process, 5000) != 0) throw new Exception("Owned suspended process did not terminate.");
+            } finally { CloseHandle(created.Thread); CloseHandle(created.Process); }
+        }
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StartupInfo {
+        public uint Size;
+        public IntPtr Reserved, Desktop, Title;
+        public uint X, Y, Width, Height, XChars, YChars, Fill, Flags;
+        public ushort ShowWindow, ReservedBytes;
+        public IntPtr ReservedData, Input, Output, Error;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CreatedProcess { public IntPtr Process, Thread; public uint ProcessId, ThreadId; }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateProcessW(string application, StringBuilder command, IntPtr processAttributes, IntPtr threadAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint flags, IntPtr environment, string directory, ref StartupInfo startup, out CreatedProcess process);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool TerminateProcess(IntPtr process, uint code);
+    [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CloseHandle(IntPtr handle);
     private static void KilledHost() {
         using Fixture fixture = new();
         ProcessStartInfo start = new(AppHost()) { UseShellExecute = false, CreateNoWindow = true };

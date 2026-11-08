@@ -49,7 +49,7 @@ public static class MmcSessions {
             start.ArgumentList.Insert(0, NonceArgumentPrefix + nonce);
             process = Process.Start(start) ?? throw new IOException("无法创建受管理游戏进程。");
             checkpoint?.Invoke(MmcSessionCheckpoint.ProcessCreated);
-            MmcExecutableIdentity image = ObserveExecutable(process.MainModule?.FileName ?? "");
+            MmcExecutableIdentity image = ObserveProcessExecutable(process);
             if (!SameExecutable(image, request.JavaIdentity)) throw new IOException("新进程镜像与已选 Java 身份不一致。");
             MmcSessionProcessRegistration running = new(1, sessionId, hash, process.Id, process.StartTime.ToUniversalTime().Ticks, image);
             MmcDurableFiles.WriteRecord(Path.Combine(directory, "Running.record"), running);
@@ -97,6 +97,7 @@ public static class MmcSessions {
         string full = MmcCanonicalPaths.ForExistingFile(Path.GetFullPath(path)); MmcInstancePaths.EnsureNoLinks(full);
         return new(full, MmcDurableFiles.Observe(full) ?? throw new IOException("进程镜像不存在。"));
     }
+    public static MmcExecutableIdentity ObserveProcessExecutable(Process process) => ObserveExecutable(MmcProcessImages.Read(process));
     internal static bool SameExecutable(MmcExecutableIdentity first, MmcExecutableIdentity second) =>
         first is not null && second is not null && MmcDurableFiles.IsHash(first.Sha256) && first.Sha256 == second.Sha256 &&
         string.Equals(Path.GetFullPath(first.ExecutablePath), Path.GetFullPath(second.ExecutablePath), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);

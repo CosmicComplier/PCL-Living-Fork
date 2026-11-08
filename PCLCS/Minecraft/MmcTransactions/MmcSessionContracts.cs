@@ -50,7 +50,7 @@ public sealed class MmcSessionProcessInspector(Func<int, string, bool?>? noncePr
         try {
             if (process.HasExited) return MmcSessionObservation.ProvenExited;
             if (process.StartTime.ToUniversalTime().Ticks != registration.CreationTimeUtcTicks) return MmcSessionObservation.Unknown;
-            MmcExecutableIdentity observed = MmcSessions.ObserveExecutable(process.MainModule?.FileName ?? "");
+            MmcExecutableIdentity observed = MmcSessions.ObserveProcessExecutable(process);
             if (!MmcSessions.SameExecutable(observed, receipt.JavaIdentity) || !MmcSessions.SameExecutable(observed, registration.ExecutableIdentity))
                 return MmcSessionObservation.Unknown;
             return nonceProbe?.Invoke(registration.ProcessId, receipt.Nonce) == true ? MmcSessionObservation.MatchingRunning : MmcSessionObservation.Unknown;
