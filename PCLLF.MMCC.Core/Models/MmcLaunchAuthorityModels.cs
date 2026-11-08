@@ -12,6 +12,7 @@ public sealed record MmcJarClassObservation(string ArtifactKey, string ArtifactS
 public sealed record MmcHostLaunchChain(string JavaIdentitySha256, string WrapperIdentitySha256,
     string NonSensitiveArgumentFingerprint) {
     public ImmutableArray<string> AdditionalJvmArguments { get; init; } = [];
+    public ImmutableArray<string> AdditionalRequiredClasses { get; init; } = [];
 }
 public sealed record MmcClasspathClassBinding(string ClassName, string ArtifactKey, string ArtifactSha256, string EntryPath, int ClasspathPosition);
 /// <summary>Structural authority to retire only named old heuristics; never a process-admission or Java-compatibility certificate.</summary>

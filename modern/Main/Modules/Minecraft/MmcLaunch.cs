@@ -153,7 +153,8 @@ public static class MmcLaunch {
                 string wrapperHash = Support("JavaWrapper.jar")?.Sha256 ?? Convert.ToHexStringLower(SHA256.HashData("PCLLF:direct-main:v1"u8));
                 var authority = MmcLaunchAuthorityEvaluator.Evaluate(prepared.Definition, prepared.BoundPlan, saved.Resolved.Resolution.Profile,
                     new(java.RuntimeJava.IdentitySha256, wrapperHash, runtime.NonSensitiveArgumentFingerprint) {
-                        AdditionalJvmArguments = runtime.NonSensitiveAdditionalJvmArguments
+                        AdditionalJvmArguments = runtime.NonSensitiveAdditionalJvmArguments,
+                        AdditionalRequiredClasses = runtime.RequiredClassNames
                     }, classes.CoreObservations);
                 if (authority.Diagnostics.Any(value => value.Severity == MmcDiagnosticSeverity.Error))
                     throw new IOException("MMC 启动链校验失败：" + string.Join("；", authority.Diagnostics.Select(value => value.Message)));

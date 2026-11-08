@@ -109,6 +109,7 @@ public final class TestLoader extends ClassLoader {
         private readonly string mutableScope=Path.Combine(Path.GetTempPath(),Guid.NewGuid().ToString("N"));
         internal string Root { get; }
         internal MmcRuntimeLaunchRequest Request { get; }
+        internal MmcResolvedProfile Sources { get; }
         internal Fixture(int javaMajor = 17, bool multiRelease = false, bool loader = true, string? unknownArgument = null, MmcRuntimeWrapperMode wrapperMode = MmcRuntimeWrapperMode.JavaWrapper,
             bool unmarkedVersions = false, bool laterTooNew = false, bool firstTooNew = false, bool longClasspath = false, Func<byte[], byte[]>? firstJarTransform = null) {
             Root = Path.Combine(Path.GetTempPath(), "PCLLF-MmcRuntimeTests", "run-" + Guid.NewGuid().ToString("N"));
@@ -142,6 +143,7 @@ public final class TestLoader extends ClassLoader {
             Dictionary<string, string> metadata = new() { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = patch };
             var parsed = MmcPackageReader.Parse(new(metadata.Select(m => new MmcArchiveEntry(m.Key)).ToArray(), metadata));
             var resolved = MmcComponentResolver.Resolve(parsed, []); Require(resolved.IsComplete, "Runtime fixture source resolution failed.");
+            Sources = resolved.Profile!;
             var compiled = MmcProfileCompiler.Compile(resolved.Profile!, new("windows", "amd64", javaMajor)); Require(!compiled.HasErrors, "Runtime fixture compile failed.");
             var plan = compiled.Profile!;
             List<MmcMaterializedArtifactFact> facts = []; List<MmcRuntimeArtifactTarget> targets = [];
@@ -243,6 +245,33 @@ public final class TestLoader extends ClassLoader {
         }
     }
     private static void ClasspathAndMultiRelease() {
+        foreach (bool hostExtra in new[] { false, true }) {
+            using Fixture fixture = new(21, loader: false, unknownArgument: hostExtra ? null : "--tweakClass fixture.Tweak");
+            var request = hostExtra ? fixture.Request with { Settings = fixture.Request.Settings with { ExtraGameTokens = ["--tweakClass=fixture.Tweak"] } } : fixture.Request;
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(request).GetAwaiter().GetResult();
+            Require(plan.RequiredClassNames.SequenceEqual(new[] { "fixture.Probe", "fixture.Tweak" }), "Raw/host tweaker was lost before the actual JAR inspection.");
+            var inspection = MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult();
+            Require(inspection.CoreObservations.All(jar => jar.Classes.Count(value => value.ClassName == "fixture.Tweak") == 1) &&
+                inspection.EffectiveClasses.Single(value => value.ClassName == "fixture.Tweak").ClasspathPosition == 0, "Tweaker facts omitted later-JAR absence or changed the first winner.");
+            var authority = MmcLaunchAuthorityEvaluator.Evaluate(request.Definition, request.BoundPlan, fixture.Sources,
+                new(request.Java.ExecutableSha256, request.Wrapper!.Sha256, plan.NonSensitiveArgumentFingerprint) {
+                    AdditionalJvmArguments = plan.NonSensitiveAdditionalJvmArguments,
+                    AdditionalRequiredClasses = plan.RequiredClassNames
+                }, inspection.CoreObservations);
+            Require(authority.HasAuthority && authority.Proof!.ClassBindings.Any(value => value.ClassName == "fixture.Tweak"), "Actual inspected raw/host tweaker facts did not authorize the bound chain.");
+            Require(Run(plan).Arguments.Contains(hostExtra ? "--tweakClass=fixture.Tweak" : "fixture.Tweak"), "Actual Java21 argv lost the raw/host tweaker token.");
+        }
+        using (Fixture fixture = new(8, loader: false)) {
+            var request = fixture.Request with { Settings = fixture.Request.Settings with { ExtraGameTokens = ["--tweakClass=fixture.Missing"] } };
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(request).GetAwaiter().GetResult();
+            bool started = false;
+            Expect("MMC_CLASSPATH_CLASS_MISSING", () => {
+                _ = MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult();
+                started = true;
+                _ = Run(plan);
+            });
+            Require(!started, "A missing host tweaker reached Process.Start just because Java8 satisfied an old heuristic.");
+        }
         using (Fixture fixture = new()) {
             var plan = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
             var inspection = MmcClasspathInspector.ObserveAsync(plan).GetAwaiter().GetResult();

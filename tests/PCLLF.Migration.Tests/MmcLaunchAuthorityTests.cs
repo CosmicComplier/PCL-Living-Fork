@@ -16,6 +16,8 @@ internal static class MmcLaunchAuthorityTests {
         yield return ("MMC aggregate launch proof accepts a sourced local final entry while retaining target-specific heuristics", AggregateAuthority);
         yield return ("MMC aggregate launch proof remains conservative for missing class locks candidates or bound agents", ConservativeAuthority);
         yield return ("MMC aggregate launch proof follows a bound higher-version library replacement without requiring the obsolete JAR", SupersededLibraryAuthority);
+        yield return ("MMC aggregate proof independently requires raw final game tweakers and every ordered absence observation", RawGameTweakerAuthority);
+        yield return ("MMC aggregate proof includes host extra required classes without weakening plan requirements", HostClassAuthority);
         yield return ("MMC binder preserves published baseline authority across explicit candidate drafts", PublishedAuthority);
         yield return ("MMC execution fingerprints reject stale labels for arguments classpath order and Java policy", PlanFingerprints);
         yield return ("MMC binder follows virtual-first asset layout without unrequested resource writes", BothAssetLayouts);
@@ -29,7 +31,7 @@ internal static class MmcLaunchAuthorityTests {
         ImmutableArray<MmcMaterializedArtifactFact> Facts, MmcResolvedProfile Sources, MmcAssetIndexInput? AssetIndex = null);
     private static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     private static string View => new('9', 64);
-    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false, bool storedOverride = false, bool supersededLibrary = false) {
+    private static Fixture Create(bool native = false, string? assetJson = null, bool mavenDuplicates = false, bool declaredJava = false, bool lateEntrypoint = false, bool storedOverride = false, bool supersededLibrary = false,string? rawGame = null) {
         Dictionary<string, object?> patch = new() {
             ["uid"] = "net.minecraft", ["version"] = "1", ["mainClass"] = "fixture.Main",
             ["mainJar"] = new Dictionary<string, object?> { ["name"] = "fixture:main:1:client", ["MMC-hint"] = "local" },
@@ -40,6 +42,7 @@ internal static class MmcLaunchAuthorityTests {
         if (assetJson is not null) patch["assetIndex"] = new { id = "fixture", url = "https://example.invalid/fixture.json" };
         if (mavenDuplicates) patch["mavenFiles"] = new[] { new { name = "fixture:tool:1" }, new { name = "fixture:tool:1" } };
         if (declaredJava) patch["compatibleJavaMajors"] = new[] { 17, 21 };
+        if(rawGame is not null)patch["minecraftArguments"]=rawGame;
         string manifest = lateEntrypoint ? "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"},{\"uid\":\"bootstrap\",\"version\":\"1\"}]}" : "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1\"}]}";
         string component = JsonSerializer.Serialize(patch);
         Dictionary<string, string> content = new() { ["mmc-pack.json"] = manifest, ["patches/net.minecraft.json"] = component };
@@ -310,6 +313,38 @@ internal static class MmcLaunchAuthorityTests {
         Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan! with { DefinitionGeneration = 2 }, fixture.Sources, Host(), probes).HasAuthority, "Stale generation authorized retirement.");
         foreach (string input in new[] { "@custom.args", "-jar", "-m", "--module=fixture/module", "-p", "--module-path=modules", "-Djava.class.path=unbound", "-Djava.ext.dirs=unbound" })
             Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!, bound.Plan!, fixture.Sources, Host() with { AdditionalJvmArguments = [input] }, probes).HasAuthority, "Unbound Java execution form authorized retirement: " + input);
+    }
+    private static ImmutableArray<MmcJarClassObservation> ClassMatrix(Fixture fixture,params string[] classes)=>fixture.Plan.Classpath.Select((artifact,index)=>
+        new MmcJarClassObservation(artifact.Key,fixture.Facts.Single(value=>value.ArtifactKey==artifact.Key).ObservedSha256,
+            classes.Select(name=>new MmcJarClassPresence(name,index==0,index==0?name.Replace('.','/')+".class":null)).ToImmutableArray())).ToImmutableArray();
+    private static void RawGameTweakerAuthority(){
+        var fixture=Create(declaredJava:true,rawGame:"--tweakClass fixture.Raw --tweakClass=fixture.Equals");var bound=Good(Bind(fixture));
+        Require(fixture.Plan.Tweakers.IsEmpty,"Raw fixture accidentally used declared Tweakers.");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host(),ClassObservations(fixture)).HasAuthority,"Core trusted omitted raw-game tweaker probes.");
+        var matrix=ClassMatrix(fixture,"fixture.Main","fixture.Raw","fixture.Equals");
+        var proof=MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host(),matrix);
+        Require(proof.HasAuthority&&proof.Proof!.ClassBindings.Select(value=>value.ClassName).SequenceEqual(new[]{"fixture.Main","fixture.Raw","fixture.Equals"}),"Raw final game tweakers were not independently bound in order.");
+        var missing=matrix.SetItem(1,matrix[1]with{Classes=matrix[1].Classes.Where(value=>value.ClassName!="fixture.Raw").ToImmutableArray()});
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host(),missing).HasAuthority,"Missing explicit later-JAR absence authorized a tweaker.");
+        var laterPresent=matrix.SetItem(1,matrix[1]with{Classes=matrix[1].Classes.Select(value=>value.ClassName=="fixture.Raw"?value with{Present=true,EntryPath="fixture/Raw.class"}:value).ToImmutableArray()});
+        var changedMatrix=MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host(),laterPresent);
+        Require(changedMatrix.HasAuthority&&changedMatrix.Proof!.ClassBindings.SequenceEqual(proof.Proof!.ClassBindings)&&changedMatrix.Proof.ProofFingerprint!=proof.Proof.ProofFingerprint,"Later-JAR class facts were absent from the proof fingerprint.");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host(),matrix.SetItem(0,matrix[0]with{ArtifactSha256=Hash("other JAR bytes")})).HasAuthority,"Raw tweaker proof accepted a different JAR digest.");
+        foreach(string raw in new[]{"--tweakClass","--tweakClass=","--tweakClass bad/name"}){
+            var bad=Create(declaredJava:true,rawGame:raw);var value=Good(Bind(bad));Require(!MmcLaunchAuthorityEvaluator.Evaluate(value.Definition!,value.Plan!,bad.Sources,Host(),ClassObservations(bad)).HasAuthority,"Malformed raw tweaker gained authority.");
+        }
+    }
+    private static void HostClassAuthority(){
+        var fixture=Create(declaredJava:true,rawGame:"--tweakClass fixture.Required");var bound=Good(Bind(fixture));
+        var host=Host()with{AdditionalRequiredClasses=["fixture.HostExtra"]};
+        var required=ClassMatrix(fixture,"fixture.Main","fixture.Required");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,host,required).HasAuthority,"Host extra class had no explicit ordered matrix.");
+        var all=ClassMatrix(fixture,"fixture.Main","fixture.Required","fixture.HostExtra");var proof=MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,host,all);
+        Require(proof.HasAuthority&&proof.Proof!.ClassBindings.Any(value=>value.ClassName=="fixture.HostExtra"),"Host extra class was omitted from authority.");
+        var noExtra=MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host(),all);
+        Require(noExtra.HasAuthority&&noExtra.Proof!.ProofFingerprint!=proof.Proof!.ProofFingerprint,"Additional class facts did not affect the authority fingerprint.");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,host,ClassMatrix(fixture,"fixture.Main","fixture.HostExtra")).HasAuthority,"Host classes replaced the independent plan requirements.");
+        Require(!MmcLaunchAuthorityEvaluator.Evaluate(bound.Definition!,bound.Plan!,fixture.Sources,Host()with{AdditionalRequiredClasses=Enumerable.Range(0,257).Select(index=>"fixture.TooMany"+index).ToImmutableArray()},all).HasAuthority,"Unbounded host class set was accepted.");
     }
     private static void PublishedAuthority() {
         var fixture = Create();

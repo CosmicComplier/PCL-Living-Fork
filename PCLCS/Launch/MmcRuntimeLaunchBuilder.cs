@@ -207,8 +207,10 @@ public static class MmcRuntimeLaunchBuilder {
         if (operand) Fail("MMC_RUNTIME_ARGUMENT", "A JVM option is missing its required single argument token.");
     }
     private static void ValidateExtraGame(ImmutableArray<string> tokens) {
-        foreach (string token in tokens) if (new[] { "--username", "--uuid", "--accessToken", "--session", "--userType", "--userProperties", "--gameDir", "--assetsDir", "--assetIndex", "--tweakClass" }.Any(flag => token == flag || token.StartsWith(flag + "=", StringComparison.Ordinal)))
-            Fail("MMC_RUNTIME_GAME_OVERRIDE", "Extra game arguments cannot replace account, instance-root or declared tweak bindings.");
+        // Additive tweakers remain tokens and join RequiredClasses below; the host must
+        // inspect their presence/absence in every locked classpath JAR before launch.
+        foreach (string token in tokens) if (new[] { "--username", "--uuid", "--accessToken", "--session", "--userType", "--userProperties", "--gameDir", "--assetsDir", "--assetIndex" }.Any(flag => token == flag || token.StartsWith(flag + "=", StringComparison.Ordinal)))
+            Fail("MMC_RUNTIME_GAME_OVERRIDE", "Extra game arguments cannot replace account or instance-root bindings.");
     }
     private static void ValidateBoundGameFlags(List<Value> game, Dictionary<string, Value> variables) {
         var flags = new Dictionary<string, string>(StringComparer.Ordinal) { ["--username"] = "auth_player_name", ["--uuid"] = "auth_uuid", ["--accessToken"] = "auth_access_token", ["--session"] = "auth_session", ["--userType"] = "user_type", ["--userProperties"] = "user_properties", ["--gameDir"] = "game_directory", ["--assetsDir"] = "assets_root", ["--assetIndex"] = "assets_index_name" };
@@ -222,12 +224,8 @@ public static class MmcRuntimeLaunchBuilder {
         }
     }
     private static ImmutableArray<string> RequiredClasses(string main, IEnumerable<string> jvm, IEnumerable<string> game) {
-        List<string> result = [main]; string? system = jvm.LastOrDefault(a => a.StartsWith("-Djava.system.class.loader=", StringComparison.Ordinal));
-        if (system is not null) result.Add(system["-Djava.system.class.loader=".Length..]);
-        string[] arguments = game.ToArray(); for (int i = 0; i < arguments.Length; i++) if (arguments[i] == "--tweakClass") { if (++i == arguments.Length) Fail("MMC_RUNTIME_ARGUMENT", "Missing tweak class."); result.Add(arguments[i]); }
-        if (result.Count > 256 || result.Any(name => string.IsNullOrWhiteSpace(name) || name.Length > 512 || name.Any(c => char.IsControl(c) || c is '/' or '\\' or ':' or '{' or '}' or ' ') || name.StartsWith("pcllf.mmc.runtime.", StringComparison.Ordinal)))
-            Fail("MMC_RUNTIME_CLASS", "Required launch classes are invalid or overlap the reserved bridge namespace.");
-        return result.Distinct(StringComparer.Ordinal).ToImmutableArray();
+        try{return MmcLaunchClassRequirements.Collect(main,jvm,game);}
+        catch(FormatException error){throw new MmcRuntimeLaunchException("MMC_RUNTIME_CLASS",error.Message);}
     }
     private static Dictionary<string, string> Properties(IEnumerable<string> jvm) {
         Dictionary<string, string> properties = new(StringComparer.Ordinal);

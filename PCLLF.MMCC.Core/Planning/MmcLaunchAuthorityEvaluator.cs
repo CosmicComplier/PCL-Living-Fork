@@ -22,19 +22,10 @@ public static class MmcLaunchAuthorityEvaluator {
             MmcDefinitionCodec.CheckHash(host.JavaIdentitySha256); MmcDefinitionCodec.CheckHash(host.WrapperIdentitySha256); MmcDefinitionCodec.CheckHash(host.NonSensitiveArgumentFingerprint);
             if (plan.Environment.JavaMajor < 1 || plan.JavaPolicy.Kind != MmcJavaPolicyKind.DeclaredCandidates || plan.JavaPolicy.AllowedMajors.IsEmpty || !plan.JavaPolicy.Allows(plan.Environment.JavaMajor))
                 Reject("Explicit compatible Java candidates and a compatible selected Java identity are required.");
-            if (host.AdditionalJvmArguments.IsDefault || classObservations.Count > limits.MaxArchiveEntries) Reject("Launch observation budget/shape is invalid.");
+            if (host.AdditionalJvmArguments.IsDefault || host.AdditionalRequiredClasses.IsDefault || host.AdditionalRequiredClasses.Length>MmcLaunchClassRequirements.MaximumClasses || classObservations.Count > limits.MaxArchiveEntries) Reject("Launch observation budget/shape is invalid.");
             string[] jvm = plan.JvmArguments.Select(a => a.Value).Concat(host.AdditionalJvmArguments).ToArray();
             if (jvm.Any(a => a is null || a.Contains('\0') || IsUnboundExecutionInput(a))) Reject("Agent, bootclasspath, module or classpath replacement inputs need a separate bound executor proof.");
-            List<string> required = [plan.MainClass];
-            string? systemLoader = jvm.LastOrDefault(a => a.StartsWith("-Djava.system.class.loader=", StringComparison.Ordinal));
-            if (systemLoader is not null) {
-                string name = systemLoader["-Djava.system.class.loader=".Length..];
-                if (name.Length == 0) Reject("System class loader name is empty.");
-                required.Add(name);
-            }
-            required.AddRange(plan.Tweakers);
-            required = required.Distinct(StringComparer.Ordinal).ToList();
-            if (required.Any(c => string.IsNullOrWhiteSpace(c) || c.Length > 512 || c.Any(ch => char.IsControl(ch) || ch is '/' or '\\' or ':' or ' '))) Reject("Invalid launch class binary name.");
+            var required=MmcLaunchClassRequirements.Collect(plan.MainClass,jvm,plan.GameArguments.Select(value=>value.Value),plan.Tweakers,host.AdditionalRequiredClasses);
             var locks = definition.ArtifactLocks.ToDictionary(l => l.ArtifactKey, StringComparer.OrdinalIgnoreCase);
             var activeLocks = boundPlan.ActiveArtifactLocks.ToDictionary(l => l.ArtifactKey, StringComparer.OrdinalIgnoreCase);
             foreach (var artifact in plan.Classpath.Concat(plan.NativeArtifacts).Concat(plan.DownloadOnlyArtifacts).Concat(plan.AuxiliaryArtifacts).DistinctBy(a => a.Key)) {
@@ -75,10 +66,15 @@ public static class MmcLaunchAuthorityEvaluator {
             targets.Add(new(minecraft.Uid, minecraft.Patch.ContentSha256, MmcRetiredHeuristicKind.BuiltinMinecraftJavaInference));
             var forge = sources.Components.SingleOrDefault(c => c.Enabled && c.Uid == "net.minecraftforge");
             if (forge is not null && CompleteLocal(forge, false)) targets.Add(new(forge.Uid, forge.Patch.ContentSha256, MmcRetiredHeuristicKind.BuiltinForgeJavaInference));
-            string proof = MmcFingerprint.Of(new[] { "mmc-structural-launch-authority-v1", definition.InstanceId.ToString("D"), definition.Generation.ToString(), boundPlan.BoundFingerprint,
+            string proof = MmcFingerprint.Of(new[] { "mmc-structural-launch-authority-v2", definition.InstanceId.ToString("D"), definition.Generation.ToString(), boundPlan.BoundFingerprint,
                 plan.ProfileFingerprint, plan.RuntimePlanFingerprint, host.JavaIdentitySha256, host.WrapperIdentitySha256, host.NonSensitiveArgumentFingerprint }
                 .Concat(targets.SelectMany(t => new[] { t.ComponentUid, t.SourceRevision, t.Heuristic.ToString() }))
                 .Concat(bindings.SelectMany(c => new[] { c.ClassName, c.ArtifactKey, c.ArtifactSha256, c.EntryPath, c.ClasspathPosition.ToString() }))
+                .Concat(required).Concat(host.AdditionalRequiredClasses)
+                .Concat(plan.Classpath.SelectMany(artifact=>required.SelectMany(name=>{
+                    var observation=observations[artifact.Key];var probe=observation.Classes.Single(value=>value.ClassName==name);
+                    return new[]{artifact.Key,observation.ArtifactSha256,name,probe.Present?"present":"absent",probe.EntryPath};
+                })))
                 .Concat(plan.JvmArguments.Select(a => a.Value)).Concat(host.AdditionalJvmArguments).Concat(plan.GameArguments.Select(a => a.Value)).Concat(plan.Tweakers)
                 .Concat(boundPlan.ActiveArtifactLocks.SelectMany(l => new[] { l.ArtifactKey, l.SourceRevision, l.AdoptedSha256, l.SizeBytes.ToString(), l.TargetRelativePath })));
             diagnostics.Add(new("MMC_AUTHORITY_STRUCTURAL_ONLY", MmcDiagnosticSeverity.Information, "authority", "Only named old MC/Forge inferences may be retired; platform/account/other hard constraints remain, and live Java/game acceptance is still required."));
@@ -106,6 +102,7 @@ public static class MmcLaunchAuthorityEvaluator {
                     plan.Classpath.Any(a => a.ComponentUid == component.Uid && a.SourceRevision == component.Patch.ContentSha256 && a.Role == MmcArtifactRole.Classpath);
             }
         } catch (MmcInputException error) { diagnostics.Add(new("MMC_AUTHORITY_CONSERVATIVE", MmcDiagnosticSeverity.Warning, error.SourcePath, error.Message)); return new(null, diagnostics.ToImmutableArray()); }
+        catch (FormatException error) { diagnostics.Add(new("MMC_AUTHORITY_CONSERVATIVE",MmcDiagnosticSeverity.Warning,"launch-classes",error.Message));return new(null,diagnostics.ToImmutableArray()); }
     }
 
     private static bool IsUnboundExecutionInput(string argument) => argument.StartsWith("-javaagent", StringComparison.Ordinal) || argument.StartsWith("-agentpath", StringComparison.Ordinal) ||
