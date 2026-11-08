@@ -29,6 +29,7 @@ internal static class MmcGtnhAcceptance {
 
     internal static bool TryRun(string[] args, out int exitCode) {
         exitCode = 0;
+        if (MmcGtnhPostPublishChecks.TryRun(args, out exitCode)) return true;
         if (!args.Contains(ParentFlag, StringComparer.Ordinal) && !args.Contains(ChildFlag, StringComparer.Ordinal)) return false;
         try { exitCode = args.Contains(ChildFlag, StringComparer.Ordinal) ? RunChild(args) : RunParent(args); }
         catch (Exception error) { Console.Error.WriteLine("FAIL explicit GTNH import acceptance: " + error); exitCode = 1; }
@@ -147,7 +148,7 @@ internal static class MmcGtnhAcceptance {
             cacheRoot = cacheCaseRoot ?? root; cacheGame = Path.Combine(cacheRoot, "game");
             name = "GTNH-2.9.0-" + sample.Id; Directory.CreateDirectory(game);
             File.WriteAllText(Path.Combine(root, OwnerName), JsonSerializer.Serialize(new { Kind = "PCLLF.GtnhImportCase", Root = root, MinecraftRoot = game, Sample = sample.Id, Keep = true }));
-            ModBase.RunInUi(); Native.Field(typeof(ModMinecraft), "_McFolderSelected").SetValue(null, game + Path.DirectorySeparatorChar);
+            ModBase.RunInUi(); MmcGtnhPostPublishChecks.InstallEmptyLegacyAccountStore(); Native.Field(typeof(ModMinecraft), "_McFolderSelected").SetValue(null, game + Path.DirectorySeparatorChar);
             Native.Cache("ToolDownloadSource", 2); Native.Cache("SystemDebugSkipCopy", true);
             var profile = new JsonConfigProvider(Path.Combine(root, "private-profile.json")); ConfigProviders.Default = profile;
             Native.Check(ReferenceEquals(Configs.JavaList.Provider, profile), "Acceptance Java settings captured a real player profile.");
@@ -189,6 +190,9 @@ internal static class MmcGtnhAcceptance {
             foreach (var download in downloads) MmcDownloads.DrainAsync(download).GetAwaiter().GetResult();
             if (loader.State != ModBase.LoadState.Finished || result?.Status != MmcInstanceBackendStatus.Succeeded)
                 throw new IOException("Actual Main managed import did not succeed: " + loader.State + " " + loader.Error + " " + result?.Failure);
+            while (ModMinecraft.McInstanceListLoader.State is ModBase.LoadState.Loading or ModBase.LoadState.Waiting || ModMinecraft.McInstanceListLoader.LastRunningThread?.IsAlive == true) { PumpUiSlice(); Thread.Sleep(2); }
+            MmcGtnhPostPublishChecks.DrainUi();
+            Native.Check(ModMinecraft.McInstanceListLoader.State == ModBase.LoadState.Finished, "Published instance refresh failed: " + ModMinecraft.McInstanceListLoader.Error);
             InstanceConfigProviders.SaveAll(); environment.AssertNoForbiddenIo();
         }
         internal void WriteSuccess(string nonce) {
@@ -264,7 +268,7 @@ internal static class MmcGtnhAcceptance {
         try { Dispatcher.PushFrame(frame); }
         finally { timer.Stop(); timer.Tick -= tick; if (idle.Status == DispatcherOperationStatus.Pending) idle.Abort(); }
     }
-    private static string OwnedCacheCase(string runRoot, string sample, string acceptanceBase) {
+    internal static string OwnedCacheCase(string runRoot, string sample, string acceptanceBase) {
         string run = Native.Full(runRoot), expectedBase = Native.Full(acceptanceBase);
         if (!SameOwnedPath(Directory.GetParent(run)?.FullName ?? "", expectedBase)) throw new IOException("Cache run must be a direct retained acceptance child.");
         string caseRoot = Path.Combine(run, sample);
@@ -282,6 +286,6 @@ internal static class MmcGtnhAcceptance {
     private static bool SameOwnedPath(string left, string right) => string.Equals(Native.Full(left), Native.Full(right), StringComparison.OrdinalIgnoreCase);
     private static string MainHash() => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Native.Main.Location)));
     private static string? Option(string[] args, string key) { int position = Array.IndexOf(args, key); return position < 0 ? null : position + 1 < args.Length ? args[position + 1] : throw new ArgumentException("Missing value: " + key); }
-    private static string FindRepository() { for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent) if (File.Exists(Path.Combine(directory.FullName, ".git")) || Directory.Exists(Path.Combine(directory.FullName, ".git"))) return directory.FullName; throw new IOException("Run the explicit acceptance from its repository build output."); }
+    internal static string FindRepository() { for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent) if (File.Exists(Path.Combine(directory.FullName, ".git")) || Directory.Exists(Path.Combine(directory.FullName, ".git"))) return directory.FullName; throw new IOException("Run the explicit acceptance from its repository build output."); }
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 }

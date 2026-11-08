@@ -30,3 +30,12 @@ dotnet tests/PCLLF.Native.Facade.Tests/bin/Debug/net10.0-windows/PCLLF.Native.Fa
 `stdout.log`、`stderr.log` 和 `import-result.json` 记录每份结果，`source-and-java.json` 保存原包/实际 Main 身份、Java 探测和摘要。BYTES 日志来自原 ZIP 实际读取、后端真实解包/物化回调与真实 NetFile 计数；总量未知时写 `unknown`，不据此编造完成百分比。最终核对已发布定义/兼容投影、Java 策略、入口、参数、库顺序、实际文件 SHA256、owned 运行库路径和 native/asset 派生记录。
 
 初版为每个 case 使用独立 Minecraft 根；它证明逐包独立导入，不覆盖“同一游戏根混合普通实例与两类 MMC”的验收。该项需要随后在保留的目录上通过受支持的移动/克隆与实例管理入口补做，不通过手改定义或删除缓存来冒充混合回归。真实游戏、世界、修复和再次启动继续单独记录。
+
+
+已发布实例可独立复核，不再解包或下载：
+
+```powershell
+dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --gtnh-owned-run <保留 run 根>
+```
+
+`java21` 对应现代包。此入口核对原真实 Main 身份、已发布 definition/projection、运行库和 native 的实际 SHA256，再运行真实版本列表 worker 并等到 dispatcher idle。只对两个必须读取的旧账号 schema key 提供空私有 store，其余 Registry/设置 guard 保持启用；不会读取用户账号、重新导入、修复或启动游戏。每次复核生成独立 `post-publish-<case>-<GUID>` 证据，不改原导入 receipt 或日志。新的导入 runner 同样等待列表 worker 和 UI 回调完成后才检查零 forbidden。
