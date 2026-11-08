@@ -67,6 +67,8 @@ internal static partial class MmcRuntimeLaunchTests {
         foreach(int major in new[]{8,21}) using(var fixture=new Fixture(major,loader:false,firstJarTransform:_=>original)) {
             var plan=MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
             var inspected=MmcClasspathInspector.ObserveAsync(plan,additionalClassNames:[name]).GetAwaiter().GetResult();
+            MmcClasspathInspector.RevalidateManifestInputs(plan,inspected);
+            Console.WriteLine("JAR source proof Java="+major+" absent manifest refs="+inspected.ManifestInputs.Length);
             Require(inspected.EffectiveClasses.Single(c=>c.ClassName==name).ClasspathPosition==0,"Original JAR required class did not participate in the real inspector proof.");
         }
         Require(Hash(File.ReadAllBytes(path))==before,"Read-only source changed.");

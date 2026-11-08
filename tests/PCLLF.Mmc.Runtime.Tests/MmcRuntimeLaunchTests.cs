@@ -18,6 +18,7 @@ internal static partial class MmcRuntimeLaunchTests {
         yield return ("MMC deep 92-JAR launch preserves early system-loader classpath and bounded compressed transport", LongArguments);
         yield return ("MMC runtime reserves the final managed-session nonce at the Windows command boundary", SessionNonceBudget);
         yield return ("MMC readonly JAR namespace permits resources without weakening extraction", ReadOnlyJarNamespace);
+        yield return ("MMC manifest absent inputs remain gated through final admission and actual JDK file URLs", ManifestAbsentInputs);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();

@@ -16,12 +16,14 @@ namespace PCLCS;
 public sealed record MmcClasspathClassSelection(string ClassName, string ArtifactKey, string EntryPath,
     int ClasspathPosition, int Release, int ClassMajorVersion);
 public sealed record MmcClasspathInspection(ImmutableArray<MmcJarClassObservation> CoreObservations,
-    ImmutableArray<MmcClasspathClassSelection> EffectiveClasses);
+    ImmutableArray<MmcClasspathClassSelection> EffectiveClasses) {
+    public ImmutableArray<MmcManifestInputAbsence> ManifestInputs { get; init; } = [];
+}
 
 /// <summary>Reads only locked classpath JARs and selected class headers; never loads classes or scans a mod directory.</summary>
 public static class MmcClasspathInspector {
     private sealed record Found(string Path, int Release, int Major);
-    private sealed record JarResult(MmcJarClassObservation Observation, Dictionary<string, Found> Found);
+    private sealed record JarResult(MmcJarClassObservation Observation, Dictionary<string, Found> Found, ImmutableArray<MmcManifestInputAbsence> ManifestInputs);
     private sealed record JarRuntimePolicy(int JavaMajor, int MaximumRelease, bool MultiReleaseEnabled, bool Preview);
     public static async Task<MmcClasspathInspection> ObserveAsync(MmcRuntimeLaunchPlan launch, CancellationToken cancellationToken = default,
         IReadOnlyList<string>? additionalClassNames = null) {
@@ -33,17 +35,24 @@ public static class MmcClasspathInspector {
         var inputs = launch.Inputs.ToDictionary(i => i.Identity, StringComparer.Ordinal);
         var observations = ImmutableArray.CreateBuilder<MmcJarClassObservation>();
         Dictionary<string, MmcClasspathClassSelection> effective = new(StringComparer.Ordinal);
+        var manifestInputs = ImmutableArray.CreateBuilder<MmcManifestInputAbsence>(); long manifestCharacters = 0;
         var policy = RuntimePolicy(launch.Request.Java.Major, launch.EffectiveJvmArguments);
         foreach (var group in profile.Classpath.Select((artifact, index) => (artifact, index)).GroupBy(x => x.artifact.Key)) {
             var first = group.First(); var expected = inputs["artifact:" + first.artifact.Key];
             var read = await ReadJarAsync(first.artifact.Key, expected.ActualPath, expected.Sha256, expected.SizeBytes, required,
-                policy, required.Where(name => !effective.ContainsKey(name)).ToHashSet(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
+                policy, required.Where(name => !effective.ContainsKey(name)).ToHashSet(StringComparer.Ordinal), cancellationToken,
+                ManifestOwnerRoot(launch.Request, first.artifact.Scope)).ConfigureAwait(false);
+            foreach (var fact in read.ManifestInputs) {
+                manifestCharacters = checked(manifestCharacters + fact.Reference.Length + fact.TargetPath.Length);
+                if (manifestInputs.Count >= 65536 || manifestCharacters > 16 * 1024 * 1024) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_BUDGET", "Manifest absence proof exceeds its launch budget.");
+                manifestInputs.Add(fact);
+            }
             observations.Add(read.Observation);
             foreach (var entry in read.Found) if (!effective.ContainsKey(entry.Key)) effective.Add(entry.Key,
                 new(entry.Key, first.artifact.Key, entry.Value.Path, first.index, entry.Value.Release, entry.Value.Major));
         }
         foreach (string name in launch.RequiredClassNames) if (!effective.ContainsKey(name)) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_CLASS_MISSING", "A required launch class is absent from its locked ordered classpath.");
-        return new(observations.ToImmutable(), required.Where(effective.ContainsKey).Select(name => effective[name]).ToImmutableArray());
+        return new(observations.ToImmutable(), required.Where(effective.ContainsKey).Select(name => effective[name]).ToImmutableArray()) { ManifestInputs = manifestInputs.ToImmutable() };
     }
 
     internal static async Task VerifySupportDoesNotShadowAsync(MmcRuntimeLaunchRequest request, ImmutableArray<string> required, IReadOnlyList<string> effectiveJvmArguments, CancellationToken token) {
@@ -59,7 +68,7 @@ public static class MmcClasspathInspector {
     }
 
     private static async Task<JarResult> ReadJarAsync(string key, string path, string expectedSha256, long expectedSize,
-        string[] required, JarRuntimePolicy policy, HashSet<string> compatibilityRequired, CancellationToken token) {
+        string[] required, JarRuntimePolicy policy, HashSet<string> compatibilityRequired, CancellationToken token, string? manifestOwnerRoot = null) {
         MmcRuntimeFiles.Hash(expectedSha256); MmcInstancePaths.EnsureNoLinks(path);
         using FileStream source = new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
         string digest = await MmcRuntimeFiles.HashStreamAsync(source, token).ConfigureAwait(false);
@@ -73,8 +82,8 @@ public static class MmcClasspathInspector {
         var manifests = archive.Entries.Where(e => e.FullName.Equals("META-INF/MANIFEST.MF", StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
         if (manifests.Length > 1) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST", "Ambiguous JAR manifest entries.");
         var manifest = manifests.Length == 0 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : ReadManifest(manifests[0]);
-        if (manifest.TryGetValue("Class-Path", out string? referenced) && !string.IsNullOrWhiteSpace(referenced))
-            throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_INPUT", "Implicit manifest Class-Path inputs are not a verified ordered launch plan.");
+        var absent = manifest.TryGetValue("Class-Path", out string? referenced)
+            ? MmcManifestClasspath.ObserveAbsent(key, path, digest, manifestOwnerRoot, referenced, token) : ImmutableArray<MmcManifestInputAbsence>.Empty;
         bool multiRelease = policy.MultiReleaseEnabled && manifest.TryGetValue("Multi-Release", out string? enabled) && enabled.Equals("true", StringComparison.OrdinalIgnoreCase);
         var names = required.ToDictionary(name => name.Replace('.', '/') + ".class", name => name, StringComparer.Ordinal);
         Dictionary<string, (ZipArchiveEntry Entry, int Release)> selected = new(StringComparer.Ordinal);
@@ -109,8 +118,33 @@ public static class MmcClasspathInspector {
                 throw new MmcRuntimeLaunchException("MMC_CLASSPATH_CLASS_VERSION", "Required class bytecode does not match the selected Java/preview capability.");
             found.Add(item.Key, new(item.Value.Entry.FullName, item.Value.Release, major));
         }
-        return new(new(key, digest, required.Select(name => found.TryGetValue(name, out var value) ? new MmcJarClassPresence(name, true, value.Path) : new(name, false)).ToImmutableArray()), found);
+        return new(new(key, digest, required.Select(name => found.TryGetValue(name, out var value) ? new MmcJarClassPresence(name, true, value.Path) : new(name, false)).ToImmutableArray()), found, absent);
     }
+
+    /// <summary>Call synchronously at final admission after runtime input revalidation, while retaining the instance gate/pins.</summary>
+    public static void RevalidateManifestInputs(MmcRuntimeLaunchPlan launch, MmcClasspathInspection inspection, CancellationToken cancellationToken = default) {
+        ArgumentNullException.ThrowIfNull(launch); ArgumentNullException.ThrowIfNull(inspection); cancellationToken.ThrowIfCancellationRequested();
+        if (inspection.ManifestInputs.IsDefault || inspection.ManifestInputs.Length > 65536)
+            throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_BUDGET", "Manifest absence proof is missing or exceeds its bound.");
+        var inputs = launch.Inputs.ToDictionary(item => item.Identity, StringComparer.Ordinal);
+        var artifacts = launch.Request.BoundPlan.CompiledProfile.Classpath.GroupBy(item => item.Key).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        long characters = 0;
+        foreach (var fact in inspection.ManifestInputs) {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!inputs.TryGetValue("artifact:" + fact.ArtifactKey, out var input) || !artifacts.TryGetValue(fact.ArtifactKey, out var artifact) ||
+                !Path.GetFullPath(input.ActualPath).Equals(fact.JarPath, MmcRuntimeFiles.PathComparison) || input.Sha256 != fact.JarSha256)
+                throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_INPUT", "Manifest absence proof does not belong to the held classpath input.");
+            string root = ManifestOwnerRoot(launch.Request, artifact.Scope);
+            if (!root.Equals(fact.OwnedRoot, MmcRuntimeFiles.PathComparison)) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_INPUT", "Manifest absence proof changed its owned role.");
+            characters = checked(characters + fact.Reference.Length + fact.TargetPath.Length);
+            if (characters > 16 * 1024 * 1024) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_BUDGET", "Manifest absence proof exceeds its name budget.");
+            string resolved = MmcManifestClasspath.Resolve(fact.JarPath, root, fact.Reference);
+            if (!resolved.Equals(fact.TargetPath, MmcRuntimeFiles.PathComparison)) throw new MmcRuntimeLaunchException("MMC_CLASSPATH_MANIFEST_INPUT", "Manifest absence proof resolved to another target.");
+            MmcManifestClasspath.RequireAbsent(root, resolved);
+        }
+    }
+    private static string ManifestOwnerRoot(MmcRuntimeLaunchRequest request, MmcArtifactScope scope) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(scope == MmcArtifactScope.InstanceLocal ? request.Paths.LocalLibraryRoot : Path.Combine(request.Paths.RuntimeRoot, request.Directories.ViewKey)));
 
     // Oracle JarFile implementation properties, applied once at VM startup.
     // 'force' enables runtime versioning but does not invent a missing manifest

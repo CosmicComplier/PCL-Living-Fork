@@ -52,3 +52,8 @@ Wrapper 本体没有修改或重打包。`MmcRuntimeBridgeTransport.JavaSource` 
 `--group jar-namespace` 覆盖只读 Java JAR namespace：普通 exact 重复资源、大小写不同的资源/类名、Windows 特殊名与 literal 资源名可读；重复 class 或 manifest 明确 unsupported，预算、UTF8/压缩与 native duplicate 拒绝均保留。此策略不授权任何提取，也不改变 native/源包 Windows 目标规则。结构 ZIP64 end record 有界支持；per-entry ZIP64 大小/offset 仍 unsupported。
 
 可显式执行 `--readonly-jar-proof <本地原始 JAR 路径>`，将不改字节的原件纳入真正的 Inspector Java8/21 类头证明，并核对源 SHA256 前后不变；不会执行该 JAR 或 Minecraft。该参数不属于默认组，也不会给 CI 增加外部 JAR 依赖。
+
+
+`--group manifest-inputs` 用真实 JDK8/21 的自有 URLClassLoader 程序核对相对 URI 的空格、Unicode、plus/hash 转义及 parent 路径解析，证明不存在的 manifest 引用不贡献资源；新增文件后实际 JDK 会读取它，而 `RevalidateManifestInputs(plan, inspection, token)` 必须拒绝。最终 admission 应在 `MmcRuntimeLaunchBuilder.RevalidateAsync` 后、持 gate/pins 时同步调用该 API。`inspection.ManifestInputs` 保存每条引用的 actual JAR SHA、owned root、原 token 与 resolved missing target；检查既有 implicit 输入时明确 unsupported，因为加载顺序尚未绑定，即使它已在显式 classpath 中。
+
+当前仅支持 owned 当前 runtime view 或 local libraries 内的缺失普通相对 file URI。远程/UNC/设备/绝对 URI、query/fragment、escaping、编码分隔符、链接以及已存在的 implicit 文件/目录均 unsupported；host Wrapper/Bridge 的非空隐式 Class-Path 仍拒绝。资源 namespace 的宽容规则不会用于该真实文件 URI 验证。分词使用 Java StringTokenizer 的五种 ASCII 分隔符，NBSP 不忽略；URI 转义只解码一次。语义参考 [OpenJDK8 URLClassPath](https://github.com/openjdk/jdk8u/blob/master/jdk/src/share/classes/sun/misc/URLClassPath.java)、[OpenJDK21 URLClassPath](https://github.com/openjdk/jdk21u/blob/master/src/java.base/share/classes/jdk/internal/loader/URLClassPath.java)，代码独立实现。
