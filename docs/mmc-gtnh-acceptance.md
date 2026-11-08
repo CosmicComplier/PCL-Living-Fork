@@ -39,3 +39,29 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 ```
 
 `java21` 对应现代包。此入口核对原真实 Main 身份、已发布 definition/projection、运行库和 native 的实际 SHA256，再运行真实版本列表 worker 并等到 dispatcher idle。只对两个必须读取的旧账号 schema key 提供空私有 store，其余 Registry/设置 guard 保持启用；不会读取用户账号、重新导入、修复或启动游戏。每次复核生成独立 `post-publish-<case>-<GUID>` 证据，不改原导入 receipt 或日志。新的导入 runner 同样等待列表 worker 和 UI 回调完成后才检查零 forbidden。
+
+## 2026-11-08 真实 Java 8 游戏验收
+
+继续使用已成功导入的独立 Java 8 实例，没有重新下载或导入发行 ZIP。
+实际运行 Java 为本机 `jre1.8.0_491`，6144 MiB 最大堆、1024 MiB 初始堆，
+通过真实 Main 执行器、owned classpath/native、会话与退出监视器启动。
+账号边界使用验收专用离线资料，不读取玩家账号。
+
+| 项目 | 已取得的证据 |
+| --- | --- |
+| 首轮主菜单、进入世界 | 用户明确确认“成功，进入主界面并且进入世界”；日志出现实际本地服务端和维度加载，建立 `New World` 存档 |
+| 正常退出 | 第一轮 Java 退出码 0；`Exited.record` 已归档，mutable 临时目录清理、Java pin 释放均为 true |
+| 修复 | 在实际退出及收尾后执行专用后端，`repair-2.json` 记录同 ID、generation 2 成功 |
+| 再次启动 | 第二个真实 Java 进程及 LWJGL 窗口已创建；重开同一世界仍待用户确认 |
+| 现代 Java 包 | 导入及最终制品核对已通过；本节不代表其游戏验收 |
+
+当前证据根是集成工作树的
+`artifacts/mmc-gtnh-launch-acceptance/20261108-114527-a1eae77059834dd2a49c48c63c816948/`，
+保留两轮真实进程/脱敏计划、游戏日志、首轮退出、修复及用户确认记录。
+用户按 Esc 停止电脑操作后，明确选择自行操作游戏界面；后续代理只读进程与日志，不再控制界面。
+
+此前另一次在子代理持有的验收链中，游戏与宿主同时突然退出，未出现正常退出收据或明确崩溃报告。
+该轮保留为中断，不计成功，也没有把尾部非致命模组告警推定为退出原因。
+已用真实进程身份检查和会话恢复流程确认退出并收尾，再由主代理持有本轮命令。
+原中断证据位于子工作树 `mmc-core-parsing` 的
+`artifacts/mmc-gtnh-launch-acceptance/20261108-113335-9cf8bf9390c541a18df05bb8cfc544a7/`。
