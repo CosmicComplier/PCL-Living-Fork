@@ -58,3 +58,6 @@ internal sealed partial class MmcConfigurationState {
     }
     private void UnpinAfterRelocation() => MmcConfigurationCoordinator.UnpinIfClean(this);
 }
+public sealed partial class MmcConfigurationWriteScope {
+    internal string IniSnapshotForRelocation { get { lease.AssertHeld();return ini; } }
+}

@@ -8,6 +8,41 @@ internal static class MmcInstanceLifecycleTests {
     internal static IEnumerable<(string Name,Action Run)> Cases() {
         yield return ("MMC path handoff preserves queued preferences and detaches every old provider without recreating its path", PreferenceHandoff);
         yield return ("MMC lifecycle permits require an exact published source and bound durable intent", JournalPermit);
+        yield return ("MMC rename and same-volume move preserve identity/worlds and advance name projections without an installed Java", Relocation);
+        yield return ("MMC lifecycle predecision cancellation rolls back while decided target conflicts recover forward", CancellationAndConflict);
+    }
+    private static void Relocation(){
+        using Fixture fixture=new();var imported=fixture.Import();var service=new MmcInstanceLifecycleBackend();
+        using var old=new InstanceConfigProvider(fixture.Source);old.Set("absolute",fixture.Source+"/minecraft/saves/world",false);old.Save();
+        string renamed=Path.Combine(Path.GetDirectoryName(fixture.Source)!,"renamed");
+        var first=service.RelocateAsync(new(fixture.Source,renamed,imported.Definition!.InstanceId,1,MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256,MmcInstanceRelocationKind.Rename)).GetAwaiter().GetResult();
+        if(first.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(first.Failure);
+        Equal(imported.Definition.InstanceId,first.Definition!.InstanceId);Equal(2L,first.Definition.Generation);Equal(false,Directory.Exists(fixture.Source));
+        Equal(true,File.Exists(Path.Combine(renamed,"renamed.json")));Equal(false,File.Exists(Path.Combine(renamed,"source.json")));Denied(old.Save);
+        string moved=Path.Combine(Path.GetDirectoryName(fixture.Target)!,"renamed");
+        var second=service.RelocateAsync(new(renamed,moved,first.Definition.InstanceId,2,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(renamed)).Sha256)).GetAwaiter().GetResult();
+        if(second.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(second.Failure);
+        Equal(3L,second.Definition!.Generation);Equal(imported.Definition.InstanceId,second.Definition.InstanceId);
+        Equal("world bytes",File.ReadAllText(Path.Combine(moved,"minecraft","saves","world","level.dat")));
+        using var current=new InstanceConfigProvider(moved);Equal(moved.Replace('\\','/')+"/minecraft/saves/world",current.Read("absolute","",false));
+        Equal(MmcManagementState.ManagedMmc,MmcManagementProbe.Read(moved).State);
+        Equal(MmcInstanceBackendStatus.Succeeded,service.RecoverAsync(second.OperationDirectory!).GetAwaiter().GetResult().Status);
+        Equal(false,Directory.Exists(renamed));Equal(false,Directory.Exists(fixture.Source));
+    }
+    private static void CancellationAndConflict(){
+        foreach(string mode in new[]{"before","after","conflict"}){
+            using Fixture fixture=new();var imported=fixture.Import();using CancellationTokenSource cancel=new();var service=new MmcInstanceLifecycleBackend();
+            var result=service.RelocateAsync(new(fixture.Source,fixture.Target,imported.Definition!.InstanceId,1,MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256){
+                Checkpoint=(phase,_)=>{if(mode=="before"&&phase==MmcLifecycleCheckpoint.StructurePrepared)cancel.Cancel();
+                    if(mode=="after"&&phase==MmcLifecycleCheckpoint.CommitDecided)cancel.Cancel();
+                    if(mode=="conflict"&&phase==MmcLifecycleCheckpoint.BeforeDirectoryMove){Directory.CreateDirectory(fixture.Target);File.WriteAllText(Path.Combine(fixture.Target,"foreign.txt"),"keep");}}
+            },cancel.Token).GetAwaiter().GetResult();
+            if(mode=="before"){Equal(MmcInstanceBackendStatus.Cancelled,result.Status);Equal(1L,MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(fixture.Source)).Definition.Generation);Equal(false,Directory.Exists(fixture.Target));Equal(MmcManagementState.ManagedMmc,MmcManagementProbe.Read(fixture.Source).State);}
+            else if(mode=="after"){if(result.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(result.Failure);Equal(true,cancel.IsCancellationRequested);Equal(2L,result.Definition!.Generation);}
+            else{Equal(MmcInstanceBackendStatus.NeedsRecovery,result.Status);Equal("keep",File.ReadAllText(Path.Combine(fixture.Target,"foreign.txt")));Equal(MmcManagementState.PendingTransaction,MmcManagementProbe.Read(fixture.Source).State);
+                File.Delete(Path.Combine(fixture.Target,"foreign.txt"));Directory.Delete(fixture.Target,false);
+                var recovered=service.RecoverAsync(result.OperationDirectory!).GetAwaiter().GetResult();if(recovered.Status!=MmcInstanceBackendStatus.Succeeded)throw new Exception(recovered.Failure);Equal(false,Directory.Exists(fixture.Source));Equal(2L,recovered.Definition!.Generation);}
+        }
     }
     private static void PreferenceHandoff() {
         using Fixture fixture=new(); var imported=fixture.Import(); Guid id=imported.Definition!.InstanceId;
