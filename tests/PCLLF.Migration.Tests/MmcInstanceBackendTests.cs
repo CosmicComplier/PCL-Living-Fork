@@ -8,6 +8,10 @@ using PCLCS;
 using PCLLF.MMCC.Core;
 
 internal static class MmcInstanceBackendTests {
+    internal static IEnumerable<(string Name, Action Run)> VariantCases() {
+        yield return ("MMC explicitly adopts a declared Java variant offline and retains adopted bytes and player data", AdoptJavaVariant);
+        yield return ("MMC variant adoption rejects stale authority, undeclared Java and predecision cancellation", VariantRefusals);
+    }
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC import preparation measures the full archive and keeps opaque docs outside live settings", SourcePreparation);
         yield return ("MMC backend imports real files and repairs offline after original ZIP deletion without touching player data", ImportRepair);
@@ -286,6 +290,56 @@ internal static class MmcInstanceBackendTests {
         }
     }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}."); }
+    private static void AdoptJavaVariant() => AdoptJavaVariantAsync().GetAwaiter().GetResult();
+    private static async Task AdoptJavaVariantAsync() {
+        using Fixture fixture = new(multiJava: true);
+        var backend = fixture.Backend();
+        var imported = await backend.ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        var first = MmcSavedSourceStore.ReadPrimary(imported.Paths!);
+        string player = Path.Combine(imported.Paths!.GameRoot, "config", "example.cfg"); File.WriteAllText(player, "personal");
+        File.Delete(fixture.Archive); Directory.Delete(fixture.CacheRoot, true);
+        var offline = fixture.Backend(offline: true);
+        var ordinaryRepair = await offline.RepairAsync(new(fixture.VersionRoot, new("windows", "x86_64", 21), first.Definition.InstanceId));
+        Equal(MmcInstanceBackendStatus.Rejected, ordinaryRepair.Status);
+        Equal(first.Sha256, MmcSavedSourceStore.ReadPrimary(imported.Paths).Sha256);
+        var next = await offline.AdoptVariantAsync(new(fixture.VersionRoot, new("windows", "x86_64", 21), first.Definition.InstanceId, 1, first.Sha256));
+        if (next.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(next.Failure);
+        Equal(2L, next.Definition!.Generation); Equal(21, next.BoundPlan!.CompiledProfile.Environment.JavaMajor);
+        foreach (var original in first.Definition.ArtifactLocks) {
+            var current = next.Definition.ArtifactLocks.Single(value => value.ArtifactKey == original.ArtifactKey);
+            Equal(original.AdoptedSha256, current.AdoptedSha256); Equal(original.RecoveryObjectRelativePath, current.RecoveryObjectRelativePath);
+        }
+        Equal("personal", File.ReadAllText(player)); Equal(1, fixture.Downloads);
+        var second = MmcSavedSourceStore.ReadPrimary(next.Paths!);
+        var same = await offline.AdoptVariantAsync(new(fixture.VersionRoot, new("windows", "x86_64", 21), second.Definition.InstanceId, 2, second.Sha256));
+        if (same.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(same.Failure);
+        Equal(2L, same.Definition!.Generation); Equal(second.Sha256, MmcSavedSourceStore.ReadPrimary(next.Paths!).Sha256);
+        var back = await offline.AdoptVariantAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8), second.Definition.InstanceId, 2, second.Sha256));
+        if (back.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(back.Failure);
+        Equal(3L, back.Definition!.Generation); Equal(8, back.BoundPlan!.CompiledProfile.Environment.JavaMajor);
+        Equal("personal", File.ReadAllText(player));
+    }
+    private static void VariantRefusals() => VariantRefusalsAsync().GetAwaiter().GetResult();
+    private static async Task VariantRefusalsAsync() {
+        using Fixture fixture = new(multiJava: true);
+        var backend = fixture.Backend();
+        var imported = await backend.ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)));
+        if (imported.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(imported.Failure);
+        var primary = MmcSavedSourceStore.ReadPrimary(imported.Paths!);
+        var request = new MmcInstanceAdoptVariantRequest(fixture.VersionRoot, new("windows", "x86_64", 21), primary.Definition.InstanceId, 1, primary.Sha256);
+        foreach (var invalid in new[] { request with { ExpectedGeneration = 2 }, request with { ExpectedPrimarySha256 = new string('e', 64) }, request with { Environment = new("windows", "x86_64", 17) } }) {
+            var result = await backend.AdoptVariantAsync(invalid); Equal(false, result.Status == MmcInstanceBackendStatus.Succeeded);
+            Equal(primary.Sha256, MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256);
+        }
+        using CancellationTokenSource cancellation = new();
+        var canceled = await backend.AdoptVariantAsync(request with {
+            TransactionCheckpoint = (phase, _) => { if (phase == MmcTransactionCheckpoint.Prepared) cancellation.Cancel(); }
+        }, cancellation.Token);
+        Equal(MmcInstanceBackendStatus.Cancelled, canceled.Status);
+        Equal(primary.Sha256, MmcSavedSourceStore.ReadPrimary(imported.Paths!).Sha256);
+    }
+
     private sealed class Fixture : IDisposable {
         public string Scope { get; } = Path.Combine(Path.GetTempPath(), "pcllf-mmc-backend-" + Guid.NewGuid().ToString("N"));
         public string Archive => Path.Combine(Scope, "fixture.zip");
@@ -294,7 +348,7 @@ internal static class MmcInstanceBackendTests {
         public int Downloads;
         private readonly List<HttpClient> clients = [];
         private static readonly byte[] AssetIndex = Encoding.UTF8.GetBytes("{\"objects\":{}}");
-        public Fixture(int tinyFiles = 0) {
+        public Fixture(int tinyFiles = 0, bool multiJava = false) {
             Directory.CreateDirectory(Scope);
             using var zip = ZipFile.Open(Archive, ZipArchiveMode.Create);
             Add(zip, "README.txt", "opaque outer documentation");
@@ -302,7 +356,8 @@ internal static class MmcInstanceBackendTests {
             Add(zip, "pack/mmc-pack.json", "{\"formatVersion\":1,\"components\":[{\"uid\":\"net.minecraft\",\"version\":\"1.7.10\"}]}");
             Add(zip, "pack/instance.cfg", "name=Fixture\nOverrideJavaArgs=true\nJvmArgs=-Dfixture=yes\n");
             Add(zip, "pack/patches/net.minecraft.json", """{"formatVersion":1,"uid":"net.minecraft","version":"1.7.10","mainClass":"fixture.Game","mainJar":{"name":"fixture:game:1","MMC-hint":"local","MMC-filename":"fixture.jar"},"assetIndex":{"id":"fixture","url":"https://fixture.invalid/assets.json","sha1":"0000000000000000000000000000000000000000","size":1},"compatibleJavaMajors":[8]}"""
-                .Replace(new string('0', 40), Convert.ToHexStringLower(SHA1.HashData(AssetIndex))).Replace("\"size\":1", "\"size\":" + AssetIndex.Length));
+                .Replace(new string('0', 40), Convert.ToHexStringLower(SHA1.HashData(AssetIndex))).Replace("\"size\":1", "\"size\":" + AssetIndex.Length)
+                .Replace("\"compatibleJavaMajors\":[8]", multiJava ? "\"compatibleJavaMajors\":[8,21]" : "\"compatibleJavaMajors\":[8]"));
             Add(zip, "pack/libraries/fixture.jar", "launcher library"); Add(zip, "pack/libraries/unreferenced.jar", "unreferenced original");
             Add(zip, "pack/minecraft/libraries/fixture.jar", "different game library"); Add(zip, "pack/minecraft/config/example.cfg", "player config");
             Add(zip, "pack/PCL/config.json", "{\"foreign-player-pref\":\"must-not-import\"}");
