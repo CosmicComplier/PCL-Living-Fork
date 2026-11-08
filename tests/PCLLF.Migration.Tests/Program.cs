@@ -56,7 +56,8 @@ internal static class Program {
             ("mmc-artifacts", MmcArtifactTests.Cases),
             ("mmc-configuration", MmcConfigurationTests.Cases),
             ("mmc-archive", () => MmcArchiveInspectionTests.Cases().Concat(MmcPackagePreservationTests.Cases()).Concat(MmcArchiveTests.Cases())),
-            ("mmc-definition", () => MmcDefinitionTests.Cases().Concat(MmcLaunchAuthorityTests.Cases()).Concat(MmcProjectionTests.Cases()))
+            ("mmc-definition", () => MmcDefinitionTests.Cases().Concat(MmcLaunchAuthorityTests.Cases()).Concat(MmcProjectionTests.Cases())),
+            ("mmc-java", MmcJavaPinTests.Cases)
         ];
         if (args.Length == 1 && args[0] == "--list-groups") {
             foreach (var group in groups) Console.WriteLine(group.Key);

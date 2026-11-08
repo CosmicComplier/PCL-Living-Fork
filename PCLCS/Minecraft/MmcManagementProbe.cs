@@ -36,6 +36,12 @@ public static class MmcManagementProbe {
         MmcManagementDocument configHint = ReadHint(Path.Combine(pcl, "config.json"), true);
         MmcManagementDocument versionHint = ReadHint(Path.Combine(root, logicalVersionName + ".json"), false);
         bool sources = false, pending = false, complete = true;
+        try {
+            string import = Path.Combine(pcl, "MmcImportPending.json");
+            MmcInstancePaths.EnsureNoLinks(pcl);
+            if (MmcInstancePaths.Attributes(import) is not null) { sources = true; pending = true; }
+            MmcInstancePaths.EnsureNoLinks(import);
+        } catch (Exception error) when (IsObservationFailure(error)) { complete = false; }
         foreach (string store in ReservedStores) {
             try {
                 string storePath = Path.Combine(pcl, store);

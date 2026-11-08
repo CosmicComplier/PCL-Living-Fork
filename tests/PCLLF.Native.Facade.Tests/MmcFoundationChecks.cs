@@ -35,6 +35,20 @@ internal static class MmcFoundationChecks
         Native.Check(damaged.State == MmcManagementState.ManagedMmcRepairRequired &&
             !damaged.CanUseLegacyBackend,
             "A damaged managed definition must never authorize ordinary repair.");
+        string pendingRoot = Path.Combine(environment.Data, "mmc-pending-model", "versions", "Pending");
+        Directory.CreateDirectory(Path.Combine(pendingRoot, "PCL"));
+        File.WriteAllText(Path.Combine(pendingRoot, "PCL", "MmcImportPending.json"), "{broken");
+        File.WriteAllText(Path.Combine(pendingRoot, ".pclignore"), "owned fixture");
+        var pendingInstance = new PCL.ModMinecraft.McInstance(pendingRoot).Load();
+        Native.Check(pendingInstance.IsLoaded && pendingInstance.Info.Contains("恢复", StringComparison.Ordinal) &&
+            File.Exists(Path.Combine(pendingRoot, ".pclignore")) && !File.Exists(Path.Combine(pendingRoot, "Pending.json")),
+            "Actual managed model must stay visible and readonly without ordinary JSON/ignore migration.");
+        bool pathRefused = false;
+        try { _ = pendingInstance.PathIndie; } catch (IOException) { pathRefused = true; }
+        Native.Check(pathRefused, "Pending MMC model cannot fall back to the shared game directory.");
+        bool renameRefused = false;
+        try { pendingInstance.Rename("Other"); } catch (InvalidOperationException) { renameRefused = true; }
+        Native.Check(renameRefused && Directory.Exists(pendingRoot), "Ordinary rename must not mutate an owned pending instance.");
         environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS mmc-foundations: actual Core assembly call and host ownership gate. " +
             "P1 source parsing only; no new MMC install, launch or repair integration claim.");

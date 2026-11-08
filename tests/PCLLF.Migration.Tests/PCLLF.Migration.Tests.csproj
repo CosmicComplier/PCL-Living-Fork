@@ -113,6 +113,7 @@
     <Compile Include="../../PCLCS/Minecraft/MmcConfiguration/**/*.cs" Link="Production/MmcConfiguration/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/MmcArchive/**/*.cs" Link="Production/MmcArchive/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/MmcInstances/**/*.cs" Link="Production/MmcInstances/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Launch/MmcJavaPinStore.cs" Link="Production/MmcJavaPinStore.cs" />
     <!-- Match modern/PCLCS exactly: the .NET 10 product uses this fixed modern
          asset. The original LF DLL stays the independent CLR4 oracle input. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

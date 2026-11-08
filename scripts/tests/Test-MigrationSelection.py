@@ -135,6 +135,8 @@ def main() -> int:
         ("tests/PCLLF.Migration.Tests/MmcPackagePreservationTests.cs", "mmc-archive-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcDefinitionTests.cs", "mmc-definition-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcLaunchAuthorityTests.cs", "mmc-definition-tests", False),
+        ("PCLCS/Launch/MmcJavaPinStore.cs", "mmc-java-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcJavaPinTests.cs", "mmc-java-tests", False),
     ):
         expect(cli([path]), scope, native, "MMC bounded stage routing: " + path, [path])
     registry_source = (repo / "tests/PCLLF.Migration.Tests/Program.cs").read_text(encoding="utf-8")

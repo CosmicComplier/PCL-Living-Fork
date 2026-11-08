@@ -45,7 +45,7 @@ def documentation_only(paths: list[str]) -> bool:
     return bool(paths) and all(is_documentation_path(name) for name in paths)
 
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -273,6 +273,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             # own rule group and the real modern Main graph in validation.
             include(("mmc-profile", "mmc-definition"), (), build=False)
             native = True
+        elif name == "PCLCS/Launch/MmcJavaPinStore.cs":
+            include(("mmc-java",), (), build=False)
         elif name == "docs/migration/source-inventory.baseline.json" or name == "scripts/Inventory-Migration.py":
             inventory = True
         elif name in NATIVE_ONLY_PATHS or name.startswith(NATIVE_ONLY_PREFIXES):
@@ -306,6 +308,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mmc-artifacts",), (), build=False)
             elif stem == "MmcConfiguration":
                 include(("mmc-configuration",), (), build=False)
+            elif stem == "MmcJavaPin":
+                include(("mmc-java",), (), build=False)
             elif stem in {"MmcArchive", "MmcArchiveInspection", "MmcPackagePreservation"}:
                 include(("mmc-archive",), (), build=False)
             elif stem in {"MmcDefinition", "MmcLaunchAuthority", "MmcProjection"}:

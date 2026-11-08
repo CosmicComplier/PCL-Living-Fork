@@ -22,6 +22,11 @@ public partial class LegacyMcInstance<TSelf, TState, TCard>
     public string PathVersion { get; }
     public string PathIndie {
         get {
+            MmcInstanceInspection managed = MmcInstanceInspector.Read(PathVersion);
+            if (!managed.IsLegacy || !managed.Management.ObservationComplete) {
+                if (!managed.IsConsistent) throw new IOException(managed.Error ?? "实例管理状态尚未确认，不能推导为公共游戏目录。");
+                return PathUtils.AddSlashSuffix(managed.Paths!.GameRoot);
+            }
             if (!host.HasSaved("VersionArgumentIndieV2", Self)) {
                 if (!IsLoaded) Load();
                 bool ShouldBeIndie() {
