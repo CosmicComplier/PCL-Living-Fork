@@ -21,6 +21,7 @@ public sealed class MmcComponentEditorServices {
     public Action<MmcInstanceDefinitionChangeResult> Published { get; init; }
     public Action<ModNet.LoaderDownload> DownloadCreated { get; init; }
     public Action<MmcTransactionCheckpoint, int> TransactionObserved { get; init; }
+    public Action DecisionReady { get; init; }
 }
 public sealed record MmcComponentEditorLocalFile(string FileName, string AbsolutePath);
 public sealed record MmcComponentEditorFileFact(string FileName, string AbsolutePath, string Sha256, long SizeBytes);
@@ -109,11 +110,14 @@ internal static class MmcComponentEditorUi {
                     },
                     TransactionCheckpoint = (phase, index) => {
                         services.TransactionObserved?.Invoke(phase, index);
-                        if (phase == MmcTransactionCheckpoint.BeforeDecision) {
-                            VerifyInputs(frozen.Inputs, token);
-                            if (frozen.JavaImage is not null) VerifyInputs([frozen.JavaImage], token);
-                            fence.EnterDecision(token);
-                        }
+                    },
+                    BeforeCommitDecision = () => {
+                        // The backend has finished its final world/source scan.
+                        // Cancellation remains effective throughout that scan.
+                        services.DecisionReady?.Invoke();
+                        VerifyInputs(frozen.Inputs, token);
+                        if (frozen.JavaImage is not null) VerifyInputs([frozen.JavaImage], token);
+                        fence.EnterDecision(token);
                     }
                 }, token).GetAwaiter().GetResult();
                 if (task.Output.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(token);

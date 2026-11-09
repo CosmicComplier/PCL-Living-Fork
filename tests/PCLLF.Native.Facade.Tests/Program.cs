@@ -67,6 +67,7 @@ internal static class Program
         ["mmc-component-cancel-unstarted"] = MmcComponentEditorUiChecks.RunCancellationUnstarted,
         ["mmc-component-cancel-preview"] = MmcComponentEditorUiChecks.RunCancellationPreview,
         ["mmc-component-cancel-before-decision"] = MmcComponentEditorUiChecks.RunCancellationBeforeDecision,
+        ["mmc-component-cancel-final-validation"] = MmcComponentEditorUiChecks.RunCancellationFinalValidation,
         ["mmc-component-cancel-after-decision"] = MmcComponentEditorUiChecks.RunCancellationAfterDecision,
         ["mmc-component-input-changed"] = MmcComponentEditorUiChecks.RunRefuseChangedInput,
         ["mmc-component-unsupported"] = MmcComponentEditorUiChecks.RunRefuseUnsupported,

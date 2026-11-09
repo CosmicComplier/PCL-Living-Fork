@@ -178,6 +178,8 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
                         .Concat(prepared.AdoptedLocks.Select(value => new MmcHistoryFile(value.RecoveryObjectRelativePath, value.AdoptedSha256, value.SizeBytes)))
                         .Concat(observations.DerivedOutputs.Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes)))
                         .GroupBy(value => value.RelativePath, StringComparer.OrdinalIgnoreCase).Select(group => group.First()), token);
+                    _ = MmcPlatformOriginFiles.ReadSaved(paths, bound.Definition);
+                    request.BeforeCommitDecision?.Invoke();
                 }
             });
             return result.Outcome == MmcTransactionOutcome.Committed ? new(MmcInstanceBackendStatus.Succeeded, bound.Definition, bound.Plan, undo) { WorldBackupIds = backups } :

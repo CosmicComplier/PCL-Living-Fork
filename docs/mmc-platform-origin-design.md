@@ -1,7 +1,8 @@
 # MMC 平台来源与在线更新接入约束
 
-本文件是尚未实施部分的开发约束，不是在线能力验收记录。ZIP 更新的实施状态见
-`mmc-completion-ledger.md`；普通 CurseForge／Modrinth 整合包继续保留原有流程。
+本文件记录开发约束。证据绑定、官方元数据适配与在线 ZIP 后端已实现，根集成九项测试通过；
+产品入口仍在接线，不等于生产接口或真实游戏验收。当前状态见
+`mmc-completion-ledger.md` 与 `mmc-platform-origin-backend.md`；普通 CurseForge／Modrinth 整合包继续保留原有流程。
 
 ## 可靠身份
 

@@ -22,6 +22,7 @@ internal static class MmcComponentEditorUiChecks {
     internal static void RunCancellationUnstarted(FixtureEnvironment environment) => Execute(environment, scope => scope.CancelUnstarted(), "unstarted cancel has no producer and late Start is fenced");
     internal static void RunCancellationPreview(FixtureEnvironment environment) => Execute(environment, scope => scope.CancelPreview(), "preview cancel leaves the publication unchanged and drains the real worker");
     internal static void RunCancellationBeforeDecision(FixtureEnvironment environment) => Execute(environment, scope => scope.CancelDecision(false), "predecision cancel rolls back and releases busy after the worker returns");
+    internal static void RunCancellationFinalValidation(FixtureEnvironment environment) => Execute(environment, scope => scope.CancelFinalValidation(), "cancel after final world/source validation still rolls back before the durable decision");
     internal static void RunCancellationAfterDecision(FixtureEnvironment environment) => Execute(environment, scope => scope.CancelDecision(true), "postdecision cancel finishes the decided publication");
     internal static void RunRefuseChangedInput(FixtureEnvironment environment) => Execute(environment, scope => scope.ChangedInput(), "selected patch/JAR mutations after preview refuse publication");
     internal static void RunRefuseUnsupported(FixtureEnvironment environment) => Execute(environment, scope => scope.Unsupported(), "unknown required capabilities cannot be acknowledged into Commit");
@@ -51,6 +52,7 @@ internal static class MmcComponentEditorUiChecks {
         private Func<MmcComponentEditorConfirmation, int> confirm = _ => 1;
         private Action<ModLoader.LoaderCombo<string>>? register;
         private Action<MmcTransactionCheckpoint>? checkpoint;
+        private Action? decisionReady;
         private MmcComponentEditorConfirmation? selected;
         private int choices;
         private ModLoader.LoaderCombo<string> Current => tasks.Last();
@@ -64,7 +66,8 @@ internal static class MmcComponentEditorUiChecks {
                 RegisterTask = task => { tasks.Add(task); ModLoader.LoaderTaskbar.Add(task); register?.Invoke(task); },
                 Published = result => { Native.Check(Busy, "Editor released busy before its publication callback returned."); published.Add(result); },
                 DownloadCreated = _ => throw new IOException("Owned editor originals must remain offline."),
-                TransactionObserved = (phase, _) => checkpoint?.Invoke(phase)
+                TransactionObserved = (phase, _) => checkpoint?.Invoke(phase),
+                DecisionReady = () => decisionReady?.Invoke()
             }));
             Set("SelectEdit", new Func<MmcComponentEditorModel, MmcComponentEditorChoice?, MmcComponentEditorChoice?>((model, old) => {
                 choices++; AssertDialogUnlocked();
@@ -177,6 +180,23 @@ internal static class MmcComponentEditorUiChecks {
             checkpoint = phase => { if (phase == (decided ? MmcTransactionCheckpoint.CommitDecided : MmcTransactionCheckpoint.BeforeDecision)) Current.Cancel(); };
             Start(data); Wait(decided ? ModBase.LoadState.Finished : ModBase.LoadState.Canceled);
             Native.Check((data.Primary.PrimarySha256 != before) == decided && published.Count == (decided ? 1 : 0), "Editor cancellation crossed the durable decision boundary.");
+        }
+        internal void CancelFinalValidation() {
+            var data = New("cancel-final-validation"); var before = data.Primary;
+            string history = data.PathOf("PCL/MmcTransactionHistory");
+            string[] decisionsBefore = Directory.EnumerateFiles(history, "CommitDecided.record", SearchOption.AllDirectories).Order(StringComparer.Ordinal).ToArray();
+            data.Put("minecraft/saves/world/level.dat", "current world");
+            data.Put(".minecraft/saves/world/level.dat", "alternate world");
+            choose = (model, _) => { var patch = JObject.Parse(model.PatchTexts["net.minecraft"]); patch["version"] = "1.7.11"; return new(new("net.minecraft", PatchContentUtf8: patch.ToString())); };
+            int ready = 0, committed = 0;
+            checkpoint = phase => { if (phase == MmcTransactionCheckpoint.CommitDecided) committed++; };
+            decisionReady = () => { ready++; Current.Cancel(); };
+            Start(data); Wait(ModBase.LoadState.Canceled);
+            Native.Check(ready == 1 && committed == 0 && published.Count == 0 && data.Primary.PrimarySha256 == before.PrimarySha256 &&
+                data.Primary.Definition!.Generation == before.Definition!.Generation &&
+                decisionsBefore.SequenceEqual(Directory.EnumerateFiles(history, "CommitDecided.record", SearchOption.AllDirectories).Order(StringComparer.Ordinal)) &&
+                data.Read("minecraft/saves/world/level.dat") == "current world" && data.Read(".minecraft/saves/world/level.dat") == "alternate world",
+                "Final validation sealed cancellation before a durable decision, changed the publication or lost player bytes.");
         }
         internal void ChangedInput() {
             foreach (bool patch in new[] { true, false }) {

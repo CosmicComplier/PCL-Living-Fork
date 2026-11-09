@@ -44,6 +44,8 @@ public sealed record MmcInstanceDefinitionChangePreviewResult(MmcInstanceBackend
 public sealed record MmcInstanceDefinitionChangeCommitRequest(MmcInstanceDefinitionChangePreview Preview, string ExpectedCandidateSha256) {
     public Action<MmcTransactionCheckpoint, int>? TransactionCheckpoint { get; init; }
     public Action? BeforeTransaction { get; init; }
+    /// <summary>Runs after final source/world validation, immediately before the transaction's durable decision.</summary>
+    public Action? BeforeCommitDecision { get; init; }
 }
 public sealed record MmcInstanceDefinitionChangeResult(MmcInstanceBackendStatus Status, MmcInstanceDefinition? Definition = null,
     MmcBoundLaunchPlan? BoundPlan = null, MmcInstanceHistoryPoint? UndoPoint = null, string? Failure = null) {

@@ -64,6 +64,14 @@ csproj／Program／selector；集成分支需正式注册该 Catalog 源文件�
 现有 LICENCE。没有复制第三方平台或启动器实现，没有新增外部依赖，MeloongCore 保持
 固定 `c774ae4c85fd94e0eaa171db21e78a65870df19b`。
 
+根集成追加：正式注册 Catalog 源文件、`mmc-platform-origin` 分组、变更选择器与 Main 官方服务桥。
+选择器 166 项通过，Migration 构建为 0 警告／0 错误，平台九项全部通过。
+独立审查发现初始加载后平台证据仍可能被外部改写，最终修复／启动共享来源复核与组件提交前
+现已重新读取并验证该证据。新增一项包含修复／组件两路径各自晚删除、晚替换共四个负例，
+全部拒绝发布，原代数、主定义、玩家文件与外部变化现场保留。
+测试 HTTP 服务改为持续绑定的 loopback TCP socket，避免随机 HTTP.sys URL 权限与关闭重绑窗口；
+没有修改系统 URL ACL、证书或生产网络设置。以上仍没有外部平台在线或游戏结论。
+
 接口形状来自 LF 当前 Modrinth `/v2`／CurseForge `/v1` 资源实现及官方资料：
 
 - [Modrinth 精确版本与全部 files](https://docs.modrinth.com/api/operations/getversion/)

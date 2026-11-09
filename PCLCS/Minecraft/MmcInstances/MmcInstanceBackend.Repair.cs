@@ -160,6 +160,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 throw new IOException("Locked original input changed before publication.");
     }
     private static void VerifySourceRecords(MmcInstancePaths paths, MmcInstanceDefinition definition) {
+        _ = MmcPlatformOriginFiles.ReadSaved(paths, definition);
         _ = MmcInstancePackageOwnership.Read(paths, definition);
         foreach (var value in definition.SourceBundle.MetadataRecords)
             if (Hash(MmcSavedSourceStore.ReadBounded(paths, value.ObjectRelativePath, 16 * 1024 * 1024)) != value.ContentSha256)

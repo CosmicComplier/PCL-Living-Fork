@@ -19,6 +19,7 @@ internal static class MmcPlatformOriginTests {
         yield return ("MMC platform attach rejects wrong original digests stale publication and changed confirmed metadata", AttachRefusals);
         yield return ("MMC platform online acquisition rejects wrong project spoofed file hashes size and real non-MMC containers", OnlineRefusals);
         yield return ("MMC platform hash discovery keeps all exact candidates and online cancellation awaits the real batch drain", CandidatesAndDrain);
+        yield return ("MMC repair and component revisions reject late deleted or replaced platform evidence before publication", EvidencePublicationRaces);
     }
     private static void Relationships() {
         byte[] bytes = Encoding.UTF8.GetBytes("measured original"); var measured = Measurement(bytes);
@@ -90,6 +91,35 @@ internal static class MmcPlatformOriginTests {
             fixture.PublishCurseForge(a); mutation(fixture.Server.Json["/v1/mods/123/files/456"]["data"]!); Throws(() => Get());
         }
         fixture.PublishCurseForge(a); fixture.Server.Json["/v1/mods/123"]["data"]!["classId"] = 6; Throws(() => Get());
+    }
+    private static void EvidencePublicationRaces() {
+        foreach (bool component in new[] { false, true }) foreach (bool replace in new[] { false, true }) {
+            using Fixture fixture = new(); string zip = fixture.Pack("race", "runtime", "author"); fixture.Import(zip);
+            fixture.Publish("VersionA", zip); fixture.Attach(zip, fixture.Release("VersionA")); var before = fixture.Primary();
+            string evidence = Path.Combine(fixture.VersionRoot, before.Definition.Origin.PlatformEvidenceReference!.ObjectRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            int changes = 0;
+            void Mutate() { changes++; if (replace) File.WriteAllText(evidence, "late foreign evidence"); else File.Delete(evidence); }
+            MmcInstanceBackendStatus status;
+            if (component) {
+                using var archive = ZipFile.OpenRead(zip); using var input = new StreamReader(archive.GetEntry("patches/net.minecraft.json")!.Open());
+                var patch = JObject.Parse(input.ReadToEnd()); patch["mainClass"] = "fixture.Changed";
+                var preview = fixture.Changes().PreviewAsync(new(fixture.VersionRoot, before.Definition.InstanceId, before.Definition.Generation,
+                    before.Sha256, new("windows", "x86_64", 8), [new("net.minecraft", PatchContentUtf8: patch.ToString())])).GetAwaiter().GetResult();
+                Require(preview.Status, preview.Failure);
+                status = fixture.Changes().CommitAsync(new(preview.Preview!, preview.Preview!.CandidateSha256) { BeforeTransaction = Mutate }).GetAwaiter().GetResult().Status;
+            } else {
+                status = fixture.Backend().RepairAsync(new(fixture.VersionRoot, new("windows", "x86_64", 8), before.Definition.InstanceId) {
+                    ExpectedGeneration = before.Definition.Generation, ExpectedPrimarySha256 = before.Sha256
+                }, progress: new InlineProgress(value => { if (value.Phase == "publishing-repair") Mutate(); })).GetAwaiter().GetResult().Status;
+            }
+            Equal(1, changes); Equal(false, status == MmcInstanceBackendStatus.Succeeded);
+            Equal(before.Sha256, fixture.Primary().Sha256); Equal(before.Definition.Generation, fixture.Primary().Definition.Generation);
+            Equal("author", fixture.Read("minecraft/config/author.cfg")); Equal("runtime", fixture.Read("libraries/runtime.jar"));
+            Equal(replace, File.Exists(evidence)); if (replace) Equal("late foreign evidence", File.ReadAllText(evidence));
+        }
+    }
+    private sealed class InlineProgress(Action<MmcInstanceBackendProgress> report) : IProgress<MmcInstanceBackendProgress> {
+        public void Report(MmcInstanceBackendProgress value) => report(value);
     }
     private static void Continuity() {
         using Fixture fixture = new(); string a = fixture.Pack("A", "runtimeA", "author A"); fixture.Import(a);
@@ -208,6 +238,8 @@ internal static class MmcPlatformOriginTests {
         }
         private MmcMetadataStore Store() => new(Path.Combine(Root, "cache", "metadata"), new Uri("https://metadata.invalid/"), http);
         private MmcArtifactCacheRoots Caches() => new(Path.Combine(Root, "cache", "libraries"), Path.Combine(Root, "cache", "assets"), Path.Combine(Root, "cache", "sources"));
+        internal MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(Store(), Caches(), value => value, Downloads);
+        internal MmcInstanceDefinitionChangeBackend<MmcArtifactDownloadSpec> Changes() => new(Store(), Caches(), value => value, Downloads);
         private async Task Downloads(ImmutableArray<MmcArtifactDownloadSpec> files, CancellationToken token) {
             Interlocked.Increment(ref ActiveDownloads);
             try {
@@ -264,26 +296,36 @@ internal static class MmcPlatformOriginTests {
         internal Uri BaseUri { get; }
         internal ConcurrentDictionary<string, JToken> Json { get; } = new(StringComparer.Ordinal);
         internal ConcurrentDictionary<string, byte[]> Bytes { get; } = new(StringComparer.Ordinal);
-        private readonly HttpListener listener = new();
+        private readonly TcpListener listener = new(IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource stop = new();
         private readonly Task loop;
+        private TcpClient? active;
         internal Server() {
-            var port = new TcpListener(IPAddress.Loopback, 0); port.Start(); int number = ((IPEndPoint)port.LocalEndpoint).Port; port.Stop();
-            BaseUri = new("http://127.0.0.1:" + number + "/"); listener.Prefixes.Add(BaseUri.AbsoluteUri); listener.Start(); loop = Task.Run(Loop);
+            // Keep the socket bound: HTTP.sys URL ACLs and a close/rebind race
+            // must not make an owned loopback fixture depend on administrator state.
+            listener.Start(); BaseUri = new("http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/"); loop = Task.Run(Loop);
         }
         private async Task Loop() {
-            while (listener.IsListening) {
-                HttpListenerContext context;
-                try { context = await listener.GetContextAsync(); } catch (Exception error) when (error is HttpListenerException or ObjectDisposedException) { break; }
-                try {
-                    string path = context.Request.Url!.AbsolutePath; byte[]? bytes;
-                    if (Json.TryGetValue(path, out var json)) { bytes = Encoding.UTF8.GetBytes(json.ToString(Newtonsoft.Json.Formatting.None)); context.Response.ContentType = "application/json"; }
-                    else if (Bytes.TryGetValue(path, out bytes)) context.Response.ContentType = "application/zip";
-                    else { context.Response.StatusCode = 404; bytes = []; }
-                    context.Response.ContentLength64 = bytes.Length; await context.Response.OutputStream.WriteAsync(bytes);
-                } catch (Exception error) when (error is HttpListenerException or IOException or ObjectDisposedException) { }
-                finally { context.Response.Close(); }
-            }
+            try {
+                while (!stop.IsCancellationRequested) {
+                    using TcpClient client = await listener.AcceptTcpClientAsync(stop.Token); active = client;
+                    try {
+                        await using var stream = client.GetStream(); using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, leaveOpen: true);
+                        string first = await reader.ReadLineAsync(stop.Token) ?? throw new IOException("Missing fixture HTTP request.");
+                        if (first.Length > 8192 || !first.StartsWith("GET /", StringComparison.Ordinal)) throw new IOException("Invalid fixture HTTP request.");
+                        string path = new Uri(BaseUri, first.Split(' ')[1]).AbsolutePath; int count = 0;
+                        while (true) { string? line = await reader.ReadLineAsync(stop.Token); if (string.IsNullOrEmpty(line)) break; if (++count > 64 || line.Length > 8192) throw new IOException("Oversized fixture HTTP headers."); }
+                        byte[]? bytes; string type = "application/zip"; bool found;
+                        if (Json.TryGetValue(path, out var json)) { bytes = Encoding.UTF8.GetBytes(json.ToString(Newtonsoft.Json.Formatting.None)); type = "application/json"; found = true; }
+                        else found = Bytes.TryGetValue(path, out bytes);
+                        bytes ??= [];
+                        byte[] headers = Encoding.ASCII.GetBytes("HTTP/1.1 " + (found ? "200 OK" : "404 Not Found") + "\r\nContent-Type: " + type + "\r\nContent-Length: " + bytes.Length + "\r\nConnection: close\r\n\r\n");
+                        await stream.WriteAsync(headers, stop.Token); await stream.WriteAsync(bytes, stop.Token); await stream.FlushAsync(stop.Token);
+                    } catch (IOException) { }
+                    finally { active = null; }
+                }
+            } catch (Exception error) when (stop.IsCancellationRequested && error is OperationCanceledException or ObjectDisposedException or SocketException or IOException) { }
         }
-        public void Dispose() { listener.Close(); loop.GetAwaiter().GetResult(); }
+        public void Dispose() { stop.Cancel(); listener.Stop(); active?.Dispose(); loop.GetAwaiter().GetResult(); stop.Dispose(); }
     }
 }

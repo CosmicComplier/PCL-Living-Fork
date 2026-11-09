@@ -78,3 +78,16 @@ The mapped-resource case additionally checks new unknown targets, edited owned
 targets and a late edit before transaction; all retain current primary bytes,
 generation and player bytes. Known A-to-B mapping, history undo/redo, missing
 targets and exact-byte reuse succeed.
+
+The version-management page now has a component/patch editor using LF controls,
+the genuine Loader and the existing backend. Three focused actual-Main groups
+cover enable/disable/reset, exact-version/local-JAR adoption, and selected JSON
+patch publication. A further pair covers cancellation after final validation
+and after the durable decision. These are isolated fixtures, not game runs.
+
+The cancellation fence is entered only after final world/source validation and
+the last selected-input checks. It must not be entered by the earlier observer
+checkpoint: large-world hashing remains cancellable. The final platform-evidence
+check also precedes this boundary. A cancelled validation cannot create a new
+CommitDecided record or publish a new generation; cancellation after the durable
+decision still completes the committed result.
