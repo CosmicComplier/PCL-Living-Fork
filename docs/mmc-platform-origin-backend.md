@@ -1,0 +1,73 @@
+# MMC 平台来源后台
+
+本批实现 Core 与 PCLCS 后台；Main 的入口、选择器和展示由集成分支接线。
+普通资源目录及非 MMC 整合包流程不变。这里的受控 HTTP 记录不等于 Modrinth／CurseForge
+生产接口或真实游戏验收。
+
+## 信任边界与存储
+
+`MmcInstanceOrigin.PlatformEvidenceReference` 是可空、摘要绑定的来源对象引用。
+对象存放于 `PCL/MmcSource/platform-origin/<sha256>.json`，包含精确平台／项目／版本、
+选定发布文件、原 ZIP 的 SHA256／SHA1／SHA512／大小、两个有界元数据原文和官方来源地址。
+原 ZIP 的实测 SHA256 必须等于当前 `Origin.PackageSha256`。
+
+`MmcPlatformOriginCodec` 独立核对原文中项目类型、稳定 ID、版本归属、文件摘要与大小。
+Modrinth 匹配全部 `files`；相同摘要的多个结果保留为候选，需要用户选择完整发布文件。
+CurseForge 必须为 Minecraft 整合包，且文件可用、`modId`／文件 ID／`gameId` 正确并含 SHA1。
+fingerprint 和仅 MD5 均不能授予身份。文件改名不影响验证，已解压文件不能用于重建原包身份。
+
+Core 不接触网络、文件系统、账号或 UI，也不声称 JSON 能自行证明 TLS 来源。
+生产入口是 `LegacyNetworkRuntime.CreateMmcPlatformOriginCatalog()`：复用现有鉴权签名与
+HTTP 缓存基础设施，采用专用缓存路径和持久客户端，使用系统 TLS 校验、禁自动重定向及
+cookies；3xx 被拒绝，签名前后请求必须保持精确官方 URI。单响应上限 2 MiB，单目录操作
+累计上限 64 MiB／512 次请求，单请求 30 秒，并传递取消令牌。普通 `DlModRequest`
+保留其既有镜像行为。测试必须显式选用只能连接 HTTP loopback 的 fixture policy。
+
+只有经过该服务入口重新核对且实际匹配 ZIP 的后台预览能够提交来源修订。
+证据不是 `verified=true` 标志，也不从可变 `PCL/ModpackOrigin.json` 镜像授予身份。
+旧定义的三个平台字符串仍可读取，但没有证据时是未核实状态；空字段不新增 JSON 成员，
+原有绑定指纹协议保持不变，非空证据才追加独立指纹域。
+
+## 提交与在线更新
+
+`BindOriginRevision` 保留 ID、原包、组件源、覆盖、库锁与玩家文件，只生成 N+1 来源修订。
+Host 先完成原 ZIP 和服务核对，再进入配置静默及实例准入，捕获撤销点，并通过一次现有
+文件事务提交证据对象、定义和代数提示。保存来源、修复、克隆及历史恢复均验证或复制该
+不可变对象；离线修复无需平台在线。导出包声明不会重新授予 Host 平台证据。
+
+`MmcInstancePlatformOriginBackend` 提供 `PreviewAsync`、`CommitAsync`、
+`ReadVerified`、`GetAvailableReleasesAsync`。`MmcPlatformOriginCatalog` 提供精确发布文件
+描述符及 Modrinth SHA512 候选查询。缓存 key 使用现有 `ResourceProjectKey`，平台使用完整
+`ResourcePlatforms` 名称。
+
+`MmcInstancePlatformOnlineBackend<TNetFile>` 使用现有 `MmcArtifactDownloadSpec`、
+下载缓存及 NetFile 批次，并等待真实批次取消／收尾；下载后重新实测全部摘要／大小、
+重新核对选定元数据并调用真实 MMC Reader。普通 mrpack 或 CurseForge ZIP 不会被假称
+MMC。通过检查的包交给已有 ZIP 更新 `Prepare/Select/Commit`，沿用组件冲突、三方文件
+选择、世界备份、完整 undo 和单文件事务。
+
+在线预览固定当前 ID／代数／主定义摘要、完整发布文件描述符、元数据指纹及实测 ZIP。
+内部已核实来源同时固定原目标选区，复制公开 request 并修改目标不能转移来源权。
+提交再次核对来源、实际 ZIP 及候选；全部网络和下载都发生在结构准入之前。
+新包保存新版本证据；改用未核实本地 ZIP 则清除平台身份及证据引用。
+
+## 验证与许可
+
+Core、生产 Modern PCLCS 和注入真实 Catalog 的 Migration 图已经以 SDK 10、单节点、
+禁共享编译、`--warnaserror` 首编通过。2026-11-09 最终源码的新增 8 组真实小 ZIP／loopback
+HTTP 与原有定义及 LaunchAuthority 共 33 例全部通过。覆盖 CF HTTP、跨项目摘要候选、
+同摘要完整文件选择、普通修复无法替换证据、旧 null／冻结指纹、完整身份连续性及实际批次
+取消收尾。Migration 本次用外置临时 targets 注入真实 Catalog 与 StartupObject，未改共享
+csproj／Program／selector；集成分支需正式注册该 Catalog 源文件和 `MmcPlatformOriginTests.Cases()`。
+
+新增 Core 文件是独立原创 C#，采用 MPL-2.0，文件含 SPDX 声明；Host 与测试属于仓库
+现有 LICENCE。没有复制第三方平台或启动器实现，没有新增外部依赖，MeloongCore 保持
+固定 `c774ae4c85fd94e0eaa171db21e78a65870df19b`。
+
+接口形状来自 LF 当前 Modrinth `/v2`／CurseForge `/v1` 资源实现及官方资料：
+
+- [Modrinth 精确版本与全部 files](https://docs.modrinth.com/api/operations/getversion/)
+- [Modrinth 摘要查询 multiple 参数](https://docs.modrinth.com/api/operations/versionfromhash/)
+- [CurseForge Get Mod File 与 File schema](https://docs.curseforge.com/rest-api/#get-mod-file)
+
+Context7 查询因配额不可用后改查以上官方主资料；没有进行外网大包下载或真实游戏测试。
