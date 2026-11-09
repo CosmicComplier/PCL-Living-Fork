@@ -218,9 +218,13 @@ internal sealed class MmcImportOperationCombo<TIn>(MmcOperationCancellationFence
     public bool ProducerCompleted => fence.IsCompleted;
     public override void Cancel() {
         fence.Cancel(() => {
+            if (!fence.Token.IsCancellationRequested) return;
             if (fence.IsCompleted) base.Cancel();
-            else if (fence.Token.IsCancellationRequested) progress.CancellationAccepted();
+            else progress.CancellationAccepted();
         });
-        if (fence.IsCompleted) base.Cancel();
+        // ExecuteWorker releases the producer before the native engine raises
+        // PreviewFinish / Finished. Completion alone must not turn a successful
+        // decided import (or an uncancelled completed producer) into Canceled.
+        if (fence.Token.IsCancellationRequested && fence.IsCompleted) base.Cancel();
     }
 }

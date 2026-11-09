@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,6 +23,11 @@ internal static partial class MmcImportRecoveryUiChecks {
         using var scope = new Scope(environment, "mmc-import-progress-cancel");
         scope.ImportCancellationCard(); scope.RetryCancellationCard(); scope.OrdinaryCancellationCard(); scope.Finish();
         Console.WriteLine("PASS mmc-import-progress-cancel: actual native cancel button retains Main import and retry cards/taskbar as Loading with Cancelling stage until the held real producer returns; unstarted cancellation creates no producer; ordinary tasks retain their existing close behavior. No game launch or desktop interaction.");
+    }
+    internal static void RunCompletionBoundary(FixtureEnvironment environment) {
+        using var scope = new Scope(environment, "mmc-import-completion-boundary");
+        scope.PublishedCompletionBoundary(); scope.UndecidedCompletionBoundary(); scope.Finish();
+        Console.WriteLine("PASS mmc-import-completion-boundary: real Main tiny import is already published at the actual worker PreviewFinish boundary; late cancellation keeps root Loading and then Finished. A genuine undecided worker at the same boundary also rejects cancellation without a cancelled token. No synthetic completed flag, game launch, desktop interaction or timing delay.");
     }
 
     private sealed record StageView(string Stage, string State, double? Progress, long CompletedBytes, long TotalBytes);
@@ -120,6 +126,62 @@ internal static partial class MmcImportRecoveryUiChecks {
                     value.Text.Contains("MMC 导入恢复", StringComparison.Ordinal) && value.Text.Contains(".pcllf-mmc-import-", StringComparison.Ordinal)),
                 "Backend failure omitted its active stage, retained-site path or recovery entry guidance.");
             left.TaskRemove(task); ModLoader.LoaderTaskbar.Remove(task);
+        }
+
+        internal void PublishedCompletionBoundary() {
+            var (left, right) = TaskPages(); using ManualResetEventSlim entered = new(), release = new();
+            var task = StartProgressImport("completion-boundary-published", left, onRegister: rootTask => {
+                rootTask.Loaders.Single().PreviewFinish += _ => {
+                    entered.Set(); if (!release.Wait(10000)) throw new TimeoutException("Published PreviewFinish boundary was not released.");
+                };
+            });
+            string finalRoot = Path.Combine(game, "versions", "completion-boundary-published");
+            try {
+                Until(() => entered.IsSet, "Actual published Main worker did not reach PreviewFinish.");
+                var final = MmcInstanceInspector.Read(finalRoot);
+                Native.Check(ProducerDone(task) && task.State == ModBase.LoadState.Loading && task.Loaders.Single().State == ModBase.LoadState.Loading &&
+                    Native.Get(task.Loaders.Single(), "LastRunningThread") is Thread { IsAlive: true } && final.IsConsistent && final.Definition!.Generation == 1 &&
+                    File.ReadAllText(Path.Combine(final.Paths!.GameRoot, "saves", "author-world", "level.dat")) == "original author world",
+                    "Completion boundary did not hold the actual native notification after a real successful MMC publication.");
+                task.Cancel(); task.Cancel(); left.TaskRefresh(task);
+                Native.Check(task.State == ModBase.LoadState.Loading && task.Loaders.Single().State == ModBase.LoadState.Loading &&
+                    Stages(task).All(value => value.State != "Cancelling") && Cards(right).Length == 1 && ModLoader.LoaderTaskbar.Contains(task),
+                    "Completed decided import was falsely cancelled between its genuine producer return and native Finished notification.");
+            } finally { release.Set(); }
+            Returned(task, ModBase.LoadState.Finished);
+            Native.Check(MmcInstanceInspector.Read(finalRoot).IsConsistent && Stages(task).All(value => value.State == "Finished"),
+                "Late completion-boundary cancellation changed the successful published instance or final task result.");
+            left.TaskRefresh(task); ModLoader.LoaderTaskbar.Remove(task);
+        }
+
+        internal void UndecidedCompletionBoundary() {
+            // Exercise the completed-without-decision callback separately from the
+            // real published case above. Native Start/ExecuteWorker/PreviewFinish
+            // are all genuine; no fence completion/finishing state is assigned.
+            using ManualResetEventSlim entered = new(), release = new();
+            object fence = Activator.CreateInstance(Native.Type("PCL.MmcOperationCancellationFence"), new object?[] { null })!;
+            object progress = Activator.CreateInstance(Native.Type("PCL.MmcImportProgress"), nonPublic: true)!;
+            Type workerType = Native.Type("PCL.MmcOperationWorker`2").MakeGenericType(typeof(string), typeof(string));
+            var worker = (ModLoader.LoaderTask<string, string>)Activator.CreateInstance(workerType,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
+                [fence, "owned undecided producer", new Action<ModLoader.LoaderTask<string, string>>(value => value.Output = "genuine producer returned")], null)!;
+            Native.Property(worker.GetType(), "InterruptOnCancel").SetValue(worker, false);
+            worker.PreviewFinish += _ => { entered.Set(); if (!release.Wait(10000)) throw new TimeoutException("Undecided PreviewFinish boundary was not released."); };
+            Type comboType = Native.Type("PCL.MmcImportOperationCombo`1").MakeGenericType(typeof(string));
+            var task = (ModLoader.LoaderCombo<string>)Activator.CreateInstance(comboType,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
+                [fence, progress, "owned undecided completion boundary", new ModLoader.LoaderBase[] { worker }], null)!;
+            tasks.Add(task); task.Start("owned-input");
+            try {
+                Until(() => entered.IsSet, "Actual undecided worker did not reach PreviewFinish.");
+                Native.Check(ProducerDone(task) && task.State == ModBase.LoadState.Loading && worker.State == ModBase.LoadState.Loading &&
+                    worker.LastRunningThread is { IsAlive: true } && worker.Output == "genuine producer returned",
+                    "Undecided test did not reach the genuine completed-producer / Loading-loader boundary.");
+                task.Cancel(); task.Cancel();
+                Native.Check(task.State == ModBase.LoadState.Loading && worker.State == ModBase.LoadState.Loading,
+                    "Completed undecided callback cancelled a real producer whose token had never been cancelled.");
+            } finally { release.Set(); }
+            Returned(task, ModBase.LoadState.Finished);
         }
 
         internal void FailedRetryStageCard() {
