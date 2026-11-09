@@ -29,7 +29,7 @@ internal static partial class MmcLaunchChecks {
         }
     }
     private sealed partial class Scope {
-        private void RunAuthentication() {
+        internal void RunAuthentication() {
             Type helper = Native.Type("PCL.MmcLaunchAuthentication");
             var sourceProperty = Native.Property(helper, "AgentSource"); object originalSource = sourceProperty.GetValue(null)!;
             var observer = (Action<Guid, Process>)Native.Property(typeof(MmcLaunch), "ProcessCreated").GetValue(null)!;
@@ -100,7 +100,7 @@ internal static partial class MmcLaunchChecks {
                 Settings.Set("VersionServerNide", "changed-synthetic-id", instance);
                 return Task.FromResult<(ImmutableArray<string>, string)>(([server.Url("/agent-nide")], hash));
             }));
-            RunWithoutChild("authentication-setting-change", () => { }, () => Native.Check(plan.State == ModBase.LoadState.Failed && plan.Error.ToString().Contains("认证方式或服务器设置", StringComparison.Ordinal), "Changed authentication settings were not refused before process creation."));
+            RunWithoutChild("authentication-setting-change", () => { }, () => Native.Check(plan.State == ModBase.LoadState.Failed && plan.Error?.ToString().Contains("认证方式或服务器设置", StringComparison.Ordinal) == true, "Changed authentication settings were not refused before process creation."));
         }
         private void CancelAgentPreparation(System.Reflection.PropertyInfo sourceProperty) {
             using ManualResetEventSlim entered = new(), release = new(); byte[] bytes = CompileAgent("cancel");

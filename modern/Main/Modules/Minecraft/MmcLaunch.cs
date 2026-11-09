@@ -85,7 +85,7 @@ public static class MmcLaunch {
                 await Task.Delay(10, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             if (loginTask.State == ModBase.LoadState.Canceled) throw new OperationCanceledException(token);
-            if (loginTask.State != ModBase.LoadState.Finished || loginTask.Output is null)
+            if (loginTask.State != ModBase.LoadState.Finished || string.IsNullOrEmpty(loginTask.Output.Type))
                 throw new IOException("现有账户登录尚未成功完成，无法绑定 MMC 启动身份。");
             authentication = MmcLaunchAuthentication.Capture(instance, ModLaunch.McLoginLoader.Output.Type);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
