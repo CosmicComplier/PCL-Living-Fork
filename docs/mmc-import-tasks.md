@@ -35,9 +35,21 @@ producer 已完成但 Loader 尚在 PreviewFinish 的窗口也不能把成功发
 最小实际 Main 用例使用 LF 自造 tiny ZIP、真实 backend、缓存命中和原生离屏控件，覆盖阶段、
 实际字节、动态标题、同 SHA 重试、真实取消按钮、held 解压／事务与普通任务原行为。
 `mmc-import-private-list` 另核对真实 reservation、缓存缺失项、损坏／伪造 marker 与恢复可达性。
-完成边界、读写计数的最新断言需在对应源码下执行；源码断言与静态审查不当作运行通过。
+完成边界、读写计数的最新断言已经在对应真实 Main 下执行：上述三个分组和
+`mmc-import-completion-boundary` 四组均通过，Native 构建 0 警告／0 错误，Main 为 78 个既有警告／0 错误。
 
 完整 GTNH 导入正在独立保留实例中复跑，使用用户原 ZIP 和旧验收缓存，不写用户 MCPACK 目录，
 不启动游戏。日志显示真实解压持续推进后进入运行环境与文件安装；最终结果单独记录，不把这些中间
 字节进度当作发布成功。首轮 private-Main 测试图缺失 `System.Runtime.Caching` runtime target，
 发生在导入前；已在 prebuilt facade 模式补齐与产品相同的依赖，原失败日志保留。
+
+2026-11-09 本轮完整 Java 8 原包复跑已取得 `Status=Succeeded` 的实际导入 receipt；
+现代包继续独立执行。它们均不包含游戏启动，不能用中间进度或首包结果替代另一包结果。
+保留 run 为 `C:/Users/16892/.codex/worktrees/mmc-sample-baseline/PCL2-MMC-Compatibility/artifacts/mmc-gtnh-acceptance/20261109-070501-bc01acf3d40a4978a658cd99211c80ef`。
+
+当前进度／IO／取消修正的开发包源码为 `81796b2c908b8742a3043dfaa08fda4224cbdc5c`，
+路径 `artifacts/mmc-dev-build/20261109-81796b2c/package/PCL-Living-Fork-dev_edition.exe`。
+EXE 189076676 字节，SHA256 `3ff675ed5e70f11426e68a2cf01f4848fd38c89210c04e9abba41f6f96e92c50`；
+ZIP 78599313 字节，SHA256 `0f12404470842ad6e6787f1bc2ad10fe6590d4cadad1fabace872d93f2270f68`。
+六个发布模块、外 ZIP 五个条目及 Core 37 个 Git blob／CRC 均通过；没有执行该产品包做冷启动。
+此包尚未包含用户随后授权的重复路径校验消重优化；该优化在独立分支开发和验证。
