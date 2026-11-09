@@ -55,6 +55,7 @@
 <Compile Include="Modules/Minecraft/MmcLifecycleUi.cs" />
 <Compile Include="Modules/Minecraft/MmcDeleteUi.cs" />
 <Compile Include="Modules/Minecraft/MmcPurgeUi.cs" />
+<Compile Include="Controls/MmcLifecycleCatalogView.cs" />
 <Compile Include="Modules/Minecraft/MmcExportUi.cs" />
 <Compile Include="Modules/Minecraft/MmcHistoryUi.cs" />
 <Compile Include="Modules/Minecraft/MmcRepairUi.cs" />

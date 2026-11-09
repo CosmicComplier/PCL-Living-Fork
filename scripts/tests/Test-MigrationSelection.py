@@ -140,6 +140,8 @@ def main() -> int:
         ("PCLCS/Minecraft/MmcInstances/MmcInstanceLifecycleBackend.Purge.cs", "mmc-purge-tests", True),
         ("PCLCS/Minecraft/MmcInstances/MmcInstanceLifecycleCatalog.Purge.cs", "mmc-purge-tests", True),
         ("PCLCS/Minecraft/MmcInstances/MmcInstancePurgeNative.cs", "mmc-purge-tests", True),
+        ("tests/PCLLF.Migration.Tests/MmcLifecycleCatalogPagingTests.cs", "mmc-catalog-paging-tests", False),
+        ("PCLCS/Minecraft/MmcInstances/MmcInstanceLifecycleCatalog.Paging.cs", "mmc-catalog-paging-tests", True),
         ("tests/PCLLF.Migration.Tests/MmcInstancePurgeTests.cs", "mmc-purge-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcPurgeTxFPrimitiveTests.cs", "mmc-purge-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcInstanceHistoryTests.cs", "mmc-history-tests", False),

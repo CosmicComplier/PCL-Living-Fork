@@ -64,6 +64,7 @@ internal static class Program {
             ("mmc-variants", MmcInstanceBackendTests.VariantCases),
             ("mmc-clone", MmcInstanceCloneTests.Cases),
             ("mmc-lifecycle", MmcInstanceLifecycleTests.Cases),
+            ("mmc-catalog-paging", MmcLifecycleCatalogPagingTests.Cases),
             ("mmc-purge", MmcInstancePurgeTests.PlatformCases),
             ("mmc-history", MmcInstanceHistoryTests.Cases),
             ("mmc-definition-change", MmcInstanceDefinitionChangeTests.Cases),

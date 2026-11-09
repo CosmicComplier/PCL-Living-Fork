@@ -46,6 +46,8 @@ internal static class Program
         ["mmc-launch-preferences"] = MmcLaunchPreferenceChecks.Run,
         ["mmc-lifecycle"] = MmcLifecycleChecks.Run,
         ["mmc-quarantine-list"] = MmcQuarantineListChecks.Run,
+        ["mmc-catalog-paging-ui"] = MmcCatalogPagingUiChecks.Run,
+        ["mmc-catalog-paging-stale"] = MmcCatalogPagingUiChecks.RunStaleConfirmation,
         ["mmc-import-private-list"] = MmcImportVisibilityChecks.Run,
         ["mmc-import-progress-ui"] = MmcImportRecoveryUiChecks.RunProgress,
         ["mmc-import-progress-cancel"] = MmcImportRecoveryUiChecks.RunProgressCancellation,
