@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Windows;
 using PCLCS;
 
 namespace PCL;
@@ -15,6 +16,7 @@ internal static class MmcDeleteUi {
     internal static Action<MmcInstanceLifecycleResult> Published { get; set; }
     internal static Func<string, string, bool, int> Confirm { get; set; }
     internal static Func<ImmutableArray<MmcLifecycleCatalogEntry>, int?> SelectEntry { get; set; }
+    internal static Func<FrameworkElement, int> ShowCatalog { get; set; }
     internal static Action<Exception, string> ErrorObserved { get; set; }
     internal static Action<MmcLifecycleCheckpoint, string> CheckpointObserved { get; set; }
     internal static MmcOperationCancellationFence AcquireOperationFence() {
@@ -49,34 +51,59 @@ internal static class MmcDeleteUi {
         string selectedRoot = Path.GetFullPath(minecraftRoot);
         ModBase.RunInNewThread(() => {
             try {
-                var catalog = MmcInstanceLifecycleCatalog.Read(selectedRoot);
-                ModBase.RunInUi(() => {
+                var request = new MmcLifecycleCatalogPageRequest(selectedRoot);
+                for (;;) {
+                    // Each return to the list re-reads its page. No record pin or admission
+                    // lease survives into the selection/confirmation dialogs.
+                    var page = MmcInstanceLifecycleCatalog.ReadPage(request);
+                    MmcLifecycleCatalogView view = null;
+                    MmcLifecycleCatalogEntry preview;
                     try {
-                        if (catalog.Entries.IsEmpty) { ModMain.MyMsgBox("当前游戏文件夹中没有 MMC 隔离区或未完成的改名、移动、删除记录。", "MMC 隔离区与恢复"); return; }
-                        if (catalog.Truncated) ModMain.Hint("恢复记录较多，本次仅显示有界范围内的记录；其余记录仍被保留。", ModMain.HintType.Blue);
-                        int? index = SelectEntry is not null ? SelectEntry(catalog.Entries) : ModMain.MyMsgBoxSelect(catalog.Entries.Select(entry => (IMyRadio)new MyRadioBox {
-                            Text = Label(entry), ToolTip = entry.Description + "\n\n" + entry.OperationDirectory
-                        }), "MMC 隔离区与恢复", "下一步", "取消");
-                        if (index is null || index < 0 || index >= catalog.Entries.Length) return;
-                        var preview = catalog.Entries[index.Value];
-                        if (!preview.CanRestore && !preview.CanRecover) { ModMain.MyMsgBox(preview.Description, preview.Name); return; }
-                        if (preview.CanPurge) {
-                            string question = "“" + preview.Name + "”仍完整保留在隔离区。\n可恢复实例，也可另行核对后永久清理。";
-                            int choice = Confirm is not null ? Confirm(question, "MMC 隔离实例", false) :
-                                ModMain.MyMsgBox(question, "MMC 隔离实例", "恢复实例", "取消", "永久清理");
-                            if (choice == 3) { MmcPurgeUi.Prompt(preview); return; }
-                            if (choice != 1) return;
-                            StartCatalogAction(preview, true); return;
-                        }
-                        bool restore = preview.CanRestore && !preview.CanRecover;
-                        bool purging = preview.State == MmcLifecycleCatalogState.Purging;
-                        string action = purging ? "继续已确认的永久清理" : restore ? "恢复到原来的版本名称" : "恢复未完成的操作";
-                        if (Ask("为“" + preview.Name + "”" + action + "？\n" + preview.Description + "\n已有同名内容不会被覆盖。", "MMC 实例操作确认", purging) != 1) return;
-                        StartCatalogAction(preview, restore);
-                    } catch (Exception error) { Report(error, "无法开始 MMC 恢复"); }
-                });
+                        preview = ModBase.RunInUiWait(() => {
+                            AssertCatalogRoot(selectedRoot);
+                            if (SelectEntry is not null) {
+                                int? index = SelectEntry(page.Entries);
+                                return index is >= 0 && index < page.Entries.Length ? page.Entries[index.Value] : null;
+                            }
+                            view = new MmcLifecycleCatalogView(request, page);
+                            int choice = ShowCatalog is not null ? ShowCatalog(view) : ModMain.MyMsgBoxConfirmContent(
+                                "选择一条记录后查看具体操作；取消操作可返回当前页。", "MMC 隔离区与恢复", "查看所选记录", () => view, IsWarn: false);
+                            request = view.CurrentRequest;
+                            AssertCatalogRoot(selectedRoot);
+                            return choice == 1 && !view.IsReading ? view.Selected : null;
+                        });
+                    } finally { view?.CloseAndDrainAsync().GetAwaiter().GetResult(); }
+                    if (preview is null) return;
+                    bool started = ModBase.RunInUiWait(() => {
+                        AssertCatalogRoot(selectedRoot);
+                        return ReviewCatalogEntry(preview);
+                    });
+                    if (started) return;
+                }
             } catch (Exception error) { Report(error, "读取 MMC 隔离区与恢复列表失败"); }
         }, "Read MMC recovery catalog");
+    }
+
+    private static void AssertCatalogRoot(string root) {
+        if (!MeloongCore.PathUtils.IsSame(root, ModMinecraft.McFolderSelected)) throw new IOException("游戏文件夹已切换，请重新打开 MMC 隔离区与恢复列表。");
+    }
+    private static bool ReviewCatalogEntry(MmcLifecycleCatalogEntry preview) {
+        if (!preview.CanRestore && !preview.CanRecover) { ModMain.MyMsgBox(preview.Description, preview.Name, "返回列表"); return false; }
+        if (preview.CanPurge) {
+            string question = "“" + preview.Name + "”仍完整保留在隔离区。\n可恢复实例，也可另行核对后永久清理。";
+            int choice = Confirm is not null ? Confirm(question, "MMC 隔离实例", false) :
+                ModMain.MyMsgBox(question, "MMC 隔离实例", "恢复实例", "返回列表", "永久清理");
+            AssertCatalogRoot(preview.MinecraftRoot);
+            if (choice == 3) { MmcPurgeUi.Prompt(preview); return true; }
+            if (choice != 1) return false;
+            StartCatalogAction(preview, true); return true;
+        }
+        bool restore = preview.CanRestore && !preview.CanRecover;
+        bool purging = preview.State == MmcLifecycleCatalogState.Purging;
+        string action = purging ? "继续已确认的永久清理" : restore ? "恢复到原来的版本名称" : "恢复未完成的操作";
+        if (Ask("为“" + preview.Name + "”" + action + "？\n" + preview.Description + "\n已有同名内容不会被覆盖。", "MMC 实例操作确认", purging) != 1) return false;
+        AssertCatalogRoot(preview.MinecraftRoot);
+        StartCatalogAction(preview, restore); return true;
     }
 
     internal static ModLoader.LoaderCombo<string> StartCatalogAction(MmcLifecycleCatalogEntry preview, bool restore) =>
@@ -122,7 +149,7 @@ internal static class MmcDeleteUi {
         } catch { fence.AbandonUnstarted(); throw; }
     }
 
-    private static string Label(MmcLifecycleCatalogEntry entry) => entry.Name + " · " + (entry.State switch {
+    internal static string Label(MmcLifecycleCatalogEntry entry) => entry.Name + " · " + (entry.State switch {
         MmcLifecycleCatalogState.Quarantined => "可恢复", MmcLifecycleCatalogState.Incomplete => "未完成", MmcLifecycleCatalogState.Completed => "已完成",
         MmcLifecycleCatalogState.Conflict => "存在冲突", MmcLifecycleCatalogState.Purging => "清理未完成", MmcLifecycleCatalogState.Purged => "已永久清理", _ => "无法验证"
     });
