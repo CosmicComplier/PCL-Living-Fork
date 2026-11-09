@@ -152,7 +152,7 @@ internal static class MmcPackageUpdateUiChecks {
                 !File.Exists(data.PathOf("minecraft/config/deleted.cfg")) && File.Exists(data.PathOf("minecraft/mods/disabled.jar.disabled")) && !File.Exists(data.PathOf("minecraft/mods/disabled.jar")) &&
                 data.Read("minecraft/config/author.cfg") == "author B" && data.Read("libraries/runtime.jar") == "runtime B", "Chosen author/personal/deleted/disabled file state differs.");
             var receipt = JObject.Parse(File.ReadAllText(Directory.GetFiles(data.PathOf("PCL/MmcPackageUpdateReceipts"), "*.json").Single()));
-            Native.Check(receipt.Value<string>("PreviewSha256") == selected.PreviewSha256 && result.UndoPoint?.CoverageVersion == 5 && !Directory.Exists(selected.WorkingRoot), "Fixed final preview, complete undo or owned cleanup is missing.");
+            Native.Check(selected is not null && receipt.Value<string>("PreviewSha256") == selected.PreviewSha256 && result.UndoPoint?.CoverageVersion == 5 && !Directory.Exists(selected.WorkingRoot), "Fixed final preview, complete undo or owned cleanup is missing.");
         }
         internal void Refusals() {
             foreach (string kind in new[] { "unknown", "error", "stale", "layout" }) {
