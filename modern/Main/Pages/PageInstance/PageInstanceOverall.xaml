@@ -92,6 +92,8 @@
                                         Visibility="Collapsed" Click="BtnMmcHistory_Click" />
                         <local:MyButton x:Name="BtnMmcMove" Text="移动 MMC 实例" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"
                                         Visibility="Collapsed" Click="BtnMmcMove_Click" />
+                        <local:MyButton x:Name="BtnMmcPackageUpdate" Text="从 MMC ZIP 更新" MinWidth="140" Height="35" Padding="13,0" Margin="0,6,20,7"
+                                        Visibility="Collapsed" Click="BtnMmcPackageUpdate_Click" />
                     </WrapPanel>
                 </StackPanel>
             </local:MyCard>
