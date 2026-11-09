@@ -17,8 +17,19 @@ public sealed class MmcInstancePlatformOnlineBackend<TNetFile> where TNetFile : 
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog)); this.updates = updates ?? throw new ArgumentNullException(nameof(updates));
         this.roots = roots; this.build = build ?? throw new ArgumentNullException(nameof(build)); this.runBatch = runBatch ?? throw new ArgumentNullException(nameof(runBatch));
     }
-    public async Task<MmcInstancePackageUpdatePreviewResult> PrepareAsync(MmcPlatformOnlineUpdateRequest request, CancellationToken token = default,
+    public Task<MmcInstancePackageUpdatePreviewResult> PrepareAsync(MmcPlatformOnlineUpdateRequest request, CancellationToken token = default,
+        IProgress<MmcInstanceBackendProgress>? progress = null) => PrepareCoreAsync(request, null, token, progress);
+
+    /// <summary>The host selects Java from the downloaded, verified MMC container. Its actual selector must return before cancellation completes.</summary>
+    public Task<MmcInstancePackageUpdatePreviewResult> PrepareAsync(MmcPlatformInstanceSelection instance, MmcPlatformReleaseDescriptor release,
+        Func<string, CancellationToken, Task<MmcRuntimeEnvironment>> selectEnvironment, CancellationToken token = default,
         IProgress<MmcInstanceBackendProgress>? progress = null) {
+        ArgumentNullException.ThrowIfNull(selectEnvironment);
+        return PrepareCoreAsync(new(instance, release, new("windows", "x86_64")), selectEnvironment, token, progress);
+    }
+    private async Task<MmcInstancePackageUpdatePreviewResult> PrepareCoreAsync(MmcPlatformOnlineUpdateRequest request,
+        Func<string, CancellationToken, Task<MmcRuntimeEnvironment>>? selectEnvironment, CancellationToken token,
+        IProgress<MmcInstanceBackendProgress>? progress) {
         try {
             ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(request.Release); ArgumentNullException.ThrowIfNull(request.Environment);
             request = request with { Instance = MmcInstancePlatformOriginBackend.Normalize(request.Instance) };
@@ -35,10 +46,12 @@ public sealed class MmcInstancePlatformOnlineBackend<TNetFile> where TNetFile : 
             var evidence = MmcPlatformOriginCodec.Create(release, request.Release.File, measurement).ToImmutableArray();
             using (var archive = await MmcArchiveSourceReader.ReadAsync(archivePath, cancellationToken: token).ConfigureAwait(false))
                 if (archive.PackageSha256 != measurement.Sha256) throw new IOException("The downloaded original changed while checking the MMC container.");
+            var environment = selectEnvironment is null ? request.Environment : await selectEnvironment(archivePath, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested(); ArgumentNullException.ThrowIfNull(environment);
             _ = MmcInstancePlatformOriginBackend.ReadCurrent(request.Instance, token);
             var selection = request.Instance;
             return await updates.PrepareAsync(new(selection.VersionRoot, selection.ExpectedInstanceId, selection.ExpectedGeneration, selection.ExpectedPrimarySha256,
-                archivePath, request.Environment) { VerifiedOrigin = new(selection, request.Release, evidence, catalog) }, token, progress).ConfigureAwait(false);
+                archivePath, environment) { VerifiedOrigin = new(selection, request.Release, evidence, catalog) }, token, progress).ConfigureAwait(false);
         } catch (OperationCanceledException) { return new(MmcInstanceBackendStatus.Cancelled, Failure: "Online package acquisition was cancelled after producers stopped."); }
         catch (Exception error) when (MmcInstancePlatformOriginBackend.Expected(error)) { return new(MmcInstanceBackendStatus.Rejected, Failure: error.Message); }
     }

@@ -20,6 +20,7 @@ internal static class MmcPlatformOriginTests {
         yield return ("MMC platform online acquisition rejects wrong project spoofed file hashes size and real non-MMC containers", OnlineRefusals);
         yield return ("MMC platform hash discovery keeps all exact candidates and online cancellation awaits the real batch drain", CandidatesAndDrain);
         yield return ("MMC repair and component revisions reject late deleted or replaced platform evidence before publication", EvidencePublicationRaces);
+        yield return ("MMC online Java selection runs after the genuine container reader and cancellation awaits the actual selector", EnvironmentSelection);
     }
     private static void Relationships() {
         byte[] bytes = Encoding.UTF8.GetBytes("measured original"); var measured = Measurement(bytes);
@@ -205,6 +206,29 @@ internal static class MmcPlatformOriginTests {
         cancellation.Cancel(); if (!fixture.CancellationSeen.Task.Wait(TimeSpan.FromSeconds(10))) throw new Exception("The controlled batch did not observe cancellation.");
         Equal(false, task.IsCompleted); Equal(1, fixture.ActiveDownloads); fixture.AllowDrain.TrySetResult(true);
         Equal(MmcInstanceBackendStatus.Cancelled, task.GetAwaiter().GetResult().Status); Equal(0, fixture.ActiveDownloads);
+    }
+    private static void EnvironmentSelection() {
+        using Fixture fixture = new(); string a = fixture.Pack("A", "runtimeA", "A"); fixture.Import(a); fixture.Publish("VersionA", a); fixture.Attach(a, fixture.Release("VersionA"));
+        string ordinary = Path.Combine(fixture.Root, "wrong.mrpack");
+        using (var zip = ZipFile.Open(ordinary, ZipArchiveMode.Create)) { using var output = new StreamWriter(zip.CreateEntry("modrinth.index.json").Open()); output.Write("{}"); }
+        fixture.Publish("Ordinary", ordinary); int calls = 0;
+        var refused = fixture.Online.PrepareAsync(fixture.Selection(), fixture.Release("Ordinary"), (_, _) => {
+            Interlocked.Increment(ref calls); return Task.FromResult(new MmcRuntimeEnvironment("windows", "x86_64", 8));
+        }).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.Rejected, refused.Status); Equal(0, calls);
+        string b = fixture.Pack("B", "runtimeB", "B"); fixture.Publish("VersionB", b); string before = fixture.Primary().Sha256;
+        using CancellationTokenSource cancellation = new();
+        TaskCompletionSource<bool> entered = new(TaskCreationOptions.RunContinuationsAsynchronously), cancellationSeen = new(TaskCreationOptions.RunContinuationsAsynchronously), drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var task = fixture.Online.PrepareAsync(fixture.Selection(), fixture.Release("VersionB"), async (archive, token) => {
+            using var read = await MmcArchiveSourceReader.ReadAsync(archive, cancellationToken: token);
+            Equal(MmcDurableFiles.Observe(b), read.PackageSha256); Interlocked.Increment(ref calls); entered.TrySetResult(true);
+            using var registration = token.Register(() => cancellationSeen.TrySetResult(true));
+            await drained.Task; return new("windows", "x86_64", 8);
+        }, cancellation.Token);
+        if (!entered.Task.Wait(TimeSpan.FromSeconds(10))) throw new Exception("The verified MMC package did not reach the actual environment selector.");
+        cancellation.Cancel(); if (!cancellationSeen.Task.Wait(TimeSpan.FromSeconds(10))) throw new Exception("The environment selector did not observe cancellation.");
+        Equal(false, task.IsCompleted); Equal(before, fixture.Primary().Sha256); Equal(0, fixture.ActiveDownloads);
+        drained.TrySetResult(true); Equal(MmcInstanceBackendStatus.Cancelled, task.GetAwaiter().GetResult().Status); Equal(1, calls); Equal(before, fixture.Primary().Sha256);
     }
 
     private static JObject ModrinthFile(byte[] bytes, string name, string url) => new() { ["filename"] = name, ["url"] = url, ["size"] = bytes.LongLength,
