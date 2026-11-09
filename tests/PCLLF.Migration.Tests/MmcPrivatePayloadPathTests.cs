@@ -32,7 +32,9 @@ internal static partial class MmcInstanceBackendTests {
         string originalBody = File.ReadAllText(input);
         string backup = Path.Combine(fixture.Scope, "parked-source");
         string? link = null; bool directoryLink = false, injected = false, beforeMove = false;
-        byte[]? changedInput = null;
+        byte[]? changedInput = null; string? outsideBefore = null;
+        string OutsideSnapshot() => string.Join("|", Directory.EnumerateFiles(outside).Order(StringComparer.Ordinal)
+            .Select(file => Path.GetFileName(file) + ":" + MmcDurableFiles.Observe(file)));
 
         void Inject() {
             if (injected) throw new Exception("The controlled payload attack ran twice.");
@@ -71,6 +73,7 @@ internal static partial class MmcInstanceBackendTests {
                     break;
                 default: throw new Exception("Unknown controlled payload attack.");
             }
+            outsideBefore = OutsideSnapshot();
         }
 
         try {
@@ -106,6 +109,7 @@ internal static partial class MmcInstanceBackendTests {
             if (changedInput is not null) Equal(true, changedInput.SequenceEqual(File.ReadAllBytes(input)));
             else if (!directoryLink && link is null) Equal(originalBody, File.ReadAllText(input));
             Equal("unknown bytes to preserve", File.ReadAllText(unknown));
+            Equal(outsideBefore, OutsideSnapshot());
             Equal(false, File.Exists(Path.Combine(outside, Path.GetFileName(target))));
 
             reservation.Dispose();
@@ -115,6 +119,7 @@ internal static partial class MmcInstanceBackendTests {
             Equal(MmcInstanceBackendStatus.NeedsRecovery, recovery.Status);
             Equal(false, Directory.Exists(fixture.VersionRoot));
             Equal("unknown bytes to preserve", File.ReadAllText(unknown));
+            Equal(outsideBefore, OutsideSnapshot());
             Equal(true, File.Exists(owner));
             if (beforeMove) Equal(true, File.Exists(manifest));
             if (mode == "target-claimed") Equal("claimed destination bytes", File.ReadAllText(target));
