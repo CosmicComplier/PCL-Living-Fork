@@ -49,6 +49,7 @@ internal static class Program
         ["mmc-import-private-list"] = MmcImportVisibilityChecks.Run,
         ["mmc-import-progress-ui"] = MmcImportRecoveryUiChecks.RunProgress,
         ["mmc-import-progress-cancel"] = MmcImportRecoveryUiChecks.RunProgressCancellation,
+        ["mmc-import-completion-boundary"] = MmcImportRecoveryUiChecks.RunCompletionBoundary,
         ["mmc-rename-admission"] = MmcRenameAdmissionChecks.Run,
         ["mmc-delete-ui"] = MmcDeleteUiChecks.Run,
         ["mmc-purge-ui"] = MmcPurgeUiChecks.Run,
