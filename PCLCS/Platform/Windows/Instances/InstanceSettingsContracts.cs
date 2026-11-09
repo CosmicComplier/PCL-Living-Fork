@@ -45,7 +45,8 @@ public sealed class InstanceSettingsHost<TInstance> where TInstance : class {
     public Func<RedoableWorker> JavaRefresh = null!;
     public Func<TInstance,ValueRange<Version>> JavaRequirement = null!;
     public Func<TInstance,RedoableWorker<Java>,InstanceJavaPreview?>? ManagedJavaPreview;
-    public Action<TInstance,RedoableWorker<Java>>? StartManagedJavaPreview;
+    public Action<TInstance,RedoableWorker<Java>>? StartJavaPreview;
+    public Func<TInstance,RedoableWorker<Java>,bool>? JavaPreviewIsCurrent;
     public Action ReloadCurrentJava = null!, ImportJava = null!, SearchJava = null!;
     public Action<Java> RemoveJava = null!;
     public Action<TInstance> OpenInstanceFolder = null!;

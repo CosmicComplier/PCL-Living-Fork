@@ -28,12 +28,12 @@ internal static class MmcJavaDiscoveryChecks {
         try {
             using var old = new Fixture(Path.Combine(files.Root,"java8"),[8],8); files.SelectMinecraft(old.Game);
             Select(old.Owner,0);
-            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult.Version!.Major==8,"MMC Java8 package did not select actual Java8.");
+            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult?.Version?.Major==8,"MMC Java8 package did not select actual Java8.");
             Native.Check(Hint().Contains("Java 8",StringComparison.Ordinal),"Actual settings panel did not display selected Java8.");
 
             using var modern = new Fixture(Path.Combine(files.Root,"modern"),[17,21,25,26],26); files.SelectMinecraft(modern.Game);
             Select(modern.Owner,0);
-            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult.Version!.Major==26 && Hint().Contains("26",StringComparison.Ordinal),"Modern package/published Java26 view regressed to MC1.7.10 Java8 or a fixed Java21.");
+            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult?.Version?.Major==26 && Hint().Contains("26",StringComparison.Ordinal),"Modern package/published Java26 view regressed to MC1.7.10 Java8 or a fixed Java21.");
             Native.Check(catalog8.Version!.Major==26 && catalog26.Version!.Major==8,"Discovery mutated cached catalogue objects instead of clean-probing fresh objects.");
             string primary = Hash(File.ReadAllBytes(Path.Combine(modern.Version,"PCL","InstanceDefinition.json")));
             MmcLaunchPreferences.SetForcedJava(modern.Owner,new Java(Path.GetDirectoryName(java8)!));
@@ -45,7 +45,7 @@ internal static class MmcJavaDiscoveryChecks {
 
             Preferences(modern.Owner,new() { ["MmcJavaLocationMode"]="Custom",["VersionArgumentJavaV2"]="1",["VersionArgumentJavaRange"]="[26,27)" });
             Select(modern.Owner,1);
-            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult.Version!.Major==26,"Custom full-version range did not use the actual launch selector.");
+            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult?.Version?.Major==26,"Custom full-version range did not use the actual launch selector.");
             Preferences(modern.Owner,new() { ["MmcJavaLocationMode"]="Custom",["VersionArgumentJavaV2"]="1",["VersionArgumentJavaRange"]=null! });
             Select(modern.Owner,1);
             Native.Check(!Settings.HasSaved("VersionArgumentJavaRange",modern.Owner) && Hint().Contains("17、21、25、26",StringComparison.Ordinal),"Entering MMC range mode silently stored a vanilla interval or lost discrete declarations.");
@@ -73,7 +73,7 @@ internal static class MmcJavaDiscoveryChecks {
             Native.Check(!PageInstanceLeft.CurrentJavaWorker.Running,"Source failure restarted indefinitely.");
 
             using var unknown = new Fixture(Path.Combine(files.Root,"unknown"),null,26); files.SelectMinecraft(unknown.Game); Select(unknown.Owner,0);
-            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult.Version!.Major==26 && Hint().Contains("未声明",StringComparison.Ordinal),"Unspecified policy invented a Java8 constraint.");
+            Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult?.Version?.Major==26 && Hint().Contains("未声明",StringComparison.Ordinal),"Unspecified policy invented a Java8 constraint.");
             string pending=Path.Combine(unknown.Version,"PCL","MmcImportPending.json"); File.WriteAllText(pending,"owned pending marker");
             Controller().UpdateJavaUi(); Native.Check(Hint().Contains("未完成",StringComparison.Ordinal),"Pending MMC ownership did not show a diagnosis."); File.Delete(pending);
             Native.Cache("LoginType",ModLaunch.McLoginType.Nide);
@@ -87,7 +87,9 @@ internal static class MmcJavaDiscoveryChecks {
             Native.Cache("LoginType",ModLaunch.McLoginType.Legacy);
 
             FullVersionConstraint(old,java8,java26);
-            Ordinary(files,java8,java26);
+            var ordinary=Ordinary(files,java8,java26);
+            SwitchDuringRun(unknown,()=>ordinary,false,8);
+            SwitchDuringRun(unknown,()=>ordinary,true,8);
             Native.Check(refreshes==0,"Java discovery started a global search/download worker.");
             InstanceConfigProviders.FlushAndDisposeWithin(files.Root); environment.AssertNoForbiddenIo();
             Console.WriteLine("PASS MMC actual settings/CurrentJavaWorker: Java8/26, stale catalogue, forced rejection, range/no default writes, folder, unknown policy, bad source, pending, cancellation and full-version constraints; no metadata network, download, login, game or variant adoption.");
@@ -118,7 +120,7 @@ internal static class MmcJavaDiscoveryChecks {
         }
         Native.Call(typeof(FileTaskScope),"DrainPostedUi",null,deadline);
     }
-    private static void Preferences(ModMinecraft.McInstance instance,Dictionary<string,string> values) => MmcIniConfiguration.QueuePreferenceBatch(instance.Config,values);
+    private static void Preferences(ModMinecraft.McInstance instance,Dictionary<string,string?> values) => MmcIniConfiguration.QueuePreferenceBatch(instance.Config,values);
     private static string Tool(string name) {
         string path=Environment.GetEnvironmentVariable(name)??throw new IOException("Set explicit installed Java: "+name);
         Native.Check(File.Exists(path),"Configured installed Java is absent: "+name); return path;
@@ -144,7 +146,8 @@ internal static class MmcJavaDiscoveryChecks {
         try { action(); } catch(MmcLaunchJavaException error) when(error.Code==code) { return; }
         throw new Exception("Expected actual Java selection rejection "+code);
     }
-    private static void SwitchDuringRun(Fixture first,Fixture second,bool failSource) {
+    private static void SwitchDuringRun(Fixture first,Fixture second,bool failSource) => SwitchDuringRun(first,()=>new ModMinecraft.McInstance(second.Version).Load(),failSource,26);
+    private static void SwitchDuringRun(Fixture first,Func<ModMinecraft.McInstance> createTarget,bool failSource,int expectedMajor) {
         string source=Path.Combine(first.Version,first.Definition.SourceBundle.MetadataRecords.First(record=>record.Kind==MmcSourceRecordKind.Manifest).ObjectRelativePath);
         byte[] original=File.ReadAllBytes(source);
         using var entered=new ManualResetEventSlim(); using var release=new ManualResetEventSlim(); using var cancel=new CancellationTokenSource();
@@ -156,7 +159,7 @@ internal static class MmcJavaDiscoveryChecks {
             worker.Started += blocked;
             Native.Static("PCL.MmcJavaDiscovery","Start",first.Owner,worker,cancel.Token);
             Native.Check(entered.Wait(TimeSpan.FromSeconds(5)) && worker.Running,"The genuine shared worker did not enter its running window.");
-            var target=new ModMinecraft.McInstance(second.Version).Load();
+            var target=createTarget();
             int animation=ModAnimation.AniControlEnabled; ModAnimation.AniControlEnabled=animation+1;
             try {
                 PageInstanceLeft.Instance=target; Page=new PageInstanceSetup(); ModMain.FrmInstanceSetup=Page;
@@ -170,11 +173,13 @@ internal static class MmcJavaDiscoveryChecks {
             Native.Check(failSource ? firstState.State==InstanceJavaPreviewState.Failed && firstState.Message.Contains("保留来源",StringComparison.Ordinal)
                 : firstState.State==InstanceJavaPreviewState.Canceled,"A's terminal result was not bound to its requested instance.");
             Controller().UpdateJavaUi(); Wait(); Controller().UpdateJavaUi();
-            Native.Check(Preview(target).State==InstanceJavaPreviewState.Selected && worker.LastResult?.Version?.Major==26,
+            var host=(InstanceSettingsHost<ModMinecraft.McInstance>)Native.Call(typeof(PageInstanceSetup),"CreateHost",Page)!;
+            Native.Check(host.JavaPreviewIsCurrent!(target,worker) && worker.LastResult?.Version?.Major==expectedMajor &&
+                (expectedMajor==8 || Preview(target).State==InstanceJavaPreviewState.Selected),
                 "A's failure/cancellation poisoned B instead of allowing B's automatic recognition.");
         } finally { worker.Started -= blocked; release.Set(); worker.Cancel(); Wait(); File.WriteAllBytes(source,original); }
     }
-    private static void Ordinary(FileTaskScope files,string java8,string java26) {
+    private static ModMinecraft.McInstance Ordinary(FileTaskScope files,string java8,string java26) {
         string root=Path.Combine(files.Root,"ordinary","versions","1.7.10"); Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root,"1.7.10.json"),"""{"id":"1.7.10","mainClass":"net.minecraft.launchwrapper.Launch","minecraftArguments":"--tweakClass cpw.mods.fml.common.launcher.FMLTweaker","libraries":[{"name":"net.minecraftforge:forge:1.7.10-10.13.4.1614-1.7.10"}],"releaseTime":"2014-05-14T18:29:23Z","time":"2014-05-14T18:29:23Z","type":"release"}""");
         File.WriteAllText(Path.Combine(root,"1.7.10.jar"),"inert owned ordinary jar");
@@ -182,6 +187,7 @@ internal static class MmcJavaDiscoveryChecks {
         Configs.JavaList.Set(new ConcurrentList<Java>([new(Path.GetDirectoryName(java26)!),new(Path.GetDirectoryName(java8)!)]));
         Select(owner,0);
         Native.Check(PageInstanceLeft.CurrentJavaWorker.LastResult?.Version?.Major==8,"Ordinary MC1.7.10 no longer uses the legacy Java8 rule.");
+        return owner;
     }
 
     private sealed class Fixture : IDisposable {

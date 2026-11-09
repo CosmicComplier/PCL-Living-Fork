@@ -68,6 +68,10 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
     public void ReloadCurrentJava() => host.ReloadCurrentJava();
     public void UpdateJavaRelatedUi() => host.RunInUi(UpdateJavaUi);
     private void Hint(string text,int theme) => view.SetJavaHint(text,theme);
+    private void StartJavaPreview(RedoableWorker<Java> worker) {
+        if(host.StartJavaPreview is not null) host.StartJavaPreview(host.Instance(),worker);
+        else worker.Start();
+    }
     public void UpdateJavaUi() {
         RedoableWorker<Java> worker=host.JavaWorker();
         var managed = host.ManagedJavaPreview?.Invoke(host.Instance(), worker);
@@ -78,16 +82,16 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
             // Discrete component candidates cannot be represented by the legacy single interval.
             // Display the declared candidates; never silently save a vanilla-derived default range.
             if (managed.State==InstanceJavaPreviewState.NotStarted && !worker.Running) {
-                if (host.StartManagedJavaPreview is not null) host.StartManagedJavaPreview(host.Instance(),worker);
-                else worker.Start();
+                StartJavaPreview(worker);
             }
             Hint(managed.Message,managed.Theme);
             return;
         }
+        bool needsCurrent = host.JavaPreviewIsCurrent is not null && !host.JavaPreviewIsCurrent(host.Instance(),worker);
         switch (view.JavaKind.SelectedIndex) {
             case 0: case 2:
                 view.JavaHint.Visibility=Visibility.Visible; view.JavaRange.Visibility=Visibility.Collapsed; view.JavaSelectPanel.Visibility=Visibility.Collapsed;
-                if (!worker.LastSucceeded || worker.Running) { if (!worker.Running) worker.Start(); Hint("正在查找 Java……",0); }
+                if (needsCurrent || !worker.LastSucceeded || worker.Running) { if (!worker.Running) StartJavaPreview(worker); Hint("正在查找 Java……",0); }
                 else if (worker.LastResult is null) { if (view.JavaKind.SelectedIndex==0) Hint("你的电脑上没有可供该版本使用的 Java，PCL 会在启动游戏时自动下载。",2); else Hint("该版本的版本文件夹中没有发现任何 Java！\r\n请点击此处打开版本文件夹，然后将 Java 文件夹复制进去。",1); }
                 else Hint($"将会使用：{worker.LastResult}",0);
                 break;
@@ -95,7 +99,7 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
                 view.JavaHint.Visibility=Visibility.Visible; view.JavaRange.Visibility=Visibility.Visible; view.JavaSelectPanel.Visibility=Visibility.Collapsed;
                 if (!host.HasSaved("VersionArgumentJavaRange",host.Instance())) { string range=host.JavaRequirement(host.Instance()).ToString().Replace("-∞","").Replace("+∞",""); host.Set("VersionArgumentJavaRange",range,host.Instance()); view.JavaRange.Text=range; }
                 string error=view.JavaRangeError(); if (!string.IsNullOrEmpty(error)) { Hint("Java 版本范围错误："+error,1); return; }
-                if (!worker.LastSucceeded || worker.Running) { if (!worker.Running) worker.Start(); Hint("正在查找 Java……",0); }
+                if (needsCurrent || !worker.LastSucceeded || worker.Running) { if (!worker.Running) StartJavaPreview(worker); Hint("正在查找 Java……",0); }
                 else if (worker.LastResult is null) Hint("你的电脑上没有任何 Java 符合该版本范围！\r\n如果 Mojang 提供了对应版本的 Java，PCL 会在启动游戏时自动下载。",2);
                 else Hint($"将会使用：{worker.LastResult}",0);
                 break;

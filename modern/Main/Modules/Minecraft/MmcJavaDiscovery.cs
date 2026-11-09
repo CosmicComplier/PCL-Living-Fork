@@ -56,6 +56,10 @@ internal static class MmcJavaDiscovery {
             worker.Start(token);
         }
     }
+    internal static bool IsCurrentRequest(ModMinecraft.McInstance instance, RedoableWorker<Java> worker) {
+        if(!Requests.TryGetValue(worker,out var work)) return false;
+        lock(work) return ReferenceEquals(work.Latest?.Owner,instance);
+    }
 
     internal static InstanceJavaPreview? Preview(ModMinecraft.McInstance instance, RedoableWorker<Java> worker) {
         try {
