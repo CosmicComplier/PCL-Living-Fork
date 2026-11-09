@@ -12,7 +12,7 @@ using PCLLF.MMCC.Core;
 namespace PCLCS;
 
 // Original LF host implementation; governed by the repository LICENCE.
-public static class MmcRuntimeLaunchBuilder {
+public static partial class MmcRuntimeLaunchBuilder {
     private sealed record Value(string Actual, string Redacted);
     private static readonly HashSet<string> PairJvmOptions = new(StringComparer.Ordinal) {
         "--add-opens", "--add-exports", "--add-reads", "--enable-native-access", "--add-modules", "--limit-modules", "--enable-final-field-mutation"
@@ -68,6 +68,9 @@ public static class MmcRuntimeLaunchBuilder {
         logicalJvm.AddRange(compiled.JvmArguments.Select(a => Expand(a.Value, replacements, request.Account)));
         ValidateJvm(logicalJvm.Select(t => t.Actual).ToArray());
         ValidateWorkingDirectory(logicalJvm.Select(t => t.Actual), currentPaths.GameRoot);
+        // Only the dedicated live binding can introduce a host authentication agent.
+        // Package/user JVM tokens above still cannot authorize execution inputs.
+        logicalJvm.AddRange(await AuthenticationArgumentsAsync(request, view, inputs, logicalJvm.Select(a => a.Actual).ToArray(), cancellationToken).ConfigureAwait(false));
         foreach (var property in new[] {
             "-Duser.dir=" + currentPaths.GameRoot,
             "-Djava.library.path=" + MmcRuntimeFiles.JavaPath(request.Directories.NativeDirectory),
@@ -87,7 +90,7 @@ public static class MmcRuntimeLaunchBuilder {
         var required = RequiredClasses(compiled.MainClass, logicalJvm.Select(a => a.Actual), game.Select(a => a.Actual));
         if (settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper) await MmcClasspathInspector.VerifySupportDoesNotShadowAsync(request, required, logicalJvm.Select(a => a.Actual).ToArray(), cancellationToken).ConfigureAwait(false);
         List<string> actual = logicalJvm.Select(a => a.Actual).ToList(), redacted = logicalJvm.Select(a => a.Redacted).ToList();
-        List<string> sensitive = Secrets(request.Account).ToList();
+        List<string> sensitive = Secrets(request.Account).Concat(AuthenticationSecrets(request.Authentication)).ToList();
         string vmClasspath = settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper
             ? string.Join(Path.PathSeparator, new[] { request.Wrapper!.ActualPath, request.Bridge!.ActualPath }.Concat(classpath).Select(path => MmcRuntimeFiles.RelativeJavaPath(currentPaths.GameRoot, path))) : gameClasspath;
         string cpProperty = "-Djava.class.path=" + vmClasspath;
@@ -133,7 +136,7 @@ public static class MmcRuntimeLaunchBuilder {
             Fail("MMC_RUNTIME_JAVA", "Selected Java must match the final compiled Windows runtime environment.");
         MmcRuntimeFiles.Hash(request.Java.ExecutableSha256); MmcRuntimeFiles.Hash(request.Java.IdentitySha256); MmcRuntimeFiles.Hash(request.Directories.ViewKey);
         var policy = MmcJavaPolicyEvaluator.Create(request.BoundPlan.CompiledProfile.JavaPolicy.Kind == MmcJavaPolicyKind.DeclaredCandidates ? request.BoundPlan.CompiledProfile.JavaPolicy.AllowedMajors : [],
-            request.BoundPlan.CompiledProfile.JavaPolicy.RecommendedRuntimeName, request.BoundPlan.CompiledProfile.JavaPolicy.HardConstraints.Concat(settings.PlatformJavaConstraints).Concat(request.Account.JavaConstraints).ToArray());
+            request.BoundPlan.CompiledProfile.JavaPolicy.RecommendedRuntimeName, request.BoundPlan.CompiledProfile.JavaPolicy.HardConstraints.Concat(settings.PlatformJavaConstraints).Concat(request.Account.JavaConstraints).Concat(AuthenticationJavaConstraints(request.Authentication)).ToArray());
         if (request.BoundPlan.CompiledProfile.JavaPolicy.Kind == MmcJavaPolicyKind.Unsatisfiable || !policy.Allows(request.Java.Major)) Fail("MMC_RUNTIME_JAVA", "Selected Java violates package, platform or account constraints.");
         if (settings.SessionId == Guid.Empty || settings.MaximumMemoryMiB is < 16 or > 1048576 || settings.MinimumMemoryMiB < 0 || settings.MinimumMemoryMiB > settings.MaximumMemoryMiB ||
             settings.ResolutionWidth is < 1 or > 65535 || settings.ResolutionHeight is < 1 or > 65535 || settings.UserJvmTokens.IsDefault || settings.ExtraGameTokens.IsDefault || settings.PlatformJavaConstraints.IsDefault || request.Targets.IsDefault || !Enum.IsDefined(settings.WrapperMode) ||

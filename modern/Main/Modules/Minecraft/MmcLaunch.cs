@@ -51,6 +51,7 @@ public static class MmcLaunch {
         private MmcPreparedInstanceLaunch prepared;
         private MmcLaunchPreferenceSnapshot preferences;
         private MmcLaunchJavaSelection java;
+        private MmcLaunchAuthentication authentication;
         private MmcRuntimeLaunchPlan runtime;
         private MmcInstanceLaunchSupport[] support;
         private ModWatcher.Watcher watcher;
@@ -77,8 +78,9 @@ public static class MmcLaunch {
             ReconcilePrevious(paths, primary.Definition.InstanceId, pins, token,runtimeAuthority);
             saved = await MmcSavedSourceStore.LoadAsync(paths, primary.Definition, token).ConfigureAwait(false);
             preferences = MmcLaunchPreferences.Capture(instance, saved.PackageConfiguration, sessionId);
+            authentication = MmcLaunchAuthentication.Capture(instance, ModLaunch.McLoginLoader.Output.Type);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
-                preferences.JavaPreference, token).ConfigureAwait(false);
+                preferences.JavaPreference, token, authentication.JavaConstraints).ConfigureAwait(false);
             selectedJava(java.Java);
             string gameRoot = Path.GetDirectoryName(Path.GetDirectoryName(paths.InstanceRoot))!;
             string cache = Path.Combine(gameRoot, "PCL", "MmcCache");
@@ -105,6 +107,7 @@ public static class MmcLaunch {
                     new[] { new MmcInstanceLaunchSupportInput("JavaWrapper.jar", WrapperBytes(), WrapperSha256),
                         new MmcInstanceLaunchSupportInput("MmcExactBridge.jar", MmcRuntimeBridgeTransport.CreateJarBytes(), MmcRuntimeBridgeTransport.JarSha256()) }, token).ConfigureAwait(false)).ToArray()
                 : [];
+            await authentication.PrepareAsync(prepared, java.Java, progress, token).ConfigureAwait(false);
             WorldBackups.RecoverBeforeLaunch(prepared.Paths.GameRoot, token);
             try { options.PersonalOptions = PersonalGameSettings.Prepare(instance); }
             catch (Exception error) { Logger.Warn(error, "MMC 个人游戏设置同步未完成，保留现有配置"); }
@@ -131,9 +134,10 @@ public static class MmcLaunch {
         public void Start(LegacyLaunchTask<int, Process> task) {
             CancellationToken token = task.CreateCancellationToken(); token.ThrowIfCancellationRequested();
             var login = ModLaunch.McLoginLoader.Output;
-            if (login.Type is "Auth" or "Nide") throw new InvalidOperationException("此 MMC 启动方式尚未绑定认证代理，请使用已支持的登录方式。");
+            authentication.Revalidate(instance, login.Type, java.Java);
             var account = new MmcRuntimeAccountSnapshot(login.Name, login.Uuid, login.AccessToken,
-                "token:" + login.AccessToken + ":" + login.Uuid, login.Type == "Microsoft" ? "msa" : "legacy", "{}", login.ClientToken);
+                "token:" + login.AccessToken + ":" + login.Uuid, login.Type == "Microsoft" ? "msa" : "legacy", "{}", login.ClientToken,
+                javaConstraints: authentication.JavaConstraints);
             var settings = preferences.RuntimeSettings with {
                 ExtraGameTokens = preferences.RuntimeSettings.ExtraGameTokens.Concat(options.ExtraGameArgs).ToImmutableArray()
             };
@@ -141,13 +145,14 @@ public static class MmcLaunch {
                 prepared.Targets.Select(value => new MmcRuntimeArtifactTarget(value.ArtifactKey, value.TargetRelativePath, value.ActualPath)).ToImmutableArray(),
                 java.RuntimeJava, settings, account,
                 new(prepared.Directories.ViewKey, prepared.Directories.NativeDirectory, prepared.Directories.AssetsRoot, prepared.Directories.GameAssetsRoot),
-                Support("JavaWrapper.jar"), Support("MmcExactBridge.jar")){RuntimeAuthority=runtimeAuthority};
+                Support("JavaWrapper.jar"), Support("MmcExactBridge.jar")){RuntimeAuthority=runtimeAuthority, Authentication=authentication.Binding};
             try {
                 // The named admission mutex is thread-affine. Block only this worker while the
                 // pure runtime reader finishes, retaining the same thread through Process.Start.
                 using var admission = MmcAdmissionGate.Acquire(prepared.Paths.InstanceRoot, prepared.Definition.InstanceId, TimeSpan.Zero, token);
                 MmcInstanceBackend<ModNet.NetFile>.ValidatePreparedLaunch(admission, prepared);
                 MmcLaunchPreferences.Revalidate(instance, preferences);
+                authentication.Revalidate(instance, ModLaunch.McLoginLoader.Output.Type, java.Java);
                 runtime = MmcRuntimeLaunchBuilder.BuildAsync(request, token).GetAwaiter().GetResult();
                 var classes = MmcClasspathInspector.ObserveAsync(runtime, token).GetAwaiter().GetResult();
                 string wrapperHash = Support("JavaWrapper.jar")?.Sha256 ?? Convert.ToHexStringLower(SHA256.HashData("PCLLF:direct-main:v1"u8));
@@ -171,6 +176,7 @@ public static class MmcLaunch {
                         token.ThrowIfCancellationRequested();
                         MmcInstanceBackend<ModNet.NetFile>.ValidatePreparedLaunch(admission, prepared);
                         MmcLaunchPreferences.Revalidate(instance, preferences);
+                        authentication.Revalidate(instance, ModLaunch.McLoginLoader.Output.Type, java.Java);
                         MmcRuntimeLaunchBuilder.RevalidateFilesAsync(runtime, token).GetAwaiter().GetResult();
                         MmcClasspathInspector.RevalidateManifestInputs(runtime, classes, token);
                     }, (id, identity) => pins.Acquire(id, identity, prepared.Definition.InstanceId, prepared.Paths.InstanceRoot, token));

@@ -29,12 +29,12 @@ public static class MmcDownloads {
     public static ModNet.NetFile BuildFile(MmcArtifactDownloadSpec spec) {
         ArgumentNullException.ThrowIfNull(spec);
         if (spec.MaximumSizeBytes < 0 || spec.ExpectedSize < 0 || spec.ExpectedSize > spec.MaximumSizeBytes ||
-            !ValidDigest(spec.ExpectedSha256, 64) || !ValidDigest(spec.ExpectedSha1, 40)) throw new ArgumentException("MMC download constraints are invalid.", nameof(spec));
+            !ValidDigest(spec.ExpectedSha256, 64) || !ValidDigest(spec.ExpectedSha1, 40) || !ValidDigest(spec.ExpectedMd5, 32)) throw new ArgumentException("MMC download constraints are invalid.", nameof(spec));
         if (!Path.IsPathFullyQualified(spec.DownloadPath)) throw new ArgumentException("MMC download target must be absolute.", nameof(spec));
         var urls = spec.Urls.SelectMany(url => Expand(spec.Artifact, url)).Distinct(StringComparer.Ordinal).ToArray();
         if (urls.Length == 0) throw new ArgumentException("MMC download has no source.", nameof(spec));
         var file = new ModNet.NetFile(urls, spec.DownloadPath, new FileChecker {
-            ActualSize = spec.ExpectedSize ?? -1, MinSize = 0, Hash = spec.ExpectedSha256 ?? spec.ExpectedSha1
+            ActualSize = spec.ExpectedSize ?? -1, MinSize = 0, Hash = spec.ExpectedSha256 ?? spec.ExpectedSha1 ?? spec.ExpectedMd5
         }) { MaximumSizeBytes = spec.MaximumSizeBytes, AllowCredentialHeaders = false };
         Specifications.Add(file, spec);
         return file;
@@ -98,7 +98,7 @@ public static class MmcDownloads {
                     throw new IOException("MMC 下载完成后的实际文件大小不符合约束。");
                 // FileChecker carries the stronger digest during transfer. When both are declared,
                 // preserve both checks rather than treating the second declaration as an observation.
-                foreach (string digest in new[] { spec.ExpectedSha256, spec.ExpectedSha1 }.OfType<string>()) {
+                foreach (string digest in new[] { spec.ExpectedSha256, spec.ExpectedSha1, spec.ExpectedMd5 }.OfType<string>()) {
                     string error = new FileChecker { Hash = digest, ActualSize = spec.ExpectedSize ?? -1 }.Check(spec.DownloadPath);
                     if (error is not null) throw new IOException(error);
                 }

@@ -21,7 +21,7 @@ public sealed record MmcClasspathInspection(ImmutableArray<MmcJarClassObservatio
 }
 
 /// <summary>Reads only locked classpath JARs and selected class headers; never loads classes or scans a mod directory.</summary>
-public static class MmcClasspathInspector {
+public static partial class MmcClasspathInspector {
     private sealed record Found(string Path, int Release, int Major);
     private sealed record JarResult(MmcJarClassObservation Observation, Dictionary<string, Found> Found, ImmutableArray<MmcManifestInputAbsence> ManifestInputs);
     private sealed record JarRuntimePolicy(int JavaMajor, int MaximumRelease, bool MultiReleaseEnabled, bool Preview);

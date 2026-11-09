@@ -16,7 +16,11 @@ namespace PCLCS;
 // Original LF host implementation; governed by the repository LICENCE.
 public sealed record MmcArtifactCacheRoots(string LibrariesRoot, string AssetsRoot, string SourceCacheRoot, string? VersionsRoot = null);
 public sealed record MmcArtifactDownloadSpec(MmcArtifactReference Artifact, ImmutableArray<string> ArtifactKeys,
-    string DownloadPath, ImmutableArray<string> Urls, string? ExpectedSha256, string? ExpectedSha1, long? ExpectedSize, long MaximumSizeBytes);
+    string DownloadPath, ImmutableArray<string> Urls, string? ExpectedSha256, string? ExpectedSha1, long? ExpectedSize, long MaximumSizeBytes) {
+    // Legacy Nide metadata can supply MD5. This is checked against that official
+    // source, then adopted as SHA256 before any owned execution copy is published.
+    public string? ExpectedMd5 { get; init; }
+}
 public sealed record MmcPrefetchedSources(ImmutableDictionary<string, MmcArtifactSource> Sources, int BatchCount, int RequestedFileCount) {
     /// <summary>No per-artifact network fallback: missing/raced inputs require rerunning the batch preparation.</summary>
     public MmcArtifactSourceAccess CreateAccess(Func<MmcArtifactReference, CancellationToken, ValueTask<MmcArtifactSource?>>? localSource = null) =>
