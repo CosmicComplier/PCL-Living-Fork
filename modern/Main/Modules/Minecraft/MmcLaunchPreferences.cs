@@ -50,6 +50,15 @@ public static class MmcLaunchPreferences {
         return ((int)Math.Round(ModMain.FrmMain.ActualWidth), (int)Math.Round(ModMain.FrmMain.ActualHeight - 29.5 * ModBase.DPI / 96));
     });
 
+    /// <summary>Read only the Java preference path; settings previews need no RAM/window/UI or custom-command capture.</summary>
+    internal static MmcLaunchJavaPreference CaptureJavaPreference(ModMinecraft.McInstance instance, MmcConfiguration packageConfiguration) {
+        ArgumentNullException.ThrowIfNull(instance); ArgumentNullException.ThrowIfNull(packageConfiguration);
+        var view = MmcIniConfiguration.CapturePreferences(instance.Config);
+        if (instance.Config.ContextStamp.Kind != MmcConfigurationContextKind.Managed)
+            throw new IOException("MMC Java 偏好需要明确的管理实例。");
+        return JavaPreference(packageConfiguration, view.Ini, view.Config, ImmutableDictionary<string, string>.Empty, Mode(view.Ini, "MmcJavaLocationMode"));
+    }
+
     public static MmcLaunchPreferenceSnapshot Capture(ModMinecraft.McInstance instance, MmcConfiguration packageConfiguration, Guid sessionId) {
         ArgumentNullException.ThrowIfNull(instance); ArgumentNullException.ThrowIfNull(packageConfiguration);
         if (sessionId == Guid.Empty) throw new ArgumentException("启动会话身份不能为空。", nameof(sessionId));

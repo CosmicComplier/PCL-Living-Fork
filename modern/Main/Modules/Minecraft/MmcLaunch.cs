@@ -89,7 +89,7 @@ public static class MmcLaunch {
                 throw new IOException("现有账户登录尚未成功完成，无法绑定 MMC 启动身份。");
             authentication = MmcLaunchAuthentication.Capture(instance, ModLaunch.McLoginLoader.Output.Type);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
-                preferences.JavaPreference, token, authentication.JavaConstraints).ConfigureAwait(false);
+                preferences.JavaPreference, token, authentication.JavaConstraints, minimumVersion: authentication.MinimumJavaVersion).ConfigureAwait(false);
             selectedJava(java.Java);
             ModLaunch.McLaunchLog("MMC 本次使用 Java " + java.Java.Version + "：" + java.Java.JavaExePath);
             string gameRoot = Path.GetDirectoryName(Path.GetDirectoryName(paths.InstanceRoot))!;

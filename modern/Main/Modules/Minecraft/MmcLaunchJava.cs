@@ -38,14 +38,16 @@ public static class MmcLaunchJava {
 
     public static Task<MmcLaunchJavaSelection> SelectAsync(ModMinecraft.McInstance instance, MmcInstanceDefinition definition,
         MmcResolvedProfile resolved, MmcLaunchJavaPreference preference, CancellationToken token,
-        ImmutableArray<MmcJavaConstraint> accountConstraints = default, ImmutableArray<MmcJavaConstraint> platformConstraints = default) =>
-        SelectFromCandidatesAsync(instance, definition, resolved, preference, Configs.JavaList.Get()?.ToArray() ?? [], token, accountConstraints, platformConstraints);
+        ImmutableArray<MmcJavaConstraint> accountConstraints = default, ImmutableArray<MmcJavaConstraint> platformConstraints = default,
+        Version? minimumVersion = null) =>
+        SelectFromCandidatesAsync(instance, definition, resolved, preference, Configs.JavaList.Get()?.ToArray() ?? [], token, accountConstraints, platformConstraints, minimumVersion);
 
     // Only the catalogue read is substitutable for narrow facade checks. All candidate execution,
     // PE inspection, checksums, policy compilation and publication matching remain genuine.
     public static async Task<MmcLaunchJavaSelection> SelectFromCandidatesAsync(ModMinecraft.McInstance instance, MmcInstanceDefinition definition,
         MmcResolvedProfile resolved, MmcLaunchJavaPreference preference, IReadOnlyList<Java> catalogue, CancellationToken token,
-        ImmutableArray<MmcJavaConstraint> accountConstraints = default, ImmutableArray<MmcJavaConstraint> platformConstraints = default) {
+        ImmutableArray<MmcJavaConstraint> accountConstraints = default, ImmutableArray<MmcJavaConstraint> platformConstraints = default,
+        Version? minimumVersion = null) {
         ArgumentNullException.ThrowIfNull(instance); ArgumentNullException.ThrowIfNull(definition); ArgumentNullException.ThrowIfNull(resolved);
         ArgumentNullException.ThrowIfNull(preference); ArgumentNullException.ThrowIfNull(catalogue);
         token.ThrowIfCancellationRequested();
@@ -82,6 +84,10 @@ public static class MmcLaunchJava {
             token.ThrowIfCancellationRequested();
             try {
                 Probed actual = await ProbeAsync(folder, token).ConfigureAwait(false);
+                if (minimumVersion is not null && (actual.Java.Version is null || actual.Java.Version < minimumVersion)) {
+                    if (preference.Force) Fail("MMC_JAVA_PREFERENCE_INCOMPATIBLE", "强制 Java 不满足认证或宿主要求的完整版本约束。");
+                    continue;
+                }
                 if (actual.Java.Version is null || range is not null && !range.Contains(actual.Java.Version)) { if (preference.Force) Fail("MMC_JAVA_PREFERENCE_INCOMPATIBLE", "强制 Java 不满足玩家设置的版本范围。"); continue; }
                 var environment = new MmcRuntimeEnvironment("windows", actual.Runtime.Architecture, actual.Runtime.Major, actual.Runtime.Bitness);
                 var compiled = MmcProfileCompiler.Compile(resolved, environment);

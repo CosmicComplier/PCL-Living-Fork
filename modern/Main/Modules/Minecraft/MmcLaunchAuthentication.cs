@@ -14,14 +14,25 @@ using PCLLF.MMCC.Core;
 
 namespace PCL;
 
+internal sealed record MmcAuthenticationJavaRequirements(ImmutableArray<MmcJavaConstraint> Majors, Version MinimumVersion);
+
 // Original LF Main integration; governed by the repository LICENCE.
 /// <summary>Reuses existing LF source identities and download queue; never logs in or stores account/session values.</summary>
 internal sealed class MmcLaunchAuthentication {
     private readonly string loginType, server;
     private readonly MmcRuntimeAuthenticationKind? kind;
     internal MmcRuntimeAuthenticationSnapshot Binding { get; private set; }
-    internal ImmutableArray<MmcJavaConstraint> JavaConstraints => kind is null ? [] :
-        [new(kind == MmcRuntimeAuthenticationKind.Nide ? "account:nide" : "account:authlib-injector", MinimumMajor: 8)];
+    internal ImmutableArray<MmcJavaConstraint> JavaConstraints => JavaRequirements(kind).Majors;
+    internal Version MinimumJavaVersion => JavaRequirements(kind).MinimumVersion;
+    // Type-only preview: never reads a login result, server setting, token or account snapshot.
+    internal static MmcAuthenticationJavaRequirements JavaRequirementsForType(ModLaunch.McLoginType type) => JavaRequirements(type switch {
+        ModLaunch.McLoginType.Nide => MmcRuntimeAuthenticationKind.Nide,
+        ModLaunch.McLoginType.Auth => MmcRuntimeAuthenticationKind.AuthlibInjector,
+        _ => null
+    });
+    private static MmcAuthenticationJavaRequirements JavaRequirements(MmcRuntimeAuthenticationKind? type) => new(
+        type is null ? [] : [new(type == MmcRuntimeAuthenticationKind.Nide ? "account:nide" : "account:authlib-injector", MinimumMajor: 8)],
+        type == MmcRuntimeAuthenticationKind.Nide ? new Version(8, 0, 141) : null);
 
     // Only public agent metadata is substitutable in controlled facade checks.
     // The real Main downloader, owned publication, runtime binding and admission remain genuine.
@@ -55,7 +66,7 @@ internal sealed class MmcLaunchAuthentication {
     private void ValidateJava(Java java) {
         // Keep the account's exact update constraint even when a custom main class
         // provides complete authority to retire vanilla Minecraft/Forge inference.
-        if (kind == MmcRuntimeAuthenticationKind.Nide && java.Version < new Version(8, 0, 141))
+        if (MinimumJavaVersion is { } minimum && java.Version < minimum)
             throw new MmcRuntimeLaunchException("MMC_AUTHENTICATION_JAVA", "统一通行证需要 Java 8u141 或更高版本。");
     }
     private static string ReadServer(ModMinecraft.McInstance instance, MmcRuntimeAuthenticationKind? kind) => kind switch {
