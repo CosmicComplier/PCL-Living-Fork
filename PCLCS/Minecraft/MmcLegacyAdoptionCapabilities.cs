@@ -15,10 +15,15 @@ public static class MmcLegacyAdoptionCapabilities {
     }
     /// <summary>Ordinary folders without an adoption store retain their old trust semantics.</summary>
     public static void RequireLegacyGameFolderSafe(string gameRoot, string operation) {
-        string store = Path.Combine(Path.GetFullPath(gameRoot), "PCL", "MmcLegacyAdoption");
-        if (MmcInstancePaths.Attributes(store) is null) return;
-        MmcInstancePaths.EnsureNoLinks(store);
-        if (!Directory.Exists(store) || Directory.EnumerateFileSystemEntries(store).Any())
-            throw new InvalidOperationException(operation + "不可通过旧目录清理入口处理：该游戏文件夹含有旧 MMC 转换的私有备份或待恢复操作，请保留这些恢复数据。");
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(gameRoot));
+        string[] stores = Path.GetFileName(root).Equals("PCL", StringComparison.OrdinalIgnoreCase)
+            ? [Path.Combine(root, "MmcLegacyAdoption"), Path.Combine(root, "PCL", "MmcLegacyAdoption")]
+            : [Path.Combine(root, "PCL", "MmcLegacyAdoption")];
+        foreach (string store in stores) {
+            if (MmcInstancePaths.Attributes(store) is null) continue;
+            MmcInstancePaths.EnsureNoLinks(store);
+            if (!Directory.Exists(store) || Directory.EnumerateFileSystemEntries(store).Any())
+                throw new InvalidOperationException(operation + "不可通过旧目录清理入口处理：该游戏文件夹含有旧 MMC 转换的私有备份或待恢复操作，请保留这些恢复数据。");
+        }
     }
 }

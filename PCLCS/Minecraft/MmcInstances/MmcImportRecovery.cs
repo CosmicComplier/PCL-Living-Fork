@@ -204,8 +204,16 @@ public static class MmcImportRecovery {
         public void Dispose() { foreach (var lease in Leases.Values.Reverse()) lease.Dispose(); foreach (var quiet in Quiet.Values.Reverse()) quiet.Dispose(); }
     }
     public static void RequireLegacyGameFolderSafe(string minecraftRoot, string operation) {
-        string store = Path.Combine(Path.GetFullPath(minecraftRoot), "PCL", MmcImportOperation.StoreName); if (MmcInstancePaths.Attributes(store) is null) return;
-        MmcInstancePaths.EnsureNoLinks(store); if (!Directory.Exists(store) || Directory.EnumerateFileSystemEntries(store).Any()) throw new InvalidOperationException(operation + "不能通过旧目录清理删除：该目录含有 MMC 导入恢复记录，请先处理这些私有数据。");
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(minecraftRoot));
+        string[] stores = Path.GetFileName(root).Equals("PCL", StringComparison.OrdinalIgnoreCase)
+            ? [Path.Combine(root, MmcImportOperation.StoreName), Path.Combine(root, "PCL", MmcImportOperation.StoreName)]
+            : [Path.Combine(root, "PCL", MmcImportOperation.StoreName)];
+        foreach (string store in stores) {
+            if (MmcInstancePaths.Attributes(store) is null) continue;
+            MmcInstancePaths.EnsureNoLinks(store);
+            if (!Directory.Exists(store) || Directory.EnumerateFileSystemEntries(store).Any())
+                throw new InvalidOperationException(operation + "不能通过旧目录清理删除：该目录含有 MMC 导入恢复记录，请先处理这些私有数据。");
+        }
     }
     private static string Root(string value) { string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(value)); MmcInstancePaths.EnsureNoLinks(root); return root; }
     internal static bool Expected(Exception error) => error is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException or OverflowException;

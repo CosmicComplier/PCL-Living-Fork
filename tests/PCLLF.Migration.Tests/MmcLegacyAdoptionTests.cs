@@ -15,12 +15,24 @@ internal static class MmcLegacyAdoptionTests {
         yield return ("MMC source rebinding requires its own preview intent and cannot silently replace strict verification", ExplicitRebinding);
         yield return ("MMC legacy copy rejects shared ambiguous active and changed sources and cancels before publication", RefusalsAndCancellation);
         yield return ("MMC legacy copy uses a real producer file lock and recovers a decided no-overwrite publication offline", Recovery);
+        yield return ("MMC legacy private backup blocks old cleanup from a selected PCL folder without versions", PrivateStoreCleanupGuard);
     }
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static string Tree(string root) => string.Join("|", Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
         .Select(path => Path.GetRelativePath(root, path) + ":" + Hash(File.ReadAllBytes(path))));
     private static void Denied(Action work) { try { work(); } catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException) { return; } throw new Exception("Expected a clear refusal."); }
+    private static void PrivateStoreCleanupGuard() {
+        using Fixture fixture = new(true); string game = Path.Combine(fixture.Root, "cleanup-game"), pcl = Path.Combine(game, "PCL"); Directory.CreateDirectory(pcl);
+        MmcInstanceCapabilities.RequireLegacyGameFolder(game, "普通目录清理检查");
+        MmcInstanceCapabilities.RequireLegacyGameFolder(pcl + Path.DirectorySeparatorChar, "普通 PCL 目录清理检查");
+        string store = Path.Combine(pcl, "MmcLegacyAdoption"), keep = Path.Combine(store, "private-backup.zip");
+        Directory.CreateDirectory(store); File.WriteAllText(keep, "owned private backup bytes");
+        Require(!Directory.Exists(Path.Combine(game, "versions")) && !Directory.Exists(Path.Combine(pcl, "versions")), "Cleanup guard fixture must not depend on a versions directory.");
+        Denied(() => MmcInstanceCapabilities.RequireLegacyGameFolder(game, "旧目录清理检查"));
+        Denied(() => MmcInstanceCapabilities.RequireLegacyGameFolder(pcl + Path.DirectorySeparatorChar, "旧目录清理检查"));
+        Require(File.ReadAllText(keep) == "owned private backup bytes", "Cleanup capability check changed private backup data."); fixture.Complete();
+    }
     private static void StrictCopy() {
         using Fixture fixture = new(retainedMetadata: true); string before = Tree(fixture.Source);
         using var old = new InstanceConfigProvider(fixture.Source);

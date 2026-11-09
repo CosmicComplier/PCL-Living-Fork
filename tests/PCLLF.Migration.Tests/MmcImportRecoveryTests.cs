@@ -14,8 +14,23 @@ internal static class MmcImportRecoveryTests {
         yield return ("MMC undecided initial transaction rolls back and fresh retry requires same ZIP SHA with a different name", RollbackAndRetry);
         yield return ("MMC recovery preserves changed payload and unproven legacy residuals", ForeignAndLegacy);
         yield return ("MMC moved import with an already removed ignore file finishes exact pending cleanup", MovedFinal);
+        yield return ("MMC import recovery store blocks old cleanup from a selected PCL folder without versions", PrivateStoreCleanupGuard);
     }
     private static void Require(bool value, string message) { if (!value) throw new Exception(message); }
+    private static void PrivateStoreCleanupGuard() {
+        using Fixture fixture = new(); string pcl = Path.Combine(fixture.Game, "PCL"); Directory.CreateDirectory(pcl);
+        MmcImportRecovery.RequireLegacyGameFolderSafe(fixture.Game, "普通目录清理检查");
+        MmcImportRecovery.RequireLegacyGameFolderSafe(pcl + Path.DirectorySeparatorChar, "普通 PCL 目录清理检查");
+        string store = Path.Combine(pcl, "MmcImportOperations"), keep = Path.Combine(store, "private-owner.json");
+        Directory.CreateDirectory(store); File.WriteAllText(keep, "owned recovery bytes");
+        Require(!Directory.Exists(Path.Combine(fixture.Game, "versions")) && !Directory.Exists(Path.Combine(pcl, "versions")), "Cleanup guard fixture must not depend on a versions directory.");
+        foreach (string target in new[] { fixture.Game, pcl + Path.DirectorySeparatorChar }) {
+            bool refused = false;
+            try { MmcImportRecovery.RequireLegacyGameFolderSafe(target, "旧目录清理检查"); } catch (InvalidOperationException) { refused = true; }
+            Require(refused, "Old cleanup accepted a folder containing the private import recovery store: " + target);
+        }
+        Require(File.ReadAllText(keep) == "owned recovery bytes", "Cleanup capability check changed private recovery data."); fixture.Complete();
+    }
     private static void Committed() {
         using Fixture fixture = new(); bool liveBlocked = false;
         var failed = fixture.Backend().ImportAsync(fixture.Request(), progress: new Progress(value => {
