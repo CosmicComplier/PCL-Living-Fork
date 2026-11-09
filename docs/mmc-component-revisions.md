@@ -91,3 +91,16 @@ checkpoint: large-world hashing remains cancellable. The final platform-evidence
 check also precedes this boundary. A cancelled validation cannot create a new
 CommitDecided record or publish a new generation; cancellation after the durable
 decision still completes the committed result.
+
+The remaining focused actual-Main groups also passed separately: unstarted and
+preview cancellation, input mutations, unsupported semantics, stale selection,
+unknown session/target/root, successful/locked/changed-world backup, genuine
+NetFile HTTP cancellation/drain, and an explicitly probed installed Java 21.
+Together with the earlier five groups these make nineteen groups, each retaining
+the original fresh-process budget. No Minecraft process was launched.
+
+The Java fixture initially assumed that an extra component's Java declaration
+removed Java 8 already declared by its Minecraft component. The fixture now
+checks its real combined candidate policy: the initial selection stays at Java 8,
+then the user explicitly selects the measured Java 21 executable. Production
+compiler semantics were not changed to satisfy the incorrect assertion.

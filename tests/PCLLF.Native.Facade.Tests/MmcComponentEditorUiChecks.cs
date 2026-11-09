@@ -268,9 +268,13 @@ internal static class MmcComponentEditorUiChecks {
         internal void Java() {
             var data = New("java"); string path = Environment.GetEnvironmentVariable("PCLLF_MMC_TEST_JAVA21") ?? throw new IOException("Set an explicit real Java21 executable: PCLLF_MMC_TEST_JAVA21");
             Native.Check(Path.IsPathFullyQualified(path) && File.Exists(path), "Selected installed test Java is missing.");
-            choose = (_, _) => { var patch = JObject.Parse(data.CustomPatch("1", "custom one", "fixture.Java21", "-Djava21=true")); patch["compatibleJavaMajors"] = new JArray(21); return new(new("net.minecraftforge", PatchContentUtf8: patch.ToString())) { JavaPath = choices == 1 ? null : path }; };
+            // This fixture's Minecraft component already declares Java 8 and 21.
+            // Extend the candidate policy, then explicitly choose installed Java 21;
+            // an additional component's declaration does not remove that Java 8 candidate.
+            choose = (_, _) => { var patch = JObject.Parse(data.CustomPatch("1", "custom one", "fixture.Java21", "-Djava21=true")); patch["compatibleJavaMajors"] = new JArray(21, 25); return new(new("net.minecraftforge", PatchContentUtf8: patch.ToString())) { JavaPath = choices == 1 ? null : path }; };
             confirm = value => {
-                if (choices == 1) { Native.Check(!value.CanCommit && value.Result.Preview is null, "A Java21-only candidate silently changed the published Java8 selection."); return 3; }
+                if (choices == 1) { Native.Check(value.CanCommit && value.Result.Preview!.Selection.Environment.JavaMajor == 8 && value.JavaImage is null,
+                    "The candidate silently changed published Java 8 before an explicit Java selection."); return 3; }
                 return 1;
             };
             Start(data); Wait(ModBase.LoadState.Finished);
