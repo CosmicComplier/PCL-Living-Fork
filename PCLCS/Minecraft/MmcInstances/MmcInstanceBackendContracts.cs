@@ -16,7 +16,10 @@ public sealed record MmcInstanceRepairRequest(string VersionRoot, MmcRuntimeEnvi
     public string? ExpectedPrimarySha256 { get; init; }
     public MmcInstanceRepairSelection? StrictSelection { get; init; }
 }
-public sealed record MmcInstanceBackendProgress(string Phase, long CompletedBytes = 0, long TotalBytes = 0);
+public sealed record MmcInstanceBackendProgress(string Phase, long CompletedBytes = 0, long TotalBytes = 0) {
+    public int? CompletedFiles { get; init; }
+    public int? TotalFiles { get; init; }
+}
 /// <summary>Explicit adoption of another variant declared by the same preserved package sources.</summary>
 public sealed record MmcInstanceAdoptVariantRequest(string VersionRoot, MmcRuntimeEnvironment Environment,
     Guid ExpectedInstanceId, long ExpectedGeneration, string ExpectedPrimarySha256) {

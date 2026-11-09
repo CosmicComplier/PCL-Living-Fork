@@ -74,6 +74,7 @@ public sealed partial class MmcArtifactMaterializer {
                 paths, workspace, io, access, mutations, progress, cancellationToken).ConfigureAwait(false);
             string viewKey = ViewKey(request.LogicalContext, artifacts.Select(x => inputs[x.Key]).Concat(
                 assetPlan is null ? [] : assetPlan.Objects.Select(x => inputs[x.Key])));
+            progress?.Report(new("runtime-view-materialization", viewKey, 0));
             var bindings = ImmutableArray.CreateBuilder<MmcArtifactBinding>();
             var targetClaims = new MmcRuntimeTargetClaims(2L * (limits.MaxArtifacts + (long)limits.MaxNativeEntries + limits.MaxAssetObjects));
             foreach (var artifact in artifacts) {
@@ -92,6 +93,7 @@ public sealed partial class MmcArtifactMaterializer {
             var nativeFiles = cachedNativeFiles ?? await ExtractNativesAsync(nativeInputs,
                 viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
             ValidateNativeTree(nativeFiles, viewKey, paths, cancellationToken);
+            if (assetPlan is not null) progress?.Report(new("asset-view-materialization", viewKey, 0));
             var assetFiles = await StageAssetsAsync(assetPlan, inputs, viewKey, paths, workspace, io, mutations, targetClaims, cancellationToken).ConfigureAwait(false);
             string? assetsRoot = assetPlan is null ? null : paths.ResolveRelative(MmcPathRole.Runtime, viewKey + "/assets");
             string? mappedRoot = assetPlan is { MapToResources: true, Virtual: false } ? paths.ResolveRelative(MmcPathRole.Game, "resources") : null;

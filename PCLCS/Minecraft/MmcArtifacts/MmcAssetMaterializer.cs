@@ -30,6 +30,7 @@ public sealed partial class MmcArtifactMaterializer {
         if (indexes.Length == 0) return null;
         if (indexes.Length != 1) throw new IOException("Exactly one effective asset index is required.");
         var index = indexes[0];
+        progress?.Report(new("asset-index-preparation", index.Key, 0));
         if (index.Scope != MmcArtifactScope.Shared || !index.RelativePath.StartsWith("indexes/", StringComparison.Ordinal) ||
             !index.RelativePath.EndsWith(".json", StringComparison.Ordinal)) throw new IOException("Asset index location is not canonical.");
         string id = index.RelativePath[8..^5]; MmcArtifactIo.Relative(id);
@@ -75,6 +76,7 @@ public sealed partial class MmcArtifactMaterializer {
         var plan = new AssetPlan(id, parsed.Index.Virtual, parsed.Index.MapToResources, entries.ToImmutable(), unique.Values.ToImmutableArray(),
             new(index.Key, parsed.Index.ContentSha256, ImmutableArray.CreateRange(json)));
         long adoptedBytes = inputs.Values.Sum(x => x.Lock.SizeBytes);
+        progress?.Report(new("asset-object-preparation", index.Key, 0));
         foreach (var artifact in plan.Objects) {
             if (inputs.Count >= limits.MaxArtifacts) throw new IOException("Combined library and asset artifact count budget exceeded.");
             locks.TryGetValue(artifact.Key, out var adopted);

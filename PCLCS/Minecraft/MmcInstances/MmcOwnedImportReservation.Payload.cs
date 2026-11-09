@@ -49,6 +49,7 @@ public sealed partial class MmcOwnedImportReservation {
             throw new IOException("Private payload inventory is incomplete or exceeds its count budget.");
         var mutations = prepared.InitialGameMutations.ToDictionary(file => file.RelativePath, StringComparer.OrdinalIgnoreCase);
         var files = ImmutableArray.CreateBuilder<MmcPrivatePayloadFile>(); long total = 0;
+        progress?.Report(new("private-payload-plan") { CompletedFiles = 0, TotalFiles = expected.Length });
         foreach (var member in expected) {
             cancellationToken.ThrowIfCancellationRequested();
             if (!observations.TryGetValue(member.TargetRelativePath!, out var file) || !mutations.TryGetValue(member.TargetRelativePath!, out var mutation) ||
@@ -69,6 +70,7 @@ public sealed partial class MmcOwnedImportReservation {
             if (!MmcDurableFiles.IsHash(file.Sha256) || file.SizeBytes < 0 || file.SizeBytes > MmcDurableFiles.MaximumFileBytes ||
                 (total = checked(total + file.SizeBytes)) > MaximumPayloadBytes) throw new IOException("Private payload byte budget is invalid.");
             files.Add(new(member.RelativePath, relative, file.Role, file.Sha256, file.SizeBytes, file.Crc32));
+            progress?.Report(new("private-payload-plan") { CompletedFiles = files.Count, TotalFiles = expected.Length });
         }
         var manifest = new MmcPrivatePayloadManifest(1, InstanceId, packageSha256, baseline.BaselineSha256, TemporaryRoot, FinalRoot,
             paths.GameRootLeaf, Path.GetRelativePath(TemporaryRoot, workspace).Replace('\\', '/'), total, files.ToImmutable());
@@ -77,6 +79,7 @@ public sealed partial class MmcOwnedImportReservation {
         string manifestPath = paths.ResolveRelative(MmcPathRole.Instance, PayloadManifestPath);
         // Persist the complete expected inventory before the first move. This record describes
         // prepared facts, not a claim that an interrupted partial placement is complete.
+        progress?.Report(new("private-payload-manifest", 0, bytes.Length) { CompletedFiles = 0, TotalFiles = manifest.Files.Length });
         MmcDurableFiles.WriteNew(manifestPath, bytes);
         payloadManifest = manifest; payloadManifestHash = MmcDurableFiles.Hash(bytes);
         try {
@@ -94,7 +97,7 @@ public sealed partial class MmcOwnedImportReservation {
                 MmcArtifactIo.Directory(Path.GetDirectoryName(target)!);
                 File.Move(input, target, false);
                 completed = checked(completed + file.SizeBytes);
-                progress?.Report(new("private-payload-install", completed, total));
+                progress?.Report(new("private-payload-install", completed, total) { CompletedFiles = index + 1, TotalFiles = manifest.Files.Length });
                 checkpoint?.Invoke(MmcInitialPayloadCheckpoint.Moved, index);
             }
             cancellationToken.ThrowIfCancellationRequested(); VerifyMarker(TemporaryRoot); VerifyPayloadWorkspace(paths, workspace); payloadPlaced = true;
@@ -114,11 +117,11 @@ public sealed partial class MmcOwnedImportReservation {
             throw new IOException("Private payload preparation record changed before publication.");
         if (MmcDurableFiles.Hash(MmcSavedSourceStore.ReadBounded(paths, definition.AuthorFileBaseline.ObjectRelativePath, 64 * 1024 * 1024)) != manifest.BaselineSha256)
             throw new IOException("Private payload author baseline changed before publication.");
-        long completed = 0; byte[] buffer = new byte[131072];
+        long completed = 0; int checkedFiles = 0; byte[] buffer = new byte[131072];
         foreach (var file in manifest.Files) {
             VerifyPayloadFile(paths.ResolveRelative(MmcPathRole.Instance, file.TargetRelativePath), file, CancellationToken.None, buffer);
             completed = checked(completed + file.SizeBytes);
-            progress?.Report(new("private-payload-verify", completed, manifest.TotalBytes));
+            progress?.Report(new("private-payload-verify", completed, manifest.TotalBytes) { CompletedFiles = ++checkedFiles, TotalFiles = manifest.Files.Length });
         }
         if (completed != manifest.TotalBytes) throw new IOException("Private payload final byte count differs from its prepared inventory.");
     }
