@@ -78,6 +78,13 @@ public static class MmcDefinitionCodec {
                 Text(platform.Platform, 64); Text(platform.ProjectId, 256);
                 if (platform.VersionId is not null) Text(platform.VersionId, 256);
             }
+            if (definition.Origin.PlatformEvidenceReference is { } evidence) {
+                try {
+                    MmcPlatformOriginCodec.ValidateReference(evidence);
+                    MmcPlatformOriginCodec.ValidateIdentity(definition.Origin.PlatformProjectIdentity!);
+                } catch (ArgumentException) { MmcJson.Fail("definition", "Invalid platform evidence reference or exact identity."); }
+                Text(evidence.Sha256, 64); Text(evidence.ObjectRelativePath);
+            }
             var sources = definition.SourceBundle;
             if (definition.PackageOwnershipReference is { } ownership) MmcPackageOwnershipCodec.ValidateReference(ownership);
             CheckHash(sources.BundleSha256); CheckHash(sources.ResolutionFingerprint);
@@ -236,7 +243,8 @@ public static class MmcDefinitionCodec {
                 environment.JavaMajor.ToString(CultureInfo.InvariantCulture),environment.JavaBitness.ToString(CultureInfo.InvariantCulture),environment.OsVersion
             } : [])
             .Concat(definition.SourceBundle.PackageLocalScopeSha256 is { } scope ? new[] { "mmc-measured-package-local-v1", scope } : [])
-            .Concat(definition.PackageOwnershipReference is { } ownership ? new[] { "mmc-package-ownership-v1", ownership.Sha256, ownership.ObjectRelativePath } : []));
+            .Concat(definition.PackageOwnershipReference is { } ownership ? new[] { "mmc-package-ownership-v1", ownership.Sha256, ownership.ObjectRelativePath } : [])
+            .Concat(definition.Origin.PlatformEvidenceReference is { } evidence ? new[] { "mmc-platform-origin-evidence-v1", evidence.Sha256, evidence.ObjectRelativePath } : []));
     }
 
     private static void ValidateEnvironmentJson(JsonElement root) {

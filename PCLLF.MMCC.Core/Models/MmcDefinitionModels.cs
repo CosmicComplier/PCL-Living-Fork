@@ -5,7 +5,11 @@ using System.Text.Json.Serialization;
 namespace PCLLF.MMCC.Core;
 
 public sealed record MmcPlatformProjectIdentity(string Platform, string ProjectId, string? VersionId = null);
-public sealed record MmcInstanceOrigin(string PackageSha256, string OriginalName, MmcPlatformProjectIdentity? PlatformProjectIdentity = null);
+public sealed record MmcInstanceOrigin(string PackageSha256, string OriginalName, MmcPlatformProjectIdentity? PlatformProjectIdentity = null) {
+    /// <summary>Optional measured service evidence. Historical three-string identities remain unverified.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MmcObjectReference? PlatformEvidenceReference { get; init; }
+}
 public sealed record MmcInstanceLayout(string GameRootLeaf, int LayoutVersion = 1);
 public enum MmcSourceRecordKind { Manifest, Configuration, Component, RecommendationIndex, PackageMetadata }
 /// <summary>References preserved metadata objects, never the original ZIP or a player's absolute path.</summary>
