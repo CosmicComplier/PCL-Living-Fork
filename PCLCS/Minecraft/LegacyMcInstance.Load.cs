@@ -15,6 +15,7 @@ public partial class LegacyMcInstance<TSelf, TState, TCard>
 
     public bool Check() {
         MmcInstanceInspection managed = MmcInstanceInspector.Read(PathVersion);
+        UsesMmcBackend = !managed.IsLegacy;
         if (!managed.IsLegacy || !managed.Management.ObservationComplete) return ApplyManagedView(managed);
         if (!DirectoryUtils.Exists(PathVersion)) {
             StateCode = 0;
@@ -60,6 +61,7 @@ public partial class LegacyMcInstance<TSelf, TState, TCard>
     public TSelf Load() {
         try {
             MmcInstanceInspection managed = MmcInstanceInspector.Read(PathVersion);
+            UsesMmcBackend = !managed.IsLegacy;
             if (!managed.IsLegacy || !managed.Management.ObservationComplete) {
                 ApplyManagedView(managed);
                 return Self;

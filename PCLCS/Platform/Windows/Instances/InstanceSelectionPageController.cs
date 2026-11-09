@@ -56,26 +56,20 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
     public void Render() {
         try {
             InstanceSelectionPageView view = host.View(); view.Main.Children.Clear();
-            var grouping = clones.Prepare(host.Instances(), host.ShowHidden);
-            foreach (var card in grouping.VisibleCards) {
-                List<TNode> roots = grouping.Roots(card.Key, card.Value); if (roots.Count == 0) continue;
-                List<TInstance> instances = grouping.Instances(roots); string name;
-                switch (Convert.ToInt32(card.Key)) {
-                    case 3: name = "常规版本"; break;
-                    case 2:
-                        bool forge = false, neo = false, fabric = false, lite = false;
-                        foreach (TInstance instance in instances) {
-                            if (instance.Version.ModLoaders.HasFlagF(ModLoaders.Fabric)) fabric = true;
-                            if (instance.Version.ModLoaders.HasFlagF(ModLoaders.LiteLoader)) lite = true;
-                            if (instance.Version.ModLoaders.HasFlagF(ModLoaders.Forge)) forge = true;
-                            if (instance.Version.ModLoaders.HasFlagF(ModLoaders.NeoForge)) neo = true;
-                        }
-                        name = (lite ? 1 : 0) + (forge ? 1 : 0) + (fabric ? 1 : 0) + (neo ? 1 : 0) > 1 ? "可安装 Mod" : forge ? "Forge 版本" : neo ? "NeoForge 版本" : lite ? "LiteLoader 版本" : "Fabric 版本"; break;
-                    case 6: name = "错误的版本"; break; case 1: name = "隐藏的版本"; break; case 4: name = "不常用版本"; break; case -1: name = "收藏夹"; break; case 5: name = "愚人节版本"; break;
-                    default: throw new ArgumentException("未知的卡片种类（" + card.Key + "）");
-                }
-                clones.RenderCategory(view.Main, card.Key, name, roots, instances.Count, grouping);
+            // Split before building clone trees so a cross-family source link
+            // cannot put an ordinary version inside a managed MMC card.
+            Dictionary<TCard, List<TInstance>> managed = new(), ordinary = new();
+            foreach (var card in host.Instances()) foreach (var instance in card.Value) {
+                bool mmc = instance.UsesMmcBackend;
+                var family = mmc ? managed : ordinary;
+                int category = Convert.ToInt32(card.Key);
+                TCard key = mmc ? (TCard)Enum.ToObject(typeof(TCard),
+                    instance.CardCode == 1 || category == 1 ? 1 : instance.IsStar || category == -1 ? -1 : instance.StateCode == 0 ? 6 : 2) : card.Key;
+                if (!family.TryGetValue(key, out var items)) family.Add(key, items = new());
+                items.Add(instance);
             }
+            RenderFamily(view.Main, managed, true);
+            RenderFamily(view.Main, ordinary, false);
             clones.ExpandSingle(view.Main);
             if (view.Main.Children.Count == 0) {
                 view.Empty.Visibility = Visibility.Visible; view.Back.Visibility = Visibility.Collapsed;
@@ -86,7 +80,33 @@ public sealed class InstanceSelectionPageController<TInstance, TState, TCard, TN
                     view.Download.Visibility = host.ModpackEnabled() || (host.HiddenDownload() && !host.HiddenForceShow()) ? Visibility.Collapsed : Visibility.Visible;
                 }
             } else { view.Back.Visibility = Visibility.Visible; view.Empty.Visibility = Visibility.Collapsed; }
+
         } catch (Exception error) { Logger.Error(error, "将版本列表转换显示时失败"); }
+    }
+    private void RenderFamily(Panel main, Dictionary<TCard, List<TInstance>> cards, bool mmc) {
+        var grouping = clones.Prepare(cards, host.ShowHidden);
+        foreach (var card in grouping.VisibleCards.OrderBy(card => mmc ? Convert.ToInt32(card.Key) switch { -1 => 0, 2 => 1, 6 => 2, 1 => 3, _ => 4 } : 0)) {
+            List<TNode> roots = grouping.Roots(card.Key, card.Value); if (roots.Count == 0) continue;
+            List<TInstance> instances = grouping.Instances(roots); string name;
+            if (mmc) name = Convert.ToInt32(card.Key) switch {
+                -1 => "MMC 实例 · 收藏", 1 => "MMC 实例 · 隐藏", 6 => "MMC 实例 · 需要修复", _ => "MMC 实例"
+            };
+            else switch (Convert.ToInt32(card.Key)) {
+                case 3: name = "常规版本"; break;
+                case 2:
+                    bool forge = false, neo = false, fabric = false, lite = false;
+                    foreach (TInstance instance in instances) {
+                        if (instance.Version.ModLoaders.HasFlagF(ModLoaders.Fabric)) fabric = true;
+                        if (instance.Version.ModLoaders.HasFlagF(ModLoaders.LiteLoader)) lite = true;
+                        if (instance.Version.ModLoaders.HasFlagF(ModLoaders.Forge)) forge = true;
+                        if (instance.Version.ModLoaders.HasFlagF(ModLoaders.NeoForge)) neo = true;
+                    }
+                    name = (lite ? 1 : 0) + (forge ? 1 : 0) + (fabric ? 1 : 0) + (neo ? 1 : 0) > 1 ? "可安装 Mod" : forge ? "Forge 版本" : neo ? "NeoForge 版本" : lite ? "LiteLoader 版本" : "Fabric 版本"; break;
+                case 6: name = "错误的版本"; break; case 1: name = "隐藏的版本"; break; case 4: name = "不常用版本"; break; case -1: name = "收藏夹"; break; case 5: name = "愚人节版本"; break;
+                default: throw new ArgumentException("未知的卡片种类（" + card.Key + "）");
+            }
+            clones.RenderCategory(main, card.Key, name, roots, instances.Count, grouping);
+        }
     }
     public static void RowContent(FrameworkElement row, InstanceSelectionPageHost<TInstance, TCard> host) {
         TInstance instance = (TInstance)row.Tag;

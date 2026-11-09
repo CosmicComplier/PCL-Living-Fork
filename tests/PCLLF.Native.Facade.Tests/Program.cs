@@ -49,6 +49,7 @@ internal static class Program
         ["mmc-catalog-paging-ui"] = MmcCatalogPagingUiChecks.Run,
         ["mmc-catalog-paging-stale"] = MmcCatalogPagingUiChecks.RunStaleConfirmation,
         ["mmc-import-private-list"] = MmcImportVisibilityChecks.Run,
+        ["mmc-selection-groups"] = MmcSelectionGroupingChecks.Run,
         ["mmc-import-progress-ui"] = MmcImportRecoveryUiChecks.RunProgress,
         ["mmc-import-progress-cancel"] = MmcImportRecoveryUiChecks.RunProgressCancellation,
         ["mmc-import-completion-boundary"] = MmcImportRecoveryUiChecks.RunCompletionBoundary,
