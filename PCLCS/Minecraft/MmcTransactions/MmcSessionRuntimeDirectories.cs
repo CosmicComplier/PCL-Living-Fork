@@ -18,14 +18,18 @@ public static class MmcSessionRuntimeDirectories {
     internal static MmcMutableRuntimePaths Describe(MmcInstancePaths paths,Guid instanceId,Guid sessionId,string fingerprint,MmcMutableRuntimeAuthority? authority=null,bool containsAuthenticationAgent=false){
         var binding=new MmcSessionRuntimeBinding(fingerprint);ValidateBinding(sessionId,binding);if(instanceId==Guid.Empty)throw new IOException("Mutable instance identity is missing.");
         var inside=Paths(paths,instanceId,sessionId,binding,authority);
-        if(OperatingSystem.IsWindows()&&(Math.Max(inside.ExtractDirectory.Length,inside.TemporaryDirectory.Length)+1+WindowsNativeSuffixBudget>=WindowsLegacyPathLimit||
-            containsAuthenticationAgent&&Encoding.UTF8.GetByteCount(Path.Combine(inside.SessionRoot,"a.jar"))+1>=WindowsLegacyPathLimit))
+        if((OperatingSystem.IsWindows()&&Math.Max(inside.ExtractDirectory.Length,inside.TemporaryDirectory.Length)+1+WindowsNativeSuffixBudget>=WindowsLegacyPathLimit)||
+            containsAuthenticationAgent&&(inside.SessionRoot.Contains('=')||OperatingSystem.IsWindows()&&Encoding.UTF8.GetByteCount(Path.Combine(inside.SessionRoot,"a.jar"))+1>=WindowsLegacyPathLimit))
             binding=binding with{MutableLayout=MmcMutableRuntimeLayout.LocalAppDataV2,AuthorityFingerprint=(authority??MmcMutableRuntimeAuthority.Default).Fingerprint};
         var result=Paths(paths,instanceId,sessionId,binding,authority);
         if(OperatingSystem.IsWindows()&&Math.Max(result.ExtractDirectory.Length,result.TemporaryDirectory.Length)+1+WindowsNativeSuffixBudget>=WindowsLegacyPathLimit)
             throw new IOException("Controlled mutable runtime scope is too long for the native-loader path budget.");
         if(OperatingSystem.IsWindows()&&containsAuthenticationAgent&&Encoding.UTF8.GetByteCount(Path.Combine(result.SessionRoot,"a.jar"))+1>=WindowsLegacyPathLimit)
             throw new IOException("Controlled authentication execution scope is too long for the native-agent path budget.");
+        // -javaagent uses the first '=' as a path/options separator with no escaping.
+        // A host authority rooted under such a directory cannot emit a valid token.
+        if(containsAuthenticationAgent&&result.SessionRoot.Contains('='))
+            throw new IOException("Controlled authentication execution scope contains the javaagent option separator.");
         return result;
     }
     internal static void CreateOwned(MmcInstancePaths paths,Guid instanceId,Guid sessionId,MmcSessionRuntimeBinding binding,MmcMutableRuntimeAuthority? authority=null){

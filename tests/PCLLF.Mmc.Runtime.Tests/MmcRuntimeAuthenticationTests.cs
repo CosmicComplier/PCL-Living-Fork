@@ -8,6 +8,7 @@ using PCLCS;
 // Original LF controlled-JVM regression; repository LICENCE. No real account/server IO.
 internal static partial class MmcRuntimeLaunchTests {
     internal static void AuthenticationAgents() {
+        AuthenticationAgentSeparatorPaths();
         foreach (var run in new[] {
             (Kind: MmcRuntimeAuthenticationKind.AuthlibInjector, Major: 17, Mode: MmcRuntimeWrapperMode.JavaWrapper),
             (Kind: MmcRuntimeAuthenticationKind.Nide, Major: 8, Mode: MmcRuntimeWrapperMode.DirectMain)
@@ -79,6 +80,38 @@ internal static partial class MmcRuntimeLaunchTests {
             Expect("MMC_RUNTIME_AUTHENTICATION_JAR", () => MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request with {
                 Authentication = new(MmcRuntimeAuthenticationKind.AuthlibInjector, external, "https://fixture.invalid/", "{}") }).GetAwaiter().GetResult());
         }
+    }
+    private static void AuthenticationAgentSeparatorPaths() {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try {
+            string version = Path.Combine(root, "a=b", "versions", "x"); Directory.CreateDirectory(Path.Combine(version, "minecraft"));
+            var paths = MmcInstancePaths.Resolve(version);
+            Guid instanceId = Guid.NewGuid(), sessionId = Guid.NewGuid();
+            string fingerprint = new('a', 64);
+            var describe = typeof(MmcSessionRuntimeDirectories).GetMethod("Describe", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            MmcMutableRuntimePaths Describe(MmcMutableRuntimeAuthority candidateAuthority, bool authenticationEnabled) =>
+                (MmcMutableRuntimePaths)describe.Invoke(null, [paths, instanceId, sessionId, fingerprint, candidateAuthority, authenticationEnabled])!;
+            var authority = FixtureAuthority(root);
+            var ordinary = Describe(authority, false);
+            Require(ordinary.RuntimeBinding.MutableLayout is null && ordinary.SessionRoot.Contains('='),
+                "Separator regression fixture already required a short scope without authentication; it does not cover agent-only fallback.");
+            var authentication = Describe(authority, true);
+            Require(authentication.RuntimeBinding.MutableLayout == MmcMutableRuntimeLayout.LocalAppDataV2 && !authentication.SessionRoot.Contains('=') &&
+                authentication.SessionRoot.StartsWith(Path.Combine(root, "m", instanceId.ToString("N")) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
+                "An instance ancestor containing '=' did not select its existing owned short authority for javaagent execution.");
+            Require(Path.IsPathFullyQualified(Path.Combine(authentication.SessionRoot, "a.jar")) && !Directory.Exists(authentication.SessionRoot),
+                "Authentication scope selection returned an unbound path or created files before validation.");
+
+            // Simulate LocalAppData itself containing '=' through the same private
+            // host-root constructor; all paths remain inside this owned GUID fixture.
+            string badRoot = Path.Combine(root, "host=scope");
+            var constructor = typeof(MmcMutableRuntimeAuthority).GetConstructor(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
+                null, [typeof(string)], null)!;
+            var unsupportedAuthority = (MmcMutableRuntimeAuthority)constructor.Invoke([badRoot]);
+            try { Describe(unsupportedAuthority, true); throw new Exception("An authority root containing '=' produced a broken javaagent execution token."); }
+            catch (System.Reflection.TargetInvocationException error) when (error.InnerException is IOException io && io.Message.Contains("javaagent option separator", StringComparison.Ordinal)) { }
+            Require(!Directory.Exists(badRoot), "Rejected authentication authority created a mutable execution directory.");
+        } finally { DeleteMutableFixture(root); }
     }
     private static MmcRuntimeSupportArtifact OwnedAuthenticationAgent(MmcRuntimeLaunchRequest request, MmcRuntimeAuthenticationKind kind, byte[] bytes) {
         string name = kind == MmcRuntimeAuthenticationKind.Nide ? "nide8auth.jar" : "authlib-injector.jar";
