@@ -7,7 +7,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace PCLCS;
 
-// Original LF host candidate; repository LICENCE applies. Not yet connected to PurgeForward.
+// Original LF host implementation; repository LICENCE applies.
 // A transacted writer locks the whole NTFS file, including every named data stream.
 // Dropping the last transaction handle before Commit rolls back staged deletion on kill.
 internal sealed class MmcPurgeNtfsTransaction : IDisposable {

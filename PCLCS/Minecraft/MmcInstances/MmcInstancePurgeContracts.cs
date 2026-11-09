@@ -5,7 +5,7 @@ namespace PCLCS;
 // Original LF host implementation; repository LICENCE applies.
 public enum MmcInstancePurgeIntent { PermanentlyDeleteQuarantinedInstance = 1 }
 public enum MmcInstancePurgeRole { InstancePrivate, InstanceMetadata, SavedSource, LocalLibraries, Runtime, Game, InactiveGame }
-public enum MmcInstancePurgeCheckpoint { PlanPrepared, BeforeDecision, CommitDecided, BeforeEntryDelete, EntryDeleted, BeforeCompletion, Completed }
+public enum MmcInstancePurgeCheckpoint { PlanPrepared, BeforeDecision, CommitDecided, BeforeEntryDelete, EntryDeleted, BeforeCompletion, Completed, EntryStaged }
 public sealed record MmcInstancePurgeEntry(string RelativePath, MmcInstancePurgeRole Role, bool Directory,
     string FileIdentity, long SizeBytes, string? Sha256);
 public sealed record MmcInstancePurgePreviewRequest(string OperationDirectory, Guid ExpectedInstanceId,

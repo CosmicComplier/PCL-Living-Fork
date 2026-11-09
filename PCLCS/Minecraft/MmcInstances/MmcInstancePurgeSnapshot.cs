@@ -55,7 +55,7 @@ internal static class MmcInstancePurgeSnapshot {
     internal static ImmutableArray<MmcInstancePurgeEntry> CaptureTree(MmcInstancePaths paths, MmcPurgeHandle root, CancellationToken token) {
         var entries = ImmutableArray.CreateBuilder<MmcInstancePurgeEntry>();
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase); long bytes = 0, characters = 0;
-        Add("", root, null); Walk("", 0);
+        root.AssertDefaultDataStreamOnly(); Add("", root, null); Walk("", 0);
         return entries.OrderBy(entry => entry.RelativePath, StringComparer.Ordinal).ToImmutableArray();
         void Walk(string relative, int depth) {
             token.ThrowIfCancellationRequested(); if (depth > 64) throw new IOException("Quarantine inventory exceeds its directory depth budget.");
@@ -65,6 +65,7 @@ internal static class MmcInstancePurgeSnapshot {
                 string checkedPath = Target(paths, child); var attributes = MmcInstancePaths.Attributes(checkedPath) ?? throw new IOException("Quarantine inventory changed during discovery.");
                 bool isDirectory = (attributes & FileAttributes.Directory) != 0;
                 using var pin = MmcPurgeHandle.Open(checkedPath, isDirectory);
+                pin.AssertDefaultDataStreamOnly();
                 if (child != Primary && child.EndsWith("/" + Primary, StringComparison.OrdinalIgnoreCase) ||
                     child != MmcInstanceLifecycleJournal.MarkerRelative && child.EndsWith("/" + MmcInstanceLifecycleJournal.MarkerRelative, StringComparison.OrdinalIgnoreCase))
                     throw new IOException("A nested foreign instance owner was found; all of its bytes were preserved.");

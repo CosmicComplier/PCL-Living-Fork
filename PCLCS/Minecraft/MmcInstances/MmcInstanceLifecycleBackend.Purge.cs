@@ -44,6 +44,13 @@ public sealed partial class MmcInstanceLifecycleBackend {
             var fresh = MmcInstancePurgeSnapshot.Capture(lifecycle, access, fence.Token);
             if (MmcInstancePurgeSnapshot.Fingerprint(fresh) != request.Preview.SnapshotFingerprint)
                 throw new IOException("Quarantine files, directories or owner facts changed; reopen and confirm a new permanent cleanup preview.");
+            // Prove local transactional writer support before making an irreversible outer
+            // decision. This enlists only the primary, changes no bytes and rolls back on close.
+            using (var capability = new MmcPurgeNtfsTransaction()) using (var writer = capability.OpenWriter(
+                Path.Combine(fresh.TargetRoot, "PCL", "InstanceDefinition.json"), false)) {
+                writer.Verify(fresh.Entries.Single(entry => entry.RelativePath == MmcInstancePurgeSnapshot.Primary), fence.Token);
+                writer.AssertDefaultDataStreamOnly();
+            }
             purge = MmcInstancePurgeJournal.Prepare(lifecycle, request.Preview);
             using var planPin = MmcPurgeHandle.Open(Path.Combine(directory, MmcInstancePurgeJournal.PlanName), false);
             request.Checkpoint?.Invoke(MmcInstancePurgeCheckpoint.PlanPrepared, null);
@@ -101,14 +108,18 @@ public sealed partial class MmcInstanceLifecycleBackend {
                 DeletePlanned(entry);
             }
             AssertPurgeIdle(purge, access, paths);
-            // Release only our root read pin before requesting DELETE. The final handle then
-            // rechecks the original identity and deletes that exact empty object atomically.
+            // Release only our root read pin before opening the transactional writer. The
+            // same writer validates identity/streams and stages only this empty directory.
             tree.ReleaseLast();
-            using (var finalRoot = MmcPurgeHandle.Open(root, true, true)) {
-                finalRoot.Verify(purge.RootEntry, CancellationToken.None);
-                checkpoint?.Invoke(MmcInstancePurgeCheckpoint.BeforeEntryDelete, "");
-                if (Directory.EnumerateFileSystemEntries(root).Any()) throw new IOException("Unknown or newly created quarantine entries remain; none were recursively removed.");
-                finalRoot.Delete();
+            using (var transaction = new MmcPurgeNtfsTransaction()) {
+                using (var finalRoot = transaction.OpenWriter(root, true)) {
+                    finalRoot.Verify(purge.RootEntry, CancellationToken.None); finalRoot.AssertDefaultDataStreamOnly();
+                    checkpoint?.Invoke(MmcInstancePurgeCheckpoint.BeforeEntryDelete, "");
+                    if (Directory.EnumerateFileSystemEntries(root).Any()) throw new IOException("Unknown or newly created quarantine entries remain; none were recursively removed.");
+                    finalRoot.StageTransactedDelete();
+                }
+                checkpoint?.Invoke(MmcInstancePurgeCheckpoint.EntryStaged, "");
+                transaction.Commit();
             }
             checkpoint?.Invoke(MmcInstancePurgeCheckpoint.EntryDeleted, "");
         }
@@ -125,18 +136,22 @@ public sealed partial class MmcInstanceLifecycleBackend {
             if (MmcInstancePaths.Attributes(target) is null) return;
             AssertPurgeIdle(purge, access, paths);
             using var parents = new MmcPurgeDirectoryPins(Path.GetDirectoryName(target)!, alreadyPinnedRoot: root);
-            using var pin = MmcPurgeHandle.Open(target, entry.Directory, true);
-            pin.Verify(entry, CancellationToken.None);
-            checkpoint?.Invoke(MmcInstancePurgeCheckpoint.BeforeEntryDelete, entry.RelativePath);
-            // A competing writer cannot mutate or replace this pinned object. An injected
-            // child makes directory disposition fail rather than being swept recursively.
-            AssertPurgeIdle(purge, access, paths);
-            if (entry.Directory && Directory.EnumerateFileSystemEntries(target).Any()) throw new IOException("Unplanned content remains in a quarantine directory: " + entry.RelativePath);
-            pin.Delete(); checkpoint?.Invoke(MmcInstancePurgeCheckpoint.EntryDeleted, entry.RelativePath);
+            using var transaction = new MmcPurgeNtfsTransaction();
+            using (var pin = transaction.OpenWriter(target, entry.Directory)) {
+                pin.Verify(entry, CancellationToken.None); pin.AssertDefaultDataStreamOnly();
+                checkpoint?.Invoke(MmcInstancePurgeCheckpoint.BeforeEntryDelete, entry.RelativePath);
+                // The native transaction excludes every stream, not just the default data
+                // stream. A new directory child instead makes empty disposition fail.
+                AssertPurgeIdle(purge, access, paths, entry.RelativePath == MmcInstanceLifecycleJournal.MarkerRelative ? pin : null);
+                if (entry.Directory && Directory.EnumerateFileSystemEntries(target).Any()) throw new IOException("Unplanned content remains in a quarantine directory: " + entry.RelativePath);
+                pin.StageTransactedDelete();
+            }
+            checkpoint?.Invoke(MmcInstancePurgeCheckpoint.EntryStaged, entry.RelativePath);
+            transaction.Commit(); checkpoint?.Invoke(MmcInstancePurgeCheckpoint.EntryDeleted, entry.RelativePath);
         }
     }
-    private static void AssertPurgeIdle(MmcInstancePurgeJournal purge, MmcLifecycleAccess access, MmcInstancePaths paths) {
-        using var permit = purge.Enter(access.Leases[paths.InstanceRoot]);
+    private static void AssertPurgeIdle(MmcInstancePurgeJournal purge, MmcLifecycleAccess access, MmcInstancePaths paths, MmcPurgeHandle? pinnedMarker = null) {
+        using var permit = purge.Enter(access.Leases[paths.InstanceRoot], pinnedMarker);
         MmcInstancePurgeSnapshot.AssertIdle(access.Leases[paths.InstanceRoot], paths);
     }
     private static void VerifyRemainingNamespace(MmcInstancePurgeJournal purge, MmcInstancePaths paths, MmcPurgeHandle root) {

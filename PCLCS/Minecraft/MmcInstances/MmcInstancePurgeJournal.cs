@@ -61,10 +61,14 @@ internal sealed class MmcInstancePurgeJournal {
         string path = Path.Combine(DirectoryPath, PlanName);
         if (MmcDurableFiles.ReadRecord<MmcPurgePlan>(path).Hash != PlanSha256) throw new IOException("A different cleanup preparation replaced this plan.");
         string expected = MmcDurableFiles.Observe(path) ?? throw new IOException("Cleanup preparation disappeared.");
-        using var pin = MmcPurgeHandle.Open(path, false, true);
-        if (pin.Size > MmcInstancePurgeSnapshot.MaximumRecordBytes + 128L || pin.Hash(CancellationToken.None) != expected || HasDecision(DirectoryPath))
-            throw new IOException("Cleanup preparation changed or acquired an irreversible decision.");
-        pin.Delete();
+        using var transaction = new MmcPurgeNtfsTransaction();
+        using (var pin = transaction.OpenWriter(path, false)) {
+            pin.AssertDefaultDataStreamOnly();
+            if (pin.Size > MmcInstancePurgeSnapshot.MaximumRecordBytes + 128L || pin.Hash(CancellationToken.None) != expected || HasDecision(DirectoryPath))
+                throw new IOException("Cleanup preparation changed or acquired an irreversible decision.");
+            pin.StageTransactedDelete();
+        }
+        transaction.Commit();
     }
     internal IDisposable PinAuthority() => new AuthorityPins(this);
     private sealed class AuthorityPins : IDisposable {
@@ -86,14 +90,20 @@ internal sealed class MmcInstancePurgeJournal {
             for (int index = pins.Count - 1; index >= 0; index--) pins[index].Dispose(); pins.Clear();
         }
     }
-    internal MmcPendingOperationPermit Enter(MmcAdmissionLease lease) => MmcPendingOperationPermit.ForPurge(lease, this);
-    internal ImmutableDictionary<string, string> ValidatePendingPermit(MmcAdmissionLease lease) {
+    internal MmcPendingOperationPermit Enter(MmcAdmissionLease lease, MmcPurgeHandle? pinnedMarker = null) => MmcPendingOperationPermit.ForPurge(lease, this, pinnedMarker);
+    internal ImmutableDictionary<string, string> ValidatePendingPermit(MmcAdmissionLease lease, MmcPurgeHandle? pinnedMarker) {
         lease.AssertHeld(); var snapshot = Plan.Snapshot;
         if (authorityPins == 0 || lease.InstanceId != snapshot.InstanceId || lease.VersionRoot != snapshot.TargetRoot)
             throw new IOException("Permanent cleanup permit has no exact same-owner durable decision.");
         var paths = MmcInstancePaths.Resolve(snapshot.TargetRoot, snapshot.GameRootLeaf);
         using (var root = MmcPurgeHandle.Open(paths.InstanceRoot, true)) root.Verify(RootEntry, CancellationToken.None);
         string markerPath = paths.ResolveRelative(MmcPathRole.Instance, MmcInstanceLifecycleJournal.MarkerRelative);
+        if (pinnedMarker is not null) {
+            if (!pinnedMarker.TransactedWriter || !MmcPurgeHandle.SamePath(pinnedMarker.Path, markerPath)) throw new IOException("Purge marker permit does not own its exact transactional writer.");
+            pinnedMarker.Verify(snapshot.Entries.Single(entry => entry.RelativePath == MmcInstanceLifecycleJournal.MarkerRelative), CancellationToken.None);
+            pinnedMarker.AssertDefaultDataStreamOnly();
+            return ImmutableDictionary<string, string>.Empty.Add(MmcInstanceLifecycleJournal.MarkerRelative, snapshot.MarkerSha256);
+        }
         if (MmcInstancePaths.Attributes(markerPath) is null) return ImmutableDictionary<string, string>.Empty;
         // A marker's own verified DELETE handle can already be held by the caller. This
         // read pin still denies writers; the pending guard rereads its exact current path.
@@ -104,5 +114,5 @@ internal sealed class MmcInstancePurgeJournal {
 }
 
 internal sealed partial class MmcPendingOperationPermit {
-    internal static MmcPendingOperationPermit ForPurge(MmcAdmissionLease lease, MmcInstancePurgeJournal journal) => new(lease, journal.ValidatePendingPermit(lease));
+    internal static MmcPendingOperationPermit ForPurge(MmcAdmissionLease lease, MmcInstancePurgeJournal journal, MmcPurgeHandle? pinnedMarker) => new(lease, journal.ValidatePendingPermit(lease, pinnedMarker));
 }

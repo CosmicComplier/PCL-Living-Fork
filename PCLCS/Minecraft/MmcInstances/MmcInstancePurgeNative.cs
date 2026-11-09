@@ -15,6 +15,7 @@ internal sealed class MmcPurgeHandle : IDisposable {
     internal string Identity { get; }
     internal long Size { get; }
     internal bool TransactedWriter { get; }
+    private readonly bool encrypted;
     private MmcPurgeHandle(string path, bool directory, bool delete, bool outerAncestor, bool allowDeleteSharing, SafeFileHandle? transaction = null) {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Permanent quarantine cleanup requires verified Windows handles.");
         Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); Directory = directory;
@@ -39,6 +40,7 @@ internal sealed class MmcPurgeHandle : IDisposable {
             RequireLocalNtfsIdentity(fileSystem.ToString(), resolved, ((ulong)info.IndexHigh << 32) | info.IndexLow);
             Identity = $"{info.Volume:x8}:{info.IndexHigh:x8}{info.IndexLow:x8}:{info.CreationHigh:x8}{info.CreationLow:x8}";
             Size = directory ? 0 : checked((long)(((ulong)info.SizeHigh << 32) | info.SizeLow));
+            encrypted = (info.Attributes & (uint)FileAttributes.Encrypted) != 0;
         } catch { Handle.Dispose(); throw; }
     }
     internal static MmcPurgeHandle Open(string path, bool directory, bool delete = false, bool outerAncestor = false, bool allowDeleteSharing = false) => new(path, directory, delete, outerAncestor, allowDeleteSharing);
@@ -64,18 +66,18 @@ internal sealed class MmcPurgeHandle : IDisposable {
         if (Directory != expected.Directory || Identity != expected.FileIdentity || Size != expected.SizeBytes ||
             !Directory && Hash(token) != expected.Sha256) throw new IOException("A planned purge object changed; its current bytes were preserved: " + expected.RelativePath);
     }
-    internal void Delete() {
-        // No POSIX deletion or readonly override: a real conflicting handle/readonly file must
-        // retain the remaining plan for recovery. Directories fail atomically when nonempty.
+    internal void StageTransactedDelete() {
+        if (!TransactedWriter) throw new IOException("A plain delete-pending handle cannot provide cross-stream exclusion or rollback on process death.");
+        // Every deletion must be enlisted before disposition. Unknown streams cannot be
+        // created or changed after this check, including after this file handle is closed.
+        AssertDefaultDataStreamOnly();
         if (!SamePath(MmcCanonicalPaths.ForHandle(Handle), Path)) throw new IOException("Pinned purge object moved before disposition.");
+        if (Directory && System.IO.Directory.EnumerateFileSystemEntries(Path).Any()) throw new IOException("Unknown content remains in a planned empty-directory deletion.");
         byte disposition = 1;
         if (!SetFileInformationByHandle(Handle, 4, ref disposition, 1)) throw Error("Exact purge object could not be deleted; remaining content was preserved.");
     }
-    internal void StageTransactedDelete() {
-        if (!TransactedWriter) throw new IOException("A plain delete-pending handle cannot provide cross-stream exclusion or rollback on process death.");
-        Delete();
-    }
     internal void AssertDefaultDataStreamOnly() {
+        if (encrypted) throw new PlatformNotSupportedException("EFS objects cannot participate in verified transactional quarantine cleanup.");
         var streams = MmcPurgeNtfsTransaction.ReadDataStreams(Handle, Directory);
         if (streams.Any(stream => stream.Name != "::$DATA"))
             throw new IOException("Named NTFS data streams are outside this permanent cleanup preview; preserve the entire object.");
