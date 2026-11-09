@@ -97,6 +97,9 @@ internal static partial class MmcLaunchChecks {
             Configs.JavaList.Set(new ConcurrentList<Java>([new(Path.GetDirectoryName(java8)!)])); Configs.JavaConfigVersion.Set(Versions.JavaConfigVersion);
             pins = new(Path.Combine(root, "java-pins"));
             Native.Property(typeof(MmcLaunch), "JavaPins").SetValue(null, new Func<MmcJavaPinStore>(() => pins));
+            var mutableAuthority = (MmcMutableRuntimeAuthority)typeof(MmcMutableRuntimeAuthority)
+                .GetMethod("ForOwnedFixture", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, [environment.Root])!;
+            Native.Property(typeof(MmcLaunch), "MutableRuntimeAuthorityFactory").SetValue(null, new Func<MmcMutableRuntimeAuthority>(() => mutableAuthority));
             Native.Property(typeof(MmcLaunch), "ProcessCreated").SetValue(null, new Action<Guid, Process>((id, process) => {
                 Native.Check(children.TryAdd(id, process), "MMC executor reused a typed session identity.");
                 currentSession = id; Interlocked.Increment(ref starts);
@@ -195,7 +198,7 @@ internal static partial class MmcLaunchChecks {
                 Native.Check(Decode(lines,"CWD") == Native.Full(instance.PathIndie), "Java working directory is not managed GameRoot.");
                 for (int i=0;i<expected.Count;i++) Native.Check(Decode(lines,"ARG"+i) == (i==1 ? "<account>" : expected[i]), "Final Java argv differs at index " + i);
                 string tmp = Decode(lines,"TMP"), extract=Decode(lines,"EXTRACT");
-                Native.Check(tmp.Contains(id.ToString("N"),StringComparison.Ordinal) && extract.Contains(id.ToString("N"),StringComparison.Ordinal) && Native.Full(tmp).StartsWith(version+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) && Native.Full(extract).StartsWith(version+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase), "Mutable paths lost their typed session identity or ownership.");
+                Native.Check(tmp.Contains(id.ToString("N"),StringComparison.Ordinal) && extract.Contains(id.ToString("N"),StringComparison.Ordinal) && Native.Full(tmp).StartsWith(environment.Root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase) && Native.Full(extract).StartsWith(environment.Root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase), "Mutable paths lost their typed session identity or owned fixture authority.");
                 Native.Check(File.Exists(Path.Combine(tmp,"owned-temp")) && File.Exists(Path.Combine(extract,"owned-native")), "Controlled Java did not use the owned mutable directories.");
                 // Observe the actual received frame, without disclosing it in any failure/log.
                 string frame = child.StartInfo.ArgumentList.Last();

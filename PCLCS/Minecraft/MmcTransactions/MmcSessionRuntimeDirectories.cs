@@ -15,14 +15,17 @@ public static class MmcSessionRuntimeDirectories {
     public static MmcMutableRuntimePaths Prepare(MmcInstancePaths paths,Guid instanceId,Guid sessionId,string boundFingerprint,MmcMutableRuntimeAuthority? authority=null){
         var described=Describe(paths,instanceId,sessionId,boundFingerprint,authority);CreateOwned(paths,instanceId,sessionId,described.RuntimeBinding,authority);return described;
     }
-    internal static MmcMutableRuntimePaths Describe(MmcInstancePaths paths,Guid instanceId,Guid sessionId,string fingerprint,MmcMutableRuntimeAuthority? authority=null){
+    internal static MmcMutableRuntimePaths Describe(MmcInstancePaths paths,Guid instanceId,Guid sessionId,string fingerprint,MmcMutableRuntimeAuthority? authority=null,bool containsAuthenticationAgent=false){
         var binding=new MmcSessionRuntimeBinding(fingerprint);ValidateBinding(sessionId,binding);if(instanceId==Guid.Empty)throw new IOException("Mutable instance identity is missing.");
         var inside=Paths(paths,instanceId,sessionId,binding,authority);
-        if(OperatingSystem.IsWindows()&&Math.Max(inside.ExtractDirectory.Length,inside.TemporaryDirectory.Length)+1+WindowsNativeSuffixBudget>=WindowsLegacyPathLimit)
+        if(OperatingSystem.IsWindows()&&(Math.Max(inside.ExtractDirectory.Length,inside.TemporaryDirectory.Length)+1+WindowsNativeSuffixBudget>=WindowsLegacyPathLimit||
+            containsAuthenticationAgent&&Encoding.UTF8.GetByteCount(Path.Combine(inside.SessionRoot,"a.jar"))+1>=WindowsLegacyPathLimit))
             binding=binding with{MutableLayout=MmcMutableRuntimeLayout.LocalAppDataV2,AuthorityFingerprint=(authority??MmcMutableRuntimeAuthority.Default).Fingerprint};
         var result=Paths(paths,instanceId,sessionId,binding,authority);
         if(OperatingSystem.IsWindows()&&Math.Max(result.ExtractDirectory.Length,result.TemporaryDirectory.Length)+1+WindowsNativeSuffixBudget>=WindowsLegacyPathLimit)
             throw new IOException("Controlled mutable runtime scope is too long for the native-loader path budget.");
+        if(OperatingSystem.IsWindows()&&containsAuthenticationAgent&&Encoding.UTF8.GetByteCount(Path.Combine(result.SessionRoot,"a.jar"))+1>=WindowsLegacyPathLimit)
+            throw new IOException("Controlled authentication execution scope is too long for the native-agent path budget.");
         return result;
     }
     internal static void CreateOwned(MmcInstancePaths paths,Guid instanceId,Guid sessionId,MmcSessionRuntimeBinding binding,MmcMutableRuntimeAuthority? authority=null){
@@ -62,6 +65,15 @@ public static class MmcSessionRuntimeDirectories {
         if (MmcInstancePaths.Attributes(paths.ResolveRelative(MmcPathRole.Instance, "PCL/MmcSessionHistory/" + sessionId.ToString("N"))) is not null)
             throw new IOException("A previously launched session cannot be abandoned as unlaunched.");
         Retire(paths,lease.InstanceId,sessionId,binding,authority);
+    }
+
+    // Builder-only rollback before returning a launch plan: this caller just created
+    // the fresh owned directory, and no process or durable launch intent can use it.
+    internal static void AbandonFreshBuild(MmcInstancePaths paths,Guid instanceId,Guid sessionId,MmcSessionRuntimeBinding binding,MmcMutableRuntimeAuthority? authority=null){
+        foreach(string root in new[]{"PCL/MmcSessions/","PCL/MmcSessionHistory/"})
+            if(MmcInstancePaths.Attributes(paths.ResolveRelative(MmcPathRole.Instance,root+sessionId.ToString("N")))is not null)
+                throw new IOException("A durable launch intent cannot be retired as a fresh failed build.");
+        Retire(paths,instanceId,sessionId,binding,authority);
     }
 
     internal static void CompleteVerifiedExit(MmcInstancePaths paths, MmcSessionReceipt receipt,MmcMutableRuntimeAuthority? authority=null) {

@@ -22,9 +22,14 @@ internal static partial class MmcRuntimeLaunchTests {
             var plan = MmcRuntimeLaunchBuilder.BuildAsync(request).GetAwaiter().GetResult();
             Require(plan.Inputs.Single(i => i.Identity.StartsWith("support:authentication:", StringComparison.Ordinal)).ActualPath == agent.ActualPath,
                 "Authentication agent is missing from the actual revalidated input set.");
+            var execution = plan.Inputs.Single(i => i.Identity.StartsWith("support:authentication-execution:", StringComparison.Ordinal));
+            Require(execution.ActualPath == Path.Combine(plan.MutableDirectories.SessionRoot, "a.jar") && execution.ActualPath != agent.ActualPath &&
+                execution.Sha256 == agent.Sha256 && execution.SizeBytes == agent.SizeBytes &&
+                Encoding.UTF8.GetByteCount(execution.ActualPath) + 1 < 260 && File.Exists(agent.ActualPath),
+                "Authentication execution copy lost its short owned role or independent approved source binding.");
             string[] actual = plan.CreateStartInfo().ArgumentList.ToArray();
             string javaAgent = actual.Single(a => a.StartsWith("-javaagent:", StringComparison.Ordinal));
-            Require(javaAgent == "-javaagent:" + Path.GetRelativePath(request.Paths.GameRoot, agent.ActualPath).Replace('\\', '/') + "=" + server,
+            Require(javaAgent == "-javaagent:" + execution.ActualPath.Replace('\\', '/') + "=" + server,
                 "Authentication javaagent argument does not target the owned execution copy as one exact token.");
             string encoded = metadata is null ? "" : Convert.ToBase64String(Encoding.UTF8.GetBytes(metadata));
             if (metadata is not null) Require(actual.Contains("-Dauthlibinjector.side=client") && actual.Contains("-Dauthlibinjector.noLogFile=true") && actual.Contains("-Dauthlibinjector.yggdrasil.prefetched=" + encoded), "Authlib live client properties or host-only diagnostics binding were dropped.");
@@ -32,6 +37,11 @@ internal static partial class MmcRuntimeLaunchTests {
             Require(!safe.Contains(server, StringComparison.Ordinal) && !safe.Contains(request.Account.AccessToken, StringComparison.Ordinal) &&
                 (encoded.Length == 0 || !safe.Contains(encoded, StringComparison.Ordinal)), "Public runtime evidence includes authentication/account values.");
             Require(!System.Text.Json.JsonSerializer.Serialize(request.Authentication).Contains(server, StringComparison.Ordinal), "Authentication snapshot serialization disclosed its live server binding.");
+            byte[] damagedExecution = bytes.ToArray(); damagedExecution[^1] ^= 1; File.WriteAllBytes(execution.ActualPath, damagedExecution);
+            Require(Hash(File.ReadAllBytes(agent.ActualPath)) == agent.Sha256, "Execution mutation altered the approved source; a hard link was used.");
+            Expect("MMC_RUNTIME_INPUT_CHANGED", () => MmcRuntimeLaunchBuilder.RevalidateFilesAsync(plan).GetAwaiter().GetResult());
+            File.WriteAllBytes(execution.ActualPath, bytes);
+            MmcRuntimeLaunchBuilder.RevalidateFilesAsync(plan).GetAwaiter().GetResult();
 
             using (var child = Process.Start(plan.CreateStartInfo()) ?? throw new Exception("Owned agent fixture did not start.")) {
                 var stdout = child.StandardOutput.ReadToEndAsync(); var stderr = child.StandardError.ReadToEndAsync();

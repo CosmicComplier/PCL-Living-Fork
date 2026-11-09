@@ -70,7 +70,8 @@ public static partial class MmcRuntimeLaunchBuilder {
         ValidateWorkingDirectory(logicalJvm.Select(t => t.Actual), currentPaths.GameRoot);
         // Only the dedicated live binding can introduce a host authentication agent.
         // Package/user JVM tokens above still cannot authorize execution inputs.
-        logicalJvm.AddRange(await AuthenticationArgumentsAsync(request, view, inputs, logicalJvm.Select(a => a.Actual).ToArray(), cancellationToken).ConfigureAwait(false));
+        var authentication = await AuthenticationArgumentsAsync(request, view, mutable, inputs, logicalJvm.Select(a => a.Actual).ToArray(), cancellationToken).ConfigureAwait(false);
+        logicalJvm.AddRange(authentication.Arguments);
         foreach (var property in new[] {
             "-Duser.dir=" + currentPaths.GameRoot,
             "-Djava.library.path=" + MmcRuntimeFiles.JavaPath(request.Directories.NativeDirectory),
@@ -112,10 +113,18 @@ public static partial class MmcRuntimeLaunchBuilder {
         if (OperatingSystem.IsWindows()) MmcRuntimeWindowsCommandLine.Validate(request.Java.ExecutablePath, actual.Prepend(MmcSessions.NonceArgumentPrefix + new string('0', 32)));
         string argumentFingerprint = MmcRuntimeFiles.Fingerprint(new[] { "mmc-runtime-arguments-v1", settings.WrapperMode.ToString(), compiled.MainClass }
             .Concat(logicalJvm.Select(a => a.Redacted)).Concat(game.Select(a => a.Redacted)).Concat([cpProperty, request.Wrapper?.Sha256, request.Bridge?.Sha256]));
+        InitializeMutablePaths(mutable, request);
+        try { await PublishAuthenticationExecutionAsync(request, mutable, authentication, inputs, cancellationToken).ConfigureAwait(false); }
+        catch {
+            // No launch plan has escaped this builder and no durable launch intent
+            // exists. Retire only this freshly owned scope, preserving the source.
+            try { MmcSessionRuntimeDirectories.AbandonFreshBuild(currentPaths, definition.InstanceId, settings.SessionId, mutable.RuntimeBinding, request.RuntimeAuthority); }
+            catch (IOException) { /* Preserve changed ownership for explicit recovery. */ }
+            throw;
+        }
         string inputFingerprint = MmcRuntimeFiles.Fingerprint(new[] { "mmc-runtime-inputs-v1", definition.InstanceId.ToString("D"), definition.Generation.ToString(CultureInfo.InvariantCulture), request.BoundPlan.BoundFingerprint,
             compiled.RuntimePlanFingerprint, request.Java.IdentitySha256, argumentFingerprint, currentPaths.GameRoot, request.Directories.ViewKey, settings.SessionId.ToString("N") }
             .Concat(inputs.SelectMany(i => new[] { i.Identity, i.ActualPath, i.Sha256, i.SizeBytes.ToString(CultureInfo.InvariantCulture) })));
-        InitializeMutablePaths(mutable, request);
         return new(request, actual.ToImmutableArray(), redacted.ToImmutableArray(), game.Select(a => a.Redacted).ToImmutableArray(), logicalJvm.Select(a => a.Redacted).ToImmutableArray(),
             userJvm.Select(a => a.Redacted).ToImmutableArray(), required, classpath, inputs.ToImmutableArray(), mutable, argumentFingerprint, inputFingerprint, sensitive.Distinct().ToImmutableArray(), logicalJvm.Select(a => a.Actual).ToImmutableArray());
     }
@@ -245,7 +254,7 @@ public static partial class MmcRuntimeLaunchBuilder {
         }
     }
     private static MmcRuntimeMutableDirectories DescribeMutablePaths(MmcInstancePaths paths, MmcRuntimeLaunchRequest request) {
-        var selected=MmcSessionRuntimeDirectories.Describe(paths,request.Definition.InstanceId,request.Settings.SessionId,request.BoundPlan.BoundFingerprint,request.RuntimeAuthority);
+        var selected=MmcSessionRuntimeDirectories.Describe(paths,request.Definition.InstanceId,request.Settings.SessionId,request.BoundPlan.BoundFingerprint,request.RuntimeAuthority,containsAuthenticationAgent:request.Authentication is not null);
         if(Directory.Exists(selected.SessionRoot)||File.Exists(selected.SessionRoot))Fail("MMC_RUNTIME_SESSION_PATH","A launch session requires a fresh owned mutable directory.");
         return new(selected.SessionRoot,selected.TemporaryDirectory,selected.ExtractDirectory){RuntimeBinding=selected.RuntimeBinding};
     }
@@ -253,10 +262,12 @@ public static partial class MmcRuntimeLaunchBuilder {
         MmcSessionRuntimeDirectories.CreateOwned(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,mutable.RuntimeBinding,request.RuntimeAuthority);
     }
     private static void ValidateMutableOwner(MmcRuntimeLaunchPlan launch) {
-        var request=launch.Request;
-        var expected=MmcSessionRuntimeDirectories.Paths(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,launch.RuntimeBinding,request.RuntimeAuthority);
-        MmcRuntimeFiles.SamePath(launch.MutableDirectories.SessionRoot,expected.SessionRoot);MmcRuntimeFiles.SamePath(launch.MutableDirectories.TemporaryDirectory,expected.TemporaryDirectory);MmcRuntimeFiles.SamePath(launch.MutableDirectories.ExtractDirectory,expected.ExtractDirectory);
-        MmcSessionRuntimeDirectories.ValidateLaunch(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,launch.RuntimeBinding,request.RuntimeAuthority);
+        ValidateMutableOwner(launch.Request, launch.MutableDirectories);
+    }
+    private static void ValidateMutableOwner(MmcRuntimeLaunchRequest request, MmcRuntimeMutableDirectories mutable) {
+        var expected=MmcSessionRuntimeDirectories.Paths(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,mutable.RuntimeBinding,request.RuntimeAuthority);
+        MmcRuntimeFiles.SamePath(mutable.SessionRoot,expected.SessionRoot);MmcRuntimeFiles.SamePath(mutable.TemporaryDirectory,expected.TemporaryDirectory);MmcRuntimeFiles.SamePath(mutable.ExtractDirectory,expected.ExtractDirectory);
+        MmcSessionRuntimeDirectories.ValidateLaunch(request.Paths,request.Definition.InstanceId,request.Settings.SessionId,mutable.RuntimeBinding,request.RuntimeAuthority);
     }
     private static void ValidateGameAssets(MmcRuntimeLaunchRequest request, string view) {
         string actual = Path.GetFullPath(request.Directories.GameAssetsRoot);

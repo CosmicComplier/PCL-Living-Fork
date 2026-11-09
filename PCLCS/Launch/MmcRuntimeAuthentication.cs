@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -29,6 +30,8 @@ public sealed class MmcRuntimeAuthenticationSnapshot {
 }
 
 public static partial class MmcRuntimeLaunchBuilder {
+    private sealed record AuthenticationPreparation(ImmutableArray<Value> Arguments, string? ExecutionPath = null,
+        byte[]? Bytes = null, MmcRuntimeSupportArtifact? Source = null);
     private static IEnumerable<MmcJavaConstraint> AuthenticationJavaConstraints(MmcRuntimeAuthenticationSnapshot? authentication) =>
         authentication is null ? [] : [new(authentication.Kind == MmcRuntimeAuthenticationKind.Nide ? "account:nide" : "account:authlib-injector", MinimumMajor: 8)];
 
@@ -41,10 +44,10 @@ public static partial class MmcRuntimeLaunchBuilder {
         }
     }
 
-    private static async Task<IEnumerable<Value>> AuthenticationArgumentsAsync(MmcRuntimeLaunchRequest request, string view,
-        List<MmcRuntimeInputObservation> inputs, IReadOnlyList<string> effectiveJvmArguments, CancellationToken token) {
+    private static async Task<AuthenticationPreparation> AuthenticationArgumentsAsync(MmcRuntimeLaunchRequest request, string view,
+        MmcRuntimeMutableDirectories mutable, List<MmcRuntimeInputObservation> inputs, IReadOnlyList<string> effectiveJvmArguments, CancellationToken token) {
         var authentication = request.Authentication;
-        if (authentication is null) return [];
+        if (authentication is null) return new([]);
         if (!Enum.IsDefined(authentication.Kind) || authentication.Agent is null || string.IsNullOrEmpty(authentication.Server) ||
             authentication.Server.Length > 4096 || authentication.Server.Any(char.IsControl) || authentication.Agent.SizeBytes is < 1 or > 8 * 1024 * 1024)
             Fail("MMC_RUNTIME_AUTHENTICATION", "Live authentication binding is incomplete or exceeds its budget.");
@@ -69,7 +72,19 @@ public static partial class MmcRuntimeLaunchBuilder {
         inputs.Add(await MmcRuntimeFiles.ObserveAsync("support:authentication:" + authentication.Kind,
             authentication.Agent.ActualPath, authentication.Agent.Sha256, authentication.Agent.SizeBytes, token).ConfigureAwait(false));
         await MmcClasspathInspector.VerifyAuthenticationAgentAsync(authentication.Agent, request.Java.Major, effectiveJvmArguments, token).ConfigureAwait(false);
-        string agent = "-javaagent:" + MmcRuntimeFiles.RelativeJavaPath(request.Paths.GameRoot, authentication.Agent.ActualPath) + "=";
+        byte[] bytes;
+        await using (FileStream input = new(authentication.Agent.ActualPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, true)) {
+            if (input.Length != authentication.Agent.SizeBytes) Fail("MMC_RUNTIME_INPUT_CHANGED", "Authentication source changed before its owned execution copy.");
+            bytes = new byte[checked((int)input.Length)]; await input.ReadExactlyAsync(bytes, token).ConfigureAwait(false);
+            if (input.Length != bytes.Length || !Convert.ToHexStringLower(SHA256.HashData(bytes)).Equals(authentication.Agent.Sha256, StringComparison.OrdinalIgnoreCase))
+                Fail("MMC_RUNTIME_INPUT_CHANGED", "Authentication source changed before its owned execution copy.");
+        }
+        // The native javaagent ZIP opener does not share Java's long-path handling.
+        // Use the already-owned short session scope and a canonical absolute token;
+        // the immutable approved source above remains an independent final input.
+        string execution = Path.Combine(mutable.SessionRoot, "a.jar");
+        MmcRuntimeFiles.Owned(execution, mutable.SessionRoot);
+        string agent = "-javaagent:" + MmcRuntimeFiles.JavaPath(execution) + "=";
         List<Value> arguments = [new(agent + authentication.Server, agent + "[authentication:server]")];
         if (authentication.Kind == MmcRuntimeAuthenticationKind.AuthlibInjector) {
             if (request.Java.Major >= 6) arguments.Add(new("-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT", "-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT"));
@@ -80,7 +95,20 @@ public static partial class MmcRuntimeLaunchBuilder {
             arguments.Add(new("-Dauthlibinjector.yggdrasil.prefetched=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(authentication.PrefetchedMetadataJson!)),
                 "-Dauthlibinjector.yggdrasil.prefetched=[authentication:metadata]"));
         }
-        return arguments;
+        return new(arguments.ToImmutableArray(), execution, bytes, authentication.Agent);
+    }
+    private static async Task PublishAuthenticationExecutionAsync(MmcRuntimeLaunchRequest request, MmcRuntimeMutableDirectories mutable,
+        AuthenticationPreparation authentication, List<MmcRuntimeInputObservation> inputs, CancellationToken token) {
+        if (authentication.ExecutionPath is null) return;
+        string expected = Path.Combine(mutable.SessionRoot, "a.jar");
+        MmcRuntimeFiles.SamePath(authentication.ExecutionPath, expected);
+        ValidateMutableOwner(request, mutable);
+        await using (FileStream output = new(expected, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true)) {
+            await output.WriteAsync(authentication.Bytes!, token).ConfigureAwait(false);
+            await output.FlushAsync(token).ConfigureAwait(false); output.Flush(true);
+        }
+        inputs.Add(await MmcRuntimeFiles.ObserveAsync("support:authentication-execution:" + request.Authentication!.Kind,
+            expected, authentication.Source!.Sha256, authentication.Source.SizeBytes, token).ConfigureAwait(false));
     }
 }
 

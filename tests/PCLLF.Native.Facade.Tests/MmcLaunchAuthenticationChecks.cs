@@ -63,13 +63,16 @@ internal static partial class MmcLaunchChecks {
                     string token = process.StartInfo.ArgumentList.Single(value => value.StartsWith("-javaagent:", StringComparison.Ordinal));
                     int split = token.IndexOf('=', "-javaagent:".Length); Native.Check(split > 0, "Agent JVM token lost its server operand.");
                     string actual = Path.GetFullPath(token["-javaagent:".Length..split], instance.PathIndie);
-                    Native.Check(token[(split + 1)..] == expectedServer && actual.Contains(Path.DirectorySeparatorChar + "support" + Path.DirectorySeparatorChar + expectedHash + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
-                        actual.StartsWith(Path.Combine(version, "PCL", "MmcRuntime") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "Actual Main JVM does not target its owned adopted authentication agent.");
+                    Native.Check(token[(split + 1)..] == expectedServer && Path.GetFileName(actual) == "a.jar" && actual.Contains(id.ToString("N"), StringComparison.Ordinal) &&
+                        actual.StartsWith(environment.Root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+                        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(actual))) == expectedHash,
+                        "Actual Main JVM does not target its short owned adopted authentication execution copy.");
                     if (authMode) Native.Check(process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.side=client") && process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.noLogFile=true") &&
                         process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.yggdrasil.prefetched=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(metadata))), "Actual Main omitted Authlib live metadata/client bindings.");
                 }));
                 ModLaunch.McLoginLoader.Output.Type = "Auth"; Settings.Set("VersionServerAuthServer", expectedServer, instance); instance.Config.Save();
                 Launch("authentication-authlib", false, false);
+                Native.Check(!File.Exists(AgentExecutionPath(children[currentSession])), "Verified Authlib exit retained its mutable execution agent.");
                 CheckAgentLog(metadata, expectedServer);
                 authMode = false; expectedServer = "synthetic-nide-id"; expectedHash = Convert.ToHexStringLower(SHA256.HashData(nide));
                 Settings.Set("VersionServerNide", expectedServer, instance); ModLaunch.McLoginLoader.Output.Type = "Nide"; instance.Config.Save();
@@ -77,6 +80,7 @@ internal static partial class MmcLaunchChecks {
                 try { Native.Call(helper, "Revalidate", captured, instance, "Nide", new Java(Path.GetDirectoryName(java8)!, new Version(8, 0, 140))); throw new IOException("Old Nide Java was accepted."); }
                 catch (MmcRuntimeLaunchException error) when (error.Code == "MMC_AUTHENTICATION_JAVA") { }
                 Launch("authentication-nide", false, false); CheckAgentLog(null, expectedServer);
+                Native.Check(!File.Exists(AgentExecutionPath(children[currentSession])), "Verified Nide exit retained its mutable execution agent.");
                 Native.Check(before.SequenceEqual(File.ReadAllBytes(Path.Combine(version, "PCL", "InstanceDefinition.json"))), "Authentication/account data altered persisted package sources or definition.");
                 ChangedAuthenticationSettings(helper, sourceProperty, nide);
                 CancelAgentPreparation(sourceProperty);
@@ -85,6 +89,10 @@ internal static partial class MmcLaunchChecks {
                 Native.Check(asyncErrors.IsEmpty, "Authentication watcher failed.");
                 InstanceConfigProviders.FlushAndDisposeWithin(root); server.Dispose(); client.Dispose(); environment.AssertNoForbiddenIo();
             } finally { sourceProperty.SetValue(null, originalSource); Native.Property(typeof(MmcLaunch), "ProcessCreated").SetValue(null, observer); }
+        }
+        private static string AgentExecutionPath(Process child) {
+            string token = child.StartInfo.ArgumentList.Single(value => value.StartsWith("-javaagent:", StringComparison.Ordinal));
+            return token["-javaagent:".Length..token.IndexOf('=', "-javaagent:".Length)];
         }
         private void CheckAgentLog(string? metadata, string expectedServer) {
             var lines = ModLaunch.McLaunchWatcher.LatestLog.Concat(ModLaunch.McLaunchWatcher.WaitingLog).Where(line => line is not null).ToArray();
