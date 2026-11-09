@@ -37,6 +37,11 @@ internal static class MmcRepairUiChecks {
         scope.RefuseChangedProjectionPreview(); scope.Finish(); environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS mmc-projection-admission: changed confirmed JSON, unknown backup bytes and foreign metadata are rejected without clobbering observed data or advancing generation.");
     }
+    internal static void RunProjectionCancellation(FixtureEnvironment environment) {
+        using FileTaskScope files = new(environment); using var scope = new Scope(files, "projection-cancel");
+        scope.CancelProjectionRebuild(); scope.Finish(); environment.AssertNoForbiddenIo();
+        Console.WriteLine("PASS mmc-projection-cancel: declining inspection is inert, predecision rollback retains changed JSON without a backup publication, and late cancellation keeps successful backup/reconstruction outcome.");
+    }
     private sealed class Scope : IDisposable {
         private readonly FileTaskScope files;
         private readonly string root, game, version, projection, config, localJar;
@@ -52,6 +57,7 @@ internal static class MmcRepairUiChecks {
         private ModLoader.LoaderCombo<string>? current;
         private Action<MmcInstanceBackendProgress>? progress;
         private Func<MmcProjectionDivergence, bool> confirmProjection = _ => false;
+        private Action<MmcTransactionCheckpoint>? transaction;
         private int progressCalls, legacyCalls;
         private readonly ModMinecraft.McInstance owner;
         private readonly byte[] world, personal;
@@ -72,6 +78,7 @@ internal static class MmcRepairUiChecks {
                 RegisterTask = task => { current = task; allTasks.Add(task); ModLoader.LoaderTaskbar.Add(task); }, Published = result => published.Enqueue(result),
                 ProgressObserved = value => { Interlocked.Increment(ref progressCalls); progress?.Invoke(value); },
                 ConfirmProjectionRebuild = inspected => confirmProjection(inspected), ErrorObserved = (error, _) => alerts.Add(error),
+                TransactionObserved = (phase, _) => transaction?.Invoke(phase),
                 DownloadCreated = _ => throw new IOException("Owned-original repair must remain offline.")
             }));
         }
@@ -212,6 +219,26 @@ internal static class MmcRepairUiChecks {
             catch (IOException) { }
             Native.Check(File.ReadAllText(backup) == "foreign backup bytes", "Metadata inspection changed the private backup.");
             File.WriteAllBytes(config, configBefore); CheckPlayerData();
+        }
+        internal void CancelProjectionRebuild() {
+            var initial = MmcInstanceInspector.Read(version);
+            var value = JObject.Parse(File.ReadAllText(projection)); value["mainClass"] = "external.cancelled.Main";
+            File.WriteAllText(projection, value.ToString(), new UTF8Encoding(false)); byte[] changed = File.ReadAllBytes(projection);
+            string before = Tree(version); bool declined = false;
+            confirmProjection = _ => { declined = true; return false; }; Repair();
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (!declined) { Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, deadline); if (DateTime.UtcNow >= deadline) throw new TimeoutException("Projection inspection did not reach its real confirmation."); Thread.Sleep(5); }
+            Native.Check(current is null && !Busy && Tree(version) == before, "Declining projection inspection changed its files or created a repair producer.");
+            string backup = Path.Combine(version, "PCL", "MmcProjectionBackups", Hash(changed) + ".json");
+            confirmProjection = _ => true; transaction = phase => { if (phase == MmcTransactionCheckpoint.BeforeDecision) current!.Cancel(); };
+            Repair(); Wait();
+            Native.Check(current!.State == ModBase.LoadState.Canceled && published.IsEmpty && File.ReadAllBytes(projection).SequenceEqual(changed) &&
+                !File.Exists(backup) && MmcInstanceInspector.Read(version).PrimarySha256 == initial.PrimarySha256, "Predecision cancellation published a projection backup or changed the current definition/JSON.");
+            Reset(); transaction = phase => { if (phase == MmcTransactionCheckpoint.CommitDecided) current!.Cancel(); };
+            Repair(); Wait();
+            Native.Check(current!.State == ModBase.LoadState.Finished && published.Count == 1 && File.ReadAllBytes(backup).SequenceEqual(changed) && MmcInstanceInspector.Read(version).IsConsistent,
+                "Late cancellation obscured a committed projection backup/reconstruction.");
+            CheckPlayerData();
         }
         private MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(new MmcMetadataStore(Path.Combine(root, "prepare-meta"), new Uri("https://fixture.invalid/meta/"), client),
             new(Path.Combine(root, "cache", "libraries"), Path.Combine(root, "cache", "assets"), Path.Combine(root, "cache", "sources")), value => value,
