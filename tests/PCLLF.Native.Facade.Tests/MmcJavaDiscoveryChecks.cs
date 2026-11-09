@@ -24,6 +24,12 @@ internal static class MmcJavaDiscoveryChecks {
         var catalog26 = new Java(Path.GetDirectoryName(java26)!,new Version(8,0));
         Configs.JavaList.Set(new ConcurrentList<Java>([catalog26,catalog8])); Configs.JavaConfigVersion.Set(Versions.JavaConfigVersion);
         Native.Cache("LoginType",ModLaunch.McLoginType.Legacy); Native.Cache("LaunchArgumentJavaSelect","");
+        // The ordinary engine deliberately refreshes the public account type from Registry.
+        // Substitute only that type predicate; every Registry/profile guard remains installed.
+        object service=Native.Field(typeof(ModJava),"Service").GetValue(null)!;
+        object javaHost=Native.Get(service,"host")!;
+        object isNide=Native.Get(javaHost,"IsNideLogin")!;
+        Native.Set(javaHost,"IsNideLogin",new Func<bool>(()=>false));
         int refreshes = 0; Action refreshed = () => Interlocked.Increment(ref refreshes); ModJava.JavaListRefreshWorker.Started += refreshed;
         try {
             using var old = new Fixture(Path.Combine(files.Root,"java8"),[8],8); files.SelectMinecraft(old.Game);
@@ -96,6 +102,7 @@ internal static class MmcJavaDiscoveryChecks {
         } finally {
             PageInstanceLeft.CurrentJavaWorker.Cancel(); PageInstanceLeft.CurrentJavaWorker.WaitIfRunning(30000);
             ModJava.JavaListRefreshWorker.Started -= refreshed;
+            Native.Set(javaHost,"IsNideLogin",isNide);
         }
     }
 
@@ -107,6 +114,7 @@ internal static class MmcJavaDiscoveryChecks {
         return host.ManagedJavaPreview!(owner,PageInstanceLeft.CurrentJavaWorker)!;
     }
     private static void Select(ModMinecraft.McInstance owner,int kind) {
+        Console.WriteLine("INFO Java settings target "+owner.Name+", mode "+kind);
         PageInstanceLeft.CurrentJavaWorker.Cancel(); Wait(); PageInstanceLeft.Instance=owner;
         Page=new PageInstanceSetup(); ModMain.FrmInstanceSetup=Page;
         ((ComboBox)Native.Property(typeof(PageInstanceSetup),"ComboArgumentJava").GetValue(Page)!).SelectedIndex=kind;
