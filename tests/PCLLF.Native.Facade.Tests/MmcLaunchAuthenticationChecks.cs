@@ -65,7 +65,7 @@ internal static partial class MmcLaunchChecks {
                     string actual = Path.GetFullPath(token["-javaagent:".Length..split], instance.PathIndie);
                     Native.Check(token[(split + 1)..] == expectedServer && actual.Contains(Path.DirectorySeparatorChar + "support" + Path.DirectorySeparatorChar + expectedHash + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
                         actual.StartsWith(Path.Combine(version, "PCL", "MmcRuntime") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase), "Actual Main JVM does not target its owned adopted authentication agent.");
-                    if (authMode) Native.Check(process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.side=client") &&
+                    if (authMode) Native.Check(process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.side=client") && process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.noLogFile=true") &&
                         process.StartInfo.ArgumentList.Contains("-Dauthlibinjector.yggdrasil.prefetched=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(metadata))), "Actual Main omitted Authlib live metadata/client bindings.");
                 }));
                 ModLaunch.McLoginLoader.Output.Type = "Auth"; Settings.Set("VersionServerAuthServer", expectedServer, instance); instance.Config.Save();

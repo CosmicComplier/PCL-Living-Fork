@@ -30,7 +30,7 @@ public sealed class MmcRuntimeAuthenticationSnapshot {
 
 public static partial class MmcRuntimeLaunchBuilder {
     private static IEnumerable<MmcJavaConstraint> AuthenticationJavaConstraints(MmcRuntimeAuthenticationSnapshot? authentication) =>
-        authentication?.Kind == MmcRuntimeAuthenticationKind.Nide ? [new("account:nide", MinimumMajor: 8)] : [];
+        authentication is null ? [] : [new(authentication.Kind == MmcRuntimeAuthenticationKind.Nide ? "account:nide" : "account:authlib-injector", MinimumMajor: 8)];
 
     private static IEnumerable<string> AuthenticationSecrets(MmcRuntimeAuthenticationSnapshot? authentication) {
         if (authentication is null) yield break;
@@ -74,6 +74,9 @@ public static partial class MmcRuntimeLaunchBuilder {
         if (authentication.Kind == MmcRuntimeAuthenticationKind.AuthlibInjector) {
             if (request.Java.Major >= 6) arguments.Add(new("-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT", "-Djavax.net.ssl.trustStoreType=WINDOWS-ROOT"));
             arguments.Add(new("-Dauthlibinjector.side=client", "-Dauthlibinjector.side=client"));
+            // Route agent diagnostics through the host's pre-storage redactor;
+            // authlib's default independent log file bypasses that boundary.
+            arguments.Add(new("-Dauthlibinjector.noLogFile=true", "-Dauthlibinjector.noLogFile=true"));
             arguments.Add(new("-Dauthlibinjector.yggdrasil.prefetched=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(authentication.PrefetchedMetadataJson!)),
                 "-Dauthlibinjector.yggdrasil.prefetched=[authentication:metadata]"));
         }

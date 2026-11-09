@@ -27,7 +27,7 @@ internal static partial class MmcRuntimeLaunchTests {
             Require(javaAgent == "-javaagent:" + Path.GetRelativePath(request.Paths.GameRoot, agent.ActualPath).Replace('\\', '/') + "=" + server,
                 "Authentication javaagent argument does not target the owned execution copy as one exact token.");
             string encoded = metadata is null ? "" : Convert.ToBase64String(Encoding.UTF8.GetBytes(metadata));
-            if (metadata is not null) Require(actual.Contains("-Dauthlibinjector.side=client") && actual.Contains("-Dauthlibinjector.yggdrasil.prefetched=" + encoded), "Authlib live client properties were dropped.");
+            if (metadata is not null) Require(actual.Contains("-Dauthlibinjector.side=client") && actual.Contains("-Dauthlibinjector.noLogFile=true") && actual.Contains("-Dauthlibinjector.yggdrasil.prefetched=" + encoded), "Authlib live client properties or host-only diagnostics binding were dropped.");
             string safe = string.Join('\n', plan.RedactedArguments.Concat(plan.LogicalJvmArguments));
             Require(!safe.Contains(server, StringComparison.Ordinal) && !safe.Contains(request.Account.AccessToken, StringComparison.Ordinal) &&
                 (encoded.Length == 0 || !safe.Contains(encoded, StringComparison.Ordinal)), "Public runtime evidence includes authentication/account values.");

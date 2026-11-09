@@ -20,8 +20,8 @@ internal sealed class MmcLaunchAuthentication {
     private readonly string loginType, server;
     private readonly MmcRuntimeAuthenticationKind? kind;
     internal MmcRuntimeAuthenticationSnapshot Binding { get; private set; }
-    internal ImmutableArray<MmcJavaConstraint> JavaConstraints => kind == MmcRuntimeAuthenticationKind.Nide
-        ? [new("account:nide", MinimumMajor: 8)] : [];
+    internal ImmutableArray<MmcJavaConstraint> JavaConstraints => kind is null ? [] :
+        [new(kind == MmcRuntimeAuthenticationKind.Nide ? "account:nide" : "account:authlib-injector", MinimumMajor: 8)];
 
     // Only public agent metadata is substitutable in controlled facade checks.
     // The real Main downloader, owned publication, runtime binding and admission remain genuine.
