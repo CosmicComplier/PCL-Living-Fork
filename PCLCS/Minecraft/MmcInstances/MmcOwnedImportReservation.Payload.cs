@@ -85,6 +85,7 @@ public sealed partial class MmcOwnedImportReservation {
         try {
             checkpoint?.Invoke(MmcInitialPayloadCheckpoint.Prepared, -1);
             long completed = 0; byte[] buffer = new byte[131072];
+            progress?.Report(new("private-payload-install", 0, total) { CompletedFiles = 0, TotalFiles = manifest.Files.Length });
             for (int index = 0; index < manifest.Files.Length; index++) {
                 cancellationToken.ThrowIfCancellationRequested();
                 var file = manifest.Files[index]; var mutation = mutations[file.TargetRelativePath];
