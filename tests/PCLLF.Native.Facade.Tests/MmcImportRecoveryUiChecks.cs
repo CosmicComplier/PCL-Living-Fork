@@ -14,7 +14,7 @@ using PCLLF.MMCC.Core;
 
 namespace PCLLF.Native.Facade.Tests;
 
-internal static class MmcImportRecoveryUiChecks {
+internal static partial class MmcImportRecoveryUiChecks {
     // Run each group in its own ordinary fresh 60-second Native child.
     internal static void RunRecovery(FixtureEnvironment environment) {
         using var scope = new Scope(environment, "initial-import-recovery-ui");
@@ -29,7 +29,7 @@ internal static class MmcImportRecoveryUiChecks {
         Console.WriteLine("PASS mmc-import-retry-ui: actual Main catalog/picker/name/confirmation, real SHA/Java policy/backend and fresh same-SHA different-name publication preserve old parked bytes with a new ID/G1; wrong/forged source SHA, forged original paths, stale preview and destination collision denied; actual Prepared cancellation drains before busy release, late decided cancel preserves success. Cache-hit production batch only; no network transfer or game launch.");
     }
 
-    private sealed class Scope : IDisposable {
+    private sealed partial class Scope : IDisposable {
         private readonly FixtureEnvironment environment;
         private readonly FileTaskScope files;
         private readonly string root, game, archive, sibling;
