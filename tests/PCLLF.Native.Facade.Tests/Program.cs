@@ -110,6 +110,7 @@ internal static class Program
     private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
         ["mmc-authentication"] = MmcLaunchChecks.RunAuthentication,
         ["mmc-import-java-current-catalogue"] = MmcImportJavaSelectionChecks.Run,
+        ["mmc-java-settings-discovery"] = MmcJavaDiscoveryChecks.Run,
         ["mmc-import-java-original-gtnh"] = MmcImportJavaSelectionChecks.RunGtnh,
         ["mmc-platform-online-success"] = MmcPlatformOriginUiTaskChecks.RunOnline,
         ["mmc-platform-online-preview-cancel"] = MmcPlatformOriginUiTaskChecks.RunOnlinePreviewCancel,
