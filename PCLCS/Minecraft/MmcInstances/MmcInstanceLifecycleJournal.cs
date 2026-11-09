@@ -41,9 +41,9 @@ internal sealed class MmcInstanceLifecycleJournal {
         MmcOwnedImportReservation.CreateExclusiveDirectory(directory);
         return new(directory,intent,MmcDurableFiles.WriteRecord(Path.Combine(directory,"intent.record"),intent));
     }
-    internal static MmcInstanceLifecycleJournal Read(string directory) {
+    internal static MmcInstanceLifecycleJournal Read(string directory, CancellationToken cancellationToken = default) {
         directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)); MmcInstancePaths.EnsureNoLinks(directory);
-        var (intent, hash) = MmcDurableFiles.ReadRecord<MmcLifecycleIntent>(Path.Combine(directory,"intent.record")); Validate(intent);
+        var (intent, hash) = MmcDurableFiles.ReadRecord<MmcLifecycleIntent>(Path.Combine(directory,"intent.record"), cancellationToken); Validate(intent);
         string expected = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(intent.SourceRoot)!)!,"PCL","MmcLifecycle",intent.OperationId.ToString("N"));
         if (!string.Equals(expected,directory,OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal)) throw new IOException("Lifecycle journal escaped its source Minecraft operation store.");
         return new(directory,intent,hash);

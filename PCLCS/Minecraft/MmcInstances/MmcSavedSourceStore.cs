@@ -16,13 +16,15 @@ public sealed record MmcSavedInstanceSources(MmcPackage Package, MmcResolvedSour
 
 /// <summary>Reconstructs only from digest-bound immutable source records; never reads the original ZIP or player files.</summary>
 public static class MmcSavedSourceStore {
-    public static MmcStoredPrimaryDefinition ReadPrimary(MmcInstancePaths paths) {
-        byte[] bytes = ReadBounded(paths, "PCL/InstanceDefinition.json", 16 * 1024 * 1024);
+    public static MmcStoredPrimaryDefinition ReadPrimary(MmcInstancePaths paths) => ReadPrimary(paths, CancellationToken.None);
+    public static MmcStoredPrimaryDefinition ReadPrimary(MmcInstancePaths paths, CancellationToken cancellationToken) {
+        byte[] bytes = ReadBounded(paths, "PCL/InstanceDefinition.json", 16 * 1024 * 1024, cancellationToken);
         MmcDefinitionReadResult result;
         try { result = MmcDefinitionCodec.Read(new UTF8Encoding(false, true).GetString(bytes)); }
         catch (DecoderFallbackException error) { throw new InvalidDataException("MMC primary definition is not UTF-8.", error); }
         if (result.Status != MmcDefinitionReadStatus.Valid || result.Definition is null)
             throw new InvalidDataException("MMC primary definition is damaged or unsupported; ordinary repair is forbidden.");
+        cancellationToken.ThrowIfCancellationRequested();
         return new(result.Definition, Hash(bytes));
     }
 
@@ -94,15 +96,19 @@ public static class MmcSavedSourceStore {
         return new(package, new(resolution, adopted.ToImmutable()), baseline, baselineInput);
     }
 
-    internal static byte[] ReadBounded(MmcInstancePaths paths, string relative, int maximumBytes) {
+    internal static byte[] ReadBounded(MmcInstancePaths paths, string relative, int maximumBytes, CancellationToken cancellationToken = default) {
+        cancellationToken.ThrowIfCancellationRequested();
         string path = paths.ResolveRelative(MmcPathRole.Instance, relative);
         using FileStream input = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (input.Length > maximumBytes) throw new InvalidDataException("Preserved source exceeds its byte budget.");
         using MemoryStream output = new(); byte[] buffer = new byte[8192]; int count;
-        while ((count = input.Read(buffer, 0, buffer.Length)) != 0) {
+        do {
+            cancellationToken.ThrowIfCancellationRequested();
+            count = input.Read(buffer, 0, buffer.Length);
             if (output.Length + count > maximumBytes) throw new InvalidDataException("Preserved source grew beyond its byte budget.");
             output.Write(buffer, 0, count);
-        }
+        } while (count != 0);
+        cancellationToken.ThrowIfCancellationRequested();
         return output.ToArray();
     }
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));

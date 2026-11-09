@@ -65,11 +65,18 @@ internal static class MmcDurableFiles {
         byte[] bytes = new byte[header.Length + payload.Length]; header.CopyTo(bytes, 0); payload.CopyTo(bytes, header.Length);
         WriteNew(path, bytes); return hash;
     }
-    internal static (T Value, string Hash) ReadRecord<T>(string path) {
+    internal static (T Value, string Hash) ReadRecord<T>(string path, CancellationToken cancellationToken = default) {
+        cancellationToken.ThrowIfCancellationRequested();
         MmcInstancePaths.EnsureNoLinks(path);
         using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (stream.Length > MaxRecordBytes + 128) throw new IOException("事务日志超过预算。");
-        using MemoryStream bytes = new(); stream.CopyTo(bytes);
+        using MemoryStream bytes = new(); byte[] buffer = new byte[64 * 1024]; int count;
+        do {
+            cancellationToken.ThrowIfCancellationRequested();
+            count = stream.Read(buffer, 0, buffer.Length); bytes.Write(buffer, 0, count);
+            if (bytes.Length > MaxRecordBytes + 128) throw new IOException("事务日志超过预算。");
+        } while (count != 0);
+        cancellationToken.ThrowIfCancellationRequested();
         byte[] content = bytes.ToArray(); byte[] prefix = Encoding.ASCII.GetBytes("PCLLF-MMC-RECORD-1\n");
         if (content.Length < prefix.Length + 65 || !content.AsSpan(0, prefix.Length).SequenceEqual(prefix) || content[prefix.Length + 64] != '\n')
             throw new IOException("事务日志格式未知或损坏。");
@@ -79,6 +86,7 @@ internal static class MmcDurableFiles {
         try {
             using JsonDocument strict = MmcManagementReader.ParseJson(new UTF8Encoding(false, true).GetString(payload));
             T value = JsonSerializer.Deserialize<T>(payload) ?? throw new IOException("事务日志内容为空。");
+            cancellationToken.ThrowIfCancellationRequested();
             return (value, expected);
         } catch (Exception ex) when (ex is JsonException or InvalidDataException or DecoderFallbackException) { throw new IOException("事务日志内容无效。", ex); }
     }

@@ -24,20 +24,10 @@ public static partial class MmcInstanceLifecycleCatalog {
         MmcInstancePurgeJournal.DecisionName, MmcInstancePurgeJournal.CompletionName];
     private static StringComparison PathComparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
+    // Compatibility preview only. Interactive callers use ReadPage and retain its cursors.
     public static MmcLifecycleCatalog Read(string minecraftRoot) {
-        string root = Root(minecraftRoot), store = Path.Combine(root, "PCL", "MmcLifecycle");
-        if (MmcInstancePaths.Attributes(store) is null) return new([], false);
-        try {
-            MmcInstancePaths.EnsureNoLinks(store);
-            if (!Directory.Exists(store)) throw new IOException("操作记录位置被文件占用。");
-            string[] directories = Directory.EnumerateFileSystemEntries(store).Take(MaximumEntries + 1).ToArray();
-            long remaining = MaximumScanBytes; List<MmcLifecycleCatalogEntry> entries = [];
-            foreach (string directory in directories.Take(MaximumEntries).Order(StringComparer.Ordinal)) {
-                try { entries.Add(Inspect(root, directory, ref remaining)); }
-                catch (Exception error) when (Expected(error)) { entries.Add(Unknown(root, directory, error.Message)); }
-            }
-            return new(entries.ToImmutableArray(), directories.Length > MaximumEntries);
-        } catch (Exception error) when (Expected(error)) { return new([Unknown(root, store, error.Message)], false); }
+        var page = ReadPage(new(minecraftRoot, PageSize: MaximumEntries));
+        return new(page.Entries, page.Next is not null || page.NeedsRefresh);
     }
 
     /// <summary>Background-only. Pins the immutable intent against replacement while the backend takes its own quiescence/admission gates.</summary>
@@ -49,7 +39,7 @@ public static partial class MmcInstanceLifecycleCatalog {
         // the instance, and remains pinned through the backend's final identity checks.
         using var intentPin = Pin(Path.Combine(directory, "intent.record"), MaximumRecordBytes, out _);
         long remaining = MaximumScanBytes;
-        var fresh = Inspect(root, directory, ref remaining);
+        var fresh = Inspect(root, directory, ref remaining, cancellationToken);
         if (preview.SnapshotFingerprint is null || fresh.SnapshotFingerprint != preview.SnapshotFingerprint ||
             preview.InstanceId != fresh.InstanceId || preview.Generation != fresh.Generation ||
             (restore ? !fresh.CanRestore : !fresh.CanRecover))
@@ -63,7 +53,8 @@ public static partial class MmcInstanceLifecycleCatalog {
         return backend.RecoverAsync(directory).GetAwaiter().GetResult();
     }
 
-    private static MmcLifecycleCatalogEntry Inspect(string root, string directory, ref long remaining) {
+    private static MmcLifecycleCatalogEntry Inspect(string root, string directory, ref long remaining, CancellationToken cancellationToken = default) {
+        cancellationToken.ThrowIfCancellationRequested();
         directory = ValidateDirectory(root, directory);
         List<FileStream> pins = []; List<MmcAdmissionLease> leases = []; List<string> recordFacts = [];
         try {
@@ -71,20 +62,23 @@ public static partial class MmcInstanceLifecycleCatalog {
             // A catalog must not briefly deny a live producer's Move/ClearPending
             // by opening instance files while that producer holds admission.
             PinOptional(Path.Combine(directory, "intent.record"), MaximumRecordBytes, pins, ref remaining);
-            var journal = MmcInstanceLifecycleJournal.Read(directory); var intent = journal.Intent;
-            foreach (string location in new[] { intent.SourceRoot, intent.TargetRoot }.Order(StringComparer.OrdinalIgnoreCase))
+            var journal = MmcInstanceLifecycleJournal.Read(directory, cancellationToken); var intent = journal.Intent;
+            foreach (string location in new[] { intent.SourceRoot, intent.TargetRoot }.Order(StringComparer.OrdinalIgnoreCase)) {
+                cancellationToken.ThrowIfCancellationRequested();
                 leases.Add(MmcAdmissionGate.Acquire(location, intent.InstanceId, TimeSpan.Zero));
+            }
             foreach (string record in Records) {
+                cancellationToken.ThrowIfCancellationRequested();
                 string path = Path.Combine(directory, record);
                 if (MmcInstancePaths.Attributes(path) is null) continue;
                 var pin = Pin(path, record == MmcInstancePurgeJournal.PlanName ? MmcInstancePurgeSnapshot.MaximumRecordBytes + 128L : MaximumRecordBytes, out long length); pins.Add(pin); Budget(ref remaining, length);
-                recordFacts.Add(record); recordFacts.Add(Convert.ToHexStringLower(SHA256.HashData(pin))); pin.Position = 0;
+                recordFacts.Add(record); recordFacts.Add(HashRecord(pin, cancellationToken)); pin.Position = 0;
             }
             string name = Path.GetFileName(intent.SourceRoot);
             // A durable purge decision supersedes restoration even when the primary or
             // lifecycle marker was already removed. Never run ordinary primary probing first.
             if (MmcInstancePurgeJournal.HasDecision(directory) || MmcInstancePaths.Attributes(Path.Combine(directory, MmcInstancePurgeJournal.CompletionName)) is not null) {
-                var purge = MmcInstancePurgeJournal.Read(journal);
+                var purge = MmcInstancePurgeJournal.Read(journal, cancellationToken);
                 if (!purge.IsDecided()) throw new IOException("永久清理决定无法验证，已保留所有剩余内容。");
                 bool exists = MmcInstancePaths.Attributes(intent.TargetRoot) is not null, completedPurge = purge.IsCompleted();
                 string identity = "";
@@ -104,12 +98,12 @@ public static partial class MmcInstanceLifecycleCatalog {
                 PinOptional(Path.Combine(location, MmcInstanceLifecycleJournal.MarkerRelative.Replace('/', Path.DirectorySeparatorChar)), 8192, pins, ref remaining);
             bool sourceOwned = journal.Owns(intent.SourceRoot), targetOwned = journal.Owns(intent.TargetRoot);
             string? sourceHash = null, targetHash = null;
-            if (sourceExists) sourceHash = Primary(intent.SourceRoot, intent.InstanceId, [intent.SourceGeneration, intent.TargetGeneration], pins, ref remaining);
-            if (targetExists) targetHash = Primary(intent.TargetRoot, intent.InstanceId, [intent.SourceGeneration, intent.TargetGeneration], pins, ref remaining);
-            string intentHash = MmcDurableFiles.ReadRecord<MmcLifecycleIntent>(Path.Combine(directory, "intent.record")).Hash;
+            if (sourceExists) sourceHash = Primary(intent.SourceRoot, intent.InstanceId, [intent.SourceGeneration, intent.TargetGeneration], pins, ref remaining, cancellationToken);
+            if (targetExists) targetHash = Primary(intent.TargetRoot, intent.InstanceId, [intent.SourceGeneration, intent.TargetGeneration], pins, ref remaining, cancellationToken);
+            string intentHash = journal.IntentSha256;
             string restorePath = Path.Combine(directory, "restore.record");
             if (MmcInstancePaths.Attributes(restorePath) is not null) {
-                var restore = MmcDurableFiles.ReadRecord<MmcLifecycleRestore>(restorePath).Value;
+                var restore = MmcDurableFiles.ReadRecord<MmcLifecycleRestore>(restorePath, cancellationToken).Value;
                 if (intent.Kind != "Delete" || restore.SchemaVersion != 1 || restore.RestoreId == Guid.Empty ||
                     restore.DeleteOperationId != intent.OperationId || restore.DeleteIntentSha256 != intentHash) throw new IOException("恢复操作记录不匹配。");
             }
@@ -143,7 +137,7 @@ public static partial class MmcInstanceLifecycleCatalog {
                 if (!decided || !targetOwned || targetHash != intent.SourcePrimarySha256 || !MmcInstanceLifecycleVisibility.IsCompletedQuarantine(intent.TargetRoot))
                     return Entry(MmcLifecycleCatalogState.Conflict, "隔离区内容或归属已变化，不能自动恢复。");
                 if (MmcInstancePurgeJournal.HasPlan(directory)) {
-                    var preparation = MmcInstancePurgeJournal.Read(journal);
+                var preparation = MmcInstancePurgeJournal.Read(journal, cancellationToken);
                     if (preparation.IsDecided()) throw new IOException("永久清理状态在列表读取期间发生变化，请重新打开列表。");
                     return Entry(MmcLifecycleCatalogState.Quarantined, "永久清理在决定前中断，实例内容仍完整；可撤销准备并恢复隔离区操作。", restore: true, recover: true);
                 }
@@ -165,11 +159,11 @@ public static partial class MmcInstanceLifecycleCatalog {
         }
     }
 
-    private static string Primary(string versionRoot, Guid id, long[] generations, List<FileStream> pins, ref long remaining) {
+    private static string Primary(string versionRoot, Guid id, long[] generations, List<FileStream> pins, ref long remaining, CancellationToken cancellationToken) {
         var paths = MmcInstancePaths.Resolve(versionRoot);
         var pin = Pin(paths.ResolveRelative(MmcPathRole.Instance, "PCL/InstanceDefinition.json"), 16 * 1024 * 1024, out long length);
         pins.Add(pin); Budget(ref remaining, length);
-        var primary = MmcSavedSourceStore.ReadPrimary(paths);
+        var primary = MmcSavedSourceStore.ReadPrimary(paths, cancellationToken);
         if (primary.Definition.InstanceId != id || !generations.Contains(primary.Definition.Generation))
             throw new IOException("该位置属于另一个实例或不同代数，已保留其内容。");
         return primary.Sha256;
@@ -199,7 +193,22 @@ public static partial class MmcInstanceLifecycleCatalog {
         if (length > maximum) { stream.Dispose(); throw new IOException("操作记录或实例定义超过读取预算。"); }
         return stream;
     }
-    private static void Budget(ref long remaining, long length) { remaining -= length; if (remaining < 0) throw new IOException("恢复列表达到读取预算，请保留记录并分批处理。"); }
+    private sealed class CatalogPageBudgetException() : IOException("本页达到读取预算；此记录将从下一页继续读取。") { }
+    private static void Budget(ref long remaining, long length) {
+        if (length > remaining) throw new CatalogPageBudgetException();
+        remaining -= length;
+    }
+    private static string HashRecord(FileStream stream, CancellationToken cancellationToken) {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = new byte[64 * 1024]; int count;
+        do {
+            cancellationToken.ThrowIfCancellationRequested();
+            count = stream.Read(buffer, 0, buffer.Length);
+            hash.AppendData(buffer, 0, count);
+        } while (count != 0);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
     private static string Root(string root) { root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)); MmcInstancePaths.EnsureNoLinks(root); return root; }
     private static string ValidateDirectory(string root, string directory) {
         directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));

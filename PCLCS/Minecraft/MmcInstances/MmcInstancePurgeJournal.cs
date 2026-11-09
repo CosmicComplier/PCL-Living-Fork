@@ -26,8 +26,8 @@ internal sealed class MmcInstancePurgeJournal {
         var plan = new MmcPurgePlan(1, Guid.NewGuid(), preview.SnapshotFingerprint, preview.Snapshot);
         return new(lifecycle, plan, MmcDurableFiles.WriteRecord(Path.Combine(lifecycle.DirectoryPath, PlanName), plan));
     }
-    internal static MmcInstancePurgeJournal Read(MmcInstanceLifecycleJournal lifecycle) {
-        var (plan, hash) = MmcDurableFiles.ReadRecord<MmcPurgePlan>(Path.Combine(lifecycle.DirectoryPath, PlanName));
+    internal static MmcInstancePurgeJournal Read(MmcInstanceLifecycleJournal lifecycle, CancellationToken cancellationToken = default) {
+        var (plan, hash) = MmcDurableFiles.ReadRecord<MmcPurgePlan>(Path.Combine(lifecycle.DirectoryPath, PlanName), cancellationToken);
         if (plan.SchemaVersion != 1 || plan.PurgeId == Guid.Empty || plan.Snapshot is null ||
             plan.SnapshotFingerprint != MmcInstancePurgeSnapshot.Fingerprint(plan.Snapshot)) throw new IOException("Permanent cleanup plan binding is damaged.");
         MmcInstancePurgeSnapshot.Validate(plan.Snapshot, lifecycle);
