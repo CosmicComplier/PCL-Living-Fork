@@ -86,6 +86,7 @@ public sealed partial class LegacyMinecraftService<TInstance, TFolder, TLibrary,
                     if (MmcInstanceLifecycleVisibility.IsCompletedQuarantine(versionsFolder)) continue;
                     MmcInstanceInspection managed = MmcInstanceInspector.Read(versionsFolder);
                     if (!managed.IsLegacy || !managed.Management.ObservationComplete) {
+                        if (!Directory.Exists(versionsFolder)) continue;
                         instanceList.Add(host.Instance.CreateInstance(versionsFolder).Load());
                         continue;
                     }
@@ -177,8 +178,10 @@ public sealed partial class LegacyMinecraftService<TInstance, TFolder, TLibrary,
         List<TInstance> instanceList = [];
         foreach (DirectoryInfo versionFolderInfo in LegacyMinecraftDirectoryScanner.GetDirectories(folder + "versions")) {
             string versionFolder = versionFolderInfo.FullName + "\\";
+            if (!Directory.Exists(versionFolder)) continue;
             MmcInstanceInspection managed = MmcInstanceInspector.Read(versionFolder);
             if (!managed.IsLegacy || !managed.Management.ObservationComplete) {
+                if (!Directory.Exists(versionFolder)) continue;
                 TInstance managedInstance = host.Instance.CreateInstance(versionFolder);
                 instanceList.Add(managedInstance);
                 managedInstance.Load();

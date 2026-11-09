@@ -114,6 +114,7 @@ public static class LegacyMinecraftDirectoryScanner {
         // MeloongCore may return extended-namespace DirectoryInfo paths. Keep
         // MMC classification bound to the caller's logical root and actual leaf.
         try { return DirectoryUtils.GetInfo(folder).GetDirectories().Where(item =>
+            Directory.Exists(Path.Combine(folder, item.Name)) &&
             !MmcImportVisibility.IsPrivateReservation(Path.Combine(folder, item.Name)) &&
             !MmcInstanceLifecycleVisibility.IsCompletedQuarantine(Path.Combine(folder, item.Name))).ToArray(); }
         catch (DirectoryNotFoundException) { return []; }
