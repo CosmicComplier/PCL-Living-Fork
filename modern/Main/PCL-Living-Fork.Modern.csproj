@@ -59,6 +59,8 @@
 <Compile Include="Modules/Minecraft/MmcHistoryUi.cs" />
 <Compile Include="Modules/Minecraft/MmcRepairUi.cs" />
 <Compile Include="Modules/Minecraft/MmcImportRecoveryUi.cs" />
+<Compile Include="Modules/Minecraft/MmcImportProgress.cs" />
+<Compile Include="Pages/PageSpeedLeft.MmcStages.cs" />
 <Compile Include="Modules/Minecraft/MmcPackageUpdateUi.cs" />
 <Compile Include="Controls/MmcPackageUpdateViews.cs" />
 <Compile Include="Controls/MmcProjectionReviewView.cs" />

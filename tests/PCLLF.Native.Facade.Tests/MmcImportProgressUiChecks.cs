@@ -95,7 +95,7 @@ internal static partial class MmcImportRecoveryUiChecks {
                     Stages(task).Take(6).All(value => value.State == "Finished"), "Publication was marked finished before its real producer returned.");
                 task.Cancel(); left.TaskRefresh(task);
                 Native.Check(task.State == ModBase.LoadState.Loading && Stages(task).All(value => value.State != "Cancelling") &&
-                    !original.Children.OfType<MyIconButton>().Single().IsEnabled, "Decided publication accepted cancellation or showed an unaccepted cancelling state.");
+                    !original!.Children.OfType<MyIconButton>().Single().IsEnabled, "Decided publication accepted cancellation or showed an unaccepted cancelling state.");
             } finally { stageRelease.Set(); publishRelease.Set(); }
             Returned(task, ModBase.LoadState.Finished);
             var copied = samples.Where(value => value.Phase == "package-extract").ToArray();
