@@ -42,6 +42,19 @@ public sealed class MmcInstancePaths {
 
     /// <summary>Returns a checked, role-relative target without creating it or merging library scopes.</summary>
     public string ResolveRelative(MmcPathRole role, string relative) {
+        string target = ComputeRelativePath(role, relative);
+        EnsureNoLinks(target);
+        return target;
+    }
+
+    /// <summary>
+    /// Private initial-payload bookkeeping only. Keeps all logical path validation; the reservation
+    /// must check the source at VerifyPayloadFile and the destination parent at actual placement.
+    /// This does not authorize I/O and must not replace ResolveRelative at other call sites.
+    /// </summary>
+    internal string ResolvePrivatePayloadPath(string relative) => ComputeRelativePath(MmcPathRole.Instance, relative);
+
+    private string ComputeRelativePath(MmcPathRole role, string relative) {
         ArgumentNullException.ThrowIfNull(relative);
         if (relative.Length == 0 || Path.IsPathRooted(relative) || relative[0] is '/' or '\\') throw new IOException("必须提供相对路径。");
         string[] parts = relative.Replace('\\', '/').Split('/');
@@ -55,7 +68,6 @@ public sealed class MmcInstancePaths {
         string prefix = root + Path.DirectorySeparatorChar;
         if (!target.StartsWith(prefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new IOException("目标路径超出了所选目录角色。");
-        EnsureNoLinks(target);
         return target;
     }
 

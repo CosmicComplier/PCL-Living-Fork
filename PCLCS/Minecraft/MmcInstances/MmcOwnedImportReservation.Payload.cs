@@ -61,7 +61,10 @@ public sealed partial class MmcOwnedImportReservation {
             if (relative.Equals(InstanceName + ".json", StringComparison.OrdinalIgnoreCase) || relative.StartsWith("PCL/", StringComparison.OrdinalIgnoreCase) ||
                 relative.StartsWith("libraries/", StringComparison.OrdinalIgnoreCase) || relative.Equals(".pclignore", StringComparison.OrdinalIgnoreCase))
                 throw new IOException("A package payload cannot occupy a structural/library/import marker target.");
-            string input = paths.ResolveRelative(MmcPathRole.Instance, mutation.NewSourceRelativePath);
+            // Only compare the owned staging identity here; VerifyPayloadFile checks its entire
+            // live ancestor chain before reading it. A changed source can therefore be rejected
+            // after the manifest is written, with that manifest and workspace retained below.
+            string input = paths.ResolvePrivatePayloadPath(mutation.NewSourceRelativePath);
             if (!string.Equals(input, file.StagedPath, StringComparison.OrdinalIgnoreCase) || Path.GetDirectoryName(input) != Path.Combine(workspace, "files") ||
                 !Guid.TryParseExact(Path.GetFileName(input), "N", out Guid sourceId) || sourceId == Guid.Empty)
                 throw new IOException("Private payload input is not a file owned by its prepared GUID workspace.");
@@ -89,8 +92,10 @@ public sealed partial class MmcOwnedImportReservation {
             for (int index = 0; index < manifest.Files.Length; index++) {
                 cancellationToken.ThrowIfCancellationRequested();
                 var file = manifest.Files[index]; var mutation = mutations[file.TargetRelativePath];
-                string input = paths.ResolveRelative(MmcPathRole.Instance, mutation.NewSourceRelativePath!);
-                string target = paths.ResolveRelative(MmcPathRole.Instance, file.TargetRelativePath);
+                // Pure path computation must not repeat the ancestor walks at the actual I/O
+                // boundaries below. Neither result authorizes a read, directory creation or move.
+                string input = paths.ResolvePrivatePayloadPath(mutation.NewSourceRelativePath!);
+                string target = paths.ResolvePrivatePayloadPath(file.TargetRelativePath);
                 checkpoint?.Invoke(MmcInitialPayloadCheckpoint.BeforeMove, index);
                 cancellationToken.ThrowIfCancellationRequested();
                 VerifyPayloadFile(input, file, cancellationToken, buffer);
