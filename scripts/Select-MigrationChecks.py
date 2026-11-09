@@ -314,7 +314,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mmc-archive",), (), build=False)
             elif stem in {"MmcDefinition", "MmcLaunchAuthority", "MmcProjection"}:
                 include(("mmc-definition",), (), build=False)
-            elif stem == "MmcInstanceBackend":
+            elif stem in {"MmcInstanceBackend", "MmcPrivatePayloadPath"}:
                 include(("mmc-backend", "mmc-variants", "mmc-import-publication"), (), build=False)
             elif stem == "MmcInstanceClone":
                 include(("mmc-clone",), (), build=False)

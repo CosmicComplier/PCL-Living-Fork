@@ -17,6 +17,7 @@ internal static class Program {
         if (MmcConfigurationTests.TryRunChild(args, out int mmcConfigurationExitCode)) return mmcConfigurationExitCode;
         if (MmcInstanceLifecycleTests.TryRunChild(args, out int mmcLifecycleExitCode)) return mmcLifecycleExitCode;
         if (MmcInstancePurgeTests.TryRunChild(args, out int mmcPurgeExitCode)) return mmcPurgeExitCode;
+        if (MmcInstanceBackendTests.TryRunPrivatePayloadImportProbe(args, out int payloadProbeExitCode)) return payloadProbeExitCode;
         // Factories keep unselected groups from constructing or enumerating cases.
         // Canonical order matches the original all-tests runner; aliases only
         // select groups, so overlapping/repeated selectors cannot duplicate cases.

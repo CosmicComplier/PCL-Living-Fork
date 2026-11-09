@@ -2,6 +2,19 @@ using PCLCS;
 using PCLLF.MMCC.Core;
 
 internal static partial class MmcInstanceBackendTests {
+    internal static bool TryRunPrivatePayloadImportProbe(string[] args, out int exitCode) {
+        exitCode = 0;
+        if (args.Length != 1 || args[0] != "--private-payload-import-probe") return false;
+        try {
+            BulkPayloadImport();
+            Console.WriteLine("PASS explicit private payload import probe (one original 2003-file import case).");
+        } catch (Exception error) {
+            Console.Error.WriteLine("FAIL explicit private payload import probe: " + error);
+            exitCode = 1;
+        }
+        return true;
+    }
+
     private static IEnumerable<(string Name, Action Run)> PrivatePayloadPathCases() {
         foreach (string mode in new[] { "source-link", "source-parent-link", "target-parent-link", "target-claimed", "source-changed", "existing-source-link" }) {
             string attack = mode;
