@@ -166,13 +166,19 @@ internal static partial class MmcImportRecoveryUiChecks {
         }
         internal void RetryCancellationCard() {
             EnsureParked(); var (left, right) = TaskPages(); using ManualResetEventSlim entered = new(), release = new();
-            registered = task => left.TaskRefresh(task);
+            var repetitions = new ConcurrentQueue<StageView[]>();
+            registered = task => {
+                left.TaskRefresh(task);
+                task.Loaders.Single().ProgressChanged += (_, _) => repetitions.Enqueue(Stages(task));
+            };
             transaction = phase => { if (phase == MmcTransactionCheckpoint.Prepared) { entered.Set(); if (!release.Wait(10000)) throw new TimeoutException("Retry cancellation barrier not released."); } };
             StartRetry(parked!, archive, "progress-retry-cancel");
             try {
                 Until(() => entered.IsSet, "Real retry did not reach its Prepared transaction.");
                 Native.Check(Stages(current!).Take(6).All(value => value.State == "Finished") && Stage(current!, "PublishInstance").State == "Running",
                     "Real retry's repeated source/metadata phases rewound completed work or prematurely finished publication.");
+                Native.Check(repetitions.Any(snapshot => snapshot.Single(value => value.Stage == "ReadArchive") is { State: "Running", Progress: null, CompletedBytes: 0 } &&
+                    snapshot.Single(value => value.Stage == "SelectJava").State == "Finished"), "Actual retry's second original-package check left Java busy or reused the first archive pass's percentage.");
                 CancelFromCard(left, right, release, current!);
             }
             finally { release.Set(); }

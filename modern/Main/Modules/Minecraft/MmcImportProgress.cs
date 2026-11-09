@@ -35,8 +35,9 @@ internal sealed class MmcImportProgress {
     private readonly Stage[] stages = [new("读取并核对整合包", .12), new("解析整合包组件", .05), new("选择整合包 Java", .03),
         new("解压整合包文件", .35), new("准备游戏运行环境", .20), new("安装整合包文件", .10), new("保存 MMC 实例环境", .15)];
     private int current = -1, downloadBatch;
+    private int? revisiting;
     private long packageBytes;
-    private bool cancellationRequested, decisionStarted;
+    private bool cancellationRequested, decisionStarted, retryValidation;
     private Action<double, string> updateWorker;
 
     internal bool CancellationRequested { get { lock (gate) return cancellationRequested; } }
@@ -57,6 +58,7 @@ internal sealed class MmcImportProgress {
         // boundaries must neither restart completed rows nor complete later work.
         if (index < current) return false;
         if (index > current) {
+            FinishRevisitUnderGate();
             if (current >= 0) { stages[current].State = MmcImportStageState.Finished; stages[current].Fraction = 1; }
             for (int skipped = current + 1; skipped < index; skipped++) {
                 stages[skipped].State = MmcImportStageState.Skipped;
@@ -84,13 +86,37 @@ internal sealed class MmcImportProgress {
         var metadata = source.Metadata.Select(value => source.Package.RelativeRoot + value.RelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         lock (gate) packageBytes = source.ArchiveEntries.Where(value => !value.IsDirectory && !metadata.Contains(value.Path)).Sum(value => value.SizeBytes);
     }
+    internal void RecheckSource() {
+        lock (gate) {
+            // RetryInitialImportAsync revalidates its durable preview and opens /
+            // hashes the original again. Show that genuine second pass explicitly;
+            // its API has no byte events, so do not keep the finished Java row busy
+            // or reuse the previous archive pass's 100% measurement.
+            if (current >= 0) { stages[current].State = MmcImportStageState.Finished; stages[current].Fraction = 1; }
+            retryValidation = true;
+            RevisitUnderGate(MmcImportStage.ReadArchive, "重新核对原包与导入记录");
+            PublishUnderGate();
+        }
+    }
+    private void RevisitUnderGate(MmcImportStage stage, string detail) {
+        FinishRevisitUnderGate(); revisiting = (int)stage;
+        var value = stages[revisiting.Value]; value.State = MmcImportStageState.Running; value.Detail = detail;
+        value.Measured = null; value.Completed = value.Total = 0;
+    }
+    private void FinishRevisitUnderGate() {
+        if (revisiting is not { } index) return;
+        stages[index].State = MmcImportStageState.Finished; stages[index].Fraction = 1; revisiting = null;
+    }
 
     internal void Backend(MmcInstanceBackendProgress value) {
         lock (gate) {
             switch (value.Phase) {
                 case "package-hash": case "metadata":
                     Archive(new(value.Phase, value.CompletedBytes, value.TotalBytes)); return;
-                case "metadata-resolution": BeginUnderGate(MmcImportStage.ResolveComponents); break;
+                case "metadata-resolution":
+                    if (retryValidation) { retryValidation = false; RevisitUnderGate(MmcImportStage.ResolveComponents, "核对原包组件与运行环境"); }
+                    else BeginUnderGate(MmcImportStage.ResolveComponents);
+                    break;
                 case "package-staging": BeginUnderGate(MmcImportStage.ExtractPackage, "解压并校验原包文件"); break;
                 case "package-extract":
                     if (BeginUnderGate(MmcImportStage.ExtractPackage, "解压并校验原包文件")) BytesUnderGate(value.CompletedBytes, packageBytes);
@@ -133,7 +159,7 @@ internal sealed class MmcImportProgress {
         if (stage.Measured is { } value) stage.Fraction = Math.Max(stage.Fraction, Math.Min(.99, value * weight));
     }
     private static double? Ratio(long completed, long total) => total > 0 ? Math.Clamp((double)completed / total, 0, 1) : null;
-    private void PublishUnderGate() { if (current >= 0) updateWorker?.Invoke(FractionUnderGate(), stages[current].Name); }
+    private void PublishUnderGate() { if (current >= 0) updateWorker?.Invoke(FractionUnderGate(), stages[revisiting ?? current].Name); }
 
     internal async Task DownloadAsync(ImmutableArray<ModNet.NetFile> files, CancellationToken token, Action<ModNet.LoaderDownload> created) {
         if (files.IsEmpty) { token.ThrowIfCancellationRequested(); return; }
@@ -165,11 +191,12 @@ internal sealed class MmcImportProgress {
         lock (gate) return stages.Select((stage, index) => {
             var state = stage.State;
             string detail = stage.Detail;
-            if (rootState == ModBase.LoadState.Finished && index == current) state = MmcImportStageState.Finished;
+            int active = revisiting ?? current;
+            if (rootState == ModBase.LoadState.Finished && index == active) state = MmcImportStageState.Finished;
             else if (rootState == ModBase.LoadState.Finished && state == MmcImportStageState.Waiting) {
                 state = MmcImportStageState.Skipped; detail = "本次操作未单独执行此步骤";
             }
-            else if (index == current) {
+            else if (index == active) {
                 if (rootState == ModBase.LoadState.Failed) state = MmcImportStageState.Failed;
                 else if (rootState == ModBase.LoadState.Canceled) state = MmcImportStageState.Canceled;
                 else if (cancellationRequested) { state = MmcImportStageState.Cancelling; detail = "正在取消，等待文件操作结束"; }

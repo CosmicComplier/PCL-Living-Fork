@@ -116,6 +116,7 @@ internal static class MmcImportRecoveryUi {
             var environment = MmcInstances.SelectJavaAsync(source.Package, resolved.Resolution.Profile, token).GetAwaiter().GetResult();
             var backend = new MmcInstanceBackend<ModNet.NetFile>(services.Metadata, services.CacheRoots, MmcDownloads.BuildFile,
                 (files, cancellation) => progress.DownloadAsync(files, cancellation, services.DownloadCreated));
+            progress.RecheckSource();
             // Pass the selected backend entry unchanged. The backend rechecks the preview,
             // original package SHA and different destination before doing a fresh import.
             var result = backend.RetryInitialImportAsync(entry, new(archive, Path.Combine(entry.MinecraftRoot, "versions", name), name, environment) {
