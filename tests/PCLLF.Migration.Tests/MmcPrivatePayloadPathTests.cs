@@ -123,15 +123,13 @@ internal static partial class MmcInstanceBackendTests {
             else if (mode == "source-changed") Equal("Private payload bytes changed after their initial CRC/hash observation.", rejected.Message);
             else Equal("Private payload target was claimed; existing bytes were preserved.", rejected.Message);
 
-            // An already-linked source may be rejected during old eager preflight or at the later
-            // read boundary. Once a manifest exists, failed placement must retain its exact facts.
-            if (mode != "existing-source-link" || beforeMove) {
-                Equal(true, beforeMove); Equal(true, File.Exists(manifest));
-                byte[] manifestBytes = File.ReadAllBytes(manifest);
-                prepared.Dispose();
-                Equal(true, File.Exists(owner)); Equal(true, ownerBytes.SequenceEqual(File.ReadAllBytes(owner)));
-                Equal(true, manifestBytes.SequenceEqual(File.ReadAllBytes(manifest)));
-            }
+            // Even a source linked before adoption reaches the actual read boundary now. Its
+            // rejection must retain the already-persisted inventory and every staged owner fact.
+            Equal(true, beforeMove); Equal(true, File.Exists(manifest));
+            byte[] manifestBytes = File.ReadAllBytes(manifest);
+            prepared.Dispose();
+            Equal(true, File.Exists(owner)); Equal(true, ownerBytes.SequenceEqual(File.ReadAllBytes(owner)));
+            Equal(true, manifestBytes.SequenceEqual(File.ReadAllBytes(manifest)));
             if (mode == "target-claimed") Equal("claimed destination bytes", File.ReadAllText(target));
             else Equal(false, File.Exists(target));
             if (changedInput is not null) Equal(true, changedInput.SequenceEqual(File.ReadAllBytes(input)));
@@ -149,7 +147,7 @@ internal static partial class MmcInstanceBackendTests {
             Equal("unknown bytes to preserve", File.ReadAllText(unknown));
             Equal(outsideBefore, OutsideSnapshot());
             Equal(true, File.Exists(owner));
-            if (beforeMove) Equal(true, File.Exists(manifest));
+            Equal(true, manifestBytes.SequenceEqual(File.ReadAllBytes(manifest)));
             if (mode == "target-claimed") Equal("claimed destination bytes", File.ReadAllText(target));
             if (changedInput is not null) Equal(true, changedInput.SequenceEqual(File.ReadAllBytes(input)));
         } finally {
