@@ -98,7 +98,12 @@ internal static class MmcPurgeTxFPrimitiveTests {
             if (args[3] == "staged-closed") Hold();
             transaction.Commit(); if (args[3] == "committed") Hold();
             code = 97;
-            void Hold() { System.IO.File.WriteAllText(args[4], Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)); using ManualResetEventSlim hold = new(); hold.Wait(); }
+            void Hold() {
+                string pending = args[4] + "." + args[2] + ".tmp";
+                System.IO.File.WriteAllText(pending, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                System.IO.File.Move(pending, args[4]);
+                using ManualResetEventSlim hold = new(); hold.Wait();
+            }
         } catch (Exception error) { Console.Error.WriteLine(error); code = 98; }
         return true;
     }
@@ -131,6 +136,7 @@ internal static class MmcPurgeTxFPrimitiveTests {
     private static void Blocked(Fixture fixture, string path, string stream) {
         using var handle = fixture.OpenAdsWriter(path, stream, out int error);
         if (!handle.IsInvalid || error is not (32 or 6800)) throw new Exception($"Native FILE_SHARE_READ|WRITE|DELETE ADS write was not transactionally excluded: {stream}, error={error}.");
+        Console.WriteLine($"TXF_ADS_BLOCKED stream={stream} win32={error} share=Read|Write|Delete");
     }
     private static void Denied(Action action) { try { action(); } catch (IOException) { return; } throw new Exception("Unknown NTFS stream was accepted by a default-only preview."); }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}."); }

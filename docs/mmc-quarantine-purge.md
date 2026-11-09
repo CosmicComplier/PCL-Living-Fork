@@ -12,4 +12,6 @@
 
 微软[说明 TxF 的数据流采用文件级锁，并让绑定事务的 disposition 参与事务](https://learn.microsoft.com/en-us/windows/win32/fileio/programming-considerations-for-transacted-fileio-)；[最后一个事务句柄在提交前关闭会回滚](https://learn.microsoft.com/en-us/windows/win32/api/ktmw32/nf-ktmw32-createtransaction)。微软也[不推荐新项目依赖 TxF，并提示未来 Windows 可能移除此 API](https://learn.microsoft.com/en-us/windows/win32/fileio/deprecation-of-txf)。因此运行时能力不足时只能明确拒绝永久清理，保留普通隔离/还原路径。
 
-静态阶段只验证源码和差异格式；尚无编译、ADS 排他或真实终止测试通过结论。后续先由 Root 串行运行 `MmcPurgeTxFPrimitiveTests.SmokeCases()`，再决定是否扩展目录/根目录/终止场景和接入清理循环。
+2026-11-09 首轮只编译 Migration 项目并运行 `MmcPurgeTxFPrimitiveTests.SmokeCases()` 的一个文件原语用例：固定 SDK 10/c774，编译 0 警告/0 错误；已有 ADS 修改和新建请求在 writer 存活时以错误 32 被拒，关闭条目句柄、事务仍活动时的新 ADS 请求以 6800 被拒，随后提交删除已验证文件。此结果尚不覆盖目录、根目录、终止恢复或完整实例清理。原始日志位于工作树已忽略目录 `artifacts/mmc-purge-txf-proof/20261109-035916-e3a5b423f5cd47f095c61f60cc602b79/`。
+
+随后单节点二编同样为 0 警告/0 错误，4 个 `BoundaryCases()` 分进程通过：文件/目录/根目录已有 ADS 被拒且原字节保留；目录/根目录的 stage 后关闭句柄间隙仍以 6800 拒绝 ADS，外部新子目录不能加入；已有 share-delete ADS writer 阻止事务 writer；3 个 parent 创建并核对 GUID/nonce/ready PID 的子进程分别在 writer、stage 后/commit 前、commit 后被终止，前两者回滚并保留主体和未批准流，后者只删除已验证主体。原始日志位于 `artifacts/mmc-purge-txf-proof/20261109-040105-boundaries-b56ff3d5f5df4644bc3440d2aa675619/`。这些是原语证据，尚不是完整实例永久清理验收。
