@@ -16,6 +16,7 @@ internal static class Program {
         if (MmcSessionTests.TryRunChild(args, out int mmcSessionExitCode)) return mmcSessionExitCode;
         if (MmcConfigurationTests.TryRunChild(args, out int mmcConfigurationExitCode)) return mmcConfigurationExitCode;
         if (MmcInstanceLifecycleTests.TryRunChild(args, out int mmcLifecycleExitCode)) return mmcLifecycleExitCode;
+        if (MmcInstancePurgeTests.TryRunChild(args, out int mmcPurgeExitCode)) return mmcPurgeExitCode;
         // Factories keep unselected groups from constructing or enumerating cases.
         // Canonical order matches the original all-tests runner; aliases only
         // select groups, so overlapping/repeated selectors cannot duplicate cases.
@@ -63,6 +64,7 @@ internal static class Program {
             ("mmc-variants", MmcInstanceBackendTests.VariantCases),
             ("mmc-clone", MmcInstanceCloneTests.Cases),
             ("mmc-lifecycle", MmcInstanceLifecycleTests.Cases),
+            ("mmc-purge", MmcInstancePurgeTests.PlatformCases),
             ("mmc-history", MmcInstanceHistoryTests.Cases),
             ("mmc-definition-change", MmcInstanceDefinitionChangeTests.Cases),
             ("mmc-platform-origin", MmcPlatformOriginTests.Cases),

@@ -81,6 +81,9 @@ internal static class Program
         ["mmc-component-editor-download"] = MmcComponentEditorDownloadChecks.Run,
         ["mmc-platform-origin-views"] = MmcPlatformOriginUiChecks.RunViews,
         ["mmc-platform-origin-cancel-unstarted"] = MmcPlatformOriginUiChecks.RunCancellationUnstarted,
+        ["mmc-platform-attach"] = MmcPlatformOriginUiTaskChecks.RunAttach,
+        ["mmc-platform-attach-preview-cancel"] = MmcPlatformOriginUiTaskChecks.RunAttachPreviewCancel,
+        ["mmc-platform-attach-metadata-change"] = MmcPlatformOriginUiTaskChecks.RunAttachMetadataChange,
         ["mmc-legacy-adoption-ui"] = MmcLegacyAdoptionUiChecks.Run,
         ["mmc-import-recovery-ui"] = MmcImportRecoveryUiChecks.RunRecovery,
         ["mmc-import-retry-ui"] = MmcImportRecoveryUiChecks.RunRetry,
@@ -93,6 +96,10 @@ internal static class Program
     };
     // Requires explicit locally installed JDKs; keep these out of the normal CI/default registry.
     private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
+        ["mmc-platform-online-success"] = MmcPlatformOriginUiTaskChecks.RunOnline,
+        ["mmc-platform-online-preview-cancel"] = MmcPlatformOriginUiTaskChecks.RunOnlinePreviewCancel,
+        ["mmc-platform-online-metadata-change"] = MmcPlatformOriginUiTaskChecks.RunOnlineMetadataChange,
+        ["mmc-platform-online-download-cancel"] = MmcPlatformOriginUiTaskChecks.RunOnlineDownloadCancel,
         ["mmc-component-java"] = MmcComponentEditorUiChecks.RunJava,
         ["mmc-package-update-ui"] = MmcPackageUpdateUiChecks.Run,
         ["mmc-package-update-cancel-unstarted"] = MmcPackageUpdateUiChecks.RunCancellationUnstarted,

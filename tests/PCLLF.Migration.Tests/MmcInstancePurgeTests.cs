@@ -9,6 +9,14 @@ using PCLLF.MMCC.Core;
 
 // Original LF host regressions. Every writable path belongs to this process's GUID tiny fixture.
 internal static class MmcInstancePurgeTests {
+    internal static IEnumerable<(string Name, Action Run)> PlatformCases() {
+        foreach (var test in MmcInstancePurgeRevisionTests.Cases()) yield return test;
+        if (!OperatingSystem.IsWindows()) {
+            Console.WriteLine("SKIP MMC native purge and long-path cases: this optional feature requires Windows and local transactional NTFS.");
+            yield break;
+        }
+        foreach (var test in Cases().Concat(MmcPurgeTxFPrimitiveTests.LongPathCases())) yield return test;
+    }
     internal static IEnumerable<(string Name, Action Run)> Cases() {
         yield return ("MMC explicit purge removes one completed private quarantine and preserves shared/source/Java bytes", Complete);
         yield return ("MMC purge refuses wrong owner, stale generation, primary, confirmation and ordinary-delete intent", IdentityAndIntent);
