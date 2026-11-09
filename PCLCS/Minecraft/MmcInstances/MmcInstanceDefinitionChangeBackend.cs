@@ -12,9 +12,11 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
     private readonly MmcMetadataStore metadata;
     private readonly MmcArtifactMaterializer materializer;
     private readonly MmcArtifactPrefetchAdapter<TNetFile> prefetch;
+    private readonly Func<string, CancellationToken, IReadOnlyList<string>>? backupWorlds;
     public MmcInstanceDefinitionChangeBackend(MmcMetadataStore metadata, MmcArtifactCacheRoots roots,
-        Func<MmcArtifactDownloadSpec, TNetFile> build, Func<ImmutableArray<TNetFile>, CancellationToken, Task> runBatch, MmcArtifactLimits? limits = null) {
-        this.metadata = metadata; materializer = new(limits); prefetch = new(roots, build, runBatch, limits);
+        Func<MmcArtifactDownloadSpec, TNetFile> build, Func<ImmutableArray<TNetFile>, CancellationToken, Task> runBatch, MmcArtifactLimits? limits = null,
+        Func<string, CancellationToken, IReadOnlyList<string>>? backupWorlds = null) {
+        this.metadata = metadata; this.backupWorlds = backupWorlds; materializer = new(limits); prefetch = new(roots, build, runBatch, limits);
     }
     public Task<MmcInstanceDefinitionChangePreviewResult> PreviewAsync(MmcInstanceDefinitionChangeRequest request, CancellationToken token = default) =>
         Task.Run(() => Preview(request, token), CancellationToken.None);
@@ -89,7 +91,7 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
     }
 
     private MmcInstanceDefinitionChangeResult Commit(MmcInstanceDefinitionChangeCommitRequest request, CancellationToken token) {
-        MmcInstanceHistoryPoint? undo = null; bool decided = false;
+        MmcInstanceHistoryPoint? undo = null; ImmutableArray<string> backups = []; bool decided = false;
         try {
             ArgumentNullException.ThrowIfNull(request); var candidate = request.Preview ?? throw new ArgumentNullException(nameof(request.Preview));
             var selection = candidate.Selection; token.ThrowIfCancellationRequested();
@@ -105,6 +107,7 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
             // Re-resolve/recompile the captured source inputs, never trust a self-reported preview plan.
             var resolution = MmcComponentResolver.Resolve(saved.Package, candidate.Snapshots, candidate.Overrides);
             var compiled = Compile(resolution, selection.Environment);
+            var previous = MmcInstanceCloneBackend.CompileEnvironment(saved.Resolved.Resolution, current, []);
             if (compiled.SourceFingerprint != candidate.Source.SourceBundle.ResolutionFingerprint) throw new IOException("Captured candidate sources no longer compile to their fixed fingerprint.");
             VerifyLocalFacts(candidate.LocalFacts, token);
             var artifacts = ArtifactRequest(paths, compiled, current, saved.Baseline, token);
@@ -116,6 +119,10 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
             var desired = candidate.LocalFacts.ToDictionary(value => "libraries/" + value.FileName, value => value.Sha256, StringComparer.OrdinalIgnoreCase);
             AssertPrivateTargets(paths, current, desired); VerifyLocalFacts(candidate.LocalFacts, token);
             AssertMappedResourceTargets(paths, current, mappedResources);
+            // The admission lease prevents a managed game from starting between the
+            // final no-session check, the real host backup and the commit decision.
+            using var worlds = previous.MinecraftVersion != compiled.MinecraftVersion ? new MmcDefinitionChangeWorldGuard(paths, token) : null;
+            if (worlds is not null) backups = worlds.Backup(backupWorlds, token);
             undo = MmcInstanceHistoryStore.Capture(lease, primary, saved, "修改游戏组件前", token, null);
             var local = candidate.LocalFacts.ToDictionary(value => value.FileName, StringComparer.OrdinalIgnoreCase);
             using var prepared = materializer.PrepareAsync(artifacts, fetched.CreateAccess((artifact, ct) => {
@@ -147,12 +154,13 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
                 .Append(new("PCL/InstanceDefinition.json", primary.Sha256, definition, MmcDurableFiles.Hash(definition))).ToList();
             byte[] receipt = JsonSerializer.SerializeToUtf8Bytes(new { Protocol = "PCLLF.MmcDefinitionRevision/v1", InstanceId = current.InstanceId,
                 PreviousGeneration = current.Generation, NewGeneration = next, PreviousPrimarySha256 = primary.Sha256, NewPrimarySha256 = MmcDurableFiles.Hash(definition),
-                CandidateSha256 = candidate.CandidateSha256, UndoPointId = undo.PointId, UndoManifestSha256 = undo.ManifestSha256 });
+                CandidateSha256 = candidate.CandidateSha256, UndoPointId = undo.PointId, UndoManifestSha256 = undo.ManifestSha256, WorldBackupIds = backups });
             mutations.Add(new("PCL/MmcDefinitionChanges/" + Guid.NewGuid().ToString("N") + ".json", null, receipt, MmcDurableFiles.Hash(receipt)));
             request.BeforeTransaction?.Invoke();
             MmcInstanceHistoryStore.AssertCurrent(lease, current.InstanceId, current.Generation, primary.Sha256);
             AssertPrivateTargets(paths, current, desired); VerifyLocalFacts(candidate.LocalFacts, token);
             AssertMappedResourceTargets(paths, current, mappedResources);
+            worlds?.AssertUnchanged(token);
             _ = MmcInstanceHistoryStore.Read(paths, undo.PointId, undo.ManifestSha256, token);
             using var scope = quiet.OpenStructuralWrite(lease, current.Generation);
             SetManifest(scope, resolution.Profile!, compiled, current.InstanceId, next);
@@ -160,6 +168,7 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
                 if (phase == MmcTransactionCheckpoint.CommitDecided) decided = true;
                 request.TransactionCheckpoint?.Invoke(phase, index);
                 if (phase == MmcTransactionCheckpoint.BeforeDecision) {
+                    worlds?.AssertUnchanged(token);
                     foreach (var fact in candidate.LocalFacts) if (MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.LocalLibraries, fact.FileName)) != fact.Sha256)
                         throw new IOException("A revised private target changed before the commit decision.");
                     foreach (var value in candidate.SourceObjects) if (MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, value.Key)) != MmcDurableFiles.Hash(value.Value.ToArray()))
@@ -171,10 +180,10 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
                         .GroupBy(value => value.RelativePath, StringComparer.OrdinalIgnoreCase).Select(group => group.First()), token);
                 }
             });
-            return result.Outcome == MmcTransactionOutcome.Committed ? new(MmcInstanceBackendStatus.Succeeded, bound.Definition, bound.Plan, undo) :
-                new(token.IsCancellationRequested && result.Outcome == MmcTransactionOutcome.Aborted ? MmcInstanceBackendStatus.Cancelled : MmcInstanceBackendStatus.NeedsRecovery, UndoPoint: undo, Failure: result.Diagnostic);
-        } catch (OperationCanceledException error) { return new(decided ? MmcInstanceBackendStatus.NeedsRecovery : MmcInstanceBackendStatus.Cancelled, UndoPoint: undo, Failure: error.Message); }
-        catch (Exception error) when (Expected(error)) { return new(MmcInstanceBackendStatus.NeedsRecovery, UndoPoint: undo, Failure: error.Message); }
+            return result.Outcome == MmcTransactionOutcome.Committed ? new(MmcInstanceBackendStatus.Succeeded, bound.Definition, bound.Plan, undo) { WorldBackupIds = backups } :
+                new(token.IsCancellationRequested && result.Outcome == MmcTransactionOutcome.Aborted ? MmcInstanceBackendStatus.Cancelled : MmcInstanceBackendStatus.NeedsRecovery, UndoPoint: undo, Failure: result.Diagnostic) { WorldBackupIds = backups };
+        } catch (OperationCanceledException error) { return new(decided ? MmcInstanceBackendStatus.NeedsRecovery : MmcInstanceBackendStatus.Cancelled, UndoPoint: undo, Failure: error.Message) { WorldBackupIds = backups }; }
+        catch (Exception error) when (Expected(error)) { return new(MmcInstanceBackendStatus.NeedsRecovery, UndoPoint: undo, Failure: error.Message) { WorldBackupIds = backups }; }
     }
     private static MmcCompiledProfile Compile(MmcResolutionResult resolution, MmcRuntimeEnvironment environment) => Compile(resolution, environment, out _);
     private static MmcCompiledProfile Compile(MmcResolutionResult resolution, MmcRuntimeEnvironment environment, out ImmutableArray<MmcDiagnostic> diagnostics) {

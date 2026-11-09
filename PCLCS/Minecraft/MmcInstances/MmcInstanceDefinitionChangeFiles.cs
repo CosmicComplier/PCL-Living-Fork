@@ -182,6 +182,7 @@ public sealed partial class MmcInstanceDefinitionChangeBackend<TNetFile> where T
             Add("component:" + uid, Description(previous.Components.FirstOrDefault(value => value.Uid == uid)), Description(candidate.Components.FirstOrDefault(value => value.Uid == uid)));
         }
         Add("mainClass", before.MainClass, after.MainClass);
+        Add("minecraft", before.MinecraftVersion, after.MinecraftVersion);
         Add("mainJar", before.MainJar.Key, after.MainJar.Key);
         Add("jvmArguments", string.Join("\n", before.JvmArguments.Select(value => value.Value)), string.Join("\n", after.JvmArguments.Select(value => value.Value)));
         Add("gameArguments", string.Join("\n", before.GameArguments.Select(value => value.Value)), string.Join("\n", after.GameArguments.Select(value => value.Value)));

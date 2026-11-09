@@ -46,4 +46,6 @@ public sealed record MmcInstanceDefinitionChangeCommitRequest(MmcInstanceDefinit
     public Action? BeforeTransaction { get; init; }
 }
 public sealed record MmcInstanceDefinitionChangeResult(MmcInstanceBackendStatus Status, MmcInstanceDefinition? Definition = null,
-    MmcBoundLaunchPlan? BoundPlan = null, MmcInstanceHistoryPoint? UndoPoint = null, string? Failure = null);
+    MmcBoundLaunchPlan? BoundPlan = null, MmcInstanceHistoryPoint? UndoPoint = null, string? Failure = null) {
+    public ImmutableArray<string> WorldBackupIds { get; init; } = [];
+}
