@@ -83,7 +83,7 @@ internal static class MmcInstancePathsTests {
         finally { Directory.Delete(link); }
         Equal(true, Directory.Exists(outside));
     }
-    private static void CreateDirectoryLink(string path, string target) {
+    internal static void CreateDirectoryLink(string path, string target) {
         if (!OperatingSystem.IsWindows()) { Directory.CreateSymbolicLink(path, target); return; }
         // Junction fixtures need no symlink privilege. Encoded PowerShell uses quoted data arguments,
         // does not invoke a shell command assembled from unescaped paths, and never touches player data.

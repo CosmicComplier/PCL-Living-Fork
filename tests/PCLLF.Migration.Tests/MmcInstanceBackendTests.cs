@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 using PCLCS;
 using PCLLF.MMCC.Core;
 
-internal static class MmcInstanceBackendTests {
+internal static partial class MmcInstanceBackendTests {
     internal static IEnumerable<(string Name, Action Run)> PublicationCases() {
         yield return ("MMC import publication waits for a transient reader and retains its exact private identity", () => PublicationReader("release"));
         yield return ("MMC import publication retry preserves a newly claimed destination", () => PublicationReader("claimed"));
@@ -59,6 +59,7 @@ internal static class MmcInstanceBackendTests {
         yield return ("MMC initial import publishes thousands of tiny files without journal body copies", BulkPayloadImport);
         yield return ("MMC initial private payload cancellation and post-decision corruption never publish a final root", BulkPayloadFailure);
         yield return ("MMC post-decision payload verification completes publication despite cancellation", BulkPayloadPostDecisionCancel);
+        foreach (var test in PrivatePayloadPathCases()) yield return test;
     }
     private static void SourcePreparation() => SourcePreparationAsync().GetAwaiter().GetResult();
     private static async Task SourcePreparationAsync() {
@@ -123,8 +124,11 @@ internal static class MmcInstanceBackendTests {
         using Fixture fixture = new(tinyFiles);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         int moved = 0, verified = 0; long movedBytes = 0, verifiedBytes = 0;
+        long? payloadStarted = null, payloadFinished = null;
         var result = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)),
             progress: new BackendProgress(value => {
+                if (value.Phase == "installing-package") payloadStarted = elapsed.ElapsedMilliseconds;
+                if (value.Phase == "publishing-instance") payloadFinished = elapsed.ElapsedMilliseconds;
                 if (value.Phase == "private-payload-install") { moved++; movedBytes = value.CompletedBytes; }
                 if (value.Phase == "private-payload-verify") { verified++; verifiedBytes = value.CompletedBytes; }
             }));
@@ -146,7 +150,7 @@ internal static class MmcInstanceBackendTests {
         Equal(false, bodyCopies.Any(file => payloadHashes.Contains(MmcDurableFiles.Observe(file)!)));
         Equal(false, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPending.json")));
         Equal(false, Directory.Exists(Path.Combine(paths.RuntimeRoot, ".staging")));
-        Console.WriteLine($"INFO private import {tinyFiles + 3} payload files/{movedBytes} bytes: {elapsed.ElapsedMilliseconds} ms; journal {journal.Mutations.Length} mutations/{bodyCopies.Length} new objects; zero bulk body copies.");
+        Console.WriteLine($"INFO private import {tinyFiles + 3} payload files/{movedBytes} bytes: {elapsed.ElapsedMilliseconds} ms; private preflight+placement {payloadFinished - payloadStarted} ms; journal {journal.Mutations.Length} mutations/{bodyCopies.Length} new objects; zero bulk body copies.");
     }
     private static void BulkPayloadFailure() => BulkPayloadFailureAsync().GetAwaiter().GetResult();
     private static void BulkPayloadPostDecisionCancel() => BulkPayloadPostDecisionCancelAsync().GetAwaiter().GetResult();
