@@ -38,11 +38,13 @@ public static class MmcInstances {
         var services = ServicesFactory?.Invoke(request) ?? CreateServices(request);
         if (services.Metadata is null || services.CacheRoots is null) throw new InvalidOperationException("MMC 导入缺少下载和元数据服务。");
         var cancellation = new MmcOperationCancellationFence();
+        var progress = new MmcImportProgress();
         ModLoader.LoaderCombo<string> combo = null;
         var worker = new MmcOperationWorker<string, MmcInstanceBackendResult>(cancellation, "读取 MMC 整合包", task => {
-            task.Output = ImportAsync(task, request, services, name => combo.Name = "MMC 整合包安装：" + name, cancellation).GetAwaiter().GetResult();
+            progress.Attach(task); progress.Begin(MmcImportStage.ReadArchive);
+            task.Output = ImportAsync(task, request, services, name => combo.Name = "MMC 整合包安装：" + name, cancellation, progress).GetAwaiter().GetResult();
         }) { InterruptOnCancel = false };
-        combo = new MmcOperationCombo<string>(cancellation, "MMC 整合包安装：" + Path.GetFileNameWithoutExtension(request.ArchivePath), [worker]);
+        combo = new MmcImportOperationCombo<string>(cancellation, progress, "MMC 整合包安装：" + Path.GetFileNameWithoutExtension(request.ArchivePath), [worker]);
         // Deliberately does not attach McInstallState: its legacy one-second failure cleanup does
         // not own MMC import reservations or durable recovery journals.
         try {
@@ -57,14 +59,15 @@ public static class MmcInstances {
     }
 
     private static async Task<MmcInstanceBackendResult> ImportAsync(ModLoader.LoaderTask<string, MmcInstanceBackendResult> task,
-        ModpackMmcInstallRequest request, MmcImportServices services, Action<string> named, MmcOperationCancellationFence cancellation) {
+        ModpackMmcInstallRequest request, MmcImportServices services, Action<string> named, MmcOperationCancellationFence cancellation, MmcImportProgress progress) {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), cancellation.Token);
         CancellationToken token = linked.Token;
         using var source = await MmcArchiveSourceReader.ReadAsync(request.ArchivePath, cancellationToken: token,
             progress: new SyncProgress<MmcArchiveProgress>(value => {
-                if (value.TotalBytes > 0) task.Progress = Math.Min(0.15, 0.15 * value.CompletedBytes / value.TotalBytes);
+                progress.Archive(value);
                 services.ProgressObserved?.Invoke(new(value.Phase, value.CompletedBytes, value.TotalBytes));
             })).ConfigureAwait(false);
+        progress.SourceRead(source);
         token.ThrowIfCancellationRequested();
         string candidate = request.InstanceName ?? source.Package.Configuration.Name;
         string name = services.SelectName is not null ? services.SelectName(candidate) : SelectName(request.MinecraftFolder, candidate);
@@ -72,30 +75,29 @@ public static class MmcInstances {
         var validator = new ValidateFolderName(Path.Combine(request.MinecraftFolder, "versions"));
         string validation = validator.Validate(name);
         if (!string.IsNullOrEmpty(validation)) throw new InvalidDataException("整合包实例名称无效：" + validation);
-        named(name); task.Name = "解析整合包组件";
+        named(name); progress.Begin(MmcImportStage.ResolveComponents);
         var resolved = await MmcMetadataResolution.ResolveAsync(source.Package, services.Metadata, cancellationToken: token).ConfigureAwait(false);
         if (!resolved.Resolution.IsComplete || resolved.Resolution.Profile is null)
             throw new InvalidDataException("无法解析 MMC 组件：" + string.Join("；", resolved.Resolution.Diagnostics.Where(value => value.Severity == MmcDiagnosticSeverity.Error).Select(value => value.Message)));
-        task.Name = "选择整合包 Java";
+        progress.Begin(MmcImportStage.SelectJava);
         var environment = await SelectJavaAsync(source.Package, resolved.Resolution.Profile, token).ConfigureAwait(false);
         string target = Path.Combine(request.MinecraftFolder, "versions", name);
         var backend = new MmcInstanceBackend<ModNet.NetFile>(services.Metadata, services.CacheRoots, MmcDownloads.BuildFile,
-            (files, cancellation) => MmcDownloads.RunBatchAsync(files, cancellation, task.CreateSyncProgressProvider(ToPercentage: 0.85), services.DownloadCreated));
-        task.Name = "安装 MMC 实例环境";
+            (files, cancellation) => progress.DownloadAsync(files, cancellation, services.DownloadCreated));
         var result = await backend.ImportPreparedAsync(source, new(request.ArchivePath, target, name, environment) {
             TransactionCheckpoint = (phase, index) => {
-                if (phase == MmcTransactionCheckpoint.BeforeDecision) cancellation.EnterDecision(token);
+                if (phase == MmcTransactionCheckpoint.BeforeDecision) { cancellation.EnterDecision(token); progress.EnteredDecision(); }
                 services.TransactionObserved?.Invoke(phase, index);
             }
         }, token,
             new SyncProgress<MmcInstanceBackendProgress>(value => {
-                if (value.Phase == "publishing-instance") task.Name = "保存 MMC 实例环境";
+                progress.Backend(value);
                 services.ProgressObserved?.Invoke(value);
             }), resolved).ConfigureAwait(false);
         if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(result.Failure, token);
         if (result.Status != MmcInstanceBackendStatus.Succeeded || result.Definition is null || result.Paths is null)
-            throw new IOException("MMC 整合包未完成安装，现场已保留：" + result.Failure);
-        task.Progress = 1;
+            throw new IOException("MMC 整合包未完成安装：" + result.Failure + (result.WorkingRoot is null ? "" :
+                "\n导入现场：" + result.WorkingRoot + "\n可在版本选择页的“MMC 导入恢复”中查看记录。"));
         ModMinecraft.McInstanceListForceRefresh = true;
         ModMinecraft.McInstanceListLoader.Start(request.MinecraftFolder, IsForceRestart: true);
         if (services.Published is not null) services.Published(result);

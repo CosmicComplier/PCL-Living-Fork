@@ -100,31 +100,37 @@ internal static class MmcImportRecoveryUi {
         RequireAction(entry, recover: false); ValidateRetryName(entry, name);
         if (services.Metadata is null || services.CacheRoots is null) throw new IOException("MMC 重新导入缺少下载和元数据服务。");
         var fence = EnterBusy();
+        var progress = new MmcImportProgress();
         var worker = new MmcOperationWorker<string, MmcInstanceBackendResult>(fence, "读取 MMC 原包", task => {
+            progress.Attach(task); progress.Begin(MmcImportStage.ReadArchive);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
             var token = linked.Token;
-            using var source = MmcArchiveSourceReader.ReadAsync(archive, cancellationToken: token).GetAwaiter().GetResult();
+            using var source = MmcArchiveSourceReader.ReadAsync(archive, cancellationToken: token,
+                progress: new RetryArchiveProgress(progress, services.ProgressObserved)).GetAwaiter().GetResult();
+            progress.SourceRead(source);
             if (!string.Equals(source.PackageSha256, entry.PackageSha256, StringComparison.Ordinal)) throw new IOException("所选 ZIP 的 SHA256 与原导入记录不同，请选择同一个原包。");
-            task.Name = "解析原包组件与 Java 要求";
+            progress.Begin(MmcImportStage.ResolveComponents);
             var resolved = MmcMetadataResolution.ResolveAsync(source.Package, services.Metadata, cancellationToken: token).GetAwaiter().GetResult();
             if (!resolved.Resolution.IsComplete || resolved.Resolution.Profile is null) throw new IOException("无法完整解析所选 MMC 原包组件。");
+            progress.Begin(MmcImportStage.SelectJava);
             var environment = MmcInstances.SelectJavaAsync(source.Package, resolved.Resolution.Profile, token).GetAwaiter().GetResult();
             var backend = new MmcInstanceBackend<ModNet.NetFile>(services.Metadata, services.CacheRoots, MmcDownloads.BuildFile,
-                (files, cancellation) => MmcDownloads.RunBatchAsync(files, cancellation, task.CreateSyncProgressProvider(), services.DownloadCreated));
+                (files, cancellation) => progress.DownloadAsync(files, cancellation, services.DownloadCreated));
             // Pass the selected backend entry unchanged. The backend rechecks the preview,
             // original package SHA and different destination before doing a fresh import.
             var result = backend.RetryInitialImportAsync(entry, new(archive, Path.Combine(entry.MinecraftRoot, "versions", name), name, environment) {
                 TransactionCheckpoint = (phase, index) => {
-                    if (phase == MmcTransactionCheckpoint.BeforeDecision) fence.EnterDecision(token);
+                    if (phase == MmcTransactionCheckpoint.BeforeDecision) { fence.EnterDecision(token); progress.EnteredDecision(); }
                     services.TransactionObserved?.Invoke(phase, index);
                 }
-            }, token, new RetryProgress(task, services.ProgressObserved)).GetAwaiter().GetResult(); task.Output = result;
+            }, token, new RetryProgress(progress, services.ProgressObserved)).GetAwaiter().GetResult(); task.Output = result;
             if (result.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(result.Failure, token);
-            if (result.Status != MmcInstanceBackendStatus.Succeeded || result.Paths is null) throw new IOException("MMC 重新导入未完成，旧现场保留：" + result.Failure);
+            if (result.Status != MmcInstanceBackendStatus.Succeeded || result.Paths is null) throw new IOException("MMC 重新导入未完成，旧现场保留：" + result.Failure +
+                (result.WorkingRoot is null ? "" : "\n本次导入现场：" + result.WorkingRoot + "\n可在版本选择页的“MMC 导入恢复”中查看记录。"));
             if (services.Retried is not null) services.Retried(result);
             else Publish(entry.MinecraftRoot, "MMC 原包已重新导入，旧导入现场保留。", services);
         }) { InterruptOnCancel = false };
-        return Register(new MmcOperationCombo<string>(fence, "重新导入 MMC 原包：" + name, [worker]), archive, services, fence);
+        return Register(new MmcImportOperationCombo<string>(fence, progress, "重新导入 MMC 原包：" + name, [worker]), archive, services, fence);
     }
 
     private static bool DiagnosticOnly(MmcImportRecoveryEntry entry) => entry.State is MmcImportRecoveryState.ProducerActive or MmcImportRecoveryState.Unknown or MmcImportRecoveryState.Conflict or MmcImportRecoveryState.CloneOnly or MmcImportRecoveryState.Completed;
@@ -172,11 +178,14 @@ internal static class MmcImportRecoveryUi {
         return new() { Metadata = MmcDownloads.CreateMetadataStore(Path.Combine(cache, "metadata")),
             CacheRoots = new(Path.Combine(root, "libraries"), Path.Combine(root, "assets"), Path.Combine(cache, "sources"), Path.Combine(root, "versions")) };
     }
-    private sealed class RetryProgress(ModLoader.LoaderTask<string, MmcInstanceBackendResult> task, Action<MmcInstanceBackendProgress> observed) : IProgress<MmcInstanceBackendProgress> {
+    private sealed class RetryArchiveProgress(MmcImportProgress progress, Action<MmcInstanceBackendProgress> observed) : IProgress<MmcArchiveProgress> {
+        public void Report(MmcArchiveProgress value) {
+            progress.Archive(value); observed?.Invoke(new(value.Phase, value.CompletedBytes, value.TotalBytes));
+        }
+    }
+    private sealed class RetryProgress(MmcImportProgress progress, Action<MmcInstanceBackendProgress> observed) : IProgress<MmcInstanceBackendProgress> {
         public void Report(MmcInstanceBackendProgress value) {
-            task.Name = value.Phase switch { "prefetching-artifacts" => "下载 MMC 运行文件", "committing-instance" => "提交新 MMC 导入", _ => "校验 MMC 原包与新导入" };
-            if (value.TotalBytes > 0) task.Progress = Math.Min(0.99, (double)value.CompletedBytes / value.TotalBytes);
-            observed?.Invoke(value);
+            progress.Backend(value); observed?.Invoke(value);
         }
     }
 }
