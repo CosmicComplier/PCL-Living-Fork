@@ -127,6 +127,7 @@ internal sealed class MmcArtifactIo {
         byte[] buffer = new byte[131072]; long size = 0;
         int read;
         while ((read = await input.ReadAsync(buffer, token).ConfigureAwait(false)) != 0) {
+            FileTaskProgress.RecordRead(read);
             size = checked(size + read);
             if (size > maximum) throw new IOException("Artifact actual byte budget exceeded.");
             hash.AppendData(buffer, 0, read);
@@ -151,10 +152,12 @@ internal sealed class MmcArtifactIo {
         byte[] buffer = new byte[131072]; long size = 0;
         int read;
         while ((read = await input.ReadAsync(buffer, token).ConfigureAwait(false)) != 0) {
+            FileTaskProgress.RecordRead(read);
             size = checked(size + read); copied = checked(copied + read);
             if (size > maximum || copied > limits.MaxCopiedBytes) throw new IOException("Artifact actual copy budget exceeded: " + key);
             sha256.AppendData(buffer, 0, read); sha1.AppendData(buffer, 0, read);
             await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+            FileTaskProgress.RecordWrite(read);
             progress?.Report(new("copy", key, copied));
         }
         await output.FlushAsync(token).ConfigureAwait(false); output.Flush(true);
@@ -176,12 +179,14 @@ internal sealed class MmcArtifactIo {
         byte[] buffer = new byte[131072]; long size = 0; uint crc = uint.MaxValue;
         int read;
         while ((read = await input.ReadAsync(buffer, token).ConfigureAwait(false)) != 0) {
+            FileTaskProgress.RecordRead(read);
             size = checked(size + read); copied = checked(copied + read);
             if (size > maximum || size > expectedSize || copied > limits.MaxCopiedBytes) throw new IOException("Native actual output budget or declared size exceeded.");
             hash.AppendData(buffer, 0, read);
             sha1.AppendData(buffer, 0, read);
             for (int index = 0; index < read; index++) crc = CrcTable[(crc ^ buffer[index]) & 255] ^ (crc >> 8);
             await output.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+            FileTaskProgress.RecordWrite(read);
             progress?.Report(new(phase, key, copied));
         }
         if (size != expectedSize || ~crc != expectedCrc32) throw new IOException("Native actual output differs from its declared size or CRC32.");

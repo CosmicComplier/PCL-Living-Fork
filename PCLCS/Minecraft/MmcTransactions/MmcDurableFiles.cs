@@ -27,6 +27,7 @@ internal static class MmcDurableFiles {
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         byte[] bytes = new byte[81920]; long total = 0; int count;
         while ((count = stream.Read(bytes, 0, bytes.Length)) != 0) {
+            FileTaskProgress.RecordRead(count);
             total += count; if (total > MaximumFileBytes) throw new IOException("事务文件读取期间超过预算。");
             hash.AppendData(bytes, 0, count);
         }
@@ -35,7 +36,7 @@ internal static class MmcDurableFiles {
     internal static void WriteNew(string path, ReadOnlySpan<byte> content) {
         MmcInstancePaths.EnsureNoLinks(path);
         using FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 8192, FileOptions.WriteThrough);
-        stream.Write(content); stream.Flush(true);
+        stream.Write(content); FileTaskProgress.RecordWrite(content.Length); stream.Flush(true);
     }
     internal static long CopyNew(string source, string target, string expectedSha256, CancellationToken token = default) {
         MmcInstancePaths.EnsureNoLinks(source); MmcInstancePaths.EnsureNoLinks(target);
@@ -45,9 +46,11 @@ internal static class MmcDurableFiles {
             if (input.Length > MaximumFileBytes) throw new IOException("事务文件超过预算。");
             byte[] buffer = new byte[81920]; int count;
             while ((count = input.Read(buffer, 0, buffer.Length)) != 0) {
+                FileTaskProgress.RecordRead(count);
                 token.ThrowIfCancellationRequested(); total += count;
                 if (total > MaximumFileBytes) throw new IOException("事务复制期间超过预算。");
                 output.Write(buffer, 0, count);
+                FileTaskProgress.RecordWrite(count);
             }
             output.Flush(true);
         }

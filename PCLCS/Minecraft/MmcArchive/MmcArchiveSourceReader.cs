@@ -216,6 +216,7 @@ public static class MmcArchiveSourceReader {
         long completed = 0, reported = 0;
         int read;
         while ((read = await source.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0) {
+            FileTaskProgress.RecordRead(read);
             hash.AppendData(buffer, 0, read); completed += read;
             if (completed - reported >= 1024 * 1024 || completed == source.Length) {
                 progress?.Report(new("package-hash", completed, source.Length)); reported = completed;
