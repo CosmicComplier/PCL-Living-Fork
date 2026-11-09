@@ -35,6 +35,25 @@
 只读 bundle/package 报告中的 `ExecutedProduct=false` 仍只描述那些结构检查自身，
 冷启动证据为独立的用户确认，不改写既有检查记录。
 
+## 2026-11-09 组件与维护入口开发构建
+
+源码 `e059eee4848b9fc1635112a9da13248d3e30b389`，Windows x64 自包含 Snapshot。
+路径：`artifacts/mmc-dev-build/20261109-e059eee4/package/PCL-Living-Fork-dev_edition.exe`。
+本批包含组件／补丁／Java 编辑、可靠平台来源与在线 MMC ZIP 更新、隔离实例永久清理。
+实际 Main 组件编辑十九组、绑定／在线任务七组、清理四组以及旧删除／列表回归分批通过；
+平台后端十项、清理后端十三项与长路径专项通过。新增主体及入口由 GPT-6.1 Sol max 定向复核。
+
+| 文件 | 字节数 | SHA256 |
+| --- | ---: | --- |
+| `PCL-Living-Fork-dev_edition.exe` | 189052100 | `9efd5dd4789468eb16fdfebc013c91bb695e19f1a0cae18f132a2c08cc367a49` |
+| `PCL-Living-Fork-dev_edition-win-x64.zip` | 78329930 | `678cb8a63e9e12907459948d1626382338657d13559d63368ce2e41c24355b68` |
+
+`bundle-verification.json` 对真实发布输出的六个主要模块逐字节核对；`package-verification.json`
+核对 ZIP 的五个条目及所有字节。Core 源码 ZIP 中 37 个文件逐一匹配固定提交的 Git blob，
+保留原 LF 字节并检查 CRC；源码、完整 MPL-2.0 文本及宿主原许可均随包提供。
+这两份结构报告的 `ExecutedProduct=false` 保持原义；新包尚无用户冷启动、外部平台或新游戏结论。
+之前“能进入主界面”的用户确认仅对应 `10543184`，不沿用为本包证明。
+
 ## 真实进程终止后的恢复
 
 只结束测试父进程自己 `Process.Start` 的 child；不枚举或终止用户程序、Java 或开发构建。
