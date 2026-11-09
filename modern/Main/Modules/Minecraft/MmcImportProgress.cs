@@ -128,7 +128,7 @@ internal sealed class MmcImportProgress {
                     break;
                 case "preparing-runtime": RuntimeUnderGate("检查游戏运行文件与缓存"); break;
                 case "materializing-runtime":
-                    if (RuntimeUnderGate("整理游戏运行库")) {
+                    if (RuntimeUnderGate("整理游戏运行文件")) {
                         var stage = stages[current]; stage.Fraction = Math.Max(stage.Fraction, .5); stage.Measured = null; stage.Completed = stage.Total = 0;
                     }
                     break;

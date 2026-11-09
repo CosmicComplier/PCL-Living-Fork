@@ -30,13 +30,19 @@ internal static partial class MmcImportRecoveryUiChecks {
         Console.WriteLine("PASS mmc-import-completion-boundary: real Main tiny import is already published at the actual worker PreviewFinish boundary; late cancellation keeps root Loading and then Finished. A genuine undecided worker at the same boundary also rejects cancellation without a cancelled token. No synthetic completed flag, game launch, desktop interaction or timing delay.");
     }
 
-    private sealed record StageView(string Stage, string State, double? Progress, long CompletedBytes, long TotalBytes);
+    private sealed record StageView(string Stage, string State, double? Progress, long CompletedBytes, long TotalBytes) {
+        public string? Detail { get; init; }
+        public int? CompletedFiles { get; init; }
+        public int? TotalFiles { get; init; }
+    }
     private static StageView[] Stages(ModLoader.LoaderCombo<string> task) {
         object tracker = Native.Property(task.GetType(), "ImportProgress").GetValue(task)!;
         var snapshots = (IEnumerable)Native.Call(tracker.GetType(), "Snapshot", tracker, task.State)!;
         object? Property(object value, string name) => Native.Property(value.GetType(), name).GetValue(value);
         return snapshots.Cast<object>().Select(value => new StageView(Property(value, "Stage")!.ToString()!, Property(value, "State")!.ToString()!,
-            (double?)Property(value, "Progress"), (long)Property(value, "CompletedBytes")!, (long)Property(value, "TotalBytes")!)).ToArray();
+            (double?)Property(value, "Progress"), (long)Property(value, "CompletedBytes")!, (long)Property(value, "TotalBytes")!) {
+                Detail = (string?)Property(value, "Detail"), CompletedFiles = (int?)Property(value, "CompletedFiles"), TotalFiles = (int?)Property(value, "TotalFiles")
+            }).ToArray();
     }
     private static StageView Stage(ModLoader.LoaderCombo<string> task, string name) => Stages(task).Single(value => value.Stage == name);
     private static bool ProducerDone(ModLoader.LoaderCombo<string> task) => (bool)Native.Property(task.GetType(), "ProducerCompleted").GetValue(task)!;
