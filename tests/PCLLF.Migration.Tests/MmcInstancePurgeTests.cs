@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using PCLCS;
 using PCLLF.MMCC.Core;
 
@@ -16,6 +18,7 @@ internal static class MmcInstancePurgeTests {
         yield return ("MMC catalog recovery withdraws a valid undecided purge preparation and reenables quarantine cleanup", CatalogPreparationRecovery);
         yield return ("MMC purge ignores late cancellation and forward-recovers after primary/marker removal", DecidedRecovery);
         yield return ("MMC purge preserves newly added files, empty directories, foreign primaries and links after decision", ForeignContent);
+        yield return ("MMC purge preserves file/directory/root ADS and transactionally excludes late share-delete stream writers", NamedStreams);
         yield return ("MMC purge keeps remaining entries on a real writer/readonly failure and safely resumes", LockedFiles);
         yield return ("MMC purge verifies and deletes the same native handle and never sweeps a new empty directory", SameHandleAndNewDirectory);
         yield return ("MMC purge decisions disable every restore path even when their plan becomes damaged", DamagedDecision);
@@ -166,6 +169,35 @@ internal static class MmcInstancePurgeTests {
             Succeeded(fixture.Backend.RecoverPurgeAsync(deleted.OperationDirectory!).GetAwaiter().GetResult());
         }
     }
+    private static void NamedStreams() {
+        foreach (string role in new[] { "file", "directory", "root" }) foreach (string phase in new[] { "before-preview", "after-preview", "after-decision", "after-hash", "after-stage" }) {
+            using Fixture fixture = new(); var deleted = fixture.Quarantine(); string root = deleted.CurrentRoot!;
+            string relative = role == "file" ? "minecraft/saves/world/level.dat" : role == "directory" ? "minecraft/empty" : "";
+            string target = relative.Length == 0 ? root : Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+            if (phase == "before-preview") {
+                WriteOwnedAds(fixture.Root, target, "foreign", "unapproved ADS bytes"); Denied(() => fixture.Preview(deleted));
+                Equal("unapproved ADS bytes", File.ReadAllText(target + ":foreign")); continue;
+            }
+            var preview = fixture.Preview(deleted); bool blocked = false;
+            if (phase == "after-preview") WriteOwnedAds(fixture.Root, target, "foreign", "unapproved ADS bytes");
+            var result = fixture.Backend.PurgeAsync(Confirm(preview) with { Checkpoint = (current, currentRelative) => {
+                if (phase == "after-decision" && current == MmcInstancePurgeCheckpoint.CommitDecided) WriteOwnedAds(fixture.Root, target, "foreign", "unapproved ADS bytes");
+                if ((phase == "after-hash" && current == MmcInstancePurgeCheckpoint.BeforeEntryDelete || phase == "after-stage" && current == MmcInstancePurgeCheckpoint.EntryStaged) && currentRelative == relative) {
+                    using var stream = OpenOwnedAdsWriter(fixture.Root, target, "late", out int error);
+                    Equal(true, stream.IsInvalid); Equal(true, error is 32 or 6800);
+                    if (phase == "after-stage") Equal(6800, error);
+                    blocked = true;
+                }
+            } }).GetAwaiter().GetResult();
+            if (phase is "after-hash" or "after-stage") { Equal(true, blocked); Succeeded(result); Equal(false, Directory.Exists(root)); }
+            else {
+                Equal(phase == "after-preview" ? MmcInstanceBackendStatus.Rejected : MmcInstanceBackendStatus.NeedsRecovery, result.Status);
+                Equal(phase == "after-decision", result.DecisionRecorded); Equal(false, result.Completed);
+                Equal("unapproved ADS bytes", File.ReadAllText(target + ":foreign")); Equal("world bytes", File.ReadAllText(Path.Combine(root, "minecraft", "saves", "world", "level.dat")));
+            }
+            fixture.Preserved();
+        }
+    }
     private static void SameHandleAndNewDirectory() {
         using Fixture fixture = new(); var deleted = fixture.Quarantine(); var preview = fixture.Preview(deleted); bool denied = false, injected = false;
         string root = deleted.CurrentRoot!, late = Path.Combine(root, "minecraft", "late-empty");
@@ -194,33 +226,44 @@ internal static class MmcInstancePurgeTests {
         if (MmcPurgeTxFPrimitiveTests.TryRunChild(args, out code)) return true;
         code = 0; if (args.Length == 0 || args[0] != "--mmc-purge-child") return false;
         try {
-            if (args.Length != 8) throw new IOException("Bad owned purge child arguments.");
+            if (args.Length != 9) throw new IOException("Bad owned purge child arguments.");
             string root = Path.GetFullPath(args[1]); string leaf = Path.GetFileName(root);
             if (!leaf.StartsWith("pcllf-mmc-purge-", StringComparison.Ordinal) || !Guid.TryParseExact(leaf[16..], "N", out _) ||
-                !Path.GetFullPath(args[2]).StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || Path.GetDirectoryName(args[7]) != root)
+                !Path.GetFullPath(args[2]).StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || Path.GetDirectoryName(args[7]) != root ||
+                File.ReadAllText(Path.Combine(root, "fixture-owner.txt")) != args[8])
                 throw new IOException("Purge child is outside its parent-created GUID fixture.");
             var backend = new MmcInstanceLifecycleBackend(); var preview = backend.PreviewPurgeAsync(new(args[2], Guid.Parse(args[3]), long.Parse(args[4]), args[5])).GetAwaiter().GetResult();
             var result = backend.PurgeAsync(Confirm(preview) with { Checkpoint = (phase, relative) => {
                 if (args[6] == "prepared" && phase == MmcInstancePurgeCheckpoint.PlanPrepared ||
                     args[6] == "decided" && phase == MmcInstancePurgeCheckpoint.CommitDecided ||
+                    args[6] == "entry-staged" && phase == MmcInstancePurgeCheckpoint.EntryStaged && relative == "minecraft/saves/world/level.dat" ||
                     args[6] == "primary-removed" && phase == MmcInstancePurgeCheckpoint.EntryDeleted && relative == "PCL/InstanceDefinition.json") {
-                    File.WriteAllText(args[7], args[2]); using ManualResetEventSlim hold = new(); hold.Wait();
+                    string pending = args[7] + "." + args[8] + ".tmp";
+                    File.WriteAllText(pending, System.Text.Json.JsonSerializer.Serialize(new PurgeChildReady(Environment.ProcessId, args[2], args[8])));
+                    File.Move(pending, args[7]); using ManualResetEventSlim hold = new(); hold.Wait();
                 }
             } }).GetAwaiter().GetResult(); Console.Error.WriteLine(result.Failure); code = 95;
         } catch (Exception error) { Console.Error.WriteLine(error); code = 96; }
         return true;
     }
     private static void KilledProducer() {
-        foreach (string phase in new[] { "prepared", "decided", "primary-removed" }) {
+        foreach (string phase in new[] { "prepared", "decided", "entry-staged", "primary-removed" }) {
             using Fixture fixture = new(); var deleted = fixture.Quarantine(); var preview = fixture.Preview(deleted); string ready = Path.Combine(fixture.Root, "ready.txt"); string before = HashTree(deleted.CurrentRoot!);
             var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            foreach (string value in new[] { "--mmc-purge-child", fixture.Root, deleted.OperationDirectory!, preview.InstanceId.ToString("D"), "1", preview.PrimarySha256, phase, ready }) start.ArgumentList.Add(value);
+            foreach (string value in new[] { "--mmc-purge-child", fixture.Root, deleted.OperationDirectory!, preview.InstanceId.ToString("D"), "1", preview.PrimarySha256, phase, ready, fixture.Nonce }) start.ArgumentList.Add(value);
             using var child = Process.Start(start) ?? throw new IOException("Owned purge child did not start."); var output = child.StandardOutput.ReadToEndAsync(); var errors = child.StandardError.ReadToEndAsync();
             try {
                 var timer = Stopwatch.StartNew();
                 while (!File.Exists(ready)) { if (child.HasExited) throw new IOException("Owned purge child exited: " + errors.GetAwaiter().GetResult()); if (timer.ElapsedMilliseconds > 20000) throw new TimeoutException("Owned purge child did not reach its exact checkpoint."); Thread.Sleep(2); }
+                var receipt = System.Text.Json.JsonSerializer.Deserialize<PurgeChildReady>(File.ReadAllText(ready)) ?? throw new IOException("Owned purge child identity receipt is missing.");
+                Equal(child.Id, receipt.ProcessId); Equal(fixture.Nonce, receipt.Nonce); Equal(deleted.OperationDirectory!, receipt.OperationDirectory);
+                if (phase == "entry-staged") {
+                    using var late = OpenOwnedAdsWriter(fixture.Root, Path.Combine(deleted.CurrentRoot!, "minecraft", "saves", "world", "level.dat"), "late", out int error);
+                    Equal(true, late.IsInvalid); Equal(6800, error);
+                }
                 Equal(MmcInstanceBackendStatus.NeedsRecovery, fixture.Backend.RecoverAsync(deleted.OperationDirectory!).GetAwaiter().GetResult().Status);
-                child.Kill(true); if (!child.WaitForExit(5000)) throw new IOException("Owned purge child did not exit.");
+                child.Kill(); if (!child.WaitForExit(5000)) throw new IOException("Owned purge child did not exit.");
+                if (phase == "entry-staged") Equal("world bytes", File.ReadAllText(Path.Combine(deleted.CurrentRoot!, "minecraft", "saves", "world", "level.dat")));
                 MmcInstanceLifecycleResult recovered;
                 if (phase == "prepared") {
                     var entry = MmcInstanceLifecycleCatalog.Read(fixture.Minecraft).Entries.Single(); Equal(true, entry.CanRecover); Equal(false, entry.CanPurge);
@@ -231,7 +274,7 @@ internal static class MmcInstancePurgeTests {
                 if (phase == "prepared") { Equal(true, recovered.Quarantined); Equal(false, recovered.PurgeDecided); Equal(before, HashTree(deleted.CurrentRoot!)); }
                 else { Equal(true, recovered.Purged); Equal(false, recovered.Quarantined); Equal(false, Directory.Exists(deleted.CurrentRoot!)); }
                 fixture.Preserved();
-            } finally { if (!child.HasExited) { child.Kill(true); child.WaitForExit(5000); } }
+            } finally { if (!child.HasExited) { child.Kill(); child.WaitForExit(5000); } }
         }
     }
     private static void Junction(string link, string target) {
@@ -244,17 +287,33 @@ internal static class MmcInstancePurgeTests {
         Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal).Select(path => Path.GetRelativePath(root, path) + ":" +
         (Directory.Exists(path) ? "directory" : Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))))))));
     private static void Succeeded(MmcInstancePurgeResult result) { if (result.Status != MmcInstanceBackendStatus.Succeeded || !result.Completed) throw new Exception(result.Failure); }
+    private static SafeFileHandle OpenOwnedAdsWriter(string fixtureRoot, string path, string stream, out int error) {
+        string root = Path.GetFullPath(fixtureRoot), full = Path.GetFullPath(path);
+        if (!Path.GetFileName(root).StartsWith("pcllf-mmc-purge-", StringComparison.Ordinal) || !Guid.TryParseExact(Path.GetFileName(root)[16..], "N", out _) ||
+            !full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || stream.Any(character => !char.IsAsciiLetterOrDigit(character)))
+            throw new IOException("Named stream test escaped its parent's GUID fixture.");
+        var handle = CreateFileW(full + ":" + stream, 0x40000000, 7, IntPtr.Zero, 4, 0, IntPtr.Zero); error = handle.IsInvalid ? Marshal.GetLastWin32Error() : 0; return handle;
+    }
+    private static void WriteOwnedAds(string root, string path, string stream, string text) {
+        using var handle = OpenOwnedAdsWriter(root, path, stream, out int error);
+        if (handle.IsInvalid) throw new IOException("Cannot create an owned named-stream test fixture: " + error);
+        RandomAccess.Write(handle, Encoding.UTF8.GetBytes(text), 0);
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafeFileHandle CreateFileW(
+        string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+    private sealed record PurgeChildReady(int ProcessId, string OperationDirectory, string Nonce);
     private static void Denied(Action action) { try { action(); } catch (IOException) { return; } throw new Exception("Expected exact ownership, snapshot or handle rejection."); }
     private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, got {actual}."); }
     private sealed class Fixture : IDisposable {
         internal readonly string Root = Path.Combine(Path.GetTempPath(), "pcllf-mmc-purge-" + Guid.NewGuid().ToString("N"));
+        internal readonly string Nonce = Guid.NewGuid().ToString("N");
         internal string Minecraft => Path.Combine(Root, "game");
         internal string Source => Path.Combine(Minecraft, "versions", "source");
         internal readonly MmcInstanceLifecycleBackend Backend = new();
         private readonly HttpClient client = new(new NoNetwork());
         private readonly Dictionary<string, byte[]> preserve = [];
         internal Fixture() {
-            Directory.CreateDirectory(Root); Directory.CreateDirectory(Path.Combine(Root, "preserved"));
+            Directory.CreateDirectory(Root); File.WriteAllText(Path.Combine(Root, "fixture-owner.txt"), Nonce); Directory.CreateDirectory(Path.Combine(Root, "preserved"));
             foreach (string leaf in new[] { "shared-cache.bin", "java.exe", "other-instance.bin" }) { string path = Path.Combine(Root, "preserved", leaf); File.WriteAllText(path, "keep " + leaf); preserve.Add(path, File.ReadAllBytes(path)); }
             byte[] index = Encoding.UTF8.GetBytes("{\"objects\":{}}"); string hash = Convert.ToHexStringLower(SHA1.HashData(index));
             using (var zip = ZipFile.Open(Path.Combine(Root, "pack.zip"), ZipArchiveMode.Create)) {
@@ -286,7 +345,7 @@ internal static class MmcInstancePurgeTests {
         internal void Preserved() { foreach (var pair in preserve) Equal(true, File.ReadAllBytes(pair.Key).SequenceEqual(pair.Value)); }
         public void Dispose() {
             client.Dispose(); InstanceConfigProviders.FlushAndDisposeWithin(Root);
-            string full = Path.GetFullPath(Root); if (Path.GetDirectoryName(full) != Path.TrimEndingDirectorySeparator(Path.GetTempPath()) || !Guid.TryParseExact(Path.GetFileName(full)[16..], "N", out _)) throw new IOException("Unsafe fixture cleanup root.");
+            string full = Path.GetFullPath(Root); if (Path.GetDirectoryName(full) != Path.TrimEndingDirectorySeparator(Path.GetTempPath()) || !Guid.TryParseExact(Path.GetFileName(full)[16..], "N", out _) || File.ReadAllText(Path.Combine(full, "fixture-owner.txt")) != Nonce) throw new IOException("Unsafe fixture cleanup root.");
             if (Directory.Exists(full)) Directory.Delete(full, true);
         }
     }
