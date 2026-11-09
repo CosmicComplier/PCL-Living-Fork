@@ -106,6 +106,7 @@
     <!-- Exercise the actual MPL Core assembly, never a linked second copy. -->
     <ProjectReference Include="../../PCLLF.MMCC.Core/PCLLF.MMCC.Core.csproj" />
     <Compile Include="../../PCLCS/Minecraft/MmcManagement*.cs" Link="Production/%(Filename)%(Extension)" />
+    <Compile Include="../../PCLCS/Minecraft/MmcLegacyAdoption*.cs" Link="Production/%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/MmcInstanceCapabilities.cs" Link="Production/MmcInstanceCapabilities.cs" />
     <Compile Include="../../PCLCS/Minecraft/MmcInstancePaths*.cs" Link="Production/%(Filename)%(Extension)" />
     <Compile Include="../../PCLCS/Minecraft/MmcMetadata/**/*.cs" Link="Production/MmcMetadata/%(RecursiveDir)%(Filename)%(Extension)" />

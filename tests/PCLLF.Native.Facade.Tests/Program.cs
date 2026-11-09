@@ -57,6 +57,8 @@ internal static class Program
         ["mmc-repair-ui"] = MmcRepairUiChecks.Run,
         ["mmc-repair-admission"] = MmcRepairUiChecks.RunAdmission,
         ["mmc-legacy-adoption-ui"] = MmcLegacyAdoptionUiChecks.Run,
+        ["mmc-import-recovery-ui"] = MmcImportRecoveryUiChecks.RunRecovery,
+        ["mmc-import-retry-ui"] = MmcImportRecoveryUiChecks.RunRetry,
         ["launch-process"] = LaunchProcessChecks.Run,
         ["pack-root-install"] = PackRootInstallChecks.Run,
         ["account-ui"] = AccountUiChecks.Run,
@@ -66,6 +68,17 @@ internal static class Program
     };
     // Requires explicit locally installed JDKs; keep these out of the normal CI/default registry.
     private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
+        ["mmc-package-update-ui"] = MmcPackageUpdateUiChecks.Run,
+        ["mmc-package-update-cancel-unstarted"] = MmcPackageUpdateUiChecks.RunCancellationUnstarted,
+        ["mmc-package-update-cancel-preview"] = MmcPackageUpdateUiChecks.RunCancellationPreview,
+        ["mmc-package-update-cancel-before-decision"] = MmcPackageUpdateUiChecks.RunCancellationBeforeDecision,
+        ["mmc-package-update-cancel-after-decision"] = MmcPackageUpdateUiChecks.RunCancellationAfterDecision,
+        ["mmc-package-update-refuse-unknown"] = MmcPackageUpdateUiChecks.RunRefusalUnknownDependencies,
+        ["mmc-package-update-refuse-error"] = MmcPackageUpdateUiChecks.RunRefusalDefiniteError,
+        ["mmc-package-update-refuse-stale"] = MmcPackageUpdateUiChecks.RunRefusalStalePreview,
+        ["mmc-package-update-refuse-layout"] = MmcPackageUpdateUiChecks.RunRefusalGameTreeRole,
+        ["mmc-package-update-world-success"] = MmcPackageUpdateUiChecks.RunWorldBackupSuccess,
+        ["mmc-package-update-world-locked"] = MmcPackageUpdateUiChecks.RunWorldBackupLocked,
         ["mmc-launch-replay"] = MmcLaunchChecks.Run,
         ["mmc-variant-launch"] = MmcLaunchChecks.RunVariants,
         ["mmc-launch-java"] = environment => {

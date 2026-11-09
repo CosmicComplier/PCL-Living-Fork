@@ -40,7 +40,7 @@ internal static class MmcImportRecoveryUiChecks {
         private readonly Type ui = Native.Type("PCL.MmcImportRecoveryUi");
         private readonly PropertyInfo factory;
         private readonly object? oldFactory;
-        private readonly IConfigProvider originalProfile;
+        private readonly JsonConfigProvider originalProfile;
         private readonly LegacyLoaderHost<ModLoader.LoaderBase, ModBase.LoadState, MyLoading.MyLoadingState> scheduler;
         private readonly Action oldRefresh;
         private readonly List<ModLoader.LoaderCombo<string>> tasks = [];

@@ -145,6 +145,8 @@ def main() -> int:
         ("tests/PCLLF.Migration.Tests/MmcInstancePackageUpdateTests.cs", "mmc-package-update-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcStandardManagedTests.cs", "mmc-standard-managed-tests", False),
         ("tests/PCLLF.Migration.Tests/MmcLegacyAdoptionTests.cs", "mmc-legacy-adoption-tests", False),
+        ("tests/PCLLF.Migration.Tests/MmcImportRecoveryTests.cs", "mmc-import-recovery-tests", False),
+        ("PCLCS/Minecraft/MmcInstances/MmcImportRecovery.cs", "mmc-import-recovery-tests", True),
         ("PCLCS/Minecraft/MmcLegacyAdoptionService.cs", "mmc-legacy-adoption-tests", True),
         ("PCLCS/Minecraft/MmcInstances/MmcInstancePackageUpdateCommit.cs", "mmc-package-update-tests", True),
         ("tests/PCLLF.Migration.Tests/MmcArtifactTests.cs", "mmc-artifact-tests", False),
