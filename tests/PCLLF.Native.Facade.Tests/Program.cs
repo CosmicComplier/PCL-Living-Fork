@@ -59,6 +59,8 @@ internal static class Program
         ["mmc-projection-rebuild"] = MmcRepairUiChecks.RunProjectionRebuild,
         ["mmc-projection-admission"] = MmcRepairUiChecks.RunProjectionAdmission,
         ["mmc-projection-cancel"] = MmcRepairUiChecks.RunProjectionCancellation,
+        ["mmc-projection-backup-deleted"] = MmcRepairUiChecks.RunProjectionBackupDeleted,
+        ["mmc-projection-backup-replaced"] = MmcRepairUiChecks.RunProjectionBackupReplaced,
         ["mmc-legacy-adoption-ui"] = MmcLegacyAdoptionUiChecks.Run,
         ["mmc-import-recovery-ui"] = MmcImportRecoveryUiChecks.RunRecovery,
         ["mmc-import-retry-ui"] = MmcImportRecoveryUiChecks.RunRetry,

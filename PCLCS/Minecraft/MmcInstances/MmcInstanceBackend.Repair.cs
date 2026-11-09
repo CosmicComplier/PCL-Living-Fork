@@ -97,7 +97,9 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 string backup = MmcInstanceRepairSelections.ProjectionBackupPath(oldProjection!);
                 string? existing = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, backup));
                 if (existing is not null && existing != oldProjection) throw new IOException("An immutable projection backup has unknown bytes.");
-                if (existing is null) mutations = mutations.Append(new(backup, null, divergenceBackup, oldProjection));
+                // Even an existing identical copy stays inside the transaction:
+                // a later deletion/replacement must not remove the promised backup.
+                mutations = mutations.Append(new(backup, existing, divergenceBackup, oldProjection));
             }
             progress?.Report(new(intent == MmcBindingIntent.RepairExisting ? "publishing-repair" : "adopting-runtime-variant"));
             using var quiet = MmcConfigurationCoordinator.Quiesce(paths.InstanceRoot, cancellationToken);

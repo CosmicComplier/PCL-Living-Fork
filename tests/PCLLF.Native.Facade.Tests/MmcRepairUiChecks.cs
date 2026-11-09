@@ -42,6 +42,13 @@ internal static class MmcRepairUiChecks {
         scope.CancelProjectionRebuild(); scope.Finish(); environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS mmc-projection-cancel: declining inspection is inert, predecision rollback retains changed JSON without a backup publication, and late cancellation keeps successful backup/reconstruction outcome.");
     }
+    internal static void RunProjectionBackupDeleted(FixtureEnvironment environment) => RunProjectionBackupRace(environment, false);
+    internal static void RunProjectionBackupReplaced(FixtureEnvironment environment) => RunProjectionBackupRace(environment, true);
+    private static void RunProjectionBackupRace(FixtureEnvironment environment, bool replace) {
+        using FileTaskScope files = new(environment); using var scope = new Scope(files, replace ? "projection-backup-replaced" : "projection-backup-deleted");
+        scope.ChangeExistingBackupBeforePublication(replace); scope.Finish(); environment.AssertNoForbiddenIo();
+        Console.WriteLine("PASS mmc-projection-backup-race: an already matching backup is transaction-bound; late " + (replace ? "replacement" : "deletion") + " is rejected while current JSON, primary and player bytes remain intact.");
+    }
     private sealed class Scope : IDisposable {
         private readonly FileTaskScope files;
         private readonly string root, game, version, projection, config, localJar;
@@ -240,6 +247,26 @@ internal static class MmcRepairUiChecks {
                 "Late cancellation obscured a committed projection backup/reconstruction.");
             CheckPlayerData();
         }
+        internal void ChangeExistingBackupBeforePublication(bool replace) {
+            var initial = MmcInstanceInspector.Read(version);
+            var value = JObject.Parse(File.ReadAllText(projection)); value["mainClass"] = "external.backup.race.Main";
+            File.WriteAllText(projection, value.ToString(), new UTF8Encoding(false)); byte[] changed = File.ReadAllBytes(projection);
+            var inspected = MmcInstanceRepairSelections.InspectDivergedProjectionAsync(version, initial.Definition!.InstanceId).GetAwaiter().GetResult();
+            string backup = Path.Combine(version, inspected.BackupRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(backup)!); File.WriteAllBytes(backup, changed);
+            int mutations = 0;
+            var result = Backend().RepairAsync(new(version, new("windows", "x86_64", 8), initial.Definition.InstanceId, true) {
+                ExpectedGeneration = initial.Definition.Generation, ExpectedPrimarySha256 = initial.PrimarySha256, StrictSelection = inspected.Selection
+            }, progress: new InlineProgress(progress => {
+                if (progress.Phase != "publishing-repair") return;
+                mutations++;
+                if (replace) File.WriteAllText(backup, "late foreign backup"); else File.Delete(backup);
+            })).GetAwaiter().GetResult();
+            Native.Check(mutations == 1 && result.Status != MmcInstanceBackendStatus.Succeeded && File.ReadAllBytes(projection).SequenceEqual(changed) &&
+                MmcInstanceInspector.Read(version).PrimarySha256 == initial.PrimarySha256 && (replace ? File.ReadAllText(backup) == "late foreign backup" : !File.Exists(backup)),
+                "Repair committed after its promised existing backup changed outside the transaction.");
+            CheckPlayerData();
+        }
         private MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(new MmcMetadataStore(Path.Combine(root, "prepare-meta"), new Uri("https://fixture.invalid/meta/"), client),
             new(Path.Combine(root, "cache", "libraries"), Path.Combine(root, "cache", "assets"), Path.Combine(root, "cache", "sources")), value => value,
             (files, _) => files.IsEmpty ? Task.CompletedTask : throw new IOException("Repaired instance must prepare entirely offline."));
@@ -259,4 +286,7 @@ internal static class MmcRepairUiChecks {
     private static string Tree(string root) => string.Join("|", Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
         .Select(path => Path.GetRelativePath(root, path) + ":" + Hash(File.ReadAllBytes(path))));
     private sealed class NoNetwork : HttpMessageHandler { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => throw new IOException("Repair fixture cannot access external metadata."); }
+    private sealed class InlineProgress(Action<MmcInstanceBackendProgress> observe) : IProgress<MmcInstanceBackendProgress> {
+        public void Report(MmcInstanceBackendProgress value) => observe(value);
+    }
 }
