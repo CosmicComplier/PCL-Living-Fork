@@ -78,6 +78,15 @@ public static class MmcLaunch {
             ReconcilePrevious(paths, primary.Definition.InstanceId, pins, token,runtimeAuthority);
             saved = await MmcSavedSourceStore.LoadAsync(paths, primary.Definition, token).ConfigureAwait(false);
             preferences = MmcLaunchPreferences.Capture(instance, saved.PackageConfiguration, sessionId);
+            // The existing login step is non-blocking. Bind only its completed
+            // result, never a previous account result while refresh is in flight.
+            var loginTask = ModLaunch.McLoginLoader;
+            while (loginTask.State is ModBase.LoadState.Waiting or ModBase.LoadState.Loading)
+                await Task.Delay(10, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (loginTask.State == ModBase.LoadState.Canceled) throw new OperationCanceledException(token);
+            if (loginTask.State != ModBase.LoadState.Finished || loginTask.Output is null)
+                throw new IOException("现有账户登录尚未成功完成，无法绑定 MMC 启动身份。");
             authentication = MmcLaunchAuthentication.Capture(instance, ModLaunch.McLoginLoader.Output.Type);
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
                 preferences.JavaPreference, token, authentication.JavaConstraints).ConfigureAwait(false);

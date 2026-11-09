@@ -136,7 +136,8 @@ internal static partial class MmcLaunchChecks {
             Settings.Set("VersionPersonalOptionsSync", 0, instance); Settings.Set("VersionWorldBackupAutoEnabled", false, instance);
             instance.Config.Save();
             ModLaunch.McLoginLoader = new("Owned account boundary", _ => throw new IOException("Replay attempted account IO")) {
-                Output = new() { Name="owned-fixture", Uuid=new string('0',32), AccessToken=secret, ClientToken="owned-client", Type="Legacy", ProfileJson="{}" }
+                Output = new() { Name="owned-fixture", Uuid=new string('0',32), AccessToken=secret, ClientToken="owned-client", Type="Legacy", ProfileJson="{}" },
+                State = ModBase.LoadState.Finished
             };
         }
         internal void Run() {
