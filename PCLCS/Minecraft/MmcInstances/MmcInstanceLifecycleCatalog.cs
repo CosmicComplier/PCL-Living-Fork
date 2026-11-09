@@ -142,6 +142,11 @@ public static class MmcInstanceLifecycleCatalog {
             if (completed?.Disposition == "Quarantined") {
                 if (!decided || !targetOwned || targetHash != intent.SourcePrimarySha256 || !MmcInstanceLifecycleVisibility.IsCompletedQuarantine(intent.TargetRoot))
                     return Entry(MmcLifecycleCatalogState.Conflict, "隔离区内容或归属已变化，不能自动恢复。");
+                if (MmcInstancePurgeJournal.HasPlan(directory)) {
+                    var preparation = MmcInstancePurgeJournal.Read(journal);
+                    if (preparation.IsDecided()) throw new IOException("永久清理状态在列表读取期间发生变化，请重新打开列表。");
+                    return Entry(MmcLifecycleCatalogState.Quarantined, "永久清理在决定前中断，实例内容仍完整；可撤销准备并恢复隔离区操作。", restore: true, recover: true);
+                }
                 return Entry(MmcLifecycleCatalogState.Quarantined, "可无覆盖地恢复到原来的版本名称；隔离区仍占用磁盘空间。", restore: true) with { CanPurge = !MmcInstancePurgeJournal.HasPlan(directory) };
             }
             if (completed is not null) {

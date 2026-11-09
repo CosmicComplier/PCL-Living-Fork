@@ -13,6 +13,7 @@ internal static class MmcInstancePurgeTests {
         yield return ("MMC purge preview covers changed files, replaced files and new empty directories", StalePreview);
         yield return ("MMC purge refuses pending transactions, unknown sessions and prepared producers", PendingWork);
         yield return ("MMC purge cancellation before its durable decision leaves all player bytes restorable", EarlyCancellation);
+        yield return ("MMC catalog recovery withdraws a valid undecided purge preparation and reenables quarantine cleanup", CatalogPreparationRecovery);
         yield return ("MMC purge ignores late cancellation and forward-recovers after primary/marker removal", DecidedRecovery);
         yield return ("MMC purge preserves newly added files, empty directories, foreign primaries and links after decision", ForeignContent);
         yield return ("MMC purge keeps remaining entries on a real writer/readonly failure and safely resumes", LockedFiles);
@@ -88,6 +89,20 @@ internal static class MmcInstancePurgeTests {
             Equal(MmcInstanceBackendStatus.Succeeded, fixture.Backend.RestoreDeletedAsync(deleted.OperationDirectory!).GetAwaiter().GetResult().Status);
             Equal("world bytes", File.ReadAllText(Path.Combine(fixture.Source, "minecraft", "saves", "world", "level.dat")));
         }
+    }
+    private static void CatalogPreparationRecovery() {
+        using Fixture fixture = new(); var deleted = fixture.Quarantine(); var preview = fixture.Preview(deleted); string before = HashTree(deleted.CurrentRoot!);
+        var prepared = fixture.Backend.PurgeAsync(Confirm(preview) with { Checkpoint = (phase, _) => {
+            if (phase == MmcInstancePurgeCheckpoint.PlanPrepared) throw new MmcLifecycleInterruptionException("owned stop before irreversible decision");
+        } }).GetAwaiter().GetResult();
+        Equal(MmcInstanceBackendStatus.NeedsRecovery, prepared.Status); Equal(false, prepared.DecisionRecorded); Equal(before, HashTree(deleted.CurrentRoot!));
+        var catalog = MmcInstanceLifecycleCatalog.Read(fixture.Minecraft).Entries.Single();
+        Equal(MmcLifecycleCatalogState.Quarantined, catalog.State); Equal(true, catalog.CanRecover); Equal(false, catalog.CanPurge);
+        var recovered = MmcInstanceLifecycleCatalog.Execute(catalog, false);
+        Equal(MmcInstanceBackendStatus.Succeeded, recovered.Status); Equal(true, recovered.Quarantined); Equal(false, recovered.PurgeDecided);
+        Equal(before, HashTree(deleted.CurrentRoot!)); Equal(false, File.Exists(Path.Combine(deleted.OperationDirectory!, MmcInstancePurgeJournal.PlanName)));
+        var after = MmcInstanceLifecycleCatalog.Read(fixture.Minecraft).Entries.Single(); Equal(true, after.CanPurge); Equal(false, after.CanRecover);
+        Denied(() => MmcInstanceLifecycleCatalog.Execute(catalog, false));
     }
     private static void DecidedRecovery() {
         using (Fixture fixture = new()) {
@@ -205,7 +220,13 @@ internal static class MmcInstancePurgeTests {
                 while (!File.Exists(ready)) { if (child.HasExited) throw new IOException("Owned purge child exited: " + errors.GetAwaiter().GetResult()); if (timer.ElapsedMilliseconds > 20000) throw new TimeoutException("Owned purge child did not reach its exact checkpoint."); Thread.Sleep(2); }
                 Equal(MmcInstanceBackendStatus.NeedsRecovery, fixture.Backend.RecoverAsync(deleted.OperationDirectory!).GetAwaiter().GetResult().Status);
                 child.Kill(true); if (!child.WaitForExit(5000)) throw new IOException("Owned purge child did not exit.");
-                var recovered = fixture.Backend.RecoverAsync(deleted.OperationDirectory!).GetAwaiter().GetResult(); Equal(MmcInstanceBackendStatus.Succeeded, recovered.Status);
+                MmcInstanceLifecycleResult recovered;
+                if (phase == "prepared") {
+                    var entry = MmcInstanceLifecycleCatalog.Read(fixture.Minecraft).Entries.Single(); Equal(true, entry.CanRecover); Equal(false, entry.CanPurge);
+                    recovered = MmcInstanceLifecycleCatalog.Execute(entry, false);
+                    Equal(true, MmcInstanceLifecycleCatalog.Read(fixture.Minecraft).Entries.Single().CanPurge);
+                } else recovered = fixture.Backend.RecoverAsync(deleted.OperationDirectory!).GetAwaiter().GetResult();
+                Equal(MmcInstanceBackendStatus.Succeeded, recovered.Status);
                 if (phase == "prepared") { Equal(true, recovered.Quarantined); Equal(false, recovered.PurgeDecided); Equal(before, HashTree(deleted.CurrentRoot!)); }
                 else { Equal(true, recovered.Purged); Equal(false, recovered.Quarantined); Equal(false, Directory.Exists(deleted.CurrentRoot!)); }
                 fixture.Preserved();
