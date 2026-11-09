@@ -57,6 +57,12 @@ internal static class MmcLaunchPreferenceChecks {
         Settings.SetInstanceUserPreference("VersionArgumentJavaV2", 0, instance);
         var automatic = MmcLaunchPreferences.Capture(instance, cfg, session);
         Native.Check(automatic.JavaPreference.Path is null && !automatic.JavaPreference.Force, "An explicit automatic Java selection reused obsolete forced Java metadata.");
+        string retiredGlobal = new JObject { ["Path"] = Path.Combine(root, "retired-global-java24") }.ToString(Newtonsoft.Json.Formatting.None);
+        Native.Cache("LaunchArgumentJavaSelect", retiredGlobal);
+        MmcIniConfiguration.QueuePreferenceBatch(instance.Config, new Dictionary<string, string?> { ["MmcJavaLocationMode"] = "InheritGlobal" });
+        var inheritedJava = MmcLaunchPreferences.Capture(instance, cfg, session);
+        Native.Check(inheritedJava.JavaPreference.Mode == MmcLaunchPreferenceMode.InheritGlobal && !inheritedJava.JavaPreference.Force && inheritedJava.JavaPreference.Path is null &&
+            Settings.Get<string>("LaunchArgumentJavaSelect") == retiredGlobal, "Current global Java catalogue order was replaced by a retired forced path, or the user's old setting was overwritten.");
         Settings.SetInstanceUserPreference("VersionRamType", 1, instance); Settings.SetInstanceUserPreference("VersionRamCustom", 20, instance);
         Native.Check(MmcLaunchPreferences.Capture(instance, cfg, session).RuntimeSettings.MaximumMemoryMiB == 5632, "User memory override did not replace package memory.");
         MmcLaunchPreferences.SetWindowOverride(instance, 1000, 600, fullscreen: true);

@@ -116,17 +116,14 @@ public static class MmcInstances {
         if (provisional.HasErrors || provisional.Profile is null) throw new InvalidDataException("整合包启动配置无法解析。" + string.Join("；", provisional.Diagnostics.Select(value => value.Message)));
         var policy = provisional.Profile.JavaPolicy;
         if (policy.Kind == MmcJavaPolicyKind.Unsatisfiable) throw new InvalidDataException("整合包声明的 Java 要求无法同时满足。");
-        string forced = null;
-        string legacy = Settings.Get<string>("LaunchArgumentJavaSelect");
-        if (legacy?.StartsWith("{", StringComparison.Ordinal) == true) {
-            try { forced = JObject.Parse(legacy).Value<string>("Path"); } catch (Newtonsoft.Json.JsonException) { throw new InvalidDataException("全局指定 Java 设置无效，请重新选择。"); }
-        }
+        // Current PCL global Java preferences are the ordered catalogue. The retired
+        // LaunchArgumentJavaSelect value is used only by JavaInit's one-time migration;
+        // it must not reintroduce a forced path after the user changes the current list.
         string recommended = package.Configuration.Values.TryGetValue("OverrideJavaLocation", out string flag) && bool.TryParse(flag, out bool enabled) && enabled
             ? package.Configuration.Values.GetValueOrDefault("JavaPath") : null;
         for (int attempt = 0; attempt < 2; attempt++) {
             var candidates = Configs.JavaList.Get()!.ToArray();
-            if (!string.IsNullOrEmpty(forced)) candidates = candidates.Where(java => SameJavaPath(java, forced)).ToArray();
-            else if (!string.IsNullOrWhiteSpace(recommended)) candidates = candidates.OrderByDescending(java => SameJavaPath(java, recommended)).ToArray();
+            if (!string.IsNullOrWhiteSpace(recommended)) candidates = candidates.OrderByDescending(java => SameJavaPath(java, recommended)).ToArray();
             foreach (Java candidate in candidates) {
                 token.ThrowIfCancellationRequested();
                 if (!await candidate.CheckAsync(token).ConfigureAwait(false) || candidate.Version is null || !policy.Allows(candidate.Version.Major)) continue;
@@ -134,14 +131,13 @@ public static class MmcInstances {
                 var actual = MmcProfileCompiler.Compile(resolved, new("windows", architecture, candidate.Version.Major, 64));
                 if (!actual.HasErrors && actual.Profile is not null && actual.Profile.JavaPolicy.Allows(candidate.Version.Major)) return actual.Profile.Environment;
             }
-            if (!string.IsNullOrEmpty(forced)) break;
             if (attempt == 0) {
                 ModJava.JavaListRefreshWorker.Start(cancellationToken: token);
                 ModJava.JavaListRefreshWorker.WaitIfRunning(cancellationToken: token);
             }
         }
         string versions = policy.Kind == MmcJavaPolicyKind.DeclaredCandidates ? string.Join("、", policy.AllowedMajors) : "符合整合包要求的版本";
-        throw new InvalidOperationException("未找到兼容的 Java（" + versions + "）。请在设置 → 启动 → Java 列表中下载或导入兼容版本后重试。指定的 Java 也必须满足整合包声明。");
+        throw new InvalidOperationException("当前 Java 列表中没有通过检查且符合整合包声明的 Java（" + versions + "）。请在设置 → 启动 → Java 列表中下载或导入兼容版本后重试。");
     }
     private static bool SameJavaPath(Java candidate, string path) {
         try { return PathUtils.IsSame(candidate.Folder, path) || PathUtils.IsSame(candidate.JavaExePath, path); } catch (ArgumentException) { return false; }

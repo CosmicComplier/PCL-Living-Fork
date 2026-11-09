@@ -39,7 +39,7 @@ public sealed class MmcLaunchPreferenceSnapshot {
 }
 
 public static class MmcLaunchPreferences {
-    private static readonly string[] GlobalKeys = ["LaunchArgumentJavaSelect", "LaunchAdvanceJvm", "LaunchAdvanceGame", "LaunchAdvanceRun", "LaunchAdvanceRunWait",
+    private static readonly string[] GlobalKeys = ["LaunchAdvanceJvm", "LaunchAdvanceGame", "LaunchAdvanceRun", "LaunchAdvanceRunWait",
         "LaunchAdvanceDisableJLW", "LaunchRamType", "LaunchRamCustom", "LaunchArgumentWindowType", "LaunchArgumentWindowWidth", "LaunchArgumentWindowHeight"];
     private static readonly string[] InstanceKeys = ["MmcJavaLocationMode", "MmcJvmArgsMode", "MmcMemoryMode", "MmcWindowMode", "VersionArgumentJavaSelect",
         "VersionArgumentJavaV2", "VersionArgumentJavaRange", "VersionAdvanceJvm", "VersionRamType", "VersionRamCustom", "VersionAdvanceGame", "VersionAdvanceRun",
@@ -128,7 +128,9 @@ public static class MmcLaunchPreferences {
     private static MmcLaunchJavaPreference JavaPreference(MmcConfiguration configuration, IReadOnlyDictionary<string, string> ini, JObject json,
         IReadOnlyDictionary<string, string> global, MmcLaunchPreferenceMode mode) {
         if (mode == MmcLaunchPreferenceMode.UsePackage) return new(mode, configuration.Values.GetValueOrDefault("JavaPath"), false);
-        if (mode == MmcLaunchPreferenceMode.InheritGlobal) return LegacyJavaPreference(mode, global["LaunchArgumentJavaSelect"]);
+        // The current global selector orders Configs.JavaList; only an instance's
+        // explicit Custom/forced mode may restrict selection to one executable.
+        if (mode == MmcLaunchPreferenceMode.InheritGlobal) return new(mode, null, false);
         int kind = Integer(ini.GetValueOrDefault("VersionArgumentJavaV2", "0"), "实例 Java 选择模式", 0, 3);
         if (kind == 1) {
             string range = Required(ini, "VersionArgumentJavaRange"); string error = InstanceJavaRangeValidation.Validate(range, "[", "]");
