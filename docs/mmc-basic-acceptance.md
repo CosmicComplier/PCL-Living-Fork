@@ -54,6 +54,25 @@
 这两份结构报告的 `ExecutedProduct=false` 保持原义；新包尚无用户冷启动、外部平台或新游戏结论。
 之前“能进入主界面”的用户确认仅对应 `10543184`，不沿用为本包证明。
 
+## 2026-11-09 用户 Java 选择故障修复
+
+用户在 `e059eee4` 的任务管理／Java 列表截图证明程序已进入主界面，但两份 GTNH 原包均在
+`MmcInstances.SelectJavaAsync` 报无兼容 Java。只读日志显示旧 Java 24 被检查，当前列表已有
+Java 8／17／21／26；旧全局 `LaunchArgumentJavaSelect` 仍保留历史路径。
+现代 PCL 已将这个旧值仅用于一次迁移并转成列表优先级，MMC 却又把它读回为硬性路径限制。
+
+`6af1b6fed10d7ce6ba747bb5993b63427f20dff1` 修复导入与启动继承两处读取，按当前列表与包声明筛选；
+实例显式强制、范围和目录模式继续保留。真实 Main 负例先复现原错误，修后候选组与偏好组均通过。
+只读核对两份用户原 ZIP 完整 SHA256、固定元数据后，再通过真实 Main 方法分别选到 Java 8／21；
+没有重新下载包、发布实例或运行游戏。另有 Java 27／31 声明与硬约束的纯策略回归，`mmc-profile` 81/81；
+不把该策略证明写成 Java 27 实机启动。
+
+修复包：`artifacts/mmc-dev-build/20261109-6af1b6fe/package/PCL-Living-Fork-dev_edition.exe`。
+EXE 189052100 字节，SHA256 `f3551a1a43acb449135fe4712d6c392db66eaaf73ce4b3d615595679f7e21b74`。
+ZIP 78331087 字节，SHA256 `6101a05a03d9d3d1fe92d49ac6f1a552af97d99fad5478d7528b4b1a05293c2a`。
+六个发布模块、五个 ZIP 条目及 37 个 Core 源码 Git blob 均已核对；没有复制用户运行目录里的日志或设置。
+Sol max 定向审查已关闭此修复；新包完整导入／冷启动结果仍须用户单独反馈。
+
 ## 真实进程终止后的恢复
 
 只结束测试父进程自己 `Process.Start` 的 child；不枚举或终止用户程序、Java 或开发构建。

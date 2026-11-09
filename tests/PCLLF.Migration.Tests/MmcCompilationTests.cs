@@ -139,6 +139,11 @@ internal static class MmcCompilationTests {
         Require(unspecified.Kind == MmcJavaPolicyKind.Unspecified && unspecified.Allows(8), "Absent declarations were treated as empty allowed set.");
         Error(Compile(new() { ["compatibleJavaMajors"] = new[] { 17, 21 } }, constraints: [new("platform", MaximumMajor: 8)]), "MMC_JAVA_UNSATISFIABLE");
         Error(Compile(new() { ["compatibleJavaMajors"] = new[] { 17, 21 } }, environment: new("windows", "amd64", 8)), "MMC_JAVA_SELECTION");
+        var future = Good(Compile(new() { ["compatibleJavaMajors"] = new[] { 27, 31 } }, environment: new("windows", "x86_64", 27)));
+        var selected = MmcJavaPolicyEvaluator.FilterInstalled(future.JavaPolicy, [new("other", 28, "x86_64"), new("newer", 31, "x86_64"), new("declared", 27, "x86_64")]);
+        Require(selected.State == MmcJavaSelectionState.CompatibleCandidates && selected.Candidates.Select(value => value.Major).SequenceEqual([31, 27]) && !future.JavaPolicy.Allows(28),
+            "Future declared Java majors were hardcoded away, reordered, or widened into an interval.");
+        Error(Compile(new() { ["compatibleJavaMajors"] = new[] { 27 } }, constraints: [new("host", MaximumMajor: 26)]), "MMC_JAVA_UNSATISFIABLE");
     }
     private static void Logging() {
         var profile = Good(Compile(new() { ["logging"] = new { argument = "-Dlog4j.configurationFile=${path}", type = "log4j2-xml", file = new { id = "fixture.xml", url = "https://example.invalid/log.xml", sha1 = new string('a', 40), size = 10 } } }));
