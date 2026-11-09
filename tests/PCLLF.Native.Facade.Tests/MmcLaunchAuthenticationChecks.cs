@@ -158,7 +158,8 @@ public final class AuthenticationAgent {
         private static void AgentMetadataSources(Type helper) {
             async Task<(ImmutableArray<string> Urls, string Digest)> Resolve(MmcRuntimeAuthenticationKind kind, string json) {
                 using var client = new HttpClient(new MetadataResponse(json));
-                return await ((Task<(ImmutableArray<string>, string)>)Native.Call(helper, "ResolveAgentSourceAsync", null, kind, "synthetic-id", client, CancellationToken.None)!).ConfigureAwait(false);
+                string server = kind == MmcRuntimeAuthenticationKind.Nide ? "synthetic-id" : "https://fixture.invalid/";
+                return await ((Task<(ImmutableArray<string>, string)>)Native.Call(helper, "ResolveAgentSourceAsync", null, kind, server, client, CancellationToken.None)!).ConfigureAwait(false);
             }
             string digest = new('a', 64);
             var auth = Resolve(MmcRuntimeAuthenticationKind.AuthlibInjector, "{\"download_url\":\"https://bmclapi2.bangbang93.com/mirrors/authlib-injector/artifact/fixture/agent.jar\",\"checksums\":{\"sha256\":\"" + digest + "\"}}").GetAwaiter().GetResult();
