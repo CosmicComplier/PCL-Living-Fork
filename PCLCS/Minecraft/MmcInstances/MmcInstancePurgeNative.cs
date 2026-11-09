@@ -27,7 +27,12 @@ internal sealed class MmcPurgeHandle : IDisposable {
             if ((info.Attributes & (uint)FileAttributes.ReparsePoint) != 0 ||
                 ((info.Attributes & (uint)FileAttributes.Directory) != 0) != directory)
                 throw new IOException("Purge object is a link or has changed its directory role.");
-            if (!SamePath(MmcCanonicalPaths.ForHandle(Handle), Path)) throw new IOException("Pinned purge object resolves outside its exact namespace.");
+            string resolved = MmcCanonicalPaths.ForHandle(Handle);
+            if (!SamePath(resolved, Path)) throw new IOException("Pinned purge object resolves outside its exact namespace.");
+            var fileSystem = new System.Text.StringBuilder(261);
+            if (!GetVolumeInformationByHandleW(Handle, IntPtr.Zero, 0, out _, out _, out _, fileSystem, (uint)fileSystem.Capacity))
+                throw Error("Cannot establish the pinned object's local NTFS filesystem.");
+            RequireLocalNtfsIdentity(fileSystem.ToString(), resolved, ((ulong)info.IndexHigh << 32) | info.IndexLow);
             Identity = $"{info.Volume:x8}:{info.IndexHigh:x8}{info.IndexLow:x8}:{info.CreationHigh:x8}{info.CreationLow:x8}";
             Size = directory ? 0 : checked((long)(((ulong)info.SizeHigh << 32) | info.SizeLow));
         } catch { Handle.Dispose(); throw; }
@@ -57,6 +62,13 @@ internal sealed class MmcPurgeHandle : IDisposable {
         if (!SetFileInformationByHandle(Handle, 4, ref disposition, 1)) throw Error("Exact purge object could not be deleted; remaining content was preserved.");
     }
     internal static bool SamePath(string a, string b) => string.Equals(System.IO.Path.TrimEndingDirectorySeparator(a), System.IO.Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
+    internal static void RequireLocalNtfsIdentity(string fileSystem, string canonicalPath, ulong fileIndex) {
+        // BY_HANDLE_FILE_INFORMATION's 64-bit ID is not sufficient for ReFS. Every
+        // opened object, including ancestors and journal files, must pass this gate.
+        if (!fileSystem.Equals("NTFS", StringComparison.OrdinalIgnoreCase) || canonicalPath.StartsWith("\\\\", StringComparison.Ordinal))
+            throw new PlatformNotSupportedException("Permanent quarantine cleanup supports only verified local NTFS objects; ReFS and network filesystems are unsupported.");
+        if (fileIndex is 0 or ulong.MaxValue) throw new IOException("Pinned NTFS object has an unusable zero or all-ones file identity.");
+    }
     internal static bool IsIdentity(string? value) => value is { Length: 42 } && value[8] == ':' && value[25] == ':' &&
         value.Where((_, index) => index is not (8 or 25)).All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
     private static IOException Error(string text) => new(text, new Win32Exception(Marshal.GetLastWin32Error()));
@@ -69,6 +81,10 @@ internal sealed class MmcPurgeHandle : IDisposable {
     private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out Information information);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetVolumeInformationByHandleW(SafeFileHandle handle, IntPtr volumeName,
+        uint volumeNameSize, out uint volumeSerialNumber, out uint maximumComponentLength, out uint flags,
+        System.Text.StringBuilder fileSystemName, uint fileSystemNameSize);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int kind, ref byte information, uint length);
 }
