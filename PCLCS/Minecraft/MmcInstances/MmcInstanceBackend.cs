@@ -48,6 +48,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             var paths = MmcInstancePaths.Resolve(reservation.TemporaryRoot, source.Package.GameRootLeaf);
             MmcBindingResult bound;
             {
+                progress?.Report(new("package-staging"));
                 using var packageFiles = await MmcPackageFileStager.PrepareInitialAsync(source, paths, cancellationToken, ArtifactProgress(progress)).ConfigureAwait(false);
                 using var sources = MmcSourceBundleWriter.Prepare(source, resolved, paths, cancellationToken);
                 byte[] baselineBytes = MmcPackageFileBaselineCodec.Serialize(CreateBaseline(source, packageFiles));
@@ -56,7 +57,9 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 var preserved = PreservedArtifacts(baseline, compiled);
                 var artifactsRequest = new MmcArtifactRequest(paths, compiled.RuntimePlanFingerprint, ActiveArtifacts(compiled), preserved, [],
                     MmcArtifactIntent.AdoptDeclaredVariant, compiled.Assets);
+                progress?.Report(new("preparing-runtime"));
                 var fetched = await prefetch.PrefetchAsync(compiled, artifactsRequest, cancellationToken).ConfigureAwait(false);
+                progress?.Report(new("materializing-runtime"));
                 using var prepared = await materializer.PrepareAsync(artifactsRequest, fetched.CreateAccess((artifact, token) => {
                     token.ThrowIfCancellationRequested();
                     return ValueTask.FromResult(packageFiles.LocalLibrarySources.GetValueOrDefault(artifact.RelativePath));
@@ -72,6 +75,7 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
                 // The exclusive unpublished root has no player-owned live targets to replace.
                 // Move already flushed/CRC-checked bulk game data there once; only structural,
                 // source, library and definition publications need the recoverable file journal.
+                progress?.Report(new("installing-package"));
                 reservation.AdoptPreparedGameFiles(packageFiles, baseline, cancellationToken, progress, request.PrivatePayloadCheckpoint);
                 var mutations = new List<MmcFileMutation>();
                 var declaredLocal = DeclaredLocalTargets(compiled);

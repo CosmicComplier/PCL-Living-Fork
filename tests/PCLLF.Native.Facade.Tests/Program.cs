@@ -46,6 +46,7 @@ internal static class Program
         ["mmc-launch-preferences"] = MmcLaunchPreferenceChecks.Run,
         ["mmc-lifecycle"] = MmcLifecycleChecks.Run,
         ["mmc-quarantine-list"] = MmcQuarantineListChecks.Run,
+        ["mmc-import-private-list"] = MmcImportVisibilityChecks.Run,
         ["mmc-rename-admission"] = MmcRenameAdmissionChecks.Run,
         ["mmc-delete-ui"] = MmcDeleteUiChecks.Run,
         ["mmc-purge-ui"] = MmcPurgeUiChecks.Run,

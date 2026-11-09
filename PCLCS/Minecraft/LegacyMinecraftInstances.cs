@@ -82,6 +82,7 @@ public sealed partial class LegacyMinecraftService<TInstance, TFolder, TLibrary,
                 foreach (string versionName in ReadIni(folder + "PCL.ini", "CardValue" + (i + 1), ":")!.Split(':')) {
                     if (versionName == "") continue;
                     string versionsFolder = $"{folder}versions\\{versionName}\\";
+                    if (!Directory.Exists(versionsFolder) || MmcImportVisibility.IsPrivateReservation(versionsFolder)) continue;
                     if (MmcInstanceLifecycleVisibility.IsCompletedQuarantine(versionsFolder)) continue;
                     MmcInstanceInspection managed = MmcInstanceInspector.Read(versionsFolder);
                     if (!managed.IsLegacy || !managed.Management.ObservationComplete) {
