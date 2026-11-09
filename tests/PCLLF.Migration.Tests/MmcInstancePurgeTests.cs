@@ -163,7 +163,8 @@ internal static class MmcInstancePurgeTests {
                     else File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
                 } }).GetAwaiter().GetResult();
                 Equal(MmcInstanceBackendStatus.NeedsRecovery, result.Status); Equal(true, result.DecisionRecorded);
-                Equal(true, result.RemainingPaths.Contains("minecraft/saves/world/level.dat")); Equal("world bytes", File.ReadAllText(path));
+                Equal(true, result.RemainingPaths.Contains("minecraft/saves/world/level.dat"));
+                using (var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))) Equal("world bytes", reader.ReadToEnd());
                 Equal(false, MmcInstanceLifecycleCatalog.Read(fixture.Minecraft).Entries.Single().CanRestore);
             } finally { writer?.Dispose(); if (File.Exists(path)) File.SetAttributes(path, FileAttributes.Normal); }
             Succeeded(fixture.Backend.RecoverPurgeAsync(deleted.OperationDirectory!).GetAwaiter().GetResult());
