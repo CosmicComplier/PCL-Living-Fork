@@ -17,11 +17,15 @@ internal static partial class MmcInstanceBackendTests {
                     ("original initial cancellation/post-decision corruption", BulkPayloadFailure),
                     ("original post-decision cancellation completes publication", BulkPayloadPostDecisionCancel)
                 ];
-                int passed = 0;
+                int passed = 0, unavailable = 0;
                 foreach (var test in PrivatePayloadPathCases().Concat(existing)) {
-                    test.Run(); passed++; Console.WriteLine("PASS " + test.Name);
+                    try {
+                        test.Run(); passed++; Console.WriteLine("PASS " + test.Name);
+                    } catch (PayloadLinkFixtureUnavailableException error) {
+                        unavailable++; Console.WriteLine("UNAVAILABLE " + test.Name + ": " + error.Message);
+                    }
                 }
-                Console.WriteLine($"PASS {passed}/{passed} selected private payload path checks; the separate 2003-file probe was not repeated.");
+                Console.WriteLine($"RESULT selected private payload path checks: {passed} passed, {unavailable} unavailable, {passed + unavailable} total; unavailable cases are not passes. The separate 2003-file probe was not repeated.");
             }
         } catch (Exception error) {
             Console.Error.WriteLine("FAIL " + args[0] + ": " + error);
@@ -31,10 +35,15 @@ internal static partial class MmcInstanceBackendTests {
     }
 
     private static IEnumerable<(string Name, Action Run)> PrivatePayloadPathCases() {
-        foreach (string mode in new[] { "source-link", "source-parent-link", "target-parent-link", "target-claimed", "source-changed", "existing-source-link" }) {
+        foreach (string mode in new[] { "source-link", "source-leaf-junction", "source-parent-link", "target-parent-link", "target-claimed", "source-changed", "existing-source-link", "existing-source-leaf-junction" }) {
             string attack = mode;
             yield return ("MMC private payload refuses " + attack + " without adopting unknown bytes", () => PrivatePayloadPathInterferenceAsync(attack).GetAwaiter().GetResult());
         }
+    }
+
+    private sealed class PayloadLinkFixtureUnavailableException : Exception {
+        internal PayloadLinkFixtureUnavailableException(Exception inner)
+            : base("File-symlink construction is unavailable (privilege/access denied); the production link gate was not exercised by this case.", inner) { }
     }
 
     private static async Task PrivatePayloadPathInterferenceAsync(string mode) {
@@ -60,6 +69,7 @@ internal static partial class MmcInstanceBackendTests {
         string originalBody = File.ReadAllText(input);
         string backup = Path.Combine(fixture.Scope, "parked-source");
         string? link = null; bool directoryLink = false, injected = false, beforeMove = false;
+        bool existingSourceLink = mode.StartsWith("existing-source-", StringComparison.Ordinal);
         byte[]? changedInput = null; string? outsideBefore = null;
         string OutsideSnapshot() => string.Join("|", Directory.EnumerateFiles(outside).Order(StringComparer.Ordinal)
             .Select(file => Path.GetFileName(file) + ":" + MmcDurableFiles.Observe(file)));
@@ -73,7 +83,18 @@ internal static partial class MmcInstanceBackendTests {
                     File.Move(input, backup);
                     // Matching author bytes ensure a missing link check cannot be hidden by a hash failure.
                     string linkedFile = Path.Combine(outside, "author-matching.bin"); File.WriteAllText(linkedFile, originalBody);
-                    File.CreateSymbolicLink(input, linkedFile); link = input;
+                    try { File.CreateSymbolicLink(input, linkedFile); }
+                    catch (IOException error) when ((error.HResult & 0xffff) == 1314) { throw new PayloadLinkFixtureUnavailableException(error); }
+                    catch (UnauthorizedAccessException error) { throw new PayloadLinkFixtureUnavailableException(error); }
+                    link = input;
+                    break;
+                case "source-leaf-junction":
+                case "existing-source-leaf-junction":
+                    File.Move(input, backup);
+                    // This is a real leaf reparse point without Windows symlink privilege. The
+                    // exact rejection message below must come from EnsureNoLinks, before File.Open
+                    // could instead fail because the replaced leaf is a directory.
+                    MmcInstancePathsTests.CreateDirectoryLink(input, outside); link = input; directoryLink = true;
                     break;
                 case "source-parent-link":
                     string inputParent = Path.GetDirectoryName(input)!;
@@ -105,13 +126,13 @@ internal static partial class MmcInstanceBackendTests {
         }
 
         try {
-            if (mode == "existing-source-link") Inject();
+            if (existingSourceLink) Inject();
             IOException? rejected = null;
             try {
                 reservation.AdoptPreparedGameFiles(prepared, proof.Baseline, checkpoint: (phase, index) => {
                     if (phase != MmcInitialPayloadCheckpoint.BeforeMove || index != 0) return;
                     beforeMove = true;
-                    if (mode != "existing-source-link") Inject();
+                    if (!existingSourceLink) Inject();
                 });
             } catch (IOException error) { rejected = error; }
             if (rejected is null) throw new Exception("The controlled payload attack was accepted: " + mode);
@@ -119,7 +140,7 @@ internal static partial class MmcInstanceBackendTests {
             Equal(false, Directory.Exists(fixture.VersionRoot));
             Equal(true, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "MmcImportPending.json")));
             Equal(false, File.Exists(Path.Combine(paths.InstanceRoot, "PCL", "InstanceDefinition.json")));
-            if (mode.EndsWith("link", StringComparison.Ordinal)) Equal("MMC 路径包含链接或重解析点。", rejected.Message);
+            if (mode.EndsWith("link", StringComparison.Ordinal) || mode.EndsWith("junction", StringComparison.Ordinal)) Equal("MMC 路径包含链接或重解析点。", rejected.Message);
             else if (mode == "source-changed") Equal("Private payload bytes changed after their initial CRC/hash observation.", rejected.Message);
             else Equal("Private payload target was claimed; existing bytes were preserved.", rejected.Message);
 
