@@ -4,12 +4,27 @@ using PCLLF.MMCC.Core;
 internal static partial class MmcInstanceBackendTests {
     internal static bool TryRunPrivatePayloadImportProbe(string[] args, out int exitCode) {
         exitCode = 0;
-        if (args.Length != 1 || args[0] != "--private-payload-import-probe") return false;
+        if (args.Length != 1) return false;
+        bool probe = args[0] == "--private-payload-import-probe";
+        if (!probe && args[0] != "--private-payload-path-checks") return false;
         try {
-            BulkPayloadImport();
-            Console.WriteLine("PASS explicit private payload import probe (one original 2003-file import case).");
+            if (probe) {
+                BulkPayloadImport();
+                Console.WriteLine("PASS explicit private payload import probe (one original 2003-file import case).");
+            } else {
+                (string Name, Action Run)[] existing = [
+                    ("original private payload complete/cancel/conflict", PrivatePayload),
+                    ("original initial cancellation/post-decision corruption", BulkPayloadFailure),
+                    ("original post-decision cancellation completes publication", BulkPayloadPostDecisionCancel)
+                ];
+                int passed = 0;
+                foreach (var test in PrivatePayloadPathCases().Concat(existing)) {
+                    test.Run(); passed++; Console.WriteLine("PASS " + test.Name);
+                }
+                Console.WriteLine($"PASS {passed}/{passed} selected private payload path checks; the separate 2003-file probe was not repeated.");
+            }
         } catch (Exception error) {
-            Console.Error.WriteLine("FAIL explicit private payload import probe: " + error);
+            Console.Error.WriteLine("FAIL " + args[0] + ": " + error);
             exitCode = 1;
         }
         return true;
