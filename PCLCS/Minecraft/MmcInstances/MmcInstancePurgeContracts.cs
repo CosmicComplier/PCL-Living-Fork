@@ -34,6 +34,8 @@ public sealed class MmcInstancePurgePreview {
 public sealed record MmcInstancePurgeRequest(MmcInstancePurgePreview Preview, string ConfirmedPreviewFingerprint,
     MmcInstancePurgeIntent Intent) {
     public Action<MmcInstancePurgeCheckpoint, string?>? Checkpoint { get; init; }
+    /// <summary>Runs after the final namespace check, immediately before recording the irreversible cleanup decision.</summary>
+    public Action? BeforeCommitDecision { get; init; }
 }
 public sealed record MmcInstancePurgeResult(MmcInstanceBackendStatus Status, string OperationDirectory,
     string? QuarantineRoot, bool DecisionRecorded, bool Completed, ImmutableArray<string> RemainingPaths, string? Failure = null);

@@ -17,6 +17,10 @@ internal static class MmcDeleteUi {
     internal static Func<ImmutableArray<MmcLifecycleCatalogEntry>, int?> SelectEntry { get; set; }
     internal static Action<Exception, string> ErrorObserved { get; set; }
     internal static Action<MmcLifecycleCheckpoint, string> CheckpointObserved { get; set; }
+    internal static MmcOperationCancellationFence AcquireOperationFence() {
+        if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) throw new IOException("另一项 MMC 删除、清理或恢复任务尚未完成。");
+        return new MmcOperationCancellationFence(() => Interlocked.Exchange(ref busy, 0));
+    }
 
     internal static void PromptDelete(ModMinecraft.McInstance instance, bool permanentRequested, Action completed = null) {
         ArgumentNullException.ThrowIfNull(instance);
@@ -30,7 +34,7 @@ internal static class MmcDeleteUi {
                     instance.Config.ContextStamp.Kind != MmcConfigurationContextKind.Managed || instance.Config.ContextStamp.InstanceId != source.Definition.InstanceId)
                     throw new IOException(source.Error ?? "实例状态已变化或存在未完成操作，请先打开 MMC 隔离区与恢复列表。");
                 string name = Path.GetFileName(source.Paths.InstanceRoot);
-                string text = (permanentRequested ? "MMC 实例当前仅支持可恢复删除，Shift 不会永久清除文件。\n\n" : "") +
+                string text = (permanentRequested ? "MMC 实例会先移入可恢复隔离区。永久清理请从“MMC 隔离区与恢复”明确选择。\n\n" : "") +
                     "将版本“" + name + "”移到 MMC 隔离区？\n存档、模组和配置会随实例保留，可从版本列表的“MMC 隔离区与恢复”恢复。\n" +
                     "此操作不会释放隔离内容占用的磁盘空间。";
                 ModBase.RunInUi(() => {
@@ -56,9 +60,18 @@ internal static class MmcDeleteUi {
                         if (index is null || index < 0 || index >= catalog.Entries.Length) return;
                         var preview = catalog.Entries[index.Value];
                         if (!preview.CanRestore && !preview.CanRecover) { ModMain.MyMsgBox(preview.Description, preview.Name); return; }
-                        bool restore = preview.CanRestore;
-                        string action = restore ? "恢复到原来的版本名称" : "恢复未完成的操作";
-                        if (Ask("为“" + preview.Name + "”" + action + "？\n" + preview.Description + "\n已有同名内容不会被覆盖。", "MMC 实例恢复确认", false) != 1) return;
+                        if (preview.CanPurge) {
+                            string question = "“" + preview.Name + "”仍完整保留在隔离区。\n可恢复实例，也可另行核对后永久清理。";
+                            int choice = Confirm is not null ? Confirm(question, "MMC 隔离实例", false) :
+                                ModMain.MyMsgBox(question, "MMC 隔离实例", "恢复实例", "取消", "永久清理");
+                            if (choice == 3) { MmcPurgeUi.Prompt(preview); return; }
+                            if (choice != 1) return;
+                            StartCatalogAction(preview, true); return;
+                        }
+                        bool restore = preview.CanRestore && !preview.CanRecover;
+                        bool purging = preview.State == MmcLifecycleCatalogState.Purging;
+                        string action = purging ? "继续已确认的永久清理" : restore ? "恢复到原来的版本名称" : "恢复未完成的操作";
+                        if (Ask("为“" + preview.Name + "”" + action + "？\n" + preview.Description + "\n已有同名内容不会被覆盖。", "MMC 实例操作确认", purging) != 1) return;
                         StartCatalogAction(preview, restore);
                     } catch (Exception error) { Report(error, "无法开始 MMC 恢复"); }
                 });
@@ -78,8 +91,7 @@ internal static class MmcDeleteUi {
 
     private static ModLoader.LoaderCombo<string> Start(string name, string input,
         Func<CancellationToken, Action<MmcLifecycleCheckpoint, string>, MmcInstanceLifecycleResult> execute, Action completed, bool recovery) {
-        if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) throw new IOException("另一项 MMC 删除或恢复任务尚未完成。");
-        var fence = new MmcOperationCancellationFence(() => Interlocked.Exchange(ref busy, 0));
+        var fence = AcquireOperationFence();
         var worker = new MmcOperationWorker<string, MmcInstanceLifecycleResult>(fence, recovery ? "恢复 MMC 实例" : "将 MMC 实例移入隔离区", task => {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
             var result = execute(linked.Token, (phase, directory) => {
@@ -112,7 +124,7 @@ internal static class MmcDeleteUi {
 
     private static string Label(MmcLifecycleCatalogEntry entry) => entry.Name + " · " + (entry.State switch {
         MmcLifecycleCatalogState.Quarantined => "可恢复", MmcLifecycleCatalogState.Incomplete => "未完成", MmcLifecycleCatalogState.Completed => "已完成",
-        MmcLifecycleCatalogState.Conflict => "存在冲突", _ => "无法验证"
+        MmcLifecycleCatalogState.Conflict => "存在冲突", MmcLifecycleCatalogState.Purging => "清理未完成", MmcLifecycleCatalogState.Purged => "已永久清理", _ => "无法验证"
     });
     private static int Ask(string text, string title, bool warning) => Confirm is not null ? Confirm(text, title, warning) :
         ModMain.MyMsgBox(text, title, "继续", "取消", IsWarn: warning);

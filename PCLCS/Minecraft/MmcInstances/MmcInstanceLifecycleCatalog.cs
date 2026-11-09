@@ -15,7 +15,7 @@ public sealed record MmcLifecycleCatalogEntry(string MinecraftRoot, string Opera
 public sealed record MmcLifecycleCatalog(ImmutableArray<MmcLifecycleCatalogEntry> Entries, bool Truncated);
 
 /// <summary>Read-only, bounded discovery. Only Execute revalidates an exact preview and invokes the existing guarded backend.</summary>
-public static class MmcInstanceLifecycleCatalog {
+public static partial class MmcInstanceLifecycleCatalog {
     private const int MaximumEntries = 256;
     private const long MaximumScanBytes = 64 * 1024 * 1024;
     private const long MaximumRecordBytes = 64 * 1024;

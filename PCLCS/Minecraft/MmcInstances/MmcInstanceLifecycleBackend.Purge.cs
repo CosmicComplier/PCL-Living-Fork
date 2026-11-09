@@ -60,6 +60,7 @@ public sealed partial class MmcInstanceLifecycleBackend {
             request.Checkpoint?.Invoke(MmcInstancePurgeCheckpoint.BeforeDecision, null);
             if (MmcInstancePurgeSnapshot.Fingerprint(MmcInstancePurgeSnapshot.Capture(lifecycle, access, fence.Token)) != request.Preview.SnapshotFingerprint)
                 throw new IOException("Quarantine changed after permanent cleanup preparation; its bytes were preserved.");
+            request.BeforeCommitDecision?.Invoke();
             fence.EnterDecision(); purge.Decide(); commitRecorded = true;
             using var decidedPins = purge.PinAuthority();
             request.Checkpoint?.Invoke(MmcInstancePurgeCheckpoint.CommitDecided, null);
