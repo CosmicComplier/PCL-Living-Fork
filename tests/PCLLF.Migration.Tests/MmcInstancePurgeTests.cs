@@ -191,6 +191,7 @@ internal static class MmcInstancePurgeTests {
         Equal(before, HashTree(deleted.CurrentRoot!)); Equal(false, Directory.Exists(fixture.Source));
     }
     internal static bool TryRunChild(string[] args, out int code) {
+        if (MmcPurgeTxFPrimitiveTests.TryRunChild(args, out code)) return true;
         code = 0; if (args.Length == 0 || args[0] != "--mmc-purge-child") return false;
         try {
             if (args.Length != 8) throw new IOException("Bad owned purge child arguments.");

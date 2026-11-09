@@ -14,13 +14,17 @@ internal sealed class MmcPurgeHandle : IDisposable {
     internal bool Directory { get; }
     internal string Identity { get; }
     internal long Size { get; }
-    private MmcPurgeHandle(string path, bool directory, bool delete, bool outerAncestor, bool allowDeleteSharing) {
+    internal bool TransactedWriter { get; }
+    private MmcPurgeHandle(string path, bool directory, bool delete, bool outerAncestor, bool allowDeleteSharing, SafeFileHandle? transaction = null) {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Permanent quarantine cleanup requires verified Windows handles.");
         Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); Directory = directory;
-        uint access = 0x80u | (directory ? 0u : 0x80000000u) | (delete ? 0x10000u : 0u);
+        TransactedWriter = transaction is not null;
+        uint access = transaction is null ? 0x80u | (directory ? 0u : 0x80000000u) | (delete ? 0x10000u : 0u) : 0xc0010080u;
         // Ancestors outside the owned namespace only deny renames. Owned directories and files
         // also deny writers, including a writer which was opened before this handle.
-        Handle = CreateFileW(Path, access, outerAncestor ? 3u : allowDeleteSharing ? 5u : 1u, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+        Handle = transaction is null
+            ? CreateFileW(Path, access, outerAncestor ? 3u : allowDeleteSharing ? 5u : 1u, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)
+            : CreateFileTransactedW(Path, access, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero, transaction, IntPtr.Zero, IntPtr.Zero);
         if (Handle.IsInvalid) { Handle.Dispose(); throw Error("Cannot pin an exact purge object."); }
         try {
             if (!GetFileInformationByHandle(Handle, out var info)) throw Error("Cannot read purge object identity.");
@@ -38,6 +42,12 @@ internal sealed class MmcPurgeHandle : IDisposable {
         } catch { Handle.Dispose(); throw; }
     }
     internal static MmcPurgeHandle Open(string path, bool directory, bool delete = false, bool outerAncestor = false, bool allowDeleteSharing = false) => new(path, directory, delete, outerAncestor, allowDeleteSharing);
+    internal static MmcPurgeHandle OpenTransactedWriter(string path, bool directory, SafeFileHandle transaction) {
+        try { return new(path, directory, true, false, false, transaction); }
+        catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException) {
+            throw new PlatformNotSupportedException("Transactional NTFS is unavailable; ordinary delete-pending is not a safe fallback.", error);
+        }
+    }
     internal string Hash(CancellationToken token) {
         if (Directory || Size > MmcInstancePurgeSnapshot.MaximumBytes) throw new IOException("Purge file exceeds its bounded role.");
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -61,6 +71,16 @@ internal sealed class MmcPurgeHandle : IDisposable {
         byte disposition = 1;
         if (!SetFileInformationByHandle(Handle, 4, ref disposition, 1)) throw Error("Exact purge object could not be deleted; remaining content was preserved.");
     }
+    internal void StageTransactedDelete() {
+        if (!TransactedWriter) throw new IOException("A plain delete-pending handle cannot provide cross-stream exclusion or rollback on process death.");
+        Delete();
+    }
+    internal void AssertDefaultDataStreamOnly() {
+        var streams = MmcPurgeNtfsTransaction.ReadDataStreams(Handle, Directory);
+        if (streams.Any(stream => stream.Name != "::$DATA"))
+            throw new IOException("Named NTFS data streams are outside this permanent cleanup preview; preserve the entire object.");
+        if (!Directory && (streams.Length != 1 || streams[0].SizeBytes != Size)) throw new IOException("The default NTFS data stream cannot be fully established.");
+    }
     internal static bool SamePath(string a, string b) => string.Equals(System.IO.Path.TrimEndingDirectorySeparator(a), System.IO.Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
     internal static void RequireLocalNtfsIdentity(string fileSystem, string canonicalPath, ulong fileIndex) {
         // BY_HANDLE_FILE_INFORMATION's 64-bit ID is not sufficient for ReFS. Every
@@ -70,7 +90,9 @@ internal sealed class MmcPurgeHandle : IDisposable {
         if (fileIndex is 0 or ulong.MaxValue) throw new IOException("Pinned NTFS object has an unusable zero or all-ones file identity.");
     }
     internal static bool IsIdentity(string? value) => value is { Length: 42 } && value[8] == ':' && value[25] == ':' &&
-        value.Where((_, index) => index is not (8 or 25)).All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+        value.Where((_, index) => index is not (8 or 25)).All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+        ulong.TryParse(value.AsSpan(9, 16), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out ulong identity) &&
+        identity is not (0 or ulong.MaxValue);
     private static IOException Error(string text) => new(text, new Win32Exception(Marshal.GetLastWin32Error()));
     public void Dispose() => Handle.Dispose();
     [StructLayout(LayoutKind.Sequential)] private struct Information {
@@ -79,6 +101,9 @@ internal sealed class MmcPurgeHandle : IDisposable {
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileTransactedW(string name, uint access, uint share, IntPtr security, uint creation, uint flags,
+        IntPtr template, SafeFileHandle transaction, IntPtr miniVersion, IntPtr extendedParameter);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out Information information);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
