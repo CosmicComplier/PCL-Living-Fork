@@ -63,6 +63,9 @@
 <Compile Include="Controls/MmcProjectionReviewView.cs" />
 <Compile Include="Modules/Minecraft/MmcComponentEditorUi.cs" />
 <Compile Include="Controls/MmcComponentEditorViews.cs" />
+<Compile Include="Controls/MmcPlatformOriginViews.cs" />
+<Compile Include="Modules/Minecraft/MmcPlatformOriginUi.cs" />
+<Compile Include="Modules/Minecraft/MmcPackageUpdateUi.PlatformOrigin.cs" />
 <Compile Include="Modules/Minecraft/MmcLegacyAdoptionUi.cs" />
 <Compile Include="Modules/Minecraft/MmcLegacyAdoptionPreviewView.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceOverall.Mmc.cs" />

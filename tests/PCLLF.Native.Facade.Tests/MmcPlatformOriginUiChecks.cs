@@ -20,18 +20,24 @@ internal static class MmcPlatformOriginUiChecks {
         var controls = (IList)Native.Get(selector, "Selections")!;
         Native.Check(controls.Count == 2 && controls.Cast<MyListItem>().All(item => !item.Checked) && Property(selector, "Selected") is null && !(bool)Property(selector, "CanConfirm")!,
             "The real platform selector preselected an ambiguous/equal-digest release file.");
+        var releasePort = Native.Static("PCL.MyMsgText", "VersionSelection", selector) ?? throw new IOException("Missing real release-dialog selection port.");
+        Native.Check(!((Func<bool>)Native.Get(releasePort, "HasSelection")!)(), "The actual modal accepted an unselected release.");
         ((MyListItem)controls[1]!).Checked = true;
         Native.Check(Equals(Property(selector, "Selected"), second) && (bool)Property(selector, "CanConfirm")!, "An explicit complete release file did not enable confirmation.");
+        Native.Check(((Func<bool>)Native.Get(releasePort, "HasSelection")!)(), "The actual modal ignored the explicit release selection.");
         object single = New("PCL.MmcPlatformReleaseSelectView", ImmutableArray.Create(first), "选择文件", "");
         Native.Check(Property(single, "Selected") is null && !(bool)Property(single, "CanConfirm")!, "A single hash candidate bypassed explicit selection.");
         string original = Path.Combine(files.Root, "original.zip"); File.WriteAllText(original, "Input form only; backend never consumes this inert file.");
         object input = New("PCL.MmcPlatformOriginInputView", new MmcInstanceOrigin(new string('d', 64), "old-name.zip"));
         Native.Check(!(bool)Property(input, "CanConfirm")!, "The real origin form began with implicit platform/project/version authority.");
+        var inputPort = Native.Static("PCL.MyMsgText", "VersionSelection", input) ?? throw new IOException("Missing real origin-form selection port.");
+        Native.Check(!((Func<bool>)Native.Get(inputPort, "HasSelection")!)(), "The actual modal accepted an incomplete origin form.");
         ((MyTextBox)Native.Get(input, "OriginalZip")!).Text = original;
         ((MyComboBox)Native.Get(input, "Platform")!).SelectedIndex = 0;
         ((MyTextBox)Native.Get(input, "ProjectId")!).Text = "ProjectA";
         ((MyTextBox)Native.Get(input, "VersionId")!).Text = "VersionA";
         Native.Check((bool)Property(input, "CanConfirm")!, "Complete explicit original/project/version fields did not enable reading release files.");
+        Native.Check(((Func<bool>)Native.Get(inputPort, "HasSelection")!)(), "The actual modal ignored the complete origin form.");
         ((MyTextBox)Native.Get(input, "ProjectId")!).Text = "net.minecraftforge";
         Native.Check(!(bool)Property(input, "CanConfirm")!, "An MMC UID was accepted as a stable platform project ID.");
         ((MyTextBox)Native.Get(input, "ProjectId")!).Text = "123"; ((MyComboBox)Native.Get(input, "Platform")!).SelectedIndex = 1;

@@ -79,6 +79,8 @@ internal static class Program
         ["mmc-component-world-locked"] = MmcComponentEditorUiChecks.RunWorldLocked,
         ["mmc-component-world-changed"] = MmcComponentEditorUiChecks.RunWorldChanged,
         ["mmc-component-editor-download"] = MmcComponentEditorDownloadChecks.Run,
+        ["mmc-platform-origin-views"] = MmcPlatformOriginUiChecks.RunViews,
+        ["mmc-platform-origin-cancel-unstarted"] = MmcPlatformOriginUiChecks.RunCancellationUnstarted,
         ["mmc-legacy-adoption-ui"] = MmcLegacyAdoptionUiChecks.Run,
         ["mmc-import-recovery-ui"] = MmcImportRecoveryUiChecks.RunRecovery,
         ["mmc-import-retry-ui"] = MmcImportRecoveryUiChecks.RunRetry,

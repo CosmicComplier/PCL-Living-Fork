@@ -11,6 +11,7 @@ public partial class PageInstanceOverall {
         // re-reading settings with side effects merely to decide button visibility.
         var visibility = PageInstanceLeft.Instance?.Config.ContextStamp.Kind == MmcConfigurationContextKind.Managed ? Visibility.Visible : Visibility.Collapsed;
         BtnMmcExport.Visibility = visibility; BtnMmcHistory.Visibility = visibility; BtnMmcMove.Visibility = visibility; BtnMmcPackageUpdate.Visibility = visibility; BtnMmcComponents.Visibility = visibility;
+        BtnMmcPlatformOrigin.Visibility = visibility;
         BtnMmcLegacyAdoption.Visibility = PageInstanceLeft.Instance?.Config.ContextStamp.Kind == MmcConfigurationContextKind.Unmanaged ? Visibility.Visible : Visibility.Collapsed;
     }
     private void BtnMmcLegacyAdoption_Click(object sender, MouseButtonEventArgs e) {
@@ -21,6 +22,7 @@ public partial class PageInstanceOverall {
     private void BtnMmcHistory_Click(object sender, MouseButtonEventArgs e) => MmcHistoryUi.Prompt(PageInstanceLeft.Instance);
     private void BtnMmcPackageUpdate_Click(object sender, MouseButtonEventArgs e) => MmcPackageUpdateUi.Prompt(PageInstanceLeft.Instance);
     private void BtnMmcComponents_Click(object sender, MouseButtonEventArgs e) => MmcComponentEditorUi.Prompt(PageInstanceLeft.Instance);
+    private void BtnMmcPlatformOrigin_Click(object sender, MouseButtonEventArgs e) => MmcPlatformOriginUi.Prompt(PageInstanceLeft.Instance, ModNet.CreateMmcPlatformOriginCatalog());
     private void BtnMmcMove_Click(object sender, MouseButtonEventArgs e) {
         var original = PageInstanceLeft.Instance;
         MmcLifecycleUi.PromptMove(original, _ => {
