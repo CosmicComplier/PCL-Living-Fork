@@ -10,7 +10,7 @@
 
 之后已静态接入 `PurgeForward`：文件、目录、根目录和未决准备记录的撤回均通过短 TxF，不存在普通 disposition 删除后备路径。预览和执行扫描均拒绝已有 ADS/EFS；不可逆外层决定前还会用主定义执行无修改的 transaction-writer 能力检查。每条目在 writer 上重验身份/默认流清单/摘要，暂存删除并关闭条目句柄后才提交；`EntryStaged` 断点保留事务，用于确认该间隙的排他和真实终止回滚。根目录最终删除同样使用该原语并检查为空。已适配的实例所有权许可可验证当前事务 marker writer，避免为了读取自身 marker 而放松其它 pending/session 守卫。
 
-本轮接入后的完整后端测试尚未运行，Main 入口仍关闭，不能据原语测试宣布整个永久清理功能验收通过。
+Main 入口仍关闭。下文的结果是自有 GUID 小样本的后端验收，不代表真实玩家数据、实际游戏启动或 Main 界面验收。
 
 每个原生句柄均限制为本地 NTFS，并拒绝零或全一的 64 位文件 ID。ReFS、网络文件系统、TxF 缺失/禁用、EFS 或写入冲突均拒绝处理或保留剩余条目，禁止退回普通 disposition 删除。此可选功能不是导入、修复或启动的依赖，也不修改服务、ACL、卷设置或 TxRM 配置。
 
@@ -19,3 +19,9 @@
 2026-11-09 首轮只编译 Migration 项目并运行 `MmcPurgeTxFPrimitiveTests.SmokeCases()` 的一个文件原语用例：固定 SDK 10/c774，编译 0 警告/0 错误；已有 ADS 修改和新建请求在 writer 存活时以错误 32 被拒，关闭条目句柄、事务仍活动时的新 ADS 请求以 6800 被拒，随后提交删除已验证文件。此结果尚不覆盖目录、根目录、终止恢复或完整实例清理。原始日志位于工作树已忽略目录 `artifacts/mmc-purge-txf-proof/20261109-035916-e3a5b423f5cd47f095c61f60cc602b79/`。
 
 随后单节点二编同样为 0 警告/0 错误，4 个 `BoundaryCases()` 分进程通过：文件/目录/根目录已有 ADS 被拒且原字节保留；目录/根目录的 stage 后关闭句柄间隙仍以 6800 拒绝 ADS，外部新子目录不能加入；已有 share-delete ADS writer 阻止事务 writer；3 个 parent 创建并核对 GUID/nonce/ready PID 的子进程分别在 writer、stage 后/commit 前、commit 后被终止，前两者回滚并保留主体和未批准流，后者只删除已验证主体。原始日志位于 `artifacts/mmc-purge-txf-proof/20261109-040105-boundaries-b56ff3d5f5df4644bc3440d2aa675619/`。这些是原语证据，尚不是完整实例永久清理验收。
+
+完整后端首次运行在只读预览的深层原生打开处遇到 Win32 错误 3，未到永久清理决定，立即停止。失败日志保留在 `artifacts/mmc-purge-txf-proof/20261109-051012-full-8b823f9586424808a57d9b2b2aaf25d0/`。原异常没有记录具体失败路径，fixture 随后按既有清理逻辑移除，因此不能把推算路径当作该次实测路径；根据固定目录布局，私有来源对象路径在此 TEMP 根下为 277 字符。修复只在 native 参数加入扩展前缀，逻辑路径、所有权、文件 ID 与最终 handle-path 检查保持原样。
+
+`9092ba28` 的后续运行固定 SDK 10/c774、单节点、关闭共享编译，Migration 编译为 0 警告/0 错误（10.22 秒）。新增长路径用例实际记录绝对逻辑路径长度 324，ordinary/TX 句柄保持同身份、同摘要并成功提交删除。随后 13 个主场景各自独立进程、独立日志全部通过：完整导入后隔离再清理；错误身份/过期预览；未决事务/会话/生产者；决定前取消；实际 catalog 撤准备；决定后恢复；外来文件/空目录/异身份主定义/链接；文件/目录/根目录的 15 种 ADS 时机；真实 writer/只读文件失败；同句柄及 late empty-dir；损坏计划关闭还原入口；四个自有子进程的 prepared、decided、entry-staged、primary-removed 终止恢复。最后一组保留原 20 秒 ready/5 秒 exit 限额，按 GUID、nonce、ready PID 核验后只终止 parent 创建的进程。
+
+全部整合证据位于 `artifacts/mmc-purge-txf-proof/20261109-051352-full-longpath-eca8a3d24e0144ea8a5a69f45d711687/`：`build.log`、`long-path.log`、`00-*.log` 至 `12-*.log` 和 `case-summary.log`。没有重复运行已绿原语矩阵，没有修改 Windows/TxRM/ACL 设置，也没有使用真实玩家数据、JVM、网络或用户桌面。
