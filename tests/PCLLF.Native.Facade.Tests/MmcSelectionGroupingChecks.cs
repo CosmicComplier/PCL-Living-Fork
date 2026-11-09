@@ -23,7 +23,7 @@ internal static class MmcSelectionGroupingChecks {
         File.WriteAllText(Path.Combine(ordinaryRoot, "mmc-pack.json"), "loose metadata does not claim installed management");
         Instance ordinary = new Instance(ordinaryRoot).Load();
         Native.Check(managed.UsesMmcBackend && !ordinary.UsesMmcBackend, "Main did not distinguish installed management from a name/loose package manifest.");
-        ordinary.Version.ModLoaderVersions[ModLoaders.Forge] = "10.13.4.1614"; ordinary.StateCode = 6;
+        ordinary.Version.ModLoaderVersions[ModLoaders.Forge] = "10.13.4.1614"; ordinary.State = Instance.McInstanceState.Forge;
         Directory.CreateDirectory(Path.Combine(ordinaryRoot, "PCL"));
         File.WriteAllText(Path.Combine(ordinaryRoot, "PCL", "CloneOrigin.json"), new JObject {
             ["schema"] = 1, ["sourceVersionFolder"] = managedRoot, ["cloneName"] = ordinary.Name, ["sourceName"] = managed.Name
@@ -37,17 +37,17 @@ internal static class MmcSelectionGroupingChecks {
             Check("MMC 实例 (1)", "Forge 版本 (1)");
             managed.IsStar = ordinary.IsStar = true; Set(Card.Star);
             Check("MMC 实例 · 收藏 (1)", "收藏夹");
-            managed.IsStar = ordinary.IsStar = false; managed.CardCode = ordinary.CardCode = 1; Set(Card.Hidden);
+            managed.IsStar = ordinary.IsStar = false; managed.DisplayType = ordinary.DisplayType = Card.Hidden; Set(Card.Hidden);
             Native.Check(Render().Count == 0, "Hidden instances leaked into the ordinary selection view.");
             page.ShowHidden = true; Check("MMC 实例 · 隐藏 (1)", "隐藏的版本 (1)");
-            page.ShowHidden = false; managed.CardCode = ordinary.CardCode = 0;
+            page.ShowHidden = false; managed.DisplayType = ordinary.DisplayType = Card.Auto;
             MmcIniConfiguration.QueuePreferenceBatch(managed.Config, new Dictionary<string, string?> { ["IsStar"] = "True", ["DisplayType"] = "1" });
             managed.Config.Save();
             string projection = Path.Combine(managedRoot, Path.GetFileName(managedRoot) + ".json");
             File.AppendAllText(projection, " ");
             var fresh = (Dictionary<Card, List<Instance>>)Native.Static("PCL.ModMinecraft", "InitMcInstanceListWithoutCache", game + Path.DirectorySeparatorChar)!;
             managed = fresh.Values.SelectMany(items => items).Single(item => item.Name == "managed");
-            Native.Check(managed.IsStar && managed.CardCode == 1 && managed.StateCode == 0 && managed.UsesMmcBackend,
+            Native.Check(managed.IsStar && managed.DisplayType == Card.Hidden && managed.State == Instance.McInstanceState.Error && managed.UsesMmcBackend,
                 "Cold-list loading a damaged projection lost identity-bound hidden/favorite preferences.");
             Set(Card.API); Native.Check(Render().Count == 1, "A hidden repair-required MMC instance leaked after a cold list refresh.");
             page.ShowHidden = true;
@@ -57,7 +57,7 @@ internal static class MmcSelectionGroupingChecks {
             managed = new Instance(managedRoot).Load(); Set(Card.API); Check("MMC 实例 · 收藏 (1)", "Forge 版本 (1)");
             MmcIniConfiguration.QueuePreferenceBatch(managed.Config, new Dictionary<string, string?> { ["IsStar"] = "False" }); managed.Config.Save();
             managed = new Instance(managedRoot).Load(); Set(Card.API);
-            Native.Check(managed.UsesMmcBackend && managed.StateCode == 0, "A damaged MMC projection fell back to ordinary management.");
+            Native.Check(managed.UsesMmcBackend && managed.State == Instance.McInstanceState.Error, "A damaged MMC projection fell back to ordinary management.");
             Check("MMC 实例 · 需要修复 (1)", "Forge 版本 (1)");
             Native.Check(File.ReadAllBytes(primary).SequenceEqual(primaryBefore) && File.ReadAllBytes(ordinaryJson).SequenceEqual(ordinaryBefore),
                 "Rendering the separated selection cards changed an instance definition or ordinary version JSON.");
@@ -84,7 +84,10 @@ internal static class MmcSelectionGroupingChecks {
         Console.WriteLine("PASS mmc-selection-groups: actual Main keeps installed MMC and ordinary rows separate, including favorites, F11 hidden mode, repair-required snapshots and cross-family clone origins. Name/loose metadata does not claim MMC management; definitions remain unchanged. No game or desktop interaction.");
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject item) {
-        foreach (DependencyObject child in LogicalTreeHelper.GetChildren(item).OfType<DependencyObject>()) {
+        // Main keeps version rows virtual until they enter a viewport. Exercise
+        // that same initializer explicitly in this offscreen, window-free check.
+        foreach (DependencyObject original in LogicalTreeHelper.GetChildren(item).OfType<DependencyObject>().ToArray()) {
+            DependencyObject child = original is FrameworkElement element ? MyVirtualizingElement.TryInit(element) : original;
             yield return child;
             foreach (var nested in Descendants(child)) yield return nested;
         }
