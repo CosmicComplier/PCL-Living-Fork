@@ -19,7 +19,7 @@ public sealed class MmcPackageUpdateServices {
     public Action<MmcInstancePackageUpdateResult> Discarded { get; init; }
 }
 
-internal static class MmcPackageUpdateUi {
+internal static partial class MmcPackageUpdateUi {
     private static int busy;
     internal static bool HasActiveOperation => Volatile.Read(ref busy) != 0;
     internal static Func<ModMinecraft.McInstance, MmcPackageUpdateServices> ServicesFactory { get; set; }
@@ -45,13 +45,25 @@ internal static class MmcPackageUpdateUi {
         string archive = Path.GetFullPath(archivePath);
         if (!File.Exists(archive)) throw new IOException("所选整合包文件不存在。");
         var services = ServicesFactory?.Invoke(instance) ?? CreateServices(source.Paths.InstanceRoot);
+        return StartPrepared(instance, source, services, "读取新版 MMC 整合包", (backend, task, token) => {
+            var environment = ResolveEnvironment(archive, services.Metadata, task, token);
+            var request = new MmcInstancePackageUpdateRequest(source.Paths.InstanceRoot, source.Definition.InstanceId,
+                source.Definition.Generation, source.PrimarySha256, archive, environment);
+            task.Name = "准备新版 MMC 整合包";
+            return backend.PrepareAsync(request, token, new Progress(task, services.ProgressObserved)).GetAwaiter().GetResult();
+        });
+    }
+
+    private static ModLoader.LoaderCombo<string> StartPrepared(ModMinecraft.McInstance instance, MmcInstanceInspection source,
+        MmcPackageUpdateServices services, string initialStage,
+        Func<MmcInstancePackageUpdateBackend<ModNet.NetFile>, ModLoader.LoaderTask<string, MmcInstancePackageUpdateResult>, CancellationToken,
+            MmcInstancePackageUpdatePreviewResult> prepare) {
         if (services.Metadata is null || services.CacheRoots is null) throw new IOException("MMC 更新缺少下载和元数据服务。");
         // Read settings before Commit takes configuration quiescence. The backup
         // callback itself only uses the supplied game root and captured retention.
         int retention = Settings.Get<int>("VersionWorldBackupRetention", Instance: instance);
-        if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) throw new IOException("另一项 MMC 整合包更新尚未完成。");
-        var fence = new MmcOperationCancellationFence(() => Interlocked.Exchange(ref busy, 0));
-        var worker = new MmcOperationWorker<string, MmcInstancePackageUpdateResult>(fence, "读取新版 MMC 整合包", task => {
+        var fence = AcquireOperationFence();
+        var worker = new MmcOperationWorker<string, MmcInstancePackageUpdateResult>(fence, initialStage, task => {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(task.CreateCancellationToken(), fence.Token);
             var token = linked.Token;
             var backend = new MmcInstancePackageUpdateBackend<ModNet.NetFile>(services.Metadata, services.CacheRoots, MmcDownloads.BuildFile,
@@ -60,12 +72,8 @@ internal static class MmcPackageUpdateUi {
             OwnedCandidate owned = null;
             bool discard = false, published = false;
             try {
-                var environment = ResolveEnvironment(archive, services.Metadata, task, token);
-                var request = new MmcInstancePackageUpdateRequest(source.Paths.InstanceRoot, source.Definition.InstanceId,
-                    source.Definition.Generation, source.PrimarySha256, archive, environment);
-                task.Name = "准备新版 MMC 整合包";
-                var prepared = backend.PrepareAsync(request, token, new Progress(task, services.ProgressObserved)).GetAwaiter().GetResult();
-                owned = OwnedCandidate.FromResult(request.VersionRoot, prepared);
+                var prepared = prepare(backend, task, token);
+                owned = OwnedCandidate.FromResult(source.Paths.InstanceRoot, prepared);
                 if (prepared.Status == MmcInstanceBackendStatus.Cancelled) throw new OperationCanceledException(token);
                 var preview = RequirePreview(prepared);
                 for (;;) {
@@ -138,6 +146,12 @@ internal static class MmcPackageUpdateUi {
             combo.Start(source.Paths.InstanceRoot); return combo;
         } catch { fence.AbandonUnstarted(); throw; }
     }
+
+    internal static MmcOperationCancellationFence AcquireOperationFence() {
+        if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) throw new IOException("另一项 MMC 来源核实或整合包更新尚未完成。");
+        return new(() => Interlocked.Exchange(ref busy, 0));
+    }
+    internal static MmcInstanceInspection ReadManagedSource(ModMinecraft.McInstance instance) => ReadSource(instance);
 
     private static MmcRuntimeEnvironment ResolveEnvironment(string archive, MmcMetadataStore metadata,
         ModLoader.LoaderTask<string, MmcInstancePackageUpdateResult> task, CancellationToken token) {

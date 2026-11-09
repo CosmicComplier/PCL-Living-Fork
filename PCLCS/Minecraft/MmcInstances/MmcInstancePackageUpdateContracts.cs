@@ -25,6 +25,8 @@ public sealed class MmcInstancePackageUpdatePreview {
     public MmcInstancePackageUpdateChoices Choices { get; }
     public string PreviewSha256 { get; }
     public string PackageSha256 { get; }
+    /// <summary>Display-only descriptor; authority remains the fixed internal service proof.</summary>
+    public MmcPlatformReleaseDescriptor? PlatformRelease => Selection.VerifiedOrigin?.Release;
     public Guid OperationId => Job.Owner.OperationId;
     public string WorkingRoot => Job.Root;
     public ImmutableArray<MmcPackageComponentDifference> Components { get; }

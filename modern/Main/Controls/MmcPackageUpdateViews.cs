@@ -23,7 +23,8 @@ internal sealed class MmcPackageUpdatePreviewView : ModpackDialogView {
     private int section, page;
 
     internal MmcPackageUpdatePreviewView(MmcInstancePackageUpdatePreview preview, bool editable) : base(
-        Path.GetFileName(preview.Selection.ArchivePath), "组件、运行环境与作者文件均来自所选本地 ZIP。", 4) {
+        preview.PlatformRelease?.File.FileName ?? Path.GetFileName(preview.Selection.ArchivePath),
+        preview.PlatformRelease is { } release ? release.Platform + " · 项目 " + release.ProjectId + " · 发布 " + release.VersionId : "组件、运行环境与作者文件均来自所选本地 ZIP。", 4) {
         this.preview = preview; this.editable = editable; allowUnverified = preview.Choices.AllowUnverifiedDependencies;
         foreach (var difference in preview.Components.Where(value => value.HasUserOverride && value.KeepUserOverride.HasValue))
             components[difference.Uid] = difference.KeepUserOverride.Value;
