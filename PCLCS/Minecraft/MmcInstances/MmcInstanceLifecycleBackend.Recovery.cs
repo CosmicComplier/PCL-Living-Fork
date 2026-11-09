@@ -26,6 +26,10 @@ public sealed partial class MmcInstanceLifecycleBackend {
             journal=MmcInstanceLifecycleJournal.Read(directory);var intent=journal.Intent;
             MmcLifecycleAccess.SameVolume(intent.SourceRoot,intent.TargetRoot);
             using var access=new MmcLifecycleAccess(intent.SourceRoot,intent.TargetRoot,intent.InstanceId);
+            if(MmcInstancePurgeJournal.HasArtifacts(directory)) {
+                var purge=MmcInstancePurgeJournal.Read(journal);var result=RecoverPurge(purge,access);
+                if(result.DecisionRecorded)return LifecyclePurgeResult(result);
+            }
             if(intent.Kind=="Delete"&&journal.IsRestored()){
                 var restored=TerminalPrimary(journal,access,intent.SourceRoot,intent.SourcePrimarySha256,intent.SourceGeneration,false);
                 if(journal.Owns(intent.SourceRoot)){using var permit=journal.Enter(access.Leases[intent.SourceRoot]);journal.ClearPending(intent.SourceRoot);}
@@ -69,7 +73,7 @@ public sealed partial class MmcInstanceLifecycleBackend {
                 MmcFileTransactions.AssertNoPending(access.Leases[intent.SourceRoot]);journal.RecoverUnmarkedWorkspace(access.Leases[intent.SourceRoot]);journal.Complete("Aborted");return new(MmcInstanceBackendStatus.Cancelled,directory,intent.SourceRoot);
             }
             throw new IOException("Lifecycle source and target ownership are missing or conflicting; both paths were preserved.");
-        }catch(Exception error)when(Failure(error)){return new(MmcInstanceBackendStatus.NeedsRecovery,journal?.DirectoryPath??directory,journal?.Intent.SourceRoot,Failure:error.Message);}
+        }catch(Exception error)when(Failure(error)){return new(MmcInstanceBackendStatus.NeedsRecovery,journal?.DirectoryPath??directory,journal?.Intent.SourceRoot,Failure:error.Message){PurgeDecided=MmcInstancePurgeJournal.HasDecision(directory)};}
     }
     private static MmcStoredPrimaryDefinition TerminalPrimary(MmcInstanceLifecycleJournal journal,MmcLifecycleAccess access,string location,string hash,long generation,bool quarantine){
         var primary=MmcSavedSourceStore.ReadPrimary(MmcInstancePaths.Resolve(location));

@@ -19,6 +19,7 @@ internal sealed class MmcInstanceLifecycleJournal {
     internal const string MarkerRelative = "PCL/MmcLifecyclePending.json";
     internal string DirectoryPath { get; }
     internal MmcLifecycleIntent Intent { get; }
+    internal string IntentSha256 => intentHash;
     private readonly string intentHash;
     private readonly byte[] marker;
     private MmcInstanceLifecycleJournal(string directory, MmcLifecycleIntent intent, string hash) {
@@ -155,6 +156,7 @@ internal sealed class MmcInstanceLifecycleJournal {
         if(!File.Exists(path)) MmcDurableFiles.WriteRecord(path,expected); else if(Completion()!=expected) throw new IOException("Lifecycle completion conflicts with its original result.");
     }
     internal string PrepareRestore(){
+        if(MmcInstancePurgeJournal.HasDecision(DirectoryPath))throw new IOException("Permanent cleanup was decided; this instance can no longer be restored.");
         if(Intent.Kind!="Delete"||Completion()?.Disposition!="Quarantined")throw new IOException("Only a completed quarantine supports restoration.");
         AbandonRestorePreparation();return MmcDurableFiles.WriteRecord(Path.Combine(DirectoryPath,"restore.record"),new MmcLifecycleRestore(1,Guid.NewGuid(),Intent.OperationId,intentHash));
     }
@@ -166,7 +168,7 @@ internal sealed class MmcInstanceLifecycleJournal {
         string path=Path.Combine(DirectoryPath,"RestoreCommitDecided.record");if(!File.Exists(path))return false;
         var(intent,hash)=ReadRestore();if(MmcDurableFiles.ReadRecord<MmcLifecycleDecision>(path).Value!=new MmcLifecycleDecision(1,intent.RestoreId,hash,"RestoreDelete"))throw new IOException("Quarantine restoration decision is damaged.");return true;
     }
-    internal void DecideRestore(){var(intent,hash)=ReadRestore();MmcDurableFiles.WriteRecord(Path.Combine(DirectoryPath,"RestoreCommitDecided.record"),new MmcLifecycleDecision(1,intent.RestoreId,hash,"RestoreDelete"));}
+    internal void DecideRestore(){if(MmcInstancePurgeJournal.HasDecision(DirectoryPath))throw new IOException("Permanent cleanup was decided; restoration is forbidden.");var(intent,hash)=ReadRestore();MmcDurableFiles.WriteRecord(Path.Combine(DirectoryPath,"RestoreCommitDecided.record"),new MmcLifecycleDecision(1,intent.RestoreId,hash,"RestoreDelete"));}
     internal void AbandonRestorePreparation(string? expectedHash=null){
         string path=Path.Combine(DirectoryPath,"restore.record");if(!File.Exists(path)||HasRestoreDecision())return;var(_,hash)=ReadRestore();if(expectedHash is not null&&hash!=expectedHash)throw new IOException("A different restore preparation owns this record.");File.Delete(path);
     }

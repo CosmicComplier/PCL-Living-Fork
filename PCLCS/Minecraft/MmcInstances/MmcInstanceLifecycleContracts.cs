@@ -15,5 +15,8 @@ public sealed record MmcInstanceDeleteRequest(string SourceRoot, Guid ExpectedIn
     public Action<MmcLifecycleCheckpoint, string>? Checkpoint { get; init; }
 }
 public sealed record MmcInstanceLifecycleResult(MmcInstanceBackendStatus Status, string? OperationDirectory = null, string? CurrentRoot = null,
-    MmcInstanceDefinition? Definition = null, bool Quarantined = false, string? Failure = null);
+    MmcInstanceDefinition? Definition = null, bool Quarantined = false, string? Failure = null) {
+    public bool PurgeDecided { get; init; }
+    public bool Purged { get; init; }
+}
 public sealed class MmcLifecycleInterruptionException(string message) : Exception(message);

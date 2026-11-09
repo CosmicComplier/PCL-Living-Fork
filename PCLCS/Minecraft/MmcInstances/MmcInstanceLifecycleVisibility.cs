@@ -31,6 +31,7 @@ public static class MmcInstanceLifecycleVisibility {
                 Path.GetFileName(paths.InstanceRoot) != ".pcllf-mmc-quarantine-" + intent.OperationId.ToString("N") ||
                 !journal.Owns(paths.InstanceRoot) || !journal.HasDeleteDecision() || journal.Completion()?.Disposition != "Quarantined" ||
                 journal.HasRestoreDecision() || journal.IsRestored()) return false;
+            if (MmcInstancePurgeJournal.HasDecision(journal.DirectoryPath)) return false;
             foreach (string role in new[] { "PCL/MmcTransactions", "PCL/MmcSessions" }) {
                 string pending = paths.ResolveRelative(MmcPathRole.Instance, role);
                 if (MmcInstancePaths.Attributes(pending) is not null && (!Directory.Exists(pending) || Directory.EnumerateFileSystemEntries(pending).Any())) return false;

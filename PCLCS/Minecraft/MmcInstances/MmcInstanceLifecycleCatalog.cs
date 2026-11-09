@@ -6,10 +6,12 @@ using JsonException = System.Text.Json.JsonException;
 namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
-public enum MmcLifecycleCatalogState { Quarantined, Incomplete, Completed, Conflict, Unknown }
+public enum MmcLifecycleCatalogState { Quarantined, Incomplete, Completed, Conflict, Unknown, Purging, Purged }
 public sealed record MmcLifecycleCatalogEntry(string MinecraftRoot, string OperationDirectory, string Name,
     MmcLifecycleCatalogState State, string Description, Guid? InstanceId = null, long? Generation = null,
-    string? SnapshotFingerprint = null, bool CanRestore = false, bool CanRecover = false);
+    string? SnapshotFingerprint = null, bool CanRestore = false, bool CanRecover = false) {
+    public bool CanPurge { get; init; }
+}
 public sealed record MmcLifecycleCatalog(ImmutableArray<MmcLifecycleCatalogEntry> Entries, bool Truncated);
 
 /// <summary>Read-only, bounded discovery. Only Execute revalidates an exact preview and invokes the existing guarded backend.</summary>
@@ -18,7 +20,8 @@ public static class MmcInstanceLifecycleCatalog {
     private const long MaximumScanBytes = 64 * 1024 * 1024;
     private const long MaximumRecordBytes = 64 * 1024;
     private static readonly string[] Records = ["intent.record", "transaction.record", "CommitDecided.record", "completed.record",
-        "restore.record", "RestoreCommitDecided.record", "restored.record"];
+        "restore.record", "RestoreCommitDecided.record", "restored.record", MmcInstancePurgeJournal.PlanName,
+        MmcInstancePurgeJournal.DecisionName, MmcInstancePurgeJournal.CompletionName];
     private static StringComparison PathComparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     public static MmcLifecycleCatalog Read(string minecraftRoot) {
@@ -74,10 +77,27 @@ public static class MmcInstanceLifecycleCatalog {
             foreach (string record in Records) {
                 string path = Path.Combine(directory, record);
                 if (MmcInstancePaths.Attributes(path) is null) continue;
-                var pin = Pin(path, MaximumRecordBytes, out long length); pins.Add(pin); Budget(ref remaining, length);
+                var pin = Pin(path, record == MmcInstancePurgeJournal.PlanName ? MmcInstancePurgeSnapshot.MaximumRecordBytes + 128L : MaximumRecordBytes, out long length); pins.Add(pin); Budget(ref remaining, length);
                 recordFacts.Add(record); recordFacts.Add(Convert.ToHexStringLower(SHA256.HashData(pin))); pin.Position = 0;
             }
             string name = Path.GetFileName(intent.SourceRoot);
+            // A durable purge decision supersedes restoration even when the primary or
+            // lifecycle marker was already removed. Never run ordinary primary probing first.
+            if (MmcInstancePurgeJournal.HasDecision(directory) || MmcInstancePaths.Attributes(Path.Combine(directory, MmcInstancePurgeJournal.CompletionName)) is not null) {
+                var purge = MmcInstancePurgeJournal.Read(journal);
+                if (!purge.IsDecided()) throw new IOException("永久清理决定无法验证，已保留所有剩余内容。");
+                bool exists = MmcInstancePaths.Attributes(intent.TargetRoot) is not null, completedPurge = purge.IsCompleted();
+                string identity = "";
+                if (exists) {
+                    using var rootPin = MmcPurgeHandle.Open(intent.TargetRoot, true); identity = rootPin.Identity;
+                    if (identity != purge.RootEntry.FileIdentity || completedPurge)
+                        return new(root, directory, name, MmcLifecycleCatalogState.Conflict, "永久清理路径被新内容占用；不会删除这些内容。", intent.InstanceId, intent.SourceGeneration);
+                }
+                string purgeFingerprint = MmcDurableFiles.Hash(Encoding.UTF8.GetBytes("mmc-purge-catalog-v1\n" + purge.PlanSha256 + "\n" + exists + "\n" + identity + "\n" + string.Join("\n", recordFacts)));
+                return new(root, directory, name, completedPurge ? MmcLifecycleCatalogState.Purged : MmcLifecycleCatalogState.Purging,
+                    completedPurge ? "已明确永久清除该实例的私有内容；无法还原。" : "永久清理已决定，尚未完成；只能继续清理，不能还原完整实例。",
+                    intent.InstanceId, intent.SourceGeneration, purgeFingerprint, CanRecover: !completedPurge);
+            }
             bool sourceExists = MmcInstancePaths.Attributes(intent.SourceRoot) is not null;
             bool targetExists = MmcInstancePaths.Attributes(intent.TargetRoot) is not null;
             foreach (string location in new[] { intent.SourceRoot, intent.TargetRoot })
@@ -122,7 +142,7 @@ public static class MmcInstanceLifecycleCatalog {
             if (completed?.Disposition == "Quarantined") {
                 if (!decided || !targetOwned || targetHash != intent.SourcePrimarySha256 || !MmcInstanceLifecycleVisibility.IsCompletedQuarantine(intent.TargetRoot))
                     return Entry(MmcLifecycleCatalogState.Conflict, "隔离区内容或归属已变化，不能自动恢复。");
-                return Entry(MmcLifecycleCatalogState.Quarantined, "可无覆盖地恢复到原来的版本名称；隔离区仍占用磁盘空间。", restore: true);
+                return Entry(MmcLifecycleCatalogState.Quarantined, "可无覆盖地恢复到原来的版本名称；隔离区仍占用磁盘空间。", restore: true) with { CanPurge = !MmcInstancePurgeJournal.HasPlan(directory) };
             }
             if (completed is not null) {
                 bool moved = completed.Disposition == "Moved";

@@ -1,0 +1,95 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using Microsoft.Win32.SafeHandles;
+
+namespace PCLCS;
+
+// Original LF host implementation; repository LICENCE applies.
+// Windows handle identity, hashing and disposition stay together. A path check followed by
+// File.Delete would allow replacement between verification and the actual deletion.
+internal sealed class MmcPurgeHandle : IDisposable {
+    internal SafeFileHandle Handle { get; }
+    internal string Path { get; }
+    internal bool Directory { get; }
+    internal string Identity { get; }
+    internal long Size { get; }
+    private MmcPurgeHandle(string path, bool directory, bool delete, bool outerAncestor, bool allowDeleteSharing) {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Permanent quarantine cleanup requires verified Windows handles.");
+        Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); Directory = directory;
+        uint access = 0x80u | (directory ? 0u : 0x80000000u) | (delete ? 0x10000u : 0u);
+        // Ancestors outside the owned namespace only deny renames. Owned directories and files
+        // also deny writers, including a writer which was opened before this handle.
+        Handle = CreateFileW(Path, access, outerAncestor ? 3u : allowDeleteSharing ? 5u : 1u, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+        if (Handle.IsInvalid) { Handle.Dispose(); throw Error("Cannot pin an exact purge object."); }
+        try {
+            if (!GetFileInformationByHandle(Handle, out var info)) throw Error("Cannot read purge object identity.");
+            if ((info.Attributes & (uint)FileAttributes.ReparsePoint) != 0 ||
+                ((info.Attributes & (uint)FileAttributes.Directory) != 0) != directory)
+                throw new IOException("Purge object is a link or has changed its directory role.");
+            if (!SamePath(MmcCanonicalPaths.ForHandle(Handle), Path)) throw new IOException("Pinned purge object resolves outside its exact namespace.");
+            Identity = $"{info.Volume:x8}:{info.IndexHigh:x8}{info.IndexLow:x8}:{info.CreationHigh:x8}{info.CreationLow:x8}";
+            Size = directory ? 0 : checked((long)(((ulong)info.SizeHigh << 32) | info.SizeLow));
+        } catch { Handle.Dispose(); throw; }
+    }
+    internal static MmcPurgeHandle Open(string path, bool directory, bool delete = false, bool outerAncestor = false, bool allowDeleteSharing = false) => new(path, directory, delete, outerAncestor, allowDeleteSharing);
+    internal string Hash(CancellationToken token) {
+        if (Directory || Size > MmcInstancePurgeSnapshot.MaximumBytes) throw new IOException("Purge file exceeds its bounded role.");
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = new byte[131072]; long offset = 0; int count;
+        while ((count = RandomAccess.Read(Handle, buffer, offset)) != 0) {
+            token.ThrowIfCancellationRequested(); offset = checked(offset + count);
+            if (offset > MmcInstancePurgeSnapshot.MaximumBytes) throw new IOException("Purge file exceeds the byte budget.");
+            hash.AppendData(buffer, 0, count);
+        }
+        if (offset != Size) throw new IOException("Pinned purge file size changed.");
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+    internal void Verify(MmcInstancePurgeEntry expected, CancellationToken token) {
+        if (Directory != expected.Directory || Identity != expected.FileIdentity || Size != expected.SizeBytes ||
+            !Directory && Hash(token) != expected.Sha256) throw new IOException("A planned purge object changed; its current bytes were preserved: " + expected.RelativePath);
+    }
+    internal void Delete() {
+        // No POSIX deletion or readonly override: a real conflicting handle/readonly file must
+        // retain the remaining plan for recovery. Directories fail atomically when nonempty.
+        if (!SamePath(MmcCanonicalPaths.ForHandle(Handle), Path)) throw new IOException("Pinned purge object moved before disposition.");
+        byte disposition = 1;
+        if (!SetFileInformationByHandle(Handle, 4, ref disposition, 1)) throw Error("Exact purge object could not be deleted; remaining content was preserved.");
+    }
+    internal static bool SamePath(string a, string b) => string.Equals(System.IO.Path.TrimEndingDirectorySeparator(a), System.IO.Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
+    internal static bool IsIdentity(string? value) => value is { Length: 42 } && value[8] == ':' && value[25] == ':' &&
+        value.Where((_, index) => index is not (8 or 25)).All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+    private static IOException Error(string text) => new(text, new Win32Exception(Marshal.GetLastWin32Error()));
+    public void Dispose() => Handle.Dispose();
+    [StructLayout(LayoutKind.Sequential)] private struct Information {
+        internal uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh,
+            Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out Information information);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int kind, ref byte information, uint length);
+}
+
+/// <summary>Pins every ancestor against rename, without acquiring deletion authority over an ancestor.</summary>
+internal sealed class MmcPurgeDirectoryPins : IDisposable {
+    private readonly List<MmcPurgeHandle> handles = [];
+    internal MmcPurgeHandle Last => handles[^1];
+    internal void ReleaseLast() { handles[^1].Dispose(); handles.RemoveAt(handles.Count - 1); }
+    internal MmcPurgeDirectoryPins(string directory, bool deleteLast = false, string? alreadyPinnedRoot = null) {
+        try {
+            var pending = new Stack<string>(); string? cursor = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(directory));
+            while (cursor is not null && (alreadyPinnedRoot is null || !MmcPurgeHandle.SamePath(cursor, alreadyPinnedRoot))) {
+                pending.Push(cursor); cursor = System.IO.Path.GetDirectoryName(cursor);
+            }
+            if (alreadyPinnedRoot is not null && cursor is null) throw new IOException("Purge parent escaped its pinned root.");
+            while (pending.Count != 0) {
+                string path = pending.Pop(); bool last = pending.Count == 0;
+                handles.Add(MmcPurgeHandle.Open(path, true, last && deleteLast, alreadyPinnedRoot is null && !last));
+            }
+        } catch { Dispose(); throw; }
+    }
+    public void Dispose() { for (int index = handles.Count - 1; index >= 0; index--) handles[index].Dispose(); handles.Clear(); }
+}

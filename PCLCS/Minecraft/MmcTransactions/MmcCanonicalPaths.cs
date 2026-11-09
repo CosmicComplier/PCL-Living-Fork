@@ -43,6 +43,10 @@ internal static class MmcCanonicalPaths {
     private static string ResolveExisting(string existing) {
         using SafeFileHandle handle = CreateFileW(existing, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
         if (handle.IsInvalid) throw new IOException("无法取得准入目录的规范路径。", new Win32Exception(Marshal.GetLastWin32Error()));
+        return ForHandle(handle);
+    }
+    // Destructive host operations must validate and act on this same pinned object.
+    internal static string ForHandle(SafeFileHandle handle) {
         StringBuilder text = new(512); uint length = GetFinalPathNameByHandleW(handle, text, (uint)text.Capacity, 0);
         if (length == 0) throw new IOException("无法读取准入目录的规范路径。", new Win32Exception(Marshal.GetLastWin32Error()));
         if (length >= text.Capacity) {
