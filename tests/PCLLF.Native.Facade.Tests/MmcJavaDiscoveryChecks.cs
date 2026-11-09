@@ -27,7 +27,7 @@ internal static class MmcJavaDiscoveryChecks {
         // The ordinary engine deliberately refreshes the public account type from Registry.
         // Substitute only that type predicate; every Registry/profile guard remains installed.
         object service=Native.Field(typeof(ModJava),"Service").GetValue(null)!;
-        object javaHost=Native.Get(service,"host")!;
+        object javaHost=service.GetType().GetFields(Native.Flags).Single(field=>field.FieldType==typeof(LegacyJavaHost<ModMinecraft.McInstance>)).GetValue(service)!;
         object isNide=Native.Get(javaHost,"IsNideLogin")!;
         Native.Set(javaHost,"IsNideLogin",new Func<bool>(()=>false));
         int refreshes = 0; Action refreshed = () => Interlocked.Increment(ref refreshes); ModJava.JavaListRefreshWorker.Started += refreshed;
