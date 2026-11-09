@@ -53,6 +53,7 @@ internal static partial class MmcLaunchChecks {
         private ModMinecraft.McInstance instance = null!;
         private ModLoader.LoaderCombo<object> plan = null!;
         private bool cancelAtSpawn;
+        private bool expectedFailure;
         private int starts, forbidden, stoppedNotifications;
         private Guid currentSession;
         private const string ProbeSource = """
@@ -77,6 +78,10 @@ internal static partial class MmcLaunchChecks {
                     Files.write(Paths.get(System.getProperty("org.lwjgl.system.SharedLibraryExtractPath"), "owned-native"), new byte[]{2});
                     System.out.println("PROBE_READY"); System.out.flush();
                     while (!Files.exists(Paths.get(control + ".ready"))) Thread.sleep(10);
+                    if (control.endsWith("-early-exit")) {
+                        System.err.println("Owned fixture exits before startup completes");
+                        System.exit(23);
+                    }
                     System.out.println("Setting user: owned-fixture");
                     System.out.println("lwjgl version controlled");
                     System.out.println("OpenAL initialized");
@@ -145,7 +150,8 @@ internal static partial class MmcLaunchChecks {
         }
         internal void Run() {
             Launch("first", false, false); Launch("second", false, false); Launch("cancel-wait", false, true); Launch("cancel-start", true, false);
-            Native.Check(starts == 4 && forbidden == 0 && !MmcLaunch.HasActiveSessions, "Replay missed a process or crossed the ordinary launch chain.");
+            Launch("early-exit", false, false, expectEarlyExit: true);
+            Native.Check(starts == 5 && forbidden == 0 && !MmcLaunch.HasActiveSessions, "Replay missed a process or crossed the ordinary launch chain.");
             Native.Check(MmcInstanceInspector.Read(version).Definition!.Generation == 1, "Normal launches or cancellation changed the adopted generation.");
             Until(() => watcherThreads.All(thread => !thread.IsAlive), "all genuine watcher threads to exit");
             Native.Check(asyncErrors.IsEmpty, "Watcher background primitive failed: " + string.Join(";", asyncErrors));
@@ -174,7 +180,8 @@ internal static partial class MmcLaunchChecks {
                 catch (InvalidOperationException) { }
             }
         }
-        private void Launch(string name, bool startCancel, bool waitCancel, long expectedGeneration = 1, bool expectNoProcess = false) {
+        private void Launch(string name, bool startCancel, bool waitCancel, long expectedGeneration = 1, bool expectNoProcess = false, bool expectEarlyExit = false) {
+            expectedFailure = expectEarlyExit;
             string run = control + "-" + name; cancelAtSpawn = startCancel; currentSession = Guid.Empty;
             ModLaunch.McLaunchProcess = null!; ModLaunch.McLaunchWatcher = null!;
             List<string> expected = [run, secret, "", "中文 空格", "C:\\中文 tail\\", "repeat", "repeat"];
@@ -205,12 +212,22 @@ internal static partial class MmcLaunchChecks {
                 foreach (string line in ModLaunch.McLaunchWatcher.LatestLog.Concat(ModLaunch.McLaunchWatcher.WaitingLog).Where(line=>line is not null))
                     Native.Check(!line.Contains(secret,StringComparison.Ordinal) && !line.Contains(frame,StringComparison.Ordinal), "Watcher stored sensitive account data or an encoded frame before redaction.");
                 Native.Check(lines.Any(line=>line.StartsWith("FRAME=",StringComparison.Ordinal)) && lines.Any(line=>line.StartsWith("SECRET=",StringComparison.Ordinal)), "Probe did not exercise both sensitive log forms.");
-                if (waitCancel) { Native.Check(ModLaunch.McLaunchWatcher.State == ModWatcher.Watcher.MinecraftState.Loading,"Wait cancellation missed Loading state."); plan.Cancel(); }
+                if (expectEarlyExit) {
+                    File.WriteAllText(run + ".ready", "");
+                    Until(() => plan.State == ModBase.LoadState.Failed, "actual early-exit failure reaches the launch task");
+                    string failure = plan.Error?.ToString() ?? "";
+                    Native.Check(failure.Contains("Java 8", StringComparison.Ordinal) && failure.Contains("23（0x00000017）", StringComparison.Ordinal) &&
+                        failure.Contains(Path.Combine(instance.PathIndie, "logs"), StringComparison.OrdinalIgnoreCase) && !failure.Contains(secret, StringComparison.Ordinal),
+                        "Early-exit failure lost its actual Java, exit status or game log location, or exposed account data.");
+                }
+                else if (waitCancel) { Native.Check(ModLaunch.McLaunchWatcher.State == ModWatcher.Watcher.MinecraftState.Loading,"Wait cancellation missed Loading state."); plan.Cancel(); }
                 else { File.WriteAllText(run+".ready",""); Until(()=>plan.State==ModBase.LoadState.Finished,"real log-driven startup completion"); File.WriteAllText(run+".exit",""); }
             }
             Until(()=>child.HasExited && !MmcLaunch.HasActiveSessions,"actual exit and session completion");
             Native.Check(Volatile.Read(ref stoppedNotifications) == previouslyStopped + 1, "Verified exit did not complete exactly one real Watcher stop notification.");
-            if (!startCancel && !waitCancel) Native.Check(child.ExitCode==0 && ModLaunch.McLaunchWatcher.State==ModWatcher.Watcher.MinecraftState.Ended,"Normal JVM did not finish through real Watcher.");
+            if (expectEarlyExit) Native.Check(child.ExitCode == 23 && ModLaunch.McLaunchWatcher.State == ModWatcher.Watcher.MinecraftState.Crashed,
+                "Early-exit fixture did not retain the actual nonzero child failure.");
+            else if (!startCancel && !waitCancel) Native.Check(child.ExitCode==0 && ModLaunch.McLaunchWatcher.State==ModWatcher.Watcher.MinecraftState.Ended,"Normal JVM did not finish through real Watcher.");
             else Native.Check(plan.State is ModBase.LoadState.Canceled or ModBase.LoadState.Failed,"Canceled launch is still live or reported success.");
             string history=Path.Combine(version,"PCL","MmcSessionHistory",id.ToString("N"));
             Native.Check(File.Exists(Path.Combine(history,"Launching.record")) && File.Exists(Path.Combine(history,"Running.record")) && File.Exists(Path.Combine(history,"Exited.record")),"Confirmed exit did not archive all typed session records.");
@@ -251,7 +268,7 @@ internal static partial class MmcLaunchChecks {
         }
         private void Until(Func<bool> complete,string message) {
             DateTime deadline=DateTime.UtcNow.AddSeconds(25);
-            while(!complete()) { Native.Call(typeof(FileTaskScope),"DrainPostedUi",null,deadline); if(plan is not null && plan.State==ModBase.LoadState.Failed)throw new IOException("MMC replay failed during "+message,plan.Error); if(DateTime.UtcNow>=deadline)throw new TimeoutException("MMC replay timed out during "+message+"; plan="+plan?.State+"; steps="+string.Join(";",plan?.Loaders.Select(t=>t.Name+"="+t.State+":"+t.Error)??[])+"; log="+string.Join(";",diagnostics));Thread.Sleep(3); }
+            while(!complete()) { Native.Call(typeof(FileTaskScope),"DrainPostedUi",null,deadline); if(!expectedFailure && plan is not null && plan.State==ModBase.LoadState.Failed)throw new IOException("MMC replay failed during "+message,plan.Error); if(DateTime.UtcNow>=deadline)throw new TimeoutException("MMC replay timed out during "+message+"; plan="+plan?.State+"; steps="+string.Join(";",plan?.Loaders.Select(t=>t.Name+"="+t.State+":"+t.Error)??[])+"; log="+string.Join(";",diagnostics));Thread.Sleep(3); }
             Native.Call(typeof(FileTaskScope),"DrainPostedUi",null,deadline);
         }
         private static string Decode(IEnumerable<string> lines,string key) {

@@ -91,6 +91,7 @@ public static class MmcLaunch {
             java = await MmcLaunchJava.SelectAsync(instance, primary.Definition, saved.Resolved.Resolution.Profile,
                 preferences.JavaPreference, token, authentication.JavaConstraints).ConfigureAwait(false);
             selectedJava(java.Java);
+            ModLaunch.McLaunchLog("MMC 本次使用 Java " + java.Java.Version + "：" + java.Java.JavaExePath);
             string gameRoot = Path.GetDirectoryName(Path.GetDirectoryName(paths.InstanceRoot))!;
             string cache = Path.Combine(gameRoot, "PCL", "MmcCache");
             var backend = new MmcInstanceBackend<ModNet.NetFile>(MmcDownloads.CreateMetadataStore(Path.Combine(cache, "metadata")),
@@ -239,7 +240,16 @@ public static class MmcLaunch {
                 Thread.Sleep(100);
             }
             if (watcher.State == ModWatcher.Watcher.MinecraftState.Canceled) throw new OperationCanceledException();
-            if (watcher.State == ModWatcher.Watcher.MinecraftState.Crashed) throw new IOException("MMC 游戏进程未完成启动，请查看游戏日志。");
+            if (watcher.State == ModWatcher.Watcher.MinecraftState.Crashed) {
+                string detail = "Java " + java.Java.Version;
+                bool exited = session.Process.HasExited;
+                if (exited) {
+                    int code = session.Process.ExitCode;
+                    detail += "，退出码 " + code + "（0x" + unchecked((uint)code).ToString("X8") + "）";
+                }
+                throw new IOException((exited ? "MMC 游戏在启动完成前退出" : "MMC 游戏报告启动失败") + "（" + detail + "）。\n游戏日志：" +
+                    Path.Combine(prepared.Paths.GameRoot, "logs"));
+            }
         }
         private MmcRuntimeSupportArtifact Support(string name) {
             var value = support.SingleOrDefault(value => value.FileName == name);
