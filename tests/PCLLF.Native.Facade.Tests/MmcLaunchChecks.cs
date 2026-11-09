@@ -14,7 +14,7 @@ using WatcherHost = PCLCS.LegacyWatcherHost<PCL.ModWatcher.Watcher, PCL.ModMinec
 namespace PCLLF.Native.Facade.Tests;
 
 // Original LF host tests; repository LICENCE. Explicit opt-in, self-authored Java only.
-internal static class MmcLaunchChecks {
+internal static partial class MmcLaunchChecks {
     internal const string Group = "mmc-launch-replay";
     private const string ChildSwitch = "--mmc-launch-replay-child", Receipt = "mmc-launch-replay.done";
     private static Scope? retained;
@@ -38,7 +38,7 @@ internal static class MmcLaunchChecks {
             ModpackUpdateCleanup.TerminateChild("MMC replay failed with guards retained: " + error);
         }
     }
-    private sealed class Scope {
+    private sealed partial class Scope {
         private readonly FixtureEnvironment environment;
         private readonly FileTaskScope tasks;
         private readonly PackRootInstallChecksLoopback server = new();
