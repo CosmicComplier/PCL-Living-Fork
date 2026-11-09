@@ -52,7 +52,7 @@ public sealed record MmcRuntimeLaunchRequest(MmcInstanceDefinition Definition, M
     MmcRuntimeSupportArtifact? Wrapper = null, MmcRuntimeSupportArtifact? Bridge = null) {
     [System.Text.Json.Serialization.JsonIgnore]
     public MmcMutableRuntimeAuthority? RuntimeAuthority { get; init; }
-    [System.Text.Json.Serialization.JsonIgnore]
+    [System.Text.Json.Serialization.JsonIgnore, Newtonsoft.Json.JsonIgnore]
     public MmcRuntimeAuthenticationSnapshot? Authentication { get; init; }
 }
 public sealed record MmcRuntimeInputObservation(string Identity, string ActualPath, string Sha256, long SizeBytes);

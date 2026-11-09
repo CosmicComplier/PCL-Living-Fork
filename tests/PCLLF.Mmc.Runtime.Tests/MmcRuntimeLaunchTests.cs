@@ -20,6 +20,7 @@ internal static partial class MmcRuntimeLaunchTests {
         yield return ("MMC readonly JAR namespace permits resources without weakening extraction", ReadOnlyJarNamespace);
         yield return ("MMC manifest absent inputs remain gated through final admission and actual JDK file URLs", ManifestAbsentInputs);
         yield return ("MMC short owned native paths load the same locked SDL3 through actual Java21 and LWJGL", ShortNativePaths);
+        yield return ("MMC owned authentication agents retain runtime authority privacy and Java constraints", AuthenticationAgents);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();

@@ -19,8 +19,8 @@ public enum MmcRuntimeAuthenticationKind { AuthlibInjector, Nide }
 public sealed class MmcRuntimeAuthenticationSnapshot {
     public MmcRuntimeAuthenticationKind Kind { get; }
     public MmcRuntimeSupportArtifact Agent { get; }
-    [JsonIgnore] public string Server { get; }
-    [JsonIgnore] public string? PrefetchedMetadataJson { get; }
+    [System.Text.Json.Serialization.JsonIgnore, Newtonsoft.Json.JsonIgnore] public string Server { get; }
+    [System.Text.Json.Serialization.JsonIgnore, Newtonsoft.Json.JsonIgnore] public string? PrefetchedMetadataJson { get; }
     public MmcRuntimeAuthenticationSnapshot(MmcRuntimeAuthenticationKind kind, MmcRuntimeSupportArtifact agent,
         string server, string? prefetchedMetadataJson = null) {
         Kind = kind; Agent = agent; Server = server; PrefetchedMetadataJson = prefetchedMetadataJson;

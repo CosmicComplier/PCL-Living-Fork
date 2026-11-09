@@ -47,6 +47,7 @@
 <Compile Include="Modules/ThirdParty/DragHelper.cs" />
 <Compile Include="Modules/Minecraft/MmcDownloads.cs" />
 <Compile Include="Modules/Minecraft/MmcLaunch.cs" />
+<Compile Include="Modules/Minecraft/MmcLaunchAuthentication.cs" />
 <Compile Include="Modules/Minecraft/MmcLaunchPreferences.cs" />
 <Compile Include="Modules/Minecraft/MmcLaunchJava.cs" />
 <Compile Include="Modules/Minecraft/MmcInstances.cs" />

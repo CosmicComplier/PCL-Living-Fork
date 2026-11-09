@@ -106,6 +106,7 @@ internal static class Program
     };
     // Requires explicit locally installed JDKs; keep these out of the normal CI/default registry.
     private static readonly Dictionary<string, Action<FixtureEnvironment>> ExplicitCases = new(StringComparer.Ordinal) {
+        ["mmc-authentication"] = MmcLaunchChecks.RunAuthentication,
         ["mmc-import-java-current-catalogue"] = MmcImportJavaSelectionChecks.Run,
         ["mmc-import-java-original-gtnh"] = MmcImportJavaSelectionChecks.RunGtnh,
         ["mmc-platform-online-success"] = MmcPlatformOriginUiTaskChecks.RunOnline,
