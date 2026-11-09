@@ -52,6 +52,10 @@ internal static class MessageDialogPlatform {
         VersionSelection = VersionSelection, Radio = Radio
     };
     private static ModalSelectionPort VersionSelection(object body) {
+        if (body is MmcComponentEditorView editor)
+            return new(() => editor.CanConfirm, handler => editor.ConfirmationChanged += (_, _) => handler());
+        if (body is MmcComponentEditorPreviewView componentPreview)
+            return new(() => componentPreview.CanConfirm, handler => componentPreview.ConfirmationChanged += (_, _) => handler());
         if (body is MmcPackageUpdatePreviewView package)
             return new(() => package.CanConfirm, handler => package.ConfirmationChanged += (_, _) => handler());
         if (body is ModpackUpdatePreviewView preview)
