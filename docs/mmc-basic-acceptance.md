@@ -9,7 +9,7 @@
 | 普通 Forge／Fabric | 真实后端导入、依赖与库、离线修复、再次准备、世界／偏好保留 | 受控后端通过，不能称为实包游戏已测 |
 | Main 补全入口 | 实际 Controller／Loader／RepairAsync、缺 JSON 与损坏 owned JAR、身份竞争、取消 | 已通过 |
 | Main 导入恢复／重试 | 实际恢复按钮、目录、原记录校验、同 SHA 不同名称、取消排空、篡改拒绝 | 已通过 |
-| 真实进程崩溃恢复 | 自有 child 在 Prepared／CommitDecided 信号后由核实身份的父进程结束，再调用真实恢复 | 进行中，不用异常模拟充数 |
+| 真实进程崩溃恢复 | 自有 child 在 Prepared／CommitDecided 持久信号后核验 PID／创建时间／镜像／双 nonce，再实际 Kill(false) 并调用真实恢复 | 三个场景实测通过，未用异常模拟代替终止 |
 | 自包含程序结构 | 官方构建包装器、真实 bundle 身份、六个主要程序集与 publish 输出逐字节 SHA256 一致、ZIP 内容与 EXE 摘要 | 已通过；未执行程序 |
 | 程序冷启动 | 用户在本构建路径问题中明确回复“能进入主界面” | 用户实测通过；未代替账号或游戏验收 |
 
@@ -34,3 +34,20 @@
 2026-11-09 用户确认：新构建可进入主界面。代理没有操作桌面或代替用户进行点击；
 只读 bundle/package 报告中的 `ExecutedProduct=false` 仍只描述那些结构检查自身，
 冷启动证据为独立的用户确认，不改写既有检查记录。
+
+## 真实进程终止后的恢复
+
+只结束测试父进程自己 `Process.Start` 的 child；不枚举或终止用户程序、Java 或开发构建。
+持久 checkpoint receipt 和实际 journal／预期文件字节在终止前已核对；child 返回 Windows 强制终止码 -1，
+没有经过托管正常返回/finally，随后确认原 producer.use 摘要不变且锁由 OS 释放。
+
+| 场景 | 实际结果 | 保留证据根 |
+| --- | --- | --- |
+| Prepared，child 59972 | 活动租约拒抢；实际终止后 Recover 回滚并要求新导入，同名／错 SHA 拒绝，同 SHA 新名称发布新 ID/G1；原 parked、旁目录和世界不变 | `D:/Temp/PCLLF-MmcRealCrash-7035ffdf169146d5bceab3adeb966265` |
+| CommitDecided，child 6792 | 原 ZIP 移到自有 offline-evidence 后恢复成功，发布原 ID/G1，9 个 staged target 共 9301 字节逐字节匹配；标记清理和旁目录保持正确 | `D:/Temp/PCLLF-MmcRealCrash-f1d92db35a834766b7b4f782e1673208` |
+| CommitDecided 后外部变化，child 5724 | unknown-only、同长度作者字节改变分别触发实际拒绝；重复恢复仍拒绝，世界／未知文件／改动后文件保留，没有 final 发布 | `D:/Temp/PCLLF-MmcRealCrash-e8790f3323134a229e9b3eedac2d966a` |
+
+每根包含 `summary.json`、`acceptance.jsonl`、父子身份与 checkpoint receipts、实际预期字节及 stdout/stderr。
+首轮测试观测 helper 的文件共享模式错误导致的失败现场单独保留，不计为产品失败或通过；
+修正的是只读观测方式，生产者的独占写租约没有放宽。最终测试项目构建为 0 警告／0 错误。
+上述测试无外网、JVM、Minecraft 或桌面操作，不等同于全部 MMC 后续功能验收。
