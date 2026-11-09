@@ -98,4 +98,6 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 `modern-java21-actual-closed-loop.json` 汇总上述事实与实际 mutable binding。
 
 本次明确通过的实包 Java 组合是 Java8 发行包＋Java8，以及现代发行包＋Java21。
-现代包声明的 Java17/25/26 尚未作实包游戏验收，Prism 实际差分、全平台、完整性能矩阵也未据此宣告通过。
+现代包声明的 Java17/25/26 尚未作实包游戏验收，全平台、完整性能矩阵也未据此宣告通过。
+固定 Prism 提交的实际 C++ [原生解析/计划子集对照](mmc-prism-differential.md)另行记录；
+它不运行完整 Prism resolver/应用/游戏，不能替代本页的实机闭环或全应用兼容验收。

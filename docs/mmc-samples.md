@@ -75,3 +75,9 @@ python -X utf8 scripts/tests/Test-MmcAudit.py
 ## 后续门槛
 
 P0 仍需固定 Java 8 包远端元数据、实际 Prism/OS/Java 版本与脱敏解析对照、正常和失败链的性能基线。P1/P2 的解析或编译测试不能替代 P3 的配置协调、事务、进程会话和库视图保护；P5 两种包的导入、主菜单、世界、退出、修复、再次启动全部未测。不得把本次 `metadata-audited` 解释为产品已支持 GTNH。
+
+2026-11-09 补充：上段是本次 11-08 离线审计的历史范围；后续两包的实机闭环见
+[GTNH 验收记录](mmc-gtnh-acceptance.md)。三份 Java 8 历史元数据已按来源/内容摘要
+锁定，并已取得固定 Prism 提交实际 C++ 的
+[原生解析/计划子集证据](mmc-prism-differential.md)。该工具不运行完整 Prism
+resolver、界面、账号或游戏，不能把子集对照扩称全应用等价。

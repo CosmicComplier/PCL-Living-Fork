@@ -20,7 +20,8 @@ if (!resolved.IsComplete) {
     return 3;
 }
 var runtime = input.GetProperty("runtime");
-var result = MmcProfileCompiler.Compile(resolved.Profile!, new(runtime.GetProperty("system").GetString()!,
+var resolvedProfile = resolved.Profile!;
+var result = MmcProfileCompiler.Compile(resolvedProfile, new(runtime.GetProperty("system").GetString()!,
     runtime.GetProperty("javaRealArchitecture").GetString()!, runtime.GetProperty("javaMajor").GetInt32(), int.Parse(runtime.GetProperty("javaArchitecture").GetString()!)));
 if (result.Profile is not { } profile || result.HasErrors) {
     Console.WriteLine(JsonSerializer.Serialize(new { kind = "PCLLFCoreReferenceAdapter", stage = "compilation", success = false, diagnostics = result.Diagnostics }));
@@ -36,7 +37,7 @@ var core = typeof(MmcProfileCompiler).Assembly.Location;
 var output = new {
     kind = "PCLLFCoreReferenceAdapter", success = true,
     coreSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(core))),
-    components = resolved.Profile.Components.Select(c => new { uid = c.Uid, version = c.Version, enabled = c.Enabled, sourceSha256 = c.Patch.ContentSha256 }),
+    components = resolvedProfile.Components.Select(c => new { uid = c.Uid, version = c.Version, enabled = c.Enabled, sourceSha256 = c.Patch.ContentSha256 }),
     mainClass = profile.MainClass, mainJar = Artifact(profile.MainJar), minecraftVersion = profile.MinecraftVersion,
     gameArguments = profile.GameArguments.Select(t => t.Value), jvmArguments = profile.JvmArguments.Select(t => t.Value),
     tweakers = profile.Tweakers, compatibleJavaMajors = profile.JavaPolicy.AllowedMajors,

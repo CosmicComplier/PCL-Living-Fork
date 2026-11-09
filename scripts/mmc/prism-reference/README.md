@@ -54,6 +54,20 @@ documented finite set. All argument and path arrays remain ordered. A
 rejection or field difference returns nonzero and stays visible in evidence;
 it is not converted to an equivalence pass. Output report paths must be new.
 
+## Retained native payload check
+
+A retained LF acceptance fixture can also be checked without extracting files:
+
+```powershell
+python -X utf8 scripts/mmc/prism-reference/VerifyNativePayload.py --import-receipt 'PATH-TO-OWNED-IMPORT-RESULT.json' --case artifacts/prism-native/cases/gtnh-java21/case.json --comparison-evidence artifacts/prism-native/comparison-cases/gtnh-java21 --output artifacts/prism-native/native-payload-verified.json
+```
+
+This verifies actual selected JAR digests, entry hashes and materialized LF
+native files. It is a concrete byte inventory, not a Prism extractor/port or a
+replacement for the native reference output. The recorded modern GTNH fixture
+has three selected native JARs and ten disjoint DLL entries; its existing LF
+native files match every payload SHA256. See the [result and scope notes](../../../docs/mmc-prism-differential.md).
+
 ## Dependency trimming and license boundary
 
 `transformations.json` records generated-file hashes and every trim/adapter:
