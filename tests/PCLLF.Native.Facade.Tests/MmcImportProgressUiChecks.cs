@@ -81,6 +81,7 @@ internal static partial class MmcImportRecoveryUiChecks {
             using ManualResetEventSlim staging = new(), stageRelease = new(), publishing = new(), publishRelease = new();
             var samples = new ConcurrentQueue<(string Phase, double Fraction, StageView[] Stages)>();
             MyCard? original = null;
+            long readBefore = FileTaskProgress.ReadBytes, writtenBefore = FileTaskProgress.WrittenBytes;
             var task = StartProgressImport("name-from-package", left, value => {
                 samples.Enqueue((value.Phase, current!.Progress, Stages(current!)));
                 if (value.Phase == "package-staging") { staging.Set(); if (!stageRelease.Wait(10000)) throw new TimeoutException("Stage identity barrier not released."); }
@@ -104,6 +105,8 @@ internal static partial class MmcImportRecoveryUiChecks {
                     !original!.Children.OfType<MyIconButton>().Single().IsEnabled, "Decided publication accepted cancellation or showed an unaccepted cancelling state.");
             } finally { stageRelease.Set(); publishRelease.Set(); }
             Returned(task, ModBase.LoadState.Finished);
+            Native.Check(FileTaskProgress.ReadBytes > readBefore && FileTaskProgress.WrittenBytes > writtenBefore,
+                "Real Main import did not contribute its successful disk reads and writes to the existing task I/O counters.");
             var copied = samples.Where(value => value.Phase == "package-extract").ToArray();
             Native.Check(copied.Length >= 2 && copied.All(value => value.Stages.Single(stage => stage.Stage == "ExtractPackage") is { State: "Running", CompletedBytes: > 0, TotalBytes: > 0, Progress: not null }) &&
                 copied.Select(value => value.Fraction).SequenceEqual(copied.Select(value => value.Fraction).Order()) && copied.Last().Fraction > .20,
@@ -211,19 +214,29 @@ internal static partial class MmcImportRecoveryUiChecks {
         }
         internal void ImportCancellationCard() {
             var (left, right) = TaskPages(); using ManualResetEventSlim entered = new(), release = new();
+            long stagingRead = FileTaskProgress.ReadBytes, stagingWritten = FileTaskProgress.WrittenBytes;
             var task = StartProgressImport("progress-early-cancel", left, value => {
+                if (value.Phase == "package-staging") { stagingRead = FileTaskProgress.ReadBytes; stagingWritten = FileTaskProgress.WrittenBytes; }
                 if (value.Phase != "package-extract" || entered.IsSet) return;
                 entered.Set(); if (!release.Wait(10000)) throw new TimeoutException("Extract cancellation barrier not released.");
             });
-            try { Until(() => entered.IsSet, "Real Main did not enter package extraction."); CancelFromCard(left, right, release, task); }
+            try {
+                Until(() => entered.IsSet, "Real Main did not enter package extraction.");
+                Native.Check(FileTaskProgress.ReadBytes > stagingRead && FileTaskProgress.WrittenBytes > stagingWritten,
+                    "Held real ZIP extraction did not update the task I/O counters after successful entry reads and writes.");
+                CancelFromCard(left, right, release, task);
+            }
             finally { release.Set(); }
             Native.Check(!Directory.Exists(Path.Combine(game, "versions", "progress-early-cancel")), "Cancelled extraction published a complete destination.");
             // Genuine scheduler pause: cancel before a producer has been scheduled.
             using var pause = new MmcRootUpdatePause(() => current);
+            long unstartedRead = FileTaskProgress.ReadBytes, unstartedWritten = FileTaskProgress.WrittenBytes;
             var unstarted = StartProgressImport("progress-unstarted", left);
             Native.Check(pause.Captured, "Unstarted MMC task did not reach the actual native scheduler pause.");
             unstarted.Cancel(); pause.Release(); pause.AwaitReturn(); Returned(unstarted, ModBase.LoadState.Canceled);
             Native.Check(Native.Get(unstarted.Loaders.Single(), "LastRunningThread") is null, "Unstarted MMC cancellation scheduled a producer.");
+            Native.Check(FileTaskProgress.ReadBytes == unstartedRead && FileTaskProgress.WrittenBytes == unstartedWritten,
+                "Cancelling the genuinely unstarted import recorded disk I/O without a producer.");
             ModLoader.LoaderTaskbar.Remove(unstarted);
         }
         internal void RetryCancellationCard() {
