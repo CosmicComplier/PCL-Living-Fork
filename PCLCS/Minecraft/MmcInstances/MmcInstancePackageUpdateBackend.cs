@@ -39,6 +39,7 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
                 local = MmcInstancePackageUpdatePlanning<TNetFile>.LocalSnapshot(MmcInstancePaths.Resolve(request.VersionRoot, primary.Definition.Layout.GameRootLeaf), token);
             }
             using var archive = MmcArchiveSourceReader.ReadAsync(request.ArchivePath, cancellationToken: token).GetAwaiter().GetResult();
+            VerifyPlatformOrigin(request, archive.PackageSha256);
             if (archive.PackageSha256 == primary.Definition.Origin.PackageSha256) throw new IOException("This is the already-adopted ZIP; use repair or an explicit environment restore.");
             if (archive.Package.GameRootLeaf != primary.Definition.Layout.GameRootLeaf) throw new IOException("The new ZIP changes active/inactive game-tree roles; explicit layout migration is required before updating.");
             job = MmcPackageUpdateJob.Create(request, archive.PackageSha256);
@@ -81,7 +82,8 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
         var localInputs = FixedLocalInputs(currentPaths, current.Definition, candidatePaths, candidate.Definition, saved.Baseline, resolved.Resolution.Profile!, compiled, token);
         var (source, objects, copies) = MmcInstanceDefinitionChangeSources.Build(candidatePaths, candidate.Definition, saved, resolved, overrides, token);
         source = source with { InstanceId = current.Definition.InstanceId, Generation = current.Definition.Generation, ParentInstanceId = current.Definition.ParentInstanceId,
-            Origin = source.Origin with { PlatformProjectIdentity = null } };
+            Origin = SelectedPlatformOrigin(request, source.Origin) };
+        if (request.VerifiedOrigin is { } verifiedOrigin) objects = objects.SetItem(verifiedOrigin.Reference.ObjectRelativePath, verifiedOrigin.Evidence);
         var selectedSaved = new MmcSavedInstanceSources(saved.Package, resolved, saved.Baseline, saved.BaselineInput);
         string stage = Path.Combine(job.Root, "preview"); MmcArtifactIo.Directory(stage);
         var engine = MmcInstancePackageUpdatePlanning<TNetFile>.Engine(stage);

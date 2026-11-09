@@ -5,7 +5,10 @@ namespace PCLCS;
 
 // Original LF host implementation; governed by the repository LICENCE.
 public sealed record MmcInstancePackageUpdateRequest(string VersionRoot, Guid ExpectedInstanceId, long ExpectedGeneration,
-    string ExpectedPrimarySha256, string ArchivePath, MmcRuntimeEnvironment Environment);
+    string ExpectedPrimarySha256, string ArchivePath, MmcRuntimeEnvironment Environment) {
+    // Only the platform service adapter can supply this. Public archive/manifest declarations never grant it.
+    internal MmcVerifiedPackageOrigin? VerifiedOrigin { get; init; }
+}
 public sealed record MmcPackageComponentDecision(string Uid, bool KeepUserOverride);
 public sealed record MmcPackageFileDecision(string ChangeId, PackUpdateChoice Choice, bool KeepDisabled = true);
 public sealed record MmcInstancePackageUpdateChoices(ImmutableArray<MmcPackageComponentDecision> Components,

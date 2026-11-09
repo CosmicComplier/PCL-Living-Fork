@@ -137,6 +137,7 @@ public sealed class MmcInstanceCloneBackend {
         var files = inventory.Files.ToDictionary(value => value.RelativePath, StringComparer.OrdinalIgnoreCase);
         void Require(string path, string hash, long? size = null) { if (!files.TryGetValue(path, out var fact) || fact.Sha256 != hash || size is not null && fact.SizeBytes != size) throw new IOException("Clone source lacks exact authoritative bytes: " + path); }
         foreach (var record in definition.SourceBundle.MetadataRecords) Require(record.ObjectRelativePath, record.ContentSha256);
+        if (definition.Origin.PlatformEvidenceReference is { } evidence) Require(evidence.ObjectRelativePath, evidence.Sha256);
         if (definition.AuthorFileBaseline is { } baseline) Require(baseline.ObjectRelativePath, baseline.ContentSha256);
         foreach (var record in definition.ComponentOverrides) if (record.PatchReference is { } patch) Require(patch.ObjectRelativePath, patch.Sha256);
         foreach (var record in MmcPublishedArtifactLocks.Create(definition)) Require(record.RecoveryObjectRelativePath, record.AdoptedSha256, record.SizeBytes);

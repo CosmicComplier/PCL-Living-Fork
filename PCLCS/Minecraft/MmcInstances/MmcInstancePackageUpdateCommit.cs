@@ -17,6 +17,7 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
             ArgumentNullException.ThrowIfNull(request); var preview = request.Preview ?? throw new ArgumentNullException(nameof(request.Preview));
             using var jobUse = preview.Job.Use();
             VerifyPreview(preview, request.ExpectedPreviewSha256, token);
+            RecheckPlatformOrigin(preview, token);
             if (preview.RequiresChoices || !preview.Errors.IsEmpty) throw new IOException("Resolve the explicit author/user/dependency choices before committing this ZIP update.");
             var currentPaths = MmcInstancePaths.Resolve(preview.Selection.VersionRoot, preview.Source.Layout.GameRootLeaf);
             var primary = MmcSavedSourceStore.ReadPrimary(currentPaths); var current = primary.Definition;
@@ -113,6 +114,7 @@ public sealed partial class MmcInstancePackageUpdateBackend<TNetFile> where TNet
                 if (phase == MmcTransactionCheckpoint.CommitDecided) decided = true;
                 request.TransactionCheckpoint?.Invoke(phase, index);
                 if (phase == MmcTransactionCheckpoint.BeforeDecision) {
+                    _ = MmcPlatformOriginFiles.ReadSaved(currentPaths, bound.Definition);
                     MmcInstanceHistoryFiles.Verify(currentPaths, prepared.OrderedBindings.Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes))
                         .Concat(prepared.AdoptedLocks.Select(value => new MmcHistoryFile(value.RecoveryObjectRelativePath, value.AdoptedSha256, value.SizeBytes)))
                         .Concat(observed.DerivedOutputs.Select(value => new MmcHistoryFile(value.TargetRelativePath, value.Sha256, value.SizeBytes)))

@@ -30,6 +30,7 @@ public static class MmcSavedSourceStore {
         CancellationToken cancellationToken = default) {
         if (!MmcDefinitionCodec.Validate(definition).IsEmpty) throw new InvalidDataException("A published definition is required to read its sources.");
         _ = MmcInstancePackageOwnership.Read(paths, definition);
+        _ = MmcPlatformOriginFiles.ReadSaved(paths, definition);
         MmcExternalBundleReference baselineReference = definition.AuthorFileBaseline ?? throw new InvalidDataException("Measured author baseline is missing; source reconstruction needs recovery.");
         byte[] baselineBytes = ReadBounded(paths, baselineReference.ObjectRelativePath, 64 * 1024 * 1024);
         var baselineInput = new MmcPackageBaselineInput(baselineBytes);
