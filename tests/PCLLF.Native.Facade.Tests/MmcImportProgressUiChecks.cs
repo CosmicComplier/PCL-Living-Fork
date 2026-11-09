@@ -206,7 +206,7 @@ internal static partial class MmcImportRecoveryUiChecks {
             left.TaskRefresh(task); ModLoader.LoaderTaskbarProgressRefresh();
             Native.Check(task.State == ModBase.LoadState.Loading && !ProducerDone(task) && Native.Get(task.Loaders.Single(), "LastRunningThread") is Thread { IsAlive: true } &&
                 ModLoader.LoaderTaskbar.Contains(task) && ReferenceEquals(Cards(right).Single(), card) && Rows(card).Children.OfType<TextBlock>().Any(value => value.Text == "取消中") &&
-                Rows(card).Children.OfType<StackPanel>().SelectMany(value => value.Children.OfType<TextBlock>()).Any(value => value.Text == "正在取消，等待文件操作结束"),
+                Rows(card).Children.OfType<StackPanel>().SelectMany(value => value.Children.OfType<TextBlock>()).Any(value => value.Text.StartsWith("正在取消，等待文件操作结束", StringComparison.Ordinal)),
                 "Cancel hid a still-writing import/retry or reported it terminal before the held actual producer drained.");
             left.TaskRemove(task); Native.Check(Cards(right).Length == 1, "TaskRemove hid a MMC operation with a live producer.");
             held.Set(); Returned(task, ModBase.LoadState.Canceled); left.TaskRefresh(task); ModLoader.LoaderTaskbarProgressRefresh();

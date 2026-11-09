@@ -14,7 +14,10 @@ namespace PCL;
 internal enum MmcImportStage { ReadArchive, ResolveComponents, SelectJava, ExtractPackage, PrepareRuntime, InstallPackage, PublishInstance }
 internal enum MmcImportStageState { Waiting, Running, Finished, Skipped, Cancelling, Canceled, Failed, NotRun }
 internal sealed record MmcImportStageSnapshot(MmcImportStage Stage, string Name, MmcImportStageState State,
-    string Detail, double? Progress, long CompletedBytes, long TotalBytes);
+    string Detail, double? Progress, long CompletedBytes, long TotalBytes) {
+    public int? CompletedFiles { get; init; }
+    public int? TotalFiles { get; init; }
+}
 
 internal interface IMmcImportProgressOperation {
     MmcImportProgress ImportProgress { get; }
@@ -30,6 +33,7 @@ internal sealed class MmcImportProgress {
         internal double Fraction;
         internal double? Measured;
         internal long Completed, Total;
+        internal int? CompletedFiles, TotalFiles;
     }
     private readonly object gate = new();
     private readonly Stage[] stages = [new("读取并核对整合包", .12), new("解析整合包组件", .05), new("选择整合包 Java", .03),
@@ -37,6 +41,7 @@ internal sealed class MmcImportProgress {
     private int current = -1, downloadBatch, cancellationRequested;
     private int? revisiting;
     private long packageBytes;
+    private string runtimeDetail;
     private bool decisionStarted, retryValidation;
     private Action<double, string> updateWorker;
 
@@ -121,32 +126,50 @@ internal sealed class MmcImportProgress {
                 case "package-extract":
                     if (BeginUnderGate(MmcImportStage.ExtractPackage, "解压并校验原包文件")) BytesUnderGate(value.CompletedBytes, packageBytes);
                     break;
-                case "preparing-runtime": BeginUnderGate(MmcImportStage.PrepareRuntime, "检查游戏运行文件与缓存"); break;
+                case "preparing-runtime": RuntimeUnderGate("检查游戏运行文件与缓存"); break;
                 case "materializing-runtime":
-                    if (BeginUnderGate(MmcImportStage.PrepareRuntime, "整理游戏运行文件")) {
+                    if (RuntimeUnderGate("整理游戏运行库")) {
                         var stage = stages[current]; stage.Fraction = Math.Max(stage.Fraction, .5); stage.Measured = null; stage.Completed = stage.Total = 0;
                     }
                     break;
+                case "asset-index-preparation": RuntimeUnderGate("读取并校验资源索引"); break;
+                case "asset-object-preparation": RuntimeUnderGate("核对并整理资源文件"); break;
+                case "runtime-view-materialization": RuntimeUnderGate("生成游戏运行目录"); break;
+                case "asset-view-materialization": RuntimeUnderGate("生成游戏资源目录"); break;
                 case "copy": case "native-extract":
-                    if (BeginUnderGate(MmcImportStage.PrepareRuntime, value.Phase == "native-extract" ? "解压本地运行库" : "整理游戏运行文件")) {
+                    if (RuntimeUnderGate(value.Phase == "native-extract" ? "解压本地运行库" : null)) {
                         stages[current].Completed = value.CompletedBytes; stages[current].Total = 0; stages[current].Measured = null;
                     }
                     break;
-                case "installing-package": BeginUnderGate(MmcImportStage.InstallPackage, "核对并放置整合包文件"); break;
+                case "installing-package": BeginUnderGate(MmcImportStage.InstallPackage, "核对文件清单"); break;
+                case "private-payload-plan":
+                    if (BeginUnderGate(MmcImportStage.InstallPackage, "核对文件清单")) {
+                        SetFilesUnderGate(value); stages[current].Completed = stages[current].Total = 0;
+                        MeasureUnderGate(FileRatio(value), 0, .35);
+                    }
+                    break;
+                case "private-payload-manifest":
+                    if (BeginUnderGate(MmcImportStage.InstallPackage, "保存文件清单")) {
+                        var stage = stages[current]; stage.Fraction = Math.Max(stage.Fraction, .35); stage.Measured = null;
+                        stage.Completed = value.CompletedBytes; stage.Total = value.TotalBytes;
+                        stage.CompletedFiles = stage.TotalFiles = null;
+                    }
+                    break;
                 case "private-payload-install":
-                    if (BeginUnderGate(MmcImportStage.InstallPackage, "核对并放置整合包文件")) BytesUnderGate(value.CompletedBytes, value.TotalBytes);
+                    if (BeginUnderGate(MmcImportStage.InstallPackage, "放置文件")) PayloadUnderGate(value, .40, .59);
                     break;
                 case "publishing-instance": BeginUnderGate(MmcImportStage.PublishInstance, "保存实例配置"); break;
                 case "publication-sharing-wait": BeginUnderGate(MmcImportStage.PublishInstance, "等待文件占用释放"); break;
                 case "private-import-moved": BeginUnderGate(MmcImportStage.PublishInstance, "完成实例发布"); break;
                 case "private-payload-verify":
-                    if (BeginUnderGate(MmcImportStage.PublishInstance, "核对已保存的整合包文件")) BytesUnderGate(value.CompletedBytes, value.TotalBytes, .8);
+                    if (BeginUnderGate(MmcImportStage.PublishInstance, "核对已保存文件")) PayloadUnderGate(value, 0, .8);
                     break;
                 case "private-import-marker-cleanup": BeginUnderGate(MmcImportStage.PublishInstance, "完成实例发布"); break;
                 case "completed":
                     if (BeginUnderGate(MmcImportStage.PublishInstance, "刷新版本列表")) {
                         stages[current].Fraction = Math.Max(stages[current].Fraction, .99); stages[current].Measured = null;
                         stages[current].Completed = stages[current].Total = 0;
+                        stages[current].CompletedFiles = stages[current].TotalFiles = null;
                     }
                     break;
                 default: return;
@@ -158,6 +181,30 @@ internal sealed class MmcImportProgress {
         var stage = stages[current]; stage.Completed = completed; stage.Total = total; stage.Measured = Ratio(completed, total);
         if (stage.Measured is { } value) stage.Fraction = Math.Max(stage.Fraction, Math.Min(.99, value * weight));
     }
+    private bool RuntimeUnderGate(string detail = null) {
+        if (!BeginUnderGate(MmcImportStage.PrepareRuntime)) return false;
+        runtimeDetail = detail ?? runtimeDetail ?? "整理游戏运行文件";
+        stages[current].Detail = runtimeDetail; stages[current].Measured = null;
+        return true;
+    }
+    private void SetFilesUnderGate(MmcInstanceBackendProgress value) {
+        stages[current].CompletedFiles = value.CompletedFiles;
+        stages[current].TotalFiles = value.TotalFiles;
+    }
+    private static double? FileRatio(MmcInstanceBackendProgress value) => value.CompletedFiles is { } completed && value.TotalFiles is > 0
+        ? Math.Clamp((double)completed / value.TotalFiles.Value, 0, 1) : null;
+    private void PayloadUnderGate(MmcInstanceBackendProgress value, double from, double weight) {
+        var stage = stages[current]; stage.Completed = value.CompletedBytes; stage.Total = value.TotalBytes;
+        SetFilesUnderGate(value);
+        MeasureUnderGate(Ratio(value.CompletedBytes, value.TotalBytes) ?? FileRatio(value), from, weight);
+    }
+    private void MeasureUnderGate(double? measured, double from, double weight) {
+        var stage = stages[current];
+        // File-plan counts and payload bytes describe different work. Only a real
+        // phase boundary advances the reserved work; never treat file counts as bytes.
+        stage.Measured = measured is { } value ? Math.Min(.99, from + weight * value) : null;
+        stage.Fraction = Math.Max(stage.Fraction, stage.Measured ?? from);
+    }
     private static double? Ratio(long completed, long total) => total > 0 ? Math.Clamp((double)completed / total, 0, 1) : null;
     private void PublishUnderGate() { if (current >= 0) updateWorker?.Invoke(FractionUnderGate(), stages[revisiting ?? current].Name); }
 
@@ -166,7 +213,8 @@ internal sealed class MmcImportProgress {
         int batch;
         lock (gate) {
             BeginUnderGate(MmcImportStage.PrepareRuntime); batch = ++downloadBatch;
-            stages[current].Detail = "下载游戏运行文件（第 " + batch + " 批）"; stages[current].Measured = 0;
+            runtimeDetail = "下载游戏运行文件（第 " + batch + " 批）";
+            stages[current].Detail = runtimeDetail; stages[current].Measured = 0;
             stages[current].Completed = stages[current].Total = 0; PublishUnderGate();
         }
         var progress = new ProgressProvider();
@@ -204,7 +252,9 @@ internal sealed class MmcImportProgress {
                 else if (CancellationRequested) { state = MmcImportStageState.Cancelling; detail = "正在取消，等待文件操作结束"; }
             } else if (rootState is ModBase.LoadState.Failed or ModBase.LoadState.Canceled && state == MmcImportStageState.Waiting) state = MmcImportStageState.NotRun;
             return new MmcImportStageSnapshot((MmcImportStage)index, stage.Name, state, detail,
-                state == MmcImportStageState.Running ? stage.Measured : null, stage.Completed, stage.Total);
+                state == MmcImportStageState.Running ? stage.Measured : null, stage.Completed, stage.Total) {
+                CompletedFiles = stage.CompletedFiles, TotalFiles = stage.TotalFiles
+            };
         }).ToArray();
     }
 }

@@ -65,7 +65,7 @@ public partial class PageSpeedLeft {
 
     private static void RefreshMmcImportStages(Grid rows, MmcImportStageSnapshot[] stages, Exception error) {
         string diagnostic = error?.GetDisplay(true);
-        string signature = string.Join("\n", stages.Select(stage => stage.State + ":" + stage.Detail + ":" + stage.Progress + ":" + stage.CompletedBytes + ":" + stage.TotalBytes)) + "\n" + diagnostic;
+        string signature = string.Join("\n", stages.Select(stage => stage.State + ":" + stage.Detail + ":" + stage.Progress + ":" + stage.CompletedBytes + ":" + stage.TotalBytes + ":" + stage.CompletedFiles + ":" + stage.TotalFiles)) + "\n" + diagnostic;
         if (Equals(rows.Tag, signature)) return;
         rows.Tag = signature; rows.Children.Clear(); rows.RowDefinitions.Clear();
         foreach (var stage in stages) {
@@ -97,15 +97,18 @@ public partial class PageSpeedLeft {
                 MmcImportStageState.Finished => "已完成", MmcImportStageState.Waiting => "等待执行", MmcImportStageState.Failed => "失败", _ => state
             };
             Grid.SetRow(marker, index); rows.Children.Add(marker);
-            string bytes = stage.CompletedBytes > 0 ? "（" + StringUtils.FormatByteSize(stage.CompletedBytes) +
-                (stage.TotalBytes > 0 ? " / " + StringUtils.FormatByteSize(stage.TotalBytes) : "") + "）" : "";
             var label = new StackPanel { Tag = stage.Stage, Margin = new Thickness(0, 0, 0, 5), ToolTip = stage.Detail };
-            var title = new TextBlock { Text = stage.Name + bytes, TextWrapping = TextWrapping.Wrap };
+            var title = new TextBlock { Text = stage.Name, TextWrapping = TextWrapping.Wrap };
             title.SetResourceReference(TextBlock.ForegroundProperty, stage.State is MmcImportStageState.Running or MmcImportStageState.Cancelling ? "ColorBrush3" : "ColorBrush1");
             label.Children.Add(title);
-            if (stage.State == MmcImportStageState.Cancelling) {
-                var detail = new TextBlock { Text = stage.Detail, FontSize = 12, TextWrapping = TextWrapping.Wrap };
-                detail.SetResourceReference(TextBlock.ForegroundProperty, "ColorBrush3"); label.Children.Add(detail);
+            string caption = stage.Detail;
+            if (stage.CompletedFiles is { } completedFiles) caption += " " + completedFiles + (stage.TotalFiles is { } knownTotal ? "/" + knownTotal : "");
+            else if (stage.TotalFiles is { } totalFiles) caption += "（共 " + totalFiles + " 个文件）";
+            if (stage.TotalBytes > 0) caption += " · " + StringUtils.FormatByteSize(stage.CompletedBytes) + " / " + StringUtils.FormatByteSize(stage.TotalBytes);
+            else if (stage.CompletedBytes > 0) caption += " · 累计 " + StringUtils.FormatByteSize(stage.CompletedBytes);
+            if (!string.IsNullOrWhiteSpace(caption)) {
+                var detail = new TextBlock { Text = caption, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 1), Tag = "mmc-import-detail" };
+                detail.SetResourceReference(TextBlock.ForegroundProperty, stage.State == MmcImportStageState.Cancelling ? "ColorBrush3" : "ColorBrushGray2"); label.Children.Add(detail);
             }
             Grid.SetColumn(label, 1); Grid.SetRow(label, index); rows.Children.Add(label);
         }
