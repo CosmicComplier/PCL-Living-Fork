@@ -17,6 +17,30 @@ internal static class MmcPurgeTxFPrimitiveTests {
         yield return ("MMC TxF refuses an already open share-delete named-stream writer", ExistingStreamWriter);
         yield return ("MMC killed TxF producers roll back before commit and only delete approved bytes after commit", KilledTransactions);
     }
+    internal static IEnumerable<(string Name, Action Run)> LongPathCases() {
+        yield return ("MMC native and transactional purge handles preserve checked logical paths beyond MAX_PATH", LongLocalPath);
+    }
+    private static void LongLocalPath() {
+        using Fixture fixture = new();
+        string directory = System.IO.Path.Combine(fixture.Root, new string('a', 80), new string('b', 80), new string('c', 80));
+        System.IO.Directory.CreateDirectory(directory); string path = System.IO.Path.Combine(directory, "owned-long-entry.bin");
+        System.IO.File.WriteAllText(path, "owned long-path bytes");
+        if (path.Length <= 260) throw new Exception("Long-path fixture did not exceed the Win32 MAX_PATH boundary.");
+        Console.WriteLine($"LONG_PATH length={path.Length} logical={path}");
+        using var parents = new MmcPurgeDirectoryPins(directory);
+        string identity; string hash;
+        using (var pin = MmcPurgeHandle.Open(path, false)) {
+            Equal(path, pin.Path); pin.AssertDefaultDataStreamOnly(); identity = pin.Identity; hash = pin.Hash(CancellationToken.None);
+        }
+        using (var transaction = new MmcPurgeNtfsTransaction()) {
+            using (var writer = transaction.OpenWriter(path, false)) {
+                Equal(path, writer.Path); Equal(identity, writer.Identity); Equal(hash, writer.Hash(CancellationToken.None));
+                writer.AssertDefaultDataStreamOnly(); writer.StageTransactedDelete();
+            }
+            transaction.Commit();
+        }
+        Equal(false, System.IO.File.Exists(path));
+    }
     private static void FileWriterExclusion() {
         using Fixture fixture = new(); string path = fixture.File;
         // An existing ADS is not modified or silently adopted, even when an outside writer

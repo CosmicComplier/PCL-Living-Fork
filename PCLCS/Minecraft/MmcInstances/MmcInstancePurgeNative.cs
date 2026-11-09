@@ -23,10 +23,14 @@ internal sealed class MmcPurgeHandle : IDisposable {
         uint access = transaction is null ? 0x80u | (directory ? 0u : 0x80000000u) | (delete ? 0x10000u : 0u) : 0xc0010080u;
         // Ancestors outside the owned namespace only deny renames. Owned directories and files
         // also deny writers, including a writer which was opened before this handle.
+        string nativePath = NativeLocalPath(Path);
         Handle = transaction is null
-            ? CreateFileW(Path, access, outerAncestor ? 3u : allowDeleteSharing ? 5u : 1u, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)
-            : CreateFileTransactedW(Path, access, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero, transaction, IntPtr.Zero, IntPtr.Zero);
-        if (Handle.IsInvalid) { Handle.Dispose(); throw Error("Cannot pin an exact purge object."); }
+            ? CreateFileW(nativePath, access, outerAncestor ? 3u : allowDeleteSharing ? 5u : 1u, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)
+            : CreateFileTransactedW(nativePath, access, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero, transaction, IntPtr.Zero, IntPtr.Zero);
+        if (Handle.IsInvalid) {
+            int error = Marshal.GetLastWin32Error(); Handle.Dispose();
+            throw new IOException($"Cannot pin the exact purge object (logical path length {Path.Length}): {Path}", new Win32Exception(error));
+        }
         try {
             if (!GetFileInformationByHandle(Handle, out var info)) throw Error("Cannot read purge object identity.");
             if ((info.Attributes & (uint)FileAttributes.ReparsePoint) != 0 ||
@@ -84,6 +88,16 @@ internal sealed class MmcPurgeHandle : IDisposable {
         if (!Directory && (streams.Length != 1 || streams[0].SizeBytes != Size)) throw new IOException("The default NTFS data stream cannot be fully established.");
     }
     internal static bool SamePath(string a, string b) => string.Equals(System.IO.Path.TrimEndingDirectorySeparator(a), System.IO.Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
+    internal static string NativeLocalPath(string logicalPath) {
+        // This is only native I/O encoding. All authorization, stored identities and final
+        // handle-path comparisons continue to use the checked logical DOS path above.
+        if (!System.IO.Path.IsPathFullyQualified(logicalPath) || logicalPath.StartsWith("\\\\", StringComparison.Ordinal))
+            throw new IOException("Purge native opens require an absolute local DOS path, without an input device namespace.");
+        string full = System.IO.Path.GetFullPath(logicalPath);
+        if (full.Length < 3 || !char.IsAsciiLetter(full[0]) || full[1] != ':' || full[2] != '\\' || full.Length > 32760)
+            throw new IOException("Purge native path is outside the supported local Windows path boundary.");
+        return "\\\\?\\" + full;
+    }
     internal static void RequireLocalNtfsIdentity(string fileSystem, string canonicalPath, ulong fileIndex) {
         // BY_HANDLE_FILE_INFORMATION's 64-bit ID is not sufficient for ReFS. Every
         // opened object, including ancestors and journal files, must pass this gate.
