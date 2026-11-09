@@ -34,13 +34,13 @@ internal sealed class MmcImportProgress {
     private readonly object gate = new();
     private readonly Stage[] stages = [new("读取并核对整合包", .12), new("解析整合包组件", .05), new("选择整合包 Java", .03),
         new("解压整合包文件", .35), new("准备游戏运行环境", .20), new("安装整合包文件", .10), new("保存 MMC 实例环境", .15)];
-    private int current = -1, downloadBatch;
+    private int current = -1, downloadBatch, cancellationRequested;
     private int? revisiting;
     private long packageBytes;
-    private bool cancellationRequested, decisionStarted, retryValidation;
+    private bool decisionStarted, retryValidation;
     private Action<double, string> updateWorker;
 
-    internal bool CancellationRequested { get { lock (gate) return cancellationRequested; } }
+    internal bool CancellationRequested => Volatile.Read(ref cancellationRequested) != 0;
     internal bool DecisionStarted { get { lock (gate) return decisionStarted; } }
     internal double Fraction { get { lock (gate) return FractionUnderGate(); } }
     private double FractionUnderGate() => Math.Min(.999, stages.Sum(stage => stage.Weight * stage.Fraction));
@@ -185,7 +185,9 @@ internal sealed class MmcImportProgress {
         // prefetch work has returned, so a completed download never finishes this row.
     }
 
-    internal void CancellationAccepted() { lock (gate) cancellationRequested = true; }
+    // Fence.Cancel calls this under its own gate. Do not acquire the presentation
+    // gate there: progress listeners can synchronously ask the fence to cancel.
+    internal void CancellationAccepted() => Interlocked.Exchange(ref cancellationRequested, 1);
     internal void EnteredDecision() { lock (gate) decisionStarted = true; }
     internal MmcImportStageSnapshot[] Snapshot(ModBase.LoadState rootState) {
         lock (gate) return stages.Select((stage, index) => {
@@ -199,7 +201,7 @@ internal sealed class MmcImportProgress {
             else if (index == active) {
                 if (rootState == ModBase.LoadState.Failed) state = MmcImportStageState.Failed;
                 else if (rootState == ModBase.LoadState.Canceled) state = MmcImportStageState.Canceled;
-                else if (cancellationRequested) { state = MmcImportStageState.Cancelling; detail = "正在取消，等待文件操作结束"; }
+                else if (CancellationRequested) { state = MmcImportStageState.Cancelling; detail = "正在取消，等待文件操作结束"; }
             } else if (rootState is ModBase.LoadState.Failed or ModBase.LoadState.Canceled && state == MmcImportStageState.Waiting) state = MmcImportStageState.NotRun;
             return new MmcImportStageSnapshot((MmcImportStage)index, stage.Name, state, detail,
                 state == MmcImportStageState.Running ? stage.Measured : null, stage.Completed, stage.Total);
