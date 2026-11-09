@@ -50,6 +50,7 @@
 <Compile Include="Modules/Minecraft/MmcLaunchAuthentication.cs" />
 <Compile Include="Modules/Minecraft/MmcLaunchPreferences.cs" />
 <Compile Include="Modules/Minecraft/MmcLaunchJava.cs" />
+<Compile Include="Modules/Minecraft/MmcJavaDiscovery.cs" />
 <Compile Include="Modules/Minecraft/MmcInstances.cs" />
 <Compile Include="Modules/Minecraft/MmcOperationLoaders.cs" />
 <Compile Include="Modules/Minecraft/MmcCloneUi.cs" />

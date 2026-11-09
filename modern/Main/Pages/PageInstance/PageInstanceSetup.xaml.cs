@@ -163,6 +163,8 @@ namespace PCL
                 JavaWorker = new Func<global::MeloongCore.RedoableWorker<global::PCLCS.Java>>(() => global::PCL.PageInstanceLeft.CurrentJavaWorker),
                 JavaRefresh = new Func<global::MeloongCore.RedoableWorker>(() => global::PCL.ModJava.JavaListRefreshWorker),
                 JavaRequirement = new Func<global::PCL.ModMinecraft.McInstance, global::MeloongCore.ValueRange<global::System.Version>>(Target => global::PCL.ModJava.GetJavaRequirement(Target).Range),
+                ManagedJavaPreview = MmcJavaDiscovery.Preview,
+                StartManagedJavaPreview = (Target, Worker) => MmcJavaDiscovery.Start(Target, Worker),
                 ReloadCurrentJava = global::PCL.PageInstanceLeft.ReloadCurrentJava,
                 ImportJava = new Action(() => global::PCL.ModJava.ManuallyImportJava()),
                 SearchJava = () => global::PCL.ModJava.ManuallySearchJava(),

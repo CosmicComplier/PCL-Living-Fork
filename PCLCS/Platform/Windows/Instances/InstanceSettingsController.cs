@@ -70,6 +70,20 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
     private void Hint(string text,int theme) => view.SetJavaHint(text,theme);
     public void UpdateJavaUi() {
         RedoableWorker<Java> worker=host.JavaWorker();
+        var managed = host.ManagedJavaPreview?.Invoke(host.Instance(), worker);
+        if (managed is not null) {
+            view.JavaHint.Visibility=Visibility.Visible;
+            view.JavaRange.Visibility=view.JavaKind.SelectedIndex==1 ? Visibility.Visible : Visibility.Collapsed;
+            view.JavaSelectPanel.Visibility=view.JavaKind.SelectedIndex==3 ? Visibility.Visible : Visibility.Collapsed;
+            // Discrete component candidates cannot be represented by the legacy single interval.
+            // Display the declared candidates; never silently save a vanilla-derived default range.
+            if (managed.State==InstanceJavaPreviewState.NotStarted && !worker.Running) {
+                if (host.StartManagedJavaPreview is not null) host.StartManagedJavaPreview(host.Instance(),worker);
+                else worker.Start();
+            }
+            Hint(managed.Message,managed.Theme);
+            return;
+        }
         switch (view.JavaKind.SelectedIndex) {
             case 0: case 2:
                 view.JavaHint.Visibility=Visibility.Visible; view.JavaRange.Visibility=Visibility.Collapsed; view.JavaSelectPanel.Visibility=Visibility.Collapsed;
@@ -99,7 +113,7 @@ public sealed class InstanceSettingsController<TInstance,TState,TCard,TItem,TBut
         try {
             foreach (Java entry in Configs.JavaList.Get()!) {
                 TItem item=view.CreateJavaItem(entry,entry.ToString()); item.MouseLeftButtonUp+=(_,e)=>e.Handled=true;
-                view.OnJavaClick(item,()=> { if (host.SetForcedJava is not null) host.SetForcedJava(host.Instance(),entry); else Configs.JavaForced.Set(entry,host.Instance().Config); UpdateJavaList(); view.JavaSelect.IsDropDownOpen=false; }); view.JavaSelect.Items.Add(item);
+                view.OnJavaClick(item,()=> { if (host.SetForcedJava is not null) host.SetForcedJava(host.Instance(),entry); else Configs.JavaForced.Set(entry,host.Instance().Config); if (host.ManagedJavaPreview?.Invoke(host.Instance(),host.JavaWorker()) is not null) host.ReloadCurrentJava(); UpdateJavaList(); view.JavaSelect.IsDropDownOpen=false; }); view.JavaSelect.Items.Add(item);
                 bool official=PathUtils.IsParentOf($@"{Paths.AppData}.minecraft\runtime\",entry.Folder);
                 TButton delete=view.CreateJavaButton(false); delete.IsEnabled=!official; delete.ToolTip=delete.IsEnabled ? "从列表中移除" : "无法移除官方 Java"; view.OnButtonClick(delete,()=>host.RemoveJava(entry)); ToolTipService.SetShowOnDisabled(delete,true);
                 TButton open=view.CreateJavaButton(true); open.ToolTip="打开文件夹"; view.OnButtonClick(open,()=>host.Explorer(entry.JavaExePath)); view.SetButtons(item,new List<TButton>{delete,open});

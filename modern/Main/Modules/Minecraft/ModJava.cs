@@ -150,6 +150,9 @@ namespace PCL
 
         public static global::PCLCS.Java SelectOrDownloadJava(global::MeloongCore.OneOf<global::MeloongCore.ValueRange<global::System.Version>, global::PCL.ModMinecraft.McInstance> Target, global::System.Boolean TryFixOrHint, global::System.Threading.CancellationToken c = default(global::System.Threading.CancellationToken), global::MeloongCore.ProgressProvider p = null)
         {
+            if (Target.Is<global::PCL.ModMinecraft.McInstance>() &&
+                MmcJavaDiscovery.TrySelect(Target.As<global::PCL.ModMinecraft.McInstance>(), c, p, out var managedJava))
+                return managedJava;
             return global::PCL.ModJava.Service.SelectOrDownloadJava(Target, TryFixOrHint, c, p);
         }
 

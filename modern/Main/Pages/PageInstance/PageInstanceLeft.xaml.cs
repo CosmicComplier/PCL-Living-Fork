@@ -192,10 +192,11 @@ namespace PCL
         {
             return global::PCLCS.InstanceNavigationRules.IsEditingPage((int)Id);
         }
-        public static global::MeloongCore.RedoableWorker<global::PCLCS.Java> CurrentJavaWorker = new global::MeloongCore.RedoableWorker<global::PCLCS.Java>((c, p) => global::PCL.ModJava.SelectOrDownloadJava(global::PCL.PageInstanceLeft.Instance, false, (global::System.Threading.CancellationToken)c, p));
+        public static global::MeloongCore.RedoableWorker<global::PCLCS.Java> CurrentJavaWorker = MmcJavaDiscovery.CreateWorker(() => global::PCL.PageInstanceLeft.Instance);
         public static void ReloadCurrentJava()
         {
-            global::PCLCS.InstanceNavigationRules.ReloadJava(() => global::PCL.ModAnimation.AniControlEnabled, () => global::PCL.PageInstanceLeft.Instance, global::PCL.PageInstanceLeft.CurrentJavaWorker);
+            if (global::PCL.ModAnimation.AniControlEnabled != 0 || global::PCL.PageInstanceLeft.Instance is null) return;
+            MmcJavaDiscovery.Start(global::PCL.PageInstanceLeft.Instance, global::PCL.PageInstanceLeft.CurrentJavaWorker);
         }
     }
 
