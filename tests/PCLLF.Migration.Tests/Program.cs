@@ -65,6 +65,7 @@ internal static class Program {
             ("mmc-lifecycle", MmcInstanceLifecycleTests.Cases),
             ("mmc-history", MmcInstanceHistoryTests.Cases),
             ("mmc-definition-change", MmcInstanceDefinitionChangeTests.Cases),
+            ("mmc-platform-origin", MmcPlatformOriginTests.Cases),
             ("mmc-import-publication", MmcInstanceBackendTests.PublicationCases),
             ("mmc-package-revision", MmcPackageRevisionTests.Cases),
             ("mmc-package-scope", MmcPackageLocalScopeTests.Cases),

@@ -45,7 +45,7 @@ def documentation_only(paths: list[str]) -> bool:
     return bool(paths) and all(is_documentation_path(name) for name in paths)
 
 GROUPS = ("world-metadata", "local-data", "personal-options", "keybindings", "quick-play",
-          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java", "mmc-backend", "mmc-variants", "mmc-clone", "mmc-lifecycle", "mmc-history", "mmc-definition-change", "mmc-import-publication", "mmc-package-revision", "mmc-package-scope", "mmc-package-update", "mmc-standard-managed", "mmc-legacy-adoption", "mmc-import-recovery")
+          "resource-entry", "resource-paths", "resource-files", "resource-metadata", "world-backups", "environment-history", "instance-clone", "pack-update", "mod-dependencies", "mod-dependency-online", "settings", "mod-favorites", "validation-loaders", "legacy-java", "foundation", "mmc-profile", "mmc-metadata", "mmc-transactions", "mmc-artifacts", "mmc-configuration", "mmc-archive", "mmc-definition", "mmc-java", "mmc-backend", "mmc-variants", "mmc-clone", "mmc-lifecycle", "mmc-history", "mmc-definition-change", "mmc-platform-origin", "mmc-import-publication", "mmc-package-revision", "mmc-package-scope", "mmc-package-update", "mmc-standard-managed", "mmc-legacy-adoption", "mmc-import-recovery")
 # Resources is a fixed feature alias, not every group appended after the first five.
 RESOURCE_GROUPS = ("resource-entry", "resource-paths", "resource-files", "resource-metadata")
 # Release-tooling-only paths have isolated, synthetic Python checks. They do
@@ -271,7 +271,7 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
         elif name.startswith("PCLLF.MMCC.Core/"):
             # The pure Core is a genuine managed product dependency. Keep its
             # own rule group and the real modern Main graph in validation.
-            include(("mmc-profile", "mmc-definition", "mmc-package-revision", "mmc-package-scope", "mmc-package-update"), (), build=False)
+            include(("mmc-profile", "mmc-definition", "mmc-package-revision", "mmc-package-scope", "mmc-package-update", "mmc-platform-origin"), (), build=False)
             native = True
         elif name == "PCLCS/Launch/MmcJavaPinStore.cs":
             include(("mmc-java",), (), build=False)
@@ -324,6 +324,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 include(("mmc-history",), (), build=False)
             elif stem == "MmcInstanceDefinitionChange":
                 include(("mmc-definition-change",), (), build=False)
+            elif stem == "MmcPlatformOrigin":
+                include(("mmc-platform-origin",), (), build=False)
             elif stem == "MmcPackageRevision":
                 include(("mmc-package-revision",), (), build=False)
             elif stem == "MmcPackageLocalScope":
@@ -384,6 +386,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
                 unknown.append(name)
         elif name.startswith("scripts/Test-") and leaf.removesuffix(".ps1") in SCRIPTS:
             include((), (leaf.removesuffix(".ps1"),))
+        elif name in {"PCLCS/Resources/MmcPlatformOriginCatalog.cs", "PCLCS/Network/LegacyNetworkPlatformOrigin.cs"}:
+            include(("mmc-platform-origin",), (), build=False)
         elif name in {"PCLCS/Resources/LegacyModFavorites.cs", "PCLCS/Resources/ResourceFavorites.cs", "PCLCS/Resources/ResourceProjectKey.cs"}:
             include(("mod-favorites",), (), build=False)
         elif name == "PCLCS/Settings/LegacyUpdateLogPrompt.cs":
@@ -431,6 +435,8 @@ def choose(paths: list[str], full: bool = False, reason: str = "changed paths") 
             elif name.startswith("PCLCS/Minecraft/MmcInstances/"):
                 if leaf.startswith(("MmcImportRecovery", "MmcImportOperation", "MmcInstanceBackend.ImportRetry")):
                     include(("mmc-import-recovery",), (), build=False)
+                elif leaf.startswith(("MmcInstancePlatform", "MmcPlatformOrigin")):
+                    include(("mmc-platform-origin",), (), build=False)
                 elif leaf.startswith("MmcInstancePackageUpdate"):
                     include(("mmc-package-update",), (), build=False)
                 elif leaf == "MmcInstancePackageOwnership.cs":

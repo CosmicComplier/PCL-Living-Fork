@@ -155,6 +155,7 @@
         "mmc-lifecycle",
         "mmc-history",
         "mmc-definition-change",
+        "mmc-platform-origin",
         "mmc-import-publication",
         "mmc-package-revision",
         "mmc-package-scope",
@@ -256,7 +257,7 @@
     },
     "mmc-core-tests": {
       "full": false, "product_build": false, "migration_run": true,
-      "groups": ["mmc-profile", "mmc-definition", "mmc-package-revision", "mmc-package-scope", "mmc-package-update"], "windows_scripts": [],
+      "groups": ["mmc-profile", "mmc-definition", "mmc-platform-origin", "mmc-package-revision", "mmc-package-scope", "mmc-package-update"], "windows_scripts": [],
       "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
     },
     "mmc-artifact-tests": {
@@ -312,6 +313,11 @@
     "mmc-definition-change-tests": {
       "full": false, "product_build": false, "migration_run": true,
       "groups": ["mmc-definition-change"], "windows_scripts": [],
+      "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
+    },
+    "mmc-platform-origin-tests": {
+      "full": false, "product_build": false, "migration_run": true,
+      "groups": ["mmc-platform-origin"], "windows_scripts": [],
       "world_checks": false, "engine_only": false, "oracle": false, "inventory": false
     },
     "mmc-package-revision-tests": {
@@ -399,6 +405,7 @@
         "mmc-lifecycle",
         "mmc-history",
         "mmc-definition-change",
+        "mmc-platform-origin",
         "mmc-import-publication",
         "mmc-package-revision",
         "mmc-package-scope",
