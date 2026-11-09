@@ -265,7 +265,7 @@ internal static class MmcComponentEditorUiChecks {
             scheduler.RefreshExtraDownload = oldRefresh; fixture?.Dispose();
         }
     }
-    private sealed class Fixture : IDisposable {
+    internal sealed class Fixture : IDisposable {
         internal readonly string Root, Game, Version;
         internal readonly MmcMetadataStore Metadata;
         internal readonly MmcArtifactCacheRoots Caches;
