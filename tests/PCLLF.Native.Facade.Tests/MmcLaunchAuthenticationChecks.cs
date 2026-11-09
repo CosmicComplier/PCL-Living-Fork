@@ -115,8 +115,25 @@ internal static partial class MmcLaunchChecks {
             server.Add("/agent-cancel", bytes, entered, release);
             sourceProperty.SetValue(null, new Func<MmcRuntimeAuthenticationKind, string, CancellationToken, Task<(ImmutableArray<string>, string)>>((_, _, _) =>
                 Task.FromResult<(ImmutableArray<string>, string)>(([server.Url("/agent-cancel")], Convert.ToHexStringLower(MD5.HashData(bytes))))));
+            var previousDownloads = ModNet.NetManager.Tasks.ToHashSet();
             try {
-                RunWithoutChild("authentication-download-cancel", () => { Until(() => entered.IsSet, "authentication agent transfer enters"); plan.Cancel(); },
+                RunWithoutChild("authentication-download-cancel", () => {
+                    Until(() => entered.IsSet, "authentication agent transfer enters");
+                    var download = ModNet.NetManager.Tasks.Single(loader => !previousDownloads.Contains(loader));
+                    var file = download.Files.Single();
+                    var prepare = plan.Loaders.OfType<ModLoader.LoaderTask<int, int>>().Single(loader => loader.Name == "准备 MMC 实例环境");
+                    Thread thread = prepare.LastRunningThread ?? throw new IOException("Owned preparation did not retain its actual worker.");
+                    Native.Check(thread.IsAlive && file.ActiveIoProducerCount > 0, "Held authentication HTTP did not exercise a live Main preparation and file producer.");
+                    plan.Cancel();
+                    Until(() => download.State == ModBase.LoadState.Canceled, "authentication download cancellation becomes terminal");
+                    Console.WriteLine("DIAG authentication cancellation: combo=" + plan.State + "; download=" + download.State +
+                        "; prepareAlive=" + thread.IsAlive + "; fileProducers=" + file.ActiveIoProducerCount +
+                        "; loaderProducers=" + ((ILegacyNetworkDownload<ModNet.NetFile>)download).CoreRecord.ActiveIoProducerCount);
+                    // The local producer is waiting for these deliberately held response
+                    // headers. Release only after cancellation, then let the genuine Main
+                    // Prepare worker finish its own downloader drain and workspace cleanup.
+                    release.Set();
+                },
                     () => Native.Check(plan.State == ModBase.LoadState.Canceled, "Authentication transfer cancellation did not complete before process creation."));
                 foreach (var loader in ModNet.NetManager.Tasks) {
                     Native.Check(((ILegacyNetworkDownload<ModNet.NetFile>)loader).CoreRecord.ActiveIoProducerCount == 0 && loader.Files.All(file => file.ActiveIoProducerCount == 0), "Authentication cancellation returned with live download writers.");
@@ -135,6 +152,10 @@ internal static partial class MmcLaunchChecks {
             DateTime deadline = DateTime.UtcNow.AddSeconds(25);
             while (plan.State == ModBase.LoadState.Loading) { Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, deadline); if (DateTime.UtcNow >= deadline) throw new TimeoutException("Authentication pre-start operation did not finish."); Thread.Sleep(3); }
             Native.Call(typeof(FileTaskScope), "DrainPostedUi", null, deadline);
+            // Canceled is observable before a non-interrupted task's finally blocks
+            // return. Do not replace Main's drain with a test-side DrainAsync call.
+            Thread? prepareThread = plan.Loaders.OfType<ModLoader.LoaderTask<int, int>>().Single(loader => loader.Name == "准备 MMC 实例环境").LastRunningThread;
+            if (prepareThread is not null) Until(() => !prepareThread.IsAlive, "actual owned MMC preparation worker exit");
             Native.Check(currentSession == Guid.Empty && ModLaunch.McLaunchProcess is null, "Canceled/changed authentication preparation created a game process."); verify();
         }
         private byte[] CompileAgent(string name) {
