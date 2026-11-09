@@ -68,11 +68,21 @@ public static class MmcPlatformOriginCodec {
         if (files.Length != 1) throw new ArgumentException("Choose exactly one release file; absent or ambiguous digest matches cannot be selected.", nameof(exactFileId));
         return files[0];
     }
+    /// <summary>Explicit file selection can distinguish equal-digest files by their full official descriptor.</summary>
+    public static MmcPlatformReleaseFile SelectFile(MmcPlatformRelease release, MmcPlatformReleaseFile selected) {
+        ArgumentNullException.ThrowIfNull(release); ArgumentNullException.ThrowIfNull(selected);
+        var files = release.Files.Where(file => file == selected).ToArray();
+        if (files.Length != 1) throw new ArgumentException("The full selected release file must match exactly one official file.", nameof(selected));
+        return files[0];
+    }
 
-    public static byte[] Create(MmcPlatformRelease release, string exactFileId, MmcPlatformPackageMeasurement measurement) {
+    public static byte[] Create(MmcPlatformRelease release, string exactFileId, MmcPlatformPackageMeasurement measurement) =>
+        Create(release, SelectFile(release, exactFileId), measurement);
+
+    public static byte[] Create(MmcPlatformRelease release, MmcPlatformReleaseFile selected, MmcPlatformPackageMeasurement measurement) {
         // Reparse the raw metadata: a caller-manufactured Files array never grants evidence.
         var parsed = ReadRelease(release.Identity, release.ProjectSource, release.VersionSource, release.ProjectJson, release.VersionJson);
-        var file = SelectFile(parsed, exactFileId); Measure(measurement, file);
+        var file = SelectFile(parsed, selected); Measure(measurement, file);
         var evidence = new MmcPlatformOriginEvidence(1, parsed.Identity, file, measurement, parsed.ProjectSource, parsed.VersionSource, parsed.ProjectJson, parsed.VersionJson);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(evidence, Options);
         if (bytes.Length > MaximumEvidenceBytes) throw new ArgumentException("Platform evidence exceeds its byte budget.");
@@ -102,7 +112,7 @@ public static class MmcPlatformOriginCodec {
             if (value.FormatVersion != 1 || value.Identity != origin.PlatformProjectIdentity || value.Package is null || value.SelectedFile is null ||
                 value.Package.Sha256 != origin.PackageSha256) throw new ArgumentException("Evidence belongs to another package or selected identity.");
             var release = ReadRelease(value.Identity, value.ProjectSource, value.VersionSource, value.ProjectJson, value.VersionJson);
-            if (SelectFile(release, value.SelectedFile.FileId) != value.SelectedFile) throw new ArgumentException("Selected release file differs from exact API metadata.");
+            _ = SelectFile(release, value.SelectedFile);
             Measure(value.Package, value.SelectedFile); return value;
         } catch (Exception error) when (error is MmcInputException or JsonException or EncoderFallbackException or InvalidOperationException) {
             throw new ArgumentException("Platform evidence is invalid.", nameof(bytes), error);
