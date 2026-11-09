@@ -10,7 +10,7 @@
 - Windows 逻辑路径树：纯目录大小写别名允许并诊断；重复叶文件、文件/目录角色冲突、隐式父文件冲突、穿越、设备名和源包伪造的 LF 管理路径拒绝。路径最多 128 段、32767 字符，每段最多 255 字符；逻辑节点最多条目预算的两倍。源条目与元数据键累计最多 16 Mi 字符，逻辑文件及父目录前缀的构造累计最多 32 Mi 字符，在生成前缀前扣计，重复前缀也计入。这些是输入检查，实际路径授权和真实解压预算仍归宿主。
 - 清单 formatVersion 1；组件 UID 唯一，保留 requested / cached / local effective version；important / dependencyOnly 不因 disabled 被静默移除。
 - 本地 `patches/<uid>.json` 的内容 UID 校验，兼容 `fileId`，严格检查重复 JSON 键、字段类型、依赖/冲突和已知能力。启用的未知关键能力拒绝；禁用来源保留并告警，启用前须重新验证。
-- 保留 mainClass、mainJar、assetIndex、参数数组、libraries / +libraries / mavenFiles、Java 离散候选与推荐名。嵌套下载、rules、extract 字段有显式读取表；数组 token 不再分词或去重。有嵌套库配置时附 `MMC_DEFERRED_LIBRARY_SEMANTICS` 信息诊断：本层仅检查形状和已注册字段，平台筛选、classifier 决策、解压和实际启动语义仍待 P2，`HasErrors=false` 不能作为支持它们的证明。
+- 保留 mainClass、mainJar、assetIndex、参数数组、libraries / +libraries / mavenFiles、Java 离散候选与推荐名。嵌套下载、rules、extract 字段有显式读取表；数组 token 不再分词或去重。有嵌套库配置时 parser 附 `MMC_DEFERRED_LIBRARY_SEMANTICS` 信息诊断：该读取阶段仅检查形状和注册字段；后续 compiler 与宿主已分别接入平台筛选、classifier 决策及受限解压。不能只据 parser 的 `HasErrors=false` 断言完整执行可用；字段和阶段范围见[当前兼容范围](../docs/mmc-compatibility-scope.md)。
 - 基础依赖检查包括精确版本、循环、禁用提供者、冲突和缺失请求；已有组件保持作者顺序。
 - 元数据逐项与累计、条目/组件/依赖/深度/声明制品预算。源文本摘要是传入文本的 UTF-8 SHA256，不冒充原始 ZIP 或未解码原件摘要。
 
