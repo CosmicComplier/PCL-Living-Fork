@@ -38,18 +38,33 @@ producer 已完成但 Loader 尚在 PreviewFinish 的窗口也不能把成功发
 完成边界、读写计数的最新断言已经在对应真实 Main 下执行：上述三个分组和
 `mmc-import-completion-boundary` 四组均通过，Native 构建 0 警告／0 错误，Main 为 78 个既有警告／0 错误。
 
-完整 GTNH 导入正在独立保留实例中复跑，使用用户原 ZIP 和旧验收缓存，不写用户 MCPACK 目录，
-不启动游戏。日志显示真实解压持续推进后进入运行环境与文件安装；最终结果单独记录，不把这些中间
-字节进度当作发布成功。首轮 private-Main 测试图缺失 `System.Runtime.Caching` runtime target，
+完整 GTNH 导入已在独立保留实例中复跑，使用用户原 ZIP 和旧验收缓存，不写用户 MCPACK 目录，
+不启动游戏。两份原包均取得 `Status=Succeeded` 的实际导入 receipt，不以中间字节进度替代发布结果。
+首轮 private-Main 测试图缺失 `System.Runtime.Caching` runtime target，
 发生在导入前；已在 prebuilt facade 模式补齐与产品相同的依赖，原失败日志保留。
 
-2026-11-09 本轮完整 Java 8 原包复跑已取得 `Status=Succeeded` 的实际导入 receipt；
-现代包继续独立执行。它们均不包含游戏启动，不能用中间进度或首包结果替代另一包结果。
+2026-11-09 本轮 Java 8 与现代 Java 原包分别完成；两项均不包含游戏启动，
+不能据此替代真实主菜单、世界或修复后启动验收。
 保留 run 为 `C:/Users/16892/.codex/worktrees/mmc-sample-baseline/PCL2-MMC-Compatibility/artifacts/mmc-gtnh-acceptance/20261109-070501-bc01acf3d40a4978a658cd99211c80ef`。
 
 当前进度／IO／取消修正的开发包源码为 `81796b2c908b8742a3043dfaa08fda4224cbdc5c`，
 路径 `artifacts/mmc-dev-build/20261109-81796b2c/package/PCL-Living-Fork-dev_edition.exe`。
 EXE 189076676 字节，SHA256 `3ff675ed5e70f11426e68a2cf01f4848fd38c89210c04e9abba41f6f96e92c50`；
 ZIP 78599313 字节，SHA256 `0f12404470842ad6e6787f1bc2ad10fe6590d4cadad1fabace872d93f2270f68`。
-六个发布模块、外 ZIP 五个条目及 Core 37 个 Git blob／CRC 均通过；没有执行该产品包做冷启动。
-此包尚未包含用户随后授权的重复路径校验消重优化；该优化在独立分支开发和验证。
+六个发布模块、外 ZIP 五个条目及 Core 37 个 Git blob／CRC 均通过；用户随后实际使用此包完成
+现代包导入、主菜单与正常退出，见 [GTNH 记录](mmc-gtnh-acceptance.md)。
+此交付包尚未包含下列后续修正，不能把源码验证当作已交付二进制。
+
+## 后续阶段明细与私有载荷路径检查
+
+运行环境行新增真实资源索引、资源对象、运行库和资源视图子步骤；复制与校验均报告实际文件数和字节。
+安装文件区分库存检查、事务清单准备、实际放置与复核，初始边界显示 `0 / 总文件数`。
+零字节文件仍推进文件数；未知总量只显示进行中。`mmc-import-stage-details` 已在真实 Main 小包、
+native ZIP 和缓存资源下通过，Sol max 审查未发现新增 P1/P2。
+
+用户另授权减少此步骤的重复路径检查。仅私有载荷三处纯路径计算改为有界词法解析，
+实际文件访问、来源摘要、目标占用、父目录 reparse 检查和最终复核仍保留。自造同一 2,003 文件包
+单次对照：库存与放置阶段 `52.786 → 30.667` 秒，完整导入 `126.004 → 102.669` 秒。
+这是一次本机小包对照，未控制操作系统缓存，不外推为 GTNH 加速幅度。
+攻击及旧取消组 9 项通过、2 项文件符号链接因构造权限不足未测；目录 junction 负例已执行。
+原路径／恢复 86 项和选择器 172 项通过，独立审查未发现新增 P1/P2。

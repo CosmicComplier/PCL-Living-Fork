@@ -98,6 +98,24 @@ dotnet <真实 facade 路径> --mmc-gtnh-post-publish-check --gtnh-case java8 --
 `modern-java21-actual-closed-loop.json` 汇总上述事实与实际 mutable binding。
 
 本次明确通过的实包 Java 组合是 Java8 发行包＋Java8，以及现代发行包＋Java21。
-现代包声明的 Java17/25/26 尚未作实包游戏验收，全平台、完整性能矩阵也未据此宣告通过。
+现代包声明的 Java17/25 尚未作实包游戏验收；Java26 的后续有限反馈见下节。
+全平台、完整性能矩阵也未据此宣告通过。
 固定 Prism 提交的实际 C++ [原生解析/计划子集对照](mmc-prism-differential.md)另行记录；
 它不运行完整 Prism resolver/应用/游戏，不能替代本页的实机闭环或全应用兼容验收。
+
+## 2026-11-09 用户开发包 Java26 反馈
+
+用户在 `81796b2c` 开发包自行导入现代原包，实例位于独立的用户游戏根；代理只读日志与进程。
+首次 Java26.0.2 进程 `67112` 的 Windows Application Error/WER 记录显示
+`SDL3.dll 3.4.14.0` 在偏移 `0x15d921` 发生 `0xc0000005`，随后 `0xc000041d`，
+启动器观察到退出码 `-1073740771`。仅凭这个故障模块不能确定 Java、驱动或模组中的具体诱因。
+同版本 SDL native JAR 的 shared/owned 字节相同，不以下载文件缺失解释原生崩溃。
+
+用户重新指定 Java26 后，真实进程 `66924` 于 16:15 完成声音／材质加载，用户确认进入主菜单，
+16:16 正常退出，退出码 0。三份会话收据摘要有效，活动记录与本轮 mutable scope 均已清理。
+这证明同一 Java26 能完成此轮主菜单与退出，没有据此认定首轮崩溃已修复，
+也没有新增 Java26 的建世界／修复／重开世界结论。
+脱敏诊断保留于 `artifacts/mmc-goal/diagnostics/user-launch-67112.json`。
+
+本轮另确认设置页自动 Java 仍按普通 MC1.7.10 显示 Java8，而 MMC 启动按组件声明使用 Java26；
+设置展示与实际选择的入口统一作为独立缺陷修复，不能通过硬编码 GTNH 或排除 Java26 掩盖。
