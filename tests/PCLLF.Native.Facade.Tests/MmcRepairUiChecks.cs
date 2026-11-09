@@ -27,6 +27,16 @@ internal static class MmcRepairUiChecks {
         scope.Finish(); environment.AssertNoForbiddenIo();
         Console.WriteLine("PASS mmc-repair-admission: actual repair rejects foreign config ID/generation at publication without overwriting it, rebases ordinary preferences, refuses pending/unknown session, and refuses unresolved old model after metadata becomes consistent; no legacy fallback/JVM/game.");
     }
+    internal static void RunProjectionRebuild(FixtureEnvironment environment) {
+        using FileTaskScope files = new(environment); using var scope = new Scope(files, "projection-rebuild");
+        scope.RebuildInspectedProjection(); scope.Finish(); environment.AssertNoForbiddenIo();
+        Console.WriteLine("PASS mmc-projection-rebuild: actual Main requires inspection/confirmation, preserves exact changed JSON in the same repair transaction, restores author launch semantics and retains player data; no JVM/game.");
+    }
+    internal static void RunProjectionAdmission(FixtureEnvironment environment) {
+        using FileTaskScope files = new(environment); using var scope = new Scope(files, "projection-admission");
+        scope.RefuseChangedProjectionPreview(); scope.Finish(); environment.AssertNoForbiddenIo();
+        Console.WriteLine("PASS mmc-projection-admission: changed confirmed JSON, unknown backup bytes and foreign metadata are rejected without clobbering observed data or advancing generation.");
+    }
     private sealed class Scope : IDisposable {
         private readonly FileTaskScope files;
         private readonly string root, game, version, projection, config, localJar;
@@ -41,6 +51,7 @@ internal static class MmcRepairUiChecks {
         private readonly List<Exception> alerts = [];
         private ModLoader.LoaderCombo<string>? current;
         private Action<MmcInstanceBackendProgress>? progress;
+        private Func<MmcProjectionDivergence, bool> confirmProjection = _ => false;
         private int progressCalls, legacyCalls;
         private readonly ModMinecraft.McInstance owner;
         private readonly byte[] world, personal;
@@ -60,6 +71,7 @@ internal static class MmcRepairUiChecks {
                 CacheRoots = new(Path.Combine(root, "cache", "libraries"), Path.Combine(root, "cache", "assets"), Path.Combine(root, "cache", "sources")),
                 RegisterTask = task => { current = task; allTasks.Add(task); ModLoader.LoaderTaskbar.Add(task); }, Published = result => published.Enqueue(result),
                 ProgressObserved = value => { Interlocked.Increment(ref progressCalls); progress?.Invoke(value); },
+                ConfirmProjectionRebuild = inspected => confirmProjection(inspected), ErrorObserved = (error, _) => alerts.Add(error),
                 DownloadCreated = _ => throw new IOException("Owned-original repair must remain offline.")
             }));
         }
@@ -152,6 +164,54 @@ internal static class MmcRepairUiChecks {
             File.WriteAllBytes(projection, json); Native.Check(MmcInstanceInspector.Read(version).IsConsistent, "Restored metadata did not become consistent.");
             string before = Tree(version); int count = allTasks.Count;
             Repair(unresolved); Native.Check(current is null && alerts.Count == 1 && allTasks.Count == count && !Busy && Tree(version) == before, "Unresolved old object silently adopted a now-consistent instance instead of requiring reload.");
+        }
+        internal void RebuildInspectedProjection() {
+            var initial = MmcInstanceInspector.Read(version); string signature = Signature(initial.Definition!);
+            var changed = JObject.Parse(File.ReadAllText(projection)); changed["mainClass"] = "external.modified.Main";
+            File.WriteAllText(projection, changed.ToString(), new UTF8Encoding(false)); byte[] bytes = File.ReadAllBytes(projection);
+            string before = Tree(version);
+            try { Native.Static("PCL.MmcRepairUi", "Start", owner); throw new Exception("Default repair accepted externally modified JSON."); }
+            catch (IOException) { }
+            Native.Check(Tree(version) == before && !Busy, "Default repair modified divergent bytes before explicit inspection.");
+            int confirmations = 0; string? backup = null;
+            confirmProjection = inspected => {
+                confirmations++;
+                Native.Check(inspected.ExpectedMainClass == "fixture.Main" && inspected.ObservedProjectionSha256 == Hash(bytes) && inspected.ObservedJson.Contains("external.modified.Main", StringComparison.Ordinal), "Inspection mixed actual JSON and saved author semantics.");
+                _ = Activator.CreateInstance(Native.Type("PCL.MmcProjectionReviewView"), Native.Flags, null, [inspected], null);
+                backup = Path.Combine(version, inspected.BackupRelativePath.Replace('/', Path.DirectorySeparatorChar));
+                return true;
+            };
+            Repair(); Wait(); var after = MmcInstanceInspector.Read(version);
+            Native.Check(current!.State == ModBase.LoadState.Finished && confirmations == 1 && published.Count == 1 && after.IsConsistent &&
+                after.Definition!.InstanceId == initial.Definition!.InstanceId && after.Definition.Generation == initial.Definition.Generation + 1 && Signature(after.Definition) == signature,
+                "Explicit reconstruction did not retain original identity and author profile.");
+            Native.Check(backup is not null && File.ReadAllBytes(backup).SequenceEqual(bytes) && JObject.Parse(File.ReadAllText(projection)).Value<string>("mainClass") == "fixture.Main", "Changed JSON was lost or adopted as author data.");
+            CheckPlayerData();
+        }
+        internal void RefuseChangedProjectionPreview() {
+            var initial = MmcInstanceInspector.Read(version); byte[] original = File.ReadAllBytes(projection);
+            void Change(string main) { var value = JObject.Parse(Encoding.UTF8.GetString(original)); value["mainClass"] = main; File.WriteAllText(projection, value.ToString(), new UTF8Encoding(false)); }
+            Change("external.first.Main");
+            var inspected = MmcInstanceRepairSelections.InspectDivergedProjectionAsync(version, initial.Definition!.InstanceId).GetAwaiter().GetResult();
+            Change("external.second.Main"); byte[] second = File.ReadAllBytes(projection);
+            var result = Backend().RepairAsync(new(version, new("windows", "x86_64", 8), initial.Definition.InstanceId, true) {
+                ExpectedGeneration = initial.Definition.Generation, ExpectedPrimarySha256 = initial.PrimarySha256, StrictSelection = inspected.Selection
+            }).GetAwaiter().GetResult();
+            Native.Check(result.Status != MmcInstanceBackendStatus.Succeeded && File.ReadAllBytes(projection).SequenceEqual(second) &&
+                MmcInstanceInspector.Read(version).PrimarySha256 == initial.PrimarySha256 && !Directory.Exists(Path.Combine(version, "PCL", "MmcProjectionBackups")), "A stale inspection overwrote newly changed JSON or created an unauthorized backup.");
+            Change("external.first.Main");
+            string backup = Path.Combine(version, inspected.BackupRelativePath.Replace('/', Path.DirectorySeparatorChar)); Directory.CreateDirectory(Path.GetDirectoryName(backup)!); File.WriteAllText(backup, "foreign backup bytes");
+            result = Backend().RepairAsync(new(version, new("windows", "x86_64", 8), initial.Definition.InstanceId, true) {
+                ExpectedGeneration = initial.Definition.Generation, ExpectedPrimarySha256 = initial.PrimarySha256, StrictSelection = inspected.Selection
+            }).GetAwaiter().GetResult();
+            Native.Check(result.Status != MmcInstanceBackendStatus.Succeeded && File.ReadAllText(backup) == "foreign backup bytes" && MmcInstanceInspector.Read(version).PrimarySha256 == initial.PrimarySha256,
+                "Reconstruction replaced unknown private backup bytes.");
+            byte[] configBefore = File.ReadAllBytes(config); var foreign = JObject.Parse(Encoding.UTF8.GetString(configBefore));
+            foreign["MinecraftInstallManifest"]!["pcllfManagement"]!["instanceId"] = Guid.NewGuid().ToString("D"); File.WriteAllText(config, foreign.ToString());
+            try { MmcInstanceRepairSelections.CaptureDivergedProjection(version, initial.Definition.InstanceId); throw new Exception("Foreign metadata was accepted as a changed projection."); }
+            catch (IOException) { }
+            Native.Check(File.ReadAllText(backup) == "foreign backup bytes", "Metadata inspection changed the private backup.");
+            File.WriteAllBytes(config, configBefore); CheckPlayerData();
         }
         private MmcInstanceBackend<MmcArtifactDownloadSpec> Backend() => new(new MmcMetadataStore(Path.Combine(root, "prepare-meta"), new Uri("https://fixture.invalid/meta/"), client),
             new(Path.Combine(root, "cache", "libraries"), Path.Combine(root, "cache", "assets"), Path.Combine(root, "cache", "sources")), value => value,

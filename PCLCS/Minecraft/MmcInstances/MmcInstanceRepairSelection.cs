@@ -4,17 +4,36 @@ using Newtonsoft.Json.Linq;
 namespace PCLCS;
 
 // Original LF host implementation; repository LICENCE applies.
-public sealed record MmcInstanceRepairSelection(string VersionRoot, Guid InstanceId, long Generation, string PrimarySha256, bool MissingProjection = false);
+public sealed record MmcInstanceRepairSelection(string VersionRoot, Guid InstanceId, long Generation, string PrimarySha256, bool MissingProjection = false) {
+    public string? DivergedProjectionSha256 { get; init; }
+}
 
 /// <summary>Read-only maintenance selection. Never creates settings providers or guesses a runtime from the MC version.</summary>
-public static class MmcInstanceRepairSelections {
-    public static MmcInstanceRepairSelection Capture(string versionRoot, Guid? expectedInstanceId = null, bool requireMissingProjection = false) {
+public static partial class MmcInstanceRepairSelections {
+    public static MmcInstanceRepairSelection Capture(string versionRoot, Guid? expectedInstanceId = null, bool requireMissingProjection = false) =>
+        CaptureCore(versionRoot, expectedInstanceId, requireMissingProjection, false);
+
+    private static MmcInstanceRepairSelection CaptureCore(string versionRoot, Guid? expectedInstanceId, bool requireMissingProjection, bool allowDiverged) {
         var observed = MmcInstanceInspector.Read(versionRoot);
         if (observed.Definition is null || observed.Paths is null || observed.PrimarySha256 is null ||
             expectedInstanceId is { } expected && observed.Definition.InstanceId != expected)
             throw new IOException(observed.Error ?? "MMC repair requires a valid, unchanged instance definition.");
         bool missing = !observed.IsConsistent;
         if (requireMissingProjection && !missing) throw new IOException("The formerly unresolved instance changed; reload its page before repairing.");
+        if (missing && allowDiverged && !requireMissingProjection && observed.Management.ObservationComplete) {
+            var raw = MmcManagementProbe.Capture(observed.Paths.InstanceRoot);
+            var agreement = MmcManagementReader.Evaluate(raw);
+            if (agreement.State == MmcManagementState.ManagedMmc && agreement.Envelope?.InstanceId == observed.Definition.InstanceId &&
+                agreement.Envelope.Generation == observed.Definition.Generation) {
+                byte[] bytes = ProjectionBytes(observed.Paths);
+                string hash = MmcDurableFiles.Hash(bytes);
+                if (hash == observed.Definition.InstalledProjection!.OutputJsonSha256)
+                    throw new IOException(observed.Error ?? "The projection has not diverged; inspect the remaining metadata error.");
+                return new(observed.Paths.InstanceRoot, observed.Definition.InstanceId, observed.Definition.Generation, observed.PrimarySha256) {
+                    DivergedProjectionSha256 = hash
+                };
+            }
+        }
         if (missing) {
             // A missing generated JSON can be reconstructed only when the real primary and
             // the remaining config hint agree. An existing/diverged JSON is never replaced
@@ -34,8 +53,9 @@ public static class MmcInstanceRepairSelections {
         lease.AssertHeld();
         if (lease.InstanceId != selection.InstanceId || !string.Equals(lease.VersionRoot, MmcCanonicalPaths.ForAdmission(selection.VersionRoot),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) throw new IOException("Repair selection belongs to another admission lease.");
-        var current = Capture(lease.VersionRoot, selection.InstanceId);
-        if (current.Generation != selection.Generation || current.PrimarySha256 != selection.PrimarySha256 || current.MissingProjection != selection.MissingProjection)
+        var current = CaptureCore(lease.VersionRoot, selection.InstanceId, false, selection.DivergedProjectionSha256 is not null);
+        if (current.Generation != selection.Generation || current.PrimarySha256 != selection.PrimarySha256 || current.MissingProjection != selection.MissingProjection ||
+            current.DivergedProjectionSha256 != selection.DivergedProjectionSha256)
             throw new IOException("The selected MMC identity or remaining management hints changed before repair.");
     }
 

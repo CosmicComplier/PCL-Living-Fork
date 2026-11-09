@@ -40,6 +40,13 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             }
             string projectionPath = paths.ResolveRelative(MmcPathRole.Instance, Path.GetFileName(paths.InstanceRoot) + ".json");
             string? oldProjection = MmcDurableFiles.Observe(projectionPath);
+            byte[]? divergenceBackup = null;
+            if (request.StrictSelection?.DivergedProjectionSha256 is { } inspected) {
+                if (!request.AllowRebuildDivergedProjection || oldProjection != inspected)
+                    throw new IOException("Rebuilding a changed projection requires its explicitly inspected exact bytes.");
+                divergenceBackup = MmcSavedSourceStore.ReadBounded(paths, Path.GetFileName(paths.InstanceRoot) + ".json", MmcManagementReader.MaximumDocumentBytes);
+                if (MmcDurableFiles.Hash(divergenceBackup) != inspected) throw new IOException("The inspected projection changed before backup preparation.");
+            }
             if (oldProjection is not null && oldProjection != definition.InstalledProjection!.OutputJsonSha256 && !request.AllowRebuildDivergedProjection)
                 throw new IOException("The compatibility JSON was externally changed; inspect it before explicitly rebuilding from the definition.");
             progress?.Report(new("loading-immutable-sources"));
@@ -86,6 +93,12 @@ public sealed partial class MmcInstanceBackend<TNetFile> where TNetFile : notnul
             byte[] nextDefinition = Encoding.UTF8.GetBytes(MmcDefinitionCodec.Serialize(bound.Definition!));
             var mutations = ArtifactMutations(prepared).Concat(localRepairs).Append(new MmcFileMutation(name + ".json", oldProjection, projection, Hash(projection)))
                 .Append(new MmcFileMutation("PCL/InstanceDefinition.json", primary.Sha256, nextDefinition, Hash(nextDefinition)));
+            if (divergenceBackup is not null) {
+                string backup = MmcInstanceRepairSelections.ProjectionBackupPath(oldProjection!);
+                string? existing = MmcDurableFiles.Observe(paths.ResolveRelative(MmcPathRole.Instance, backup));
+                if (existing is not null && existing != oldProjection) throw new IOException("An immutable projection backup has unknown bytes.");
+                if (existing is null) mutations = mutations.Append(new(backup, null, divergenceBackup, oldProjection));
+            }
             progress?.Report(new(intent == MmcBindingIntent.RepairExisting ? "publishing-repair" : "adopting-runtime-variant"));
             using var quiet = MmcConfigurationCoordinator.Quiesce(paths.InstanceRoot, cancellationToken);
             using var gate = MmcAdmissionGate.Acquire(paths.InstanceRoot, definition.InstanceId, TimeSpan.Zero, cancellationToken);

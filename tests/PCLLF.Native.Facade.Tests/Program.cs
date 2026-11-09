@@ -56,6 +56,8 @@ internal static class Program
         ["mmc-move-ui"] = MmcMoveUiChecks.Run,
         ["mmc-repair-ui"] = MmcRepairUiChecks.Run,
         ["mmc-repair-admission"] = MmcRepairUiChecks.RunAdmission,
+        ["mmc-projection-rebuild"] = MmcRepairUiChecks.RunProjectionRebuild,
+        ["mmc-projection-admission"] = MmcRepairUiChecks.RunProjectionAdmission,
         ["mmc-legacy-adoption-ui"] = MmcLegacyAdoptionUiChecks.Run,
         ["mmc-import-recovery-ui"] = MmcImportRecoveryUiChecks.RunRecovery,
         ["mmc-import-retry-ui"] = MmcImportRecoveryUiChecks.RunRetry,

@@ -60,6 +60,7 @@
 <Compile Include="Modules/Minecraft/MmcImportRecoveryUi.cs" />
 <Compile Include="Modules/Minecraft/MmcPackageUpdateUi.cs" />
 <Compile Include="Controls/MmcPackageUpdateViews.cs" />
+<Compile Include="Controls/MmcProjectionReviewView.cs" />
 <Compile Include="Modules/Minecraft/MmcLegacyAdoptionUi.cs" />
 <Compile Include="Modules/Minecraft/MmcLegacyAdoptionPreviewView.cs" />
 <Compile Include="Pages/PageInstance/PageInstanceOverall.Mmc.cs" />

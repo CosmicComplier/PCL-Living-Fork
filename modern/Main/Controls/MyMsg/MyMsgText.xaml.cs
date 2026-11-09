@@ -45,7 +45,7 @@ internal static class MessageDialogPlatform {
         DragMove = () => ModMain.FrmMain.DragMove(), PixelToWpf = ModBase.GetWPFSize,
         Animations = () => ControlServices.Current.Animations,
         UpdateWidth = body => (body as ModLauncherUpdate.UpdatePromptView)?.PreferredWidth ?? (body as ReleaseNotesView)?.PreferredWidth ?? (body as ReleaseNotesPromptView)?.PreferredWidth,
-        ModpackWidth = body => (body as ModpackDialogView)?.PreferredWidth,
+        ModpackWidth = body => (body as ModpackDialogView)?.PreferredWidth ?? (body as MmcProjectionReviewView)?.PreferredWidth,
         DependenciesWidth = body => (body as ModDependencyCheckView)?.PreferredWidth,
         GraphWidth = body => (body as ModDependencyGraphView)?.PreferredWidth,
         ImpactsWidth = body => (body as ModDependencyImpactView)?.PreferredWidth,
