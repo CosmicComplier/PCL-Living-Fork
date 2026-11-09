@@ -103,7 +103,9 @@ internal static class MmcDeleteUiChecks {
             host.InstancePage = () => pageInstance; host.SetInstancePage = value => pageInstance = value;
             host.ForceRefresh = () => { }; host.RefreshInstances = _ => { };
             host.BeginManagedDelete = (target, shift, complete) => { shifted = shift; callback = complete; actual(target, shift, complete); };
-            Confirmation = text => { Native.Check(text.Contains("仅支持可恢复删除", StringComparison.Ordinal) && text.Contains("不会释放", StringComparison.Ordinal), "Shift silently entered permanent deletion or claimed reclaimed space."); return 1; };
+            Confirmation = text => { Native.Check(text.Contains("移到 MMC 隔离区", StringComparison.Ordinal) &&
+                text.Contains("永久清理请从", StringComparison.Ordinal) && text.Contains("不会释放", StringComparison.Ordinal),
+                "Shift bypassed quarantine/explicit permanent-cleanup selection or claimed reclaimed space."); return 1; };
             Completed = () => callback!();
             var controllerType = typeof(InstanceSelectionPageController<,,,,>).MakeGenericType(typeof(ModMinecraft.McInstance), typeof(ModMinecraft.McInstance.McInstanceState), typeof(ModMinecraft.McInstanceCardType), Native.Type("PCL.InstanceCloneGroupNode"), Native.Type("PCL.InstanceCloneGroupSet"));
             Native.Call(controllerType, "Delete", null, new Grid { Tag = instance }, instance, host); Wait(before);
