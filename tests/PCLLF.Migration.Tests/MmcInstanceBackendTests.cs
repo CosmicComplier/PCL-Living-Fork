@@ -123,13 +123,22 @@ internal static partial class MmcInstanceBackendTests {
         const int tinyFiles = 2000;
         using Fixture fixture = new(tinyFiles);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        int moved = 0, verified = 0; long movedBytes = 0, verifiedBytes = 0;
+        int moved = 0, verified = 0, announcedFiles = 0; long movedBytes = 0, verifiedBytes = 0;
         long? payloadStarted = null, payloadFinished = null;
         var result = await fixture.Backend().ImportAsync(new(fixture.Archive, fixture.VersionRoot, "fixture", new("windows", "x86_64", 8)),
             progress: new BackendProgress(value => {
                 if (value.Phase == "installing-package") payloadStarted = elapsed.ElapsedMilliseconds;
                 if (value.Phase == "publishing-instance") payloadFinished = elapsed.ElapsedMilliseconds;
-                if (value.Phase == "private-payload-install") { moved++; movedBytes = value.CompletedBytes; }
+                // Placement is disclosed before the first move (CompletedFiles = 0), so the number of
+                // callbacks is not the number of transferred files. Count each announced CompletedFiles
+                // level once; that remains correct whether progress disclosure is added or removed
+                // around the real per-file completions, while a skipped or duplicated announcement
+                // still cannot pass the inventory and byte assertions below.
+                if (value.Phase == "private-payload-install") {
+                    movedBytes = value.CompletedBytes;
+                    int completed = value.CompletedFiles ?? 0;
+                    if (completed > announcedFiles) { moved++; announcedFiles = completed; }
+                }
                 if (value.Phase == "private-payload-verify") { verified++; verifiedBytes = value.CompletedBytes; }
             }));
         if (result.Status != MmcInstanceBackendStatus.Succeeded) throw new Exception(result.Failure);
