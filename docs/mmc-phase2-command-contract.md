@@ -298,11 +298,18 @@ flowchart TB
 
 | 项 | 状态 | 提交 | 验收证据 |
 | --- | --- | --- | --- |
-| Env（`OverrideEnv`／`Env`） | **已接通** | `0a03ca0a` | 冷构建 0 错误；`mmc-configuration` 21/21、`mmc-profile` 85/85、新组 `mmc-runtime-environment` 5/5。宿主边界 `MmcRuntimeLaunchContracts.cs` 经真实 `CreateStartInfo()` 验证。契约 D15 未定 → **命令子进程**不继承包 Env |
+| Env（`OverrideEnv`／`Env`） | **已接通** | `0a03ca0a` | 冷构建 0 错误；`mmc-profile` 85/85、新组 `mmc-runtime-environment` 5/5。宿主边界经真实 `CreateStartInfo()` 验证。契约 D15 未定 → **命令子进程**不继承包 Env |
 | 包内命令三阶段（PreLoad／PreLaunch／PostExit） | **已接通** | `35d7c9f2` | 冷构建 0 错误；`mmc-configuration` 30/30（含 9 条新用例）、`mmc-lifecycle` 9/9。四条红线已核：无被禁旁路、`cmd.exe`+`ArgumentList`、`VersionAdvanceRun` 未写、Env 零回退 |
-| `WrapperCommand` | **未接通（仍拒绝）** | — | `Unsupported("cfg:WrapperCommand", ...)` 保持；命令项提交明确未触及 |
-| console／PermGen | **未接通** | — | 产品代码无消费点；由二期待办 L15-16 承接 |
+| `WrapperCommand` | **已接通** | `2ae04748` | 冷构建 0 错误；`mmc-transactions` 31/31、`mmc-profile` 88/88。§4.3 判定表实现为纯函数 `MmcWrapperExit.Decide`：**包装程序退出 + Java 存活 → 不判退出、不收尾、不终止**；PID 重用与 nonce 不可观察均保持 `Unknown` |
+| console／PermGen | **已接通（差异说明）** | `f5147d0e` | 内存/窗口字段已映射；`PermGen` 与 console 四键保留原值 + 明确差异诊断，通知文本声明「永不替换为 Metaspace、不称已迁移」；导出路径已封口 |
 
-**端到端边界（重要）**：三阶段的**阶段逻辑**已被真实验证（`MmcRuntimeCommandExecution.cs` 编入测试工程并由受控用例覆盖）；但**在真实启动链中的接线触发**位于 `modern/Main/Modules/Minecraft/MmcLaunch.cs`，该文件属 WPF/UI 层、不在 `tests/PCLLF.Migration.Tests` 的 `Compile Include` 范围内，故**未验证，原因=需真跑游戏或构造 WPF 宿主**。不得据上表宣称已取得真实游戏验收。
+**终态回归（lead 独立复跑）**：`mmc-transactions` 31/31、`mmc-profile` 88/88、`mmc-configuration` 30/30、`mmc-lifecycle` 9/9、`mmc-java` 4/4、`mmc-backend` 16/18；全集 **1016/1023**，失败集合自始至终未变（恒为 2 项符号链接特权，非二期引入）。
 
-**已知契约缺口（需 owner 补齐）**：§1.2 要求 PreLoad 在 `launch-sources-start` 之前执行，而 §3 的 plan 侧变量（`classpath`、`version_name`、`assets_root` 等）在该时点尚不存在。现实现对该子集**明确失败**（`MMC_RUNTIME_VARIABLE`），只用启动前已存在的根变量——这是保守处置，但契约需补「PreLoad 阶段加载哪些输入」。裁定见 `.botharness/mmc-acceptance/phase2-adjudications.md` R-6。
+**端到端边界（重要）**：三个阶段与 wrapper 的**逻辑**已被真实验证（`MmcRuntimeCommandExecution.cs`、`MmcRuntimeWrapperCommand.cs`、`MmcWrapperExit.cs` 等均编入测试工程并由受控用例覆盖）；但**在真实启动链中的接线触发**位于 `modern/Main/Modules/Minecraft/MmcLaunch.cs`，该文件属 WPF/UI 层、不在 `tests/PCLLF.Migration.Tests` 的 `Compile Include` 范围内，故**未验证，原因=需真跑游戏或构造 WPF 宿主**。**窗口监控的目标切换同样未落地**（落点在该 WPF 层）。不得据上表宣称已取得真实游戏验收。
+
+**已知契约缺口（需 owner 补齐，三项）**
+1. **PreLoad 的输入面**：§1.2 要求 PreLoad 在 `launch-sources-start` 之前执行，而 §3 的 plan 侧变量（`classpath`、`version_name`、`assets_root` 等）在该时点尚不存在。现实现对该子集**明确失败**（`MMC_RUNTIME_VARIABLE`），只用启动前已存在的根变量——保守处置，但需补「PreLoad 阶段加载哪些输入」。裁定见 `phase2-adjudications.md` R-6。
+2. **§3 需补 wrapper 的 argv 读法**：按「先展开、后分词」的字面顺序实现，含空格的实例根会被切成两个参数，导致"看起来正确的 wrap 以错误参数启动错误的程序"（施工期已由真实夹具复现 16 → 21 token）。现实现为「**先分词、后逐 token 展开**」，与 `+jvmArgs`「每成员即一参数」一致。契约应明文写入，否则后人会重现该缺陷。裁定见 R-9。
+3. **差异诊断缺消费点（既有系统性问题）**：`MMC_PACKAGE_PREFERENCE_RUNTIME` 与 `MMC_PACKAGE_JVM_UI_DIFFERENCE` 在全仓库各只有定义处 1 处命中，从导入到界面无任何读取点（已独立核实）。console/PermGen 项已把新差异显式接到 `ModMain.Hint` 规避；**这两条既有死码需另立任务处置**（接通或删除）。裁定见 R-8 裁定 2。
+
+**未验证项汇总（未写通过）**：真实启动链端到端触发（需 WPF 宿主/真跑游戏）；窗口监控目标切换（未落地）；WPF `ModMain.Hint` 实际屏幕显示未肉眼确认；真实 GTNH 实机跑包未做；符号链接 2 项（本机无权限，纯净 worktree 对照证实既存）；`Mmc.Runtime.Tests` 全量需 `PCLLF_MMC_TEST_JAVA8`（本机无 Java 8）。
