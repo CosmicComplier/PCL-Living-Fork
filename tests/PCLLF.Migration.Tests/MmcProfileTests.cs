@@ -16,6 +16,7 @@ internal static class MmcProfileTests {
         yield return ("MMC cfg environment refuses unverified encodings and launcher-managed names", CfgEnvironmentRefused);
         yield return ("MMC cfg console and PermGen requirements get a difference notice not a substitution", CfgDifferenceNotices);
         yield return ("MMC cfg difference notices stay inactive until the source activates the requirement", CfgDifferenceInactive);
+        yield return ("MMC cfg package wrapper is admitted on the same terms as the landed command stages", CfgWrapperCommand);
         yield return ("MMC cfg malformed booleans duplicate keys variants and unknown behavior fail closed", CfgInvalid);
         yield return ("MMC archive root discovery does not depend on directory entries", Roots);
         yield return ("MMC ambiguous roots and missing source metadata fail closed", AmbiguousRoots);
@@ -82,12 +83,15 @@ internal static class MmcProfileTests {
     }
     private static void CfgCapabilities() {
         Good(Input(cfg: "OverrideCommands=false\nPreLaunchCommand=ignored\nOverrideEnv=false\nEnv=@Variant(ignored)"));
-        // A landed stage command is admitted; the packaging entry remains unlanded and stays refused.
+        // A landed stage command is admitted, and the package wrapper is admitted on the same terms now that
+        // its host composition and fixture landed with it (contract §8 target state).
         Require(Good(Input(cfg: "OverrideCommands=true\nPreLaunchCommand=active")).Configuration.Values["PreLaunchCommand"] == "active",
             "An implemented stage command was not admitted.");
-        Error(Input(cfg: "OverrideCommands=true\nWrapperCommand=active"), "MMC_UNSUPPORTED_REQUIRED");
+        Require(Good(Input(cfg: "OverrideCommands=true\nWrapperCommand=active")).Configuration.Values["WrapperCommand"] == "active",
+            "An admitted package wrapper was not preserved.");
         // The legacy alias activates the same gate, so it reaches the same verdict.
-        Error(Input(cfg: "OverrideLaunchCmd=true\nWrapperCommand=active"), "MMC_UNSUPPORTED_REQUIRED");
+        Require(Good(Input(cfg: "OverrideLaunchCmd=true\nWrapperCommand=active")).Configuration.Values["WrapperCommand"] == "active",
+            "The legacy alias did not admit the package wrapper.");
         var result = MmcPackageReader.Parse(Input(cfg: "OverrideCommands=false\nOverrideLaunchCmd=true\nPostExitCommand=inactive"));
         Require(!result.HasErrors && result.Diagnostics.Any(d => d.Code == "MMC_CFG_ALIAS"), "New alias precedence changed.");
         Error(Input(cfg: "OverrideNativeWorkarounds=true"), "MMC_UNSUPPORTED_REQUIRED");
@@ -240,6 +244,28 @@ internal static class MmcProfileTests {
         var ungated = MmcPackageReader.Parse(Input(cfg: "PermGen=256"));
         Require(ungated.Package!.Configuration.Values["PermGen"] == "256" && !ungated.Diagnostics.Any(d => d.Code == MmcDisplayDifference.PermanentGenerationCode),
             "A PermGen size without OverrideMemory was reported as active.");
+    }
+    // The capability gate for the package wrapper (contract §8 target state): it is admitted exactly like the
+    // other landed stages, and its still-refused cases are the ones the reader can decide from text alone.
+    private static void CfgWrapperCommand() {
+        // An active wrapper is admitted and its text is preserved verbatim for the host to use.
+        var admitted = Good(Input(cfg: "OverrideCommands=true\nWrapperCommand=wrapper.exe --flag value")).Configuration;
+        Require(admitted.Values["WrapperCommand"] == "wrapper.exe --flag value", "An admitted wrapper text was rewritten.");
+        // The legacy alias activates the same gate, so it reaches the same verdict.
+        Require(Good(Input(cfg: "OverrideLaunchCmd=true\nWrapperCommand=wrapper.exe")).Configuration.Values["WrapperCommand"] == "wrapper.exe",
+            "The legacy alias did not admit the package wrapper.");
+        // An inactive source keeps its value and is never admitted, exactly as the other stages behave.
+        var inactive = Good(Input(cfg: "OverrideCommands=false\nWrapperCommand=wrapper.exe")).Configuration;
+        Require(inactive.Values["WrapperCommand"] == "wrapper.exe", "An inactive wrapper value was dropped.");
+        // The wrapper still obeys the command text rules: NUL, length and credential binding are refused.
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideCommands=true\nWrapperCommand=abc\\x0000def"), "MMC_CFG_COMMAND");
+        Error(Input(cfg: "OverrideCommands=true\nWrapperCommand=" + new string('a', 16385)), "MMC_CFG_COMMAND");
+        foreach (string credential in new[] { "auth_access_token", "auth_session", "access_token", "client_token" })
+            Error(Input(cfg: "OverrideCommands=true\nWrapperCommand=wrapper.exe ${" + credential + "}"), "MMC_CFG_COMMAND_CREDENTIAL");
+        // An empty or blank wrapper declares no wrapper and is not an error.
+        Require(Good(Input(cfg: "OverrideCommands=true\nWrapperCommand=")).Configuration.Values["WrapperCommand"].Length == 0, "A blank wrapper was fabricated.");
+        // A malformed Boolean gate is still refused by the existing rule.
+        Error(Input(cfg: "OverrideCommands=garbage\nWrapperCommand=wrapper.exe"), "MMC_CFG_BOOLEAN");
     }
     private static void CfgInvalid() {
         Error(Input(cfg: "OverrideMemory=garbage"), "MMC_CFG_BOOLEAN");

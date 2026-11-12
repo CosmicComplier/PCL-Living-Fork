@@ -109,10 +109,15 @@ internal static class MmcCommandExecutionTests {
         Equal("echo prelaunch", active.Package!.Configuration.Values["PreLaunchCommand"], "An admitted command text was rewritten");
         Equal("echo preload", active.Package!.Configuration.Values["PreLoadCommand"], "An admitted PreLoad text was rewritten");
         Equal("echo postexit", active.Package!.Configuration.Values["PostExitCommand"], "An admitted PostExit text was rewritten");
-        // The packaging entry stays refused while its capability is unlanded.
+        // The package wrapper is admitted now that its capability, host composition and fixture landed
+        // together (contract §8); its text is preserved verbatim for the wrapper boundary.
         MmcParseResult wrapper = Read("OverrideCommands=true\nWrapperCommand=wrap.exe");
-        Require(wrapper.HasErrors && wrapper.Diagnostics.Any(d => d.Code == "MMC_UNSUPPORTED_REQUIRED"),
-            "WrapperCommand must stay refused: " + Errors(wrapper));
+        Require(!wrapper.HasErrors, "The landed package wrapper was refused: " + Errors(wrapper));
+        Equal("wrap.exe", wrapper.Package!.Configuration.Values["WrapperCommand"], "An admitted wrapper text was rewritten");
+        // The wrapper still obeys the command text rules: a bound credential is refused, not silently bound.
+        MmcParseResult wrapperCredential = Read("OverrideCommands=true\nWrapperCommand=wrap.exe ${auth_access_token}");
+        Require(wrapperCredential.HasErrors && wrapperCredential.Diagnostics.Any(d => d.Code == "MMC_CFG_COMMAND_CREDENTIAL"),
+            "A credential-binding wrapper was not refused: " + Errors(wrapperCredential));
         // An inactive source keeps its value and is refused nothing.
         MmcParseResult inactive = Read("OverrideCommands=false\nPreLaunchCommand=kept");
         Require(!inactive.HasErrors, "An inactive source produced an error: " + Errors(inactive));
