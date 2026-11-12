@@ -117,6 +117,13 @@ internal static class MmcConfigurationReader {
         }
         foreach (string key in new[] { "OverrideGameTime", "OverrideNativeWorkarounds" })
             if (ReadBool(values, key, source)) MmcPatchReader.Unsupported("cfg:" + key, source, true, diagnostics);
+        // Two capability groups have no equivalent here. The requirement is a real one, so the value is kept
+        // exactly as read and the difference is reported; nothing is silently dropped and nothing is
+        // re-expressed as a capability this launcher happens to have.
+        var displayDifference = MmcDisplayDifference.ConsoleDifference(values, ReadBool(values, "OverrideConsole", source), source);
+        if (displayDifference is not null) diagnostics.Add(displayDifference);
+        var permanentGeneration = MmcDisplayDifference.PermanentGenerationDifference(values, ReadBool(values, "OverrideMemory", source), source);
+        if (permanentGeneration is not null) diagnostics.Add(permanentGeneration);
         return new(qt ? MmcConfigurationFormat.QtScalar : MmcConfigurationFormat.Legacy, values.ToImmutableDictionary(StringComparer.Ordinal)) { EnvironmentOverride = environmentOverride };
     }
 

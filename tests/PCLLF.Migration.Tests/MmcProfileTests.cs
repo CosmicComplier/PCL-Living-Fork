@@ -14,6 +14,8 @@ internal static class MmcProfileTests {
         yield return ("MMC cfg inactive environment value is preserved and never applied", CfgEnvironmentInactive);
         yield return ("MMC cfg environment malformed list separators and duplicate names fail closed", CfgEnvironmentMalformed);
         yield return ("MMC cfg environment refuses unverified encodings and launcher-managed names", CfgEnvironmentRefused);
+        yield return ("MMC cfg console and PermGen requirements get a difference notice not a substitution", CfgDifferenceNotices);
+        yield return ("MMC cfg difference notices stay inactive until the source activates the requirement", CfgDifferenceInactive);
         yield return ("MMC cfg malformed booleans duplicate keys variants and unknown behavior fail closed", CfgInvalid);
         yield return ("MMC archive root discovery does not depend on directory entries", Roots);
         yield return ("MMC ambiguous roots and missing source metadata fail closed", AmbiguousRoots);
@@ -181,6 +183,63 @@ internal static class MmcProfileTests {
         // A doubled at sign is a literal '@', not an envelope, and stays decodable.
         Require(Good(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=LITERAL=@@notAvariant")).Configuration.EnvironmentOverride is [{ Name: "LITERAL", Value: "@notAvariant" }],
             "The escaped literal at sign was not decoded.");
+    }
+    // A requirement this launcher cannot honour is kept and reported. Neither of these groups may be
+    // re-expressed as a capability the host happens to have: a console preference is not launcher
+    // visibility, and a PermGen size is not a Metaspace size.
+    private static void CfgDifferenceNotices() {
+        // An active console requirement is retained and reported, with the substitution named as forbidden.
+        var console = Good(Input(cfg: "OverrideConsole=true\nShowConsole=true\nAutoCloseConsole=false")).Configuration;
+        var reported = MmcPackageReader.Parse(Input(cfg: "OverrideConsole=true\nShowConsole=true\nAutoCloseConsole=false"));
+        Require(!reported.HasErrors, "An active console requirement was refused instead of reported.");
+        var notice = reported.Diagnostics.Single(d => d.Code == MmcDisplayDifference.ConsoleCode);
+        Require(notice.Severity == MmcDiagnosticSeverity.Warning, "The console difference was not a Warning.");
+        Require(notice.Message.Contains("ShowConsole") && notice.Message.Contains("AutoCloseConsole"), "The console notice did not name the declared keys.");
+        Require(notice.Message.Contains("this launcher's own window"), "The console notice did not rule out the launcher-visibility substitution.");
+        Require(!notice.Message.Contains("ShowConsoleOnError"), "The console notice named a key the source did not declare.");
+        Require(console.Values["ShowConsole"] == "true" && console.Values["AutoCloseConsole"] == "false", "A console value was rewritten or dropped.");
+        // Declaring only some of the keys reports only those keys.
+        var partial = MmcPackageReader.Parse(Input(cfg: "OverrideConsole=true\nShowConsoleOnError=true"));
+        Require(partial.Diagnostics.Single(d => d.Code == MmcDisplayDifference.ConsoleCode).Message.Contains("ShowConsoleOnError"), "A declared console key was omitted.");
+        // A blank value expresses no requirement and is not reported.
+        Require(!MmcPackageReader.Parse(Input(cfg: "OverrideConsole=true\nShowConsole=  ")).Diagnostics.Any(d => d.Code == MmcDisplayDifference.ConsoleCode),
+            "A blank console value was reported as a requirement.");
+        // No console key at all leaves the notice absent even when the gate is on.
+        Require(!MmcPackageReader.Parse(Input(cfg: "OverrideConsole=true")).Diagnostics.Any(d => d.Code == MmcDisplayDifference.ConsoleCode),
+            "An absent console declaration produced a notice.");
+        // A declared PermGen size is reported and its value is preserved exactly, never converted.
+        var permGen = MmcPackageReader.Parse(Input(cfg: "OverrideMemory=true\nMinMemAlloc=512\nMaxMemAlloc=4096\nPermGen=256"));
+        Require(!permGen.HasErrors, "A declared PermGen size was refused instead of reported.");
+        var generation = permGen.Diagnostics.Single(d => d.Code == MmcDisplayDifference.PermanentGenerationCode);
+        Require(generation.Severity == MmcDiagnosticSeverity.Warning, "The PermGen difference was not a Warning.");
+        Require(generation.Message.Contains("never substitutes a Metaspace"), "The PermGen notice did not rule out the Metaspace substitution.");
+        Require(generation.Message.Contains("not claim the requirement was migrated"), "The PermGen notice still permitted a migration claim.");
+        Require(permGen.Package!.Configuration.Values["PermGen"] == "256", "The declared PermGen value was rewritten.");
+        // The two groups report under distinct codes so a caller can act on either independently.
+        Require(MmcDisplayDifference.ConsoleCode != MmcDisplayDifference.PermanentGenerationCode, "The two differences share a code.");
+        // A malformed PermGen is still refused by the existing numeric rule, not silently reported.
+        Error(Input(cfg: "OverrideMemory=true\nPermGen=-1"), "MMC_CFG");
+        Error(Input(cfg: "OverrideMemory=true\nPermGen=abc"), "MMC_CFG");
+    }
+    // An inactive requirement keeps exactly the pre-existing behaviour: the value is retained and no notice
+    // is raised, because a source that is switched off is not asking for anything.
+    private static void CfgDifferenceInactive() {
+        foreach (string cfg in new[] { "OverrideConsole=false\nShowConsole=true", "ShowConsole=true", "OverrideConsole=false\nAutoCloseConsole=true" }) {
+            var inactive = MmcPackageReader.Parse(Input(cfg: cfg));
+            Require(!inactive.HasErrors, "An inactive console declaration became an error: " + cfg);
+            Require(!inactive.Diagnostics.Any(d => d.Code == MmcDisplayDifference.ConsoleCode && d.Severity == MmcDiagnosticSeverity.Error),
+                "An inactive console declaration was refused: " + cfg);
+            Require(inactive.Package!.Configuration.Values.ContainsKey("ShowConsole") || inactive.Package.Configuration.Values.ContainsKey("AutoCloseConsole"),
+                "An inactive console value was dropped: " + cfg);
+        }
+        // An inactive PermGen keeps its value and raises no notice.
+        var permGen = MmcPackageReader.Parse(Input(cfg: "OverrideMemory=false\nPermGen=256"));
+        Require(!permGen.HasErrors && permGen.Package!.Configuration.Values["PermGen"] == "256", "An inactive PermGen value was not preserved.");
+        Require(!permGen.Diagnostics.Any(d => d.Code == MmcDisplayDifference.PermanentGenerationCode), "An inactive PermGen size produced an active notice.");
+        // PermGen without its gate is likewise preserved and unreported.
+        var ungated = MmcPackageReader.Parse(Input(cfg: "PermGen=256"));
+        Require(ungated.Package!.Configuration.Values["PermGen"] == "256" && !ungated.Diagnostics.Any(d => d.Code == MmcDisplayDifference.PermanentGenerationCode),
+            "A PermGen size without OverrideMemory was reported as active.");
     }
     private static void CfgInvalid() {
         Error(Input(cfg: "OverrideMemory=garbage"), "MMC_CFG_BOOLEAN");
