@@ -14,6 +14,8 @@
 | 依据格式 | 每条契约标注「文档行号」或 `文件:行`；无依据处标 **待定 Dx**，见第 10 节 | 本任务硬性要求 |
 | 语义纪律 | 未知编码或无法兑现的要求明确拒绝；不静默丢弃、不凭字段名猜语义 | 设计 L317、L325、L337；兼容范围 L17-18 |
 | 冻结轮次 | 第一轮冻结契约并把 15 项列为待定；第二轮用**仓库自身先例**定掉 11 项（D1–D5、D7–D11、D14），保留 4 项 owner 决策（D6、D12、D13、D15）与 1 项实现期残值（D8-残余）。已定项从第 10.2 节移除并回填各章附依据，清单见第 10.1 节 | 本任务第二轮要求 |
+| 行号约定 | 本文引用的 `文件:行` 是**撰写时**的快照。`MmcConfigurationReader.cs` 会随二期各项落地持续增行（Env 与命令三阶段已使其从 154 行增至 187 行），因此**以引用的代码语义为准，行号仅供定位**。查找方法：命令三阶段放行看 `foreach (string command in new[] { "PreLoadCommand", ... })`；Wrapper 拒绝看 `Unsupported("cfg:WrapperCommand", ...)`；Env 放行看 `MmcEnvironmentReader` 调用点 | lead 验收裁定 R-4 |
+| 实现进度 | 见第 12 节。契约本身不表示某项已接通；放行以「该字段的放行与实现 + fixture 同时落地」为准（第 8 节） | 设计 L337、L620 |
 
 ## 1. 阶段契约：四阶段时机与插入点
 
@@ -289,3 +291,18 @@ flowchart TB
 | P3 必测：收据各崩溃点、宿主关闭/强退、PID 重用、无法检查进程、退出收尾与新任务交错 | 第 4、6、7 节 | 设计 L471 |
 
 **未验证声明**：本文档只冻结契约，不含任何实现或实测证据；第 8 节的目标态在对应实现与 fixture 落地前不得当作已放行能力，也不得据此宣称命令能力已接通。
+
+## 12. 实现进度（由 lead 依验收记录维护）
+
+本节记录契约各项的**落地状态**，不改变上文任何契约条目。状态以提交与独立复跑数字为准；**未验证项不写通过**。
+
+| 项 | 状态 | 提交 | 验收证据 |
+| --- | --- | --- | --- |
+| Env（`OverrideEnv`／`Env`） | **已接通** | `0a03ca0a` | 冷构建 0 错误；`mmc-configuration` 21/21、`mmc-profile` 85/85、新组 `mmc-runtime-environment` 5/5。宿主边界 `MmcRuntimeLaunchContracts.cs` 经真实 `CreateStartInfo()` 验证。契约 D15 未定 → **命令子进程**不继承包 Env |
+| 包内命令三阶段（PreLoad／PreLaunch／PostExit） | **已接通** | `35d7c9f2` | 冷构建 0 错误；`mmc-configuration` 30/30（含 9 条新用例）、`mmc-lifecycle` 9/9。四条红线已核：无被禁旁路、`cmd.exe`+`ArgumentList`、`VersionAdvanceRun` 未写、Env 零回退 |
+| `WrapperCommand` | **未接通（仍拒绝）** | — | `Unsupported("cfg:WrapperCommand", ...)` 保持；命令项提交明确未触及 |
+| console／PermGen | **未接通** | — | 产品代码无消费点；由二期待办 L15-16 承接 |
+
+**端到端边界（重要）**：三阶段的**阶段逻辑**已被真实验证（`MmcRuntimeCommandExecution.cs` 编入测试工程并由受控用例覆盖）；但**在真实启动链中的接线触发**位于 `modern/Main/Modules/Minecraft/MmcLaunch.cs`，该文件属 WPF/UI 层、不在 `tests/PCLLF.Migration.Tests` 的 `Compile Include` 范围内，故**未验证，原因=需真跑游戏或构造 WPF 宿主**。不得据上表宣称已取得真实游戏验收。
+
+**已知契约缺口（需 owner 补齐）**：§1.2 要求 PreLoad 在 `launch-sources-start` 之前执行，而 §3 的 plan 侧变量（`classpath`、`version_name`、`assets_root` 等）在该时点尚不存在。现实现对该子集**明确失败**（`MMC_RUNTIME_VARIABLE`），只用启动前已存在的根变量——这是保守处置，但契约需补「PreLoad 阶段加载哪些输入」。裁定见 `.botharness/mmc-acceptance/phase2-adjudications.md` R-6。
