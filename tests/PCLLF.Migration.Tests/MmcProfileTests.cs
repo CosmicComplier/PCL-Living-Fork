@@ -80,7 +80,11 @@ internal static class MmcProfileTests {
     }
     private static void CfgCapabilities() {
         Good(Input(cfg: "OverrideCommands=false\nPreLaunchCommand=ignored\nOverrideEnv=false\nEnv=@Variant(ignored)"));
-        Error(Input(cfg: "OverrideCommands=true\nPreLaunchCommand=active"), "MMC_UNSUPPORTED_REQUIRED");
+        // A landed stage command is admitted; the packaging entry remains unlanded and stays refused.
+        Require(Good(Input(cfg: "OverrideCommands=true\nPreLaunchCommand=active")).Configuration.Values["PreLaunchCommand"] == "active",
+            "An implemented stage command was not admitted.");
+        Error(Input(cfg: "OverrideCommands=true\nWrapperCommand=active"), "MMC_UNSUPPORTED_REQUIRED");
+        // The legacy alias activates the same gate, so it reaches the same verdict.
         Error(Input(cfg: "OverrideLaunchCmd=true\nWrapperCommand=active"), "MMC_UNSUPPORTED_REQUIRED");
         var result = MmcPackageReader.Parse(Input(cfg: "OverrideCommands=false\nOverrideLaunchCmd=true\nPostExitCommand=inactive"));
         Require(!result.HasErrors && result.Diagnostics.Any(d => d.Code == "MMC_CFG_ALIAS"), "New alias precedence changed.");

@@ -96,8 +96,14 @@ internal static class MmcConfigurationReader {
             values["OverrideCommands"] != values["OverrideLaunchCmd"])
             diagnostics.Add(new("MMC_CFG_ALIAS", MmcDiagnosticSeverity.Warning, source, "OverrideCommands takes precedence over OverrideLaunchCmd."));
         if (commandOverride) {
-            foreach (string command in new[] { "PreLoadCommand", "PreLaunchCommand", "WrapperCommand", "PostExitCommand" })
-                if (!string.IsNullOrWhiteSpace(values.GetValueOrDefault(command))) MmcPatchReader.Unsupported("cfg:" + command, source, true, diagnostics);
+            // A stage command whose phase is actually implemented is admitted once its text is a decodable
+            // command within the instance budget and binds no credential variable. WrapperCommand stays
+            // refused: its packaging/child-process semantics are a different capability and are not landed.
+            foreach (string command in new[] { "PreLoadCommand", "PreLaunchCommand", "PostExitCommand" })
+                if (values.TryGetValue(command, out string? active) && !string.IsNullOrWhiteSpace(active))
+                    MmcCommandReader.Validate(active, command, source);
+            if (!string.IsNullOrWhiteSpace(values.GetValueOrDefault("WrapperCommand")))
+                MmcPatchReader.Unsupported("cfg:WrapperCommand", source, true, diagnostics);
         }
         // An active mapping is decoded into its ordered structure. A requirement this host cannot honour
         // (unverified encoding, launcher-managed name, ambiguous duplicate) is refused, never dropped;
