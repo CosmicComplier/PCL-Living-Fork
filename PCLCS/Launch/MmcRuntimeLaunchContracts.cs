@@ -23,6 +23,8 @@ public sealed record MmcRuntimeSettingsSnapshot(string DisplayName, string Launc
     public string StreamEncodingName { get; init; } = "UTF-8";
     public bool AppendResolutionArguments { get; init; } = true;
     public bool Fullscreen { get; init; }
+    /// <summary>Ordered active package environment mapping; empty inherits the launcher's base process environment.</summary>
+    public ImmutableArray<MmcEnvironmentVariable> EnvironmentOverride { get; init; } = [];
 }
 
 /// <summary>Only live launch values; intentionally redacted ToString and no serializer/persistence API.</summary>
@@ -100,9 +102,7 @@ public sealed class MmcRuntimeLaunchPlan {
             StandardOutputEncoding = Encoding.GetEncoding(encodingName), StandardErrorEncoding = Encoding.GetEncoding(encodingName)
         };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
-        // These environment channels would inject unobserved JVM/agent options.
-        foreach (string key in new[] { "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH" }) start.Environment.Remove(key);
-        start.Environment["TEMP"] = MutableDirectories.TemporaryDirectory; start.Environment["TMP"] = MutableDirectories.TemporaryDirectory;
+        MmcRuntimeEnvironmentOverlay.Apply(start.Environment, Request.Settings.EnvironmentOverride, MutableDirectories.TemporaryDirectory);
         return start;
     }
     public string Redact(string text) {
@@ -110,7 +110,4 @@ public sealed class MmcRuntimeLaunchPlan {
         return text;
     }
     public override string ToString() => "MMC runtime launch plan [arguments redacted], input " + RuntimeInputFingerprint;
-}
-public sealed class MmcRuntimeLaunchException(string code, string message) : InvalidOperationException(message) {
-    public string Code { get; } = code;
 }

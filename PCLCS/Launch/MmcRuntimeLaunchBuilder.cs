@@ -151,6 +151,14 @@ public static partial class MmcRuntimeLaunchBuilder {
             settings.ResolutionWidth is < 1 or > 65535 || settings.ResolutionHeight is < 1 or > 65535 || settings.UserJvmTokens.IsDefault || settings.ExtraGameTokens.IsDefault || settings.PlatformJavaConstraints.IsDefault || request.Targets.IsDefault || !Enum.IsDefined(settings.WrapperMode) ||
             settings.DisplayName is null || settings.LauncherName is null || settings.LauncherVersion is null || settings.UserJvmTokens.Length + request.BoundPlan.CompiledProfile.JvmArguments.Length > 16384 || settings.ExtraGameTokens.Length + request.BoundPlan.CompiledProfile.GameArguments.Length > 4096)
             Fail("MMC_RUNTIME_SETTINGS", "Runtime settings are incomplete or outside their allowed ranges.");
+        // The mapping must still be an ordered list of literal, non-reserved entries at the process
+        // boundary; Core already refuses these during parsing, so this guards a forged snapshot too.
+        if (settings.EnvironmentOverride.IsDefault || settings.EnvironmentOverride.Length > 4096) Fail("MMC_RUNTIME_ENV_SETTINGS", "The package environment mapping is absent by construction or beyond its entry budget.");
+        foreach (var entry in settings.EnvironmentOverride) {
+            if (entry.Name is null || entry.Value is null || entry.Name.Length == 0 || entry.Name.Contains('=') || entry.Value.Contains('\0') || entry.Name.Any(char.IsControl))
+                Fail("MMC_RUNTIME_ENV_SETTINGS", "A package environment entry is not a valid literal name/value pair.");
+            if (MmcEnvironmentPolicy.IsReserved(entry.Name)) Fail("MMC_RUNTIME_ENV_RESERVED", "A package environment entry redeclares a launcher-managed variable: " + entry.Name);
+        }
         if (settings.WrapperMode == MmcRuntimeWrapperMode.JavaWrapper && request.Java.Major < 8) Fail("MMC_RUNTIME_JAVA", "Exact JavaWrapper transport requires Java 8 or newer.");
         if (request.Account.Name is null || request.Account.Uuid is null || request.Account.AccessToken is null || request.Account.Session is null || request.Account.UserType is null || request.Account.UserPropertiesJson is null || request.Account.UserPropertiesJson.Length > 262144)
             Fail("MMC_RUNTIME_ACCOUNT", "Live account launch data is incomplete or exceeds its transient budget.");

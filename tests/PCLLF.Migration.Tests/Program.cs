@@ -61,6 +61,7 @@ internal static class Program {
             ("mmc-archive", () => MmcArchiveInspectionTests.Cases().Concat(MmcPackagePreservationTests.Cases()).Concat(MmcArchiveTests.Cases())),
             ("mmc-definition", () => MmcDefinitionTests.Cases().Concat(MmcLaunchAuthorityTests.Cases()).Concat(MmcProjectionTests.Cases())),
             ("mmc-java", MmcJavaPinTests.Cases),
+            ("mmc-runtime-environment", MmcRuntimeEnvironmentTests.Cases),
             ("mmc-backend", MmcInstanceBackendTests.Cases),
             ("mmc-variants", MmcInstanceBackendTests.VariantCases),
             ("mmc-clone", MmcInstanceCloneTests.Cases),

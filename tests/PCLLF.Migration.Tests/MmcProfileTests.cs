@@ -10,6 +10,10 @@ internal static class MmcProfileTests {
         yield return ("MMC legacy cfg includes first line BOM equals escaped hash and General marker", LegacyCfg);
         yield return ("MMC Qt scalar cfg preserves quotes continuations and escaped Unicode", QtCfg);
         yield return ("MMC cfg command aliases and inactive dangerous values are explicit", CfgCapabilities);
+        yield return ("MMC cfg active environment mapping is decoded in source order", CfgEnvironment);
+        yield return ("MMC cfg inactive environment value is preserved and never applied", CfgEnvironmentInactive);
+        yield return ("MMC cfg environment malformed list separators and duplicate names fail closed", CfgEnvironmentMalformed);
+        yield return ("MMC cfg environment refuses unverified encodings and launcher-managed names", CfgEnvironmentRefused);
         yield return ("MMC cfg malformed booleans duplicate keys variants and unknown behavior fail closed", CfgInvalid);
         yield return ("MMC archive root discovery does not depend on directory entries", Roots);
         yield return ("MMC ambiguous roots and missing source metadata fail closed", AmbiguousRoots);
@@ -51,7 +55,9 @@ internal static class MmcProfileTests {
     }
     private static void Error(MmcPackageInput input, string code, MmcReadLimits? limits = null) {
         MmcParseResult result = MmcPackageReader.Parse(input, limits);
-        Require(result.HasErrors && result.Diagnostics.Any(d => d.Code == code && d.Severity == MmcDiagnosticSeverity.Error), "Missing " + code + ": " + string.Join(" | ", result.Diagnostics.Select(d => d.Code)));
+        string cfg = input.Metadata.TryGetValue("instance.cfg", out string? text) ? text.Replace("\n", "\\n") : "";
+        Require(result.HasErrors && result.Diagnostics.Any(d => d.Code == code && d.Severity == MmcDiagnosticSeverity.Error),
+            $"Missing {code} for [{cfg}]: " + string.Join(" | ", result.Diagnostics.Select(d => d.Code + " " + d.Message)));
     }
     private static void OptionalCfg() {
         MmcPackage result = Good(Input());
@@ -78,8 +84,99 @@ internal static class MmcProfileTests {
         Error(Input(cfg: "OverrideLaunchCmd=true\nWrapperCommand=active"), "MMC_UNSUPPORTED_REQUIRED");
         var result = MmcPackageReader.Parse(Input(cfg: "OverrideCommands=false\nOverrideLaunchCmd=true\nPostExitCommand=inactive"));
         Require(!result.HasErrors && result.Diagnostics.Any(d => d.Code == "MMC_CFG_ALIAS"), "New alias precedence changed.");
-        Error(Input(cfg: "OverrideEnv=true\nEnv=active"), "MMC_UNSUPPORTED_REQUIRED");
         Error(Input(cfg: "OverrideNativeWorkarounds=true"), "MMC_UNSUPPORTED_REQUIRED");
+    }
+    // An active mapping must decode to ordered literal entries. Order is what the host overlay depends on.
+    private static void CfgEnvironment() {
+        var legacy = Good(Input(cfg: "OverrideEnv=true\nEnv=FIRST=alpha\\nSECOND=beta\\nTHIRD=gamma")).Configuration;
+        Require(legacy.EnvironmentOverride.SequenceEqual(new[] { new MmcEnvironmentVariable("FIRST", "alpha"), new MmcEnvironmentVariable("SECOND", "beta"), new MmcEnvironmentVariable("THIRD", "gamma") }),
+            "Legacy environment order or values changed.");
+        Require(legacy.Values["Env"] == "FIRST=alpha\nSECOND=beta\nTHIRD=gamma", "Legacy environment source text was not preserved.");
+        // The Qt list form separates on an unquoted comma; every other key still refuses one.
+        var qt = Good(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=ALPHA=one,BETA=two, GAMMA=th ree ")).Configuration;
+        Require(qt.EnvironmentOverride.SequenceEqual(new[] { new MmcEnvironmentVariable("ALPHA", "one"), new MmcEnvironmentVariable("BETA", "two"), new MmcEnvironmentVariable("GAMMA", "th ree") }),
+            "Qt environment list lost order, trimmed a value, or dropped a separator.");
+        Error(Input(cfg: "ConfigVersion=1.3\nname=a,b"), "MMC_CFG_LIST");
+        var quoted = Good(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=\"A=1,b=2\",C=3")).Configuration;
+        Require(quoted.EnvironmentOverride.SequenceEqual(new[] { new MmcEnvironmentVariable("A", "1,b=2"), new MmcEnvironmentVariable("C", "3") }),
+            "A quoted comma was not kept inside its element.");
+        // Escapes in the environment key use the same table as the scalar decoder, including \\, \\x and \\;.
+        var escaped = Good(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=PATH=C\\\\tools\\\\bin,HEX=\\x4e2d\\x6587,SEMI=a\\;b")).Configuration;
+        Require(escaped.EnvironmentOverride.SequenceEqual(new[] { new MmcEnvironmentVariable("PATH", "C\\tools\\bin"), new MmcEnvironmentVariable("HEX", "中文"), new MmcEnvironmentVariable("SEMI", "a;b") }),
+            "Environment escapes drifted from the scalar escape table.");
+        // The JSON list form is its own escaping domain and preserves element order.
+        var json = Good(Input(cfg: "OverrideEnv=true\nEnv=[\"JSON=one\",\"SECOND=two\"]")).Configuration;
+        Require(json.EnvironmentOverride.SequenceEqual(new[] { new MmcEnvironmentVariable("JSON", "one"), new MmcEnvironmentVariable("SECOND", "two") }),
+            "JSON environment list lost order or content.");
+        // Values are literal: launch-variable syntax is never expanded in an environment entry.
+        var literal = Good(Input(cfg: "OverrideEnv=true\nEnv=LITERAL=${INST_DIR}")).Configuration;
+        Require(literal.EnvironmentOverride is [{ Name: "LITERAL", Value: "${INST_DIR}" }], "An environment value was macro-expanded.");
+        Require(Good(Input(cfg: "OverrideEnv=true\nEnv=BOOLISH=1")).Configuration.EnvironmentOverride is [{ Value: "1" }], "A literal environment value was coerced.");
+        // The General section marker and a trailing comment keep the legacy rules for this key too.
+        var sectioned = Good(Input(cfg: "[General]\nOverrideEnv=true\nEnv=SECTIONED=yes # comment")).Configuration;
+        Require(sectioned.EnvironmentOverride is [{ Name: "SECTIONED", Value: "yes" }], "The legacy comment rule changed for an environment entry.");
+    }
+    private static void CfgEnvironmentInactive() {
+        // An inactive mapping is retained verbatim and never becomes an active override.
+        foreach (string value in new[] { "@Variant(ignored)", "A=1", "A=1\\nB=2" }) {
+            var inactive = Good(Input(cfg: "OverrideEnv=false\nEnv=" + value)).Configuration;
+            Require(inactive.EnvironmentOverride.IsEmpty, "An inactive environment mapping was applied: " + value);
+            Require(inactive.Values.ContainsKey("Env"), "An inactive environment value was dropped.");
+        }
+        // The envelope text and the JSON text keep the original source spelling when inactive.
+        Require(Good(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=false\nEnv=@Variant(ignored)")).Configuration.Values["Env"] == "@Variant(ignored)",
+            "An inactive variant envelope was not preserved verbatim.");
+        Require(Good(Input(cfg: "OverrideEnv=false\nEnv=[\"A=1\"]")).Configuration.Values["Env"] == "A=1", "A JSON list did not decode to its element text.");
+        // A reserved name that is not active is preserved rather than refused.
+        var reserved = Good(Input(cfg: "OverrideEnv=false\nEnv=TEMP=elsewhere")).Configuration;
+        Require(reserved.EnvironmentOverride.IsEmpty && reserved.Values["Env"] == "TEMP=elsewhere", "An inactive reserved name was not preserved.");
+        // Env without OverrideEnv is likewise preserved but inactive.
+        Require(Good(Input(cfg: "Env=A=1")).Configuration.EnvironmentOverride.IsEmpty, "A mapping without OverrideEnv became active.");
+        // An active but blank mapping declares no override and is not an error.
+        foreach (string blank in new[] { "OverrideEnv=true\nEnv=", "OverrideEnv=true\nEnv=   " }) {
+            var empty = Good(Input(cfg: blank)).Configuration;
+            Require(empty.EnvironmentOverride.IsEmpty, "A blank active mapping became an override.");
+            Require(empty.Values["Env"].Length == 0 || string.IsNullOrWhiteSpace(empty.Values["Env"]), "A blank active mapping was rewritten.");
+        }
+        // No Env key at all leaves the mapping empty so the host base environment is untouched.
+        Require(Good(Input(cfg: "name=x")).Configuration.EnvironmentOverride.IsEmpty, "An absent mapping was fabricated.");
+        Require(Good(Input()).Configuration.EnvironmentOverride.IsEmpty, "An absent cfg fabricated a mapping.");
+    }
+    private static void CfgEnvironmentMalformed() {
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=A=1,,B=2"), "MMC_CFG_ENV");
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=A=1,"), "MMC_CFG_ENV");
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=,A=1"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=NOEQUALS"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv==value"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=A=1\\nB\\nC=3"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=A=1\\n\\nB=2"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=A=1\\nA=2"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=a=1\\nA=2"), "MMC_CFG_ENV");
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=\"unterminated"), "MMC_CFG_ENV");
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=A=\\q"), "MMC_CFG_ESCAPE");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=A=1\\"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=[\"A=1\",2]"), "MMC_CFG_ENV_ENCODING");
+        Error(Input(cfg: "OverrideEnv=true\nEnv=[\"A=1\""), "MMC_CFG_ENV_ENCODING");
+        Error(Input(cfg: "OverrideEnv=true\nEnv={\"a\":1}"), "MMC_CFG_ENV");
+        Error(Input(cfg: "OverrideEnv=garbage\nEnv=A=1"), "MMC_CFG_BOOLEAN");
+        // A malformed list or illegal escape is refused at parse time even while inactive: the source
+        // declares a value the format contract cannot represent, so it cannot be silently kept as false.
+        Error(Input(cfg: "OverrideEnv=false\nEnv=[bad json"), "MMC_CFG_ENV_ENCODING");
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=false\nEnv=A=\\q"), "MMC_CFG_ESCAPE");
+        Error(Input(cfg: "ConfigVersion=1.3\nEnv=A=1\nEnv=B=2"), "MMC_CFG");
+    }
+    private static void CfgEnvironmentRefused() {
+        // A launcher-managed name is refused, not silently ignored and not silently overwritten.
+        foreach (string name in new[] { "TEMP", "TMP", "temp", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH", "ClassPath" })
+            Error(Input(cfg: "OverrideEnv=true\nEnv=" + name + "=value"), "MMC_CFG_ENV_RESERVED");
+        // A variant envelope has no verified decoder here; an active one is refused rather than guessed.
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=@Variant(ignored)"), "MMC_CFG_ENV_ENCODING");
+        // A varied casing of the envelope marker is refused by the same rule. The envelope body is opaque,
+        // so cfg-level escaping is not applied to it while inactive and only its envelope class is judged.
+        Error(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=@Variant(\\0\\0\\0\\x09\\0\\0\\0\\x04)"), "MMC_CFG_ENV_ENCODING");
+        // A doubled at sign is a literal '@', not an envelope, and stays decodable.
+        Require(Good(Input(cfg: "ConfigVersion=1.3\nOverrideEnv=true\nEnv=LITERAL=@@notAvariant")).Configuration.EnvironmentOverride is [{ Name: "LITERAL", Value: "@notAvariant" }],
+            "The escaped literal at sign was not decoded.");
     }
     private static void CfgInvalid() {
         Error(Input(cfg: "OverrideMemory=garbage"), "MMC_CFG_BOOLEAN");

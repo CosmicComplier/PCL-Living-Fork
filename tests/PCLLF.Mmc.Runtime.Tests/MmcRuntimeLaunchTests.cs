@@ -21,6 +21,7 @@ internal static partial class MmcRuntimeLaunchTests {
         yield return ("MMC manifest absent inputs remain gated through final admission and actual JDK file URLs", ManifestAbsentInputs);
         yield return ("MMC short owned native paths load the same locked SDL3 through actual Java21 and LWJGL", ShortNativePaths);
         yield return ("MMC owned authentication agents retain runtime authority privacy and Java constraints", AuthenticationAgents);
+        yield return ("MMC launch plan applies the package environment mapping at the real process boundary", EnvironmentBoundary);
     }
     private static void BridgeIdentity() {
         byte[] bytes = MmcRuntimeBridgeTransport.CreateJarBytes();
@@ -431,8 +432,43 @@ public final class TestLoader extends ClassLoader {
     }
     private static void WriteInt(Stream output, int value) { Span<byte> bytes = stackalloc byte[4]; System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes, value); output.Write(bytes); }
     private static string UrlBase64(byte[] bytes) => Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
-    private static void ExpectArgument(Action operation) { try { operation(); } catch (ArgumentException) { return; } throw new Exception("Expected bounded transport argument refusal."); }
-    private static byte[] WithFile(byte[] originalJar, string name, byte[] contents) {
+    private static void EnvironmentBoundary() {
+        // Exercises the genuine plan and its genuine CreateStartInfo(), so the mapping is proven to reach
+        // the boundary the launcher actually starts, not merely a helper of the same shape.
+        using (Fixture fixture = new(loader: false)) {
+            // No mapping: the launcher-owned temporary directory is asserted and no package entry appears.
+            var plain = MmcRuntimeLaunchBuilder.BuildAsync(fixture.Request).GetAwaiter().GetResult();
+            var baseline = plain.CreateStartInfo();
+            Require(baseline.Environment["TEMP"] == plain.MutableDirectories.TemporaryDirectory && baseline.Environment["TMP"] == plain.MutableDirectories.TemporaryDirectory,
+                "The launcher-owned temporary directory was not asserted on the real start info.");
+            Require(!baseline.Environment.ContainsKey("PACK_ONE") && !baseline.Environment.ContainsKey("PACK_TWO"), "A mapping appeared without being declared.");
+            fixture.RemoveMutable(plain);
+        }
+        using (Fixture fixture = new(loader: false)) {
+            // An active mapping is overlaid literally and cannot displace the launcher boundary.
+            var mapped = fixture.Request with { Settings = fixture.Request.Settings with { EnvironmentOverride = [
+                new("PACK_ONE", "${INST_DIR}/literal"), new("PACK_TWO", "中文 value 😀"), new("PACK_EMPTY", "")] } };
+            var plan = MmcRuntimeLaunchBuilder.BuildAsync(mapped).GetAwaiter().GetResult();
+            var observed = plan.CreateStartInfo();
+            Require(observed.Environment["PACK_ONE"] == "${INST_DIR}/literal", "A package environment value was macro-expanded at the real boundary.");
+            Require(observed.Environment["PACK_TWO"] == "中文 value 😀", "Unicode in a package environment value changed.");
+            Require(observed.Environment["PACK_EMPTY"] == "", "An explicit empty package environment value was dropped.");
+            Require(observed.Environment["TEMP"] == plan.MutableDirectories.TemporaryDirectory && observed.Environment["TMP"] == plan.MutableDirectories.TemporaryDirectory,
+                "A package mapping displaced the launcher-owned temporary directory.");
+            // The managed launch re-copies this same block under session admission and must keep it.
+            MmcRuntimeLaunchBuilder.RevalidateFilesAsync(plan).GetAwaiter().GetResult();
+            var revalidated = plan.CreateStartInfo();
+            Require(revalidated.Environment["PACK_ONE"] == "${INST_DIR}/literal" && revalidated.Environment["TEMP"] == plan.MutableDirectories.TemporaryDirectory,
+                "The environment block changed across file revalidation.");
+            fixture.RemoveMutable(plan);
+        }
+        using (Fixture fixture = new(loader: false)) {
+            // A reserved package name is refused by the genuine builder, not silently dropped.
+            var reserved = fixture.Request with { Settings = fixture.Request.Settings with { EnvironmentOverride = [new("TEMP", @"C:\attacker")] } };
+            Expect("MMC_RUNTIME_ENV_RESERVED", () => MmcRuntimeLaunchBuilder.BuildAsync(reserved).GetAwaiter().GetResult());
+        }
+    }
+    private static void ExpectArgument(Action operation) { try { operation(); } catch (ArgumentException) { return; } throw new Exception("Expected bounded transport argument refusal."); }    private static byte[] WithFile(byte[] originalJar, string name, byte[] contents) {
         Dictionary<string, byte[]> files = new(StringComparer.Ordinal);
         using (var input = new MemoryStream(originalJar)) using (var jar = new ZipArchive(input, ZipArchiveMode.Read)) foreach (var entry in jar.Entries) {
             using var body = entry.Open(); using var copy = new MemoryStream(); body.CopyTo(copy); files.Add(entry.FullName, copy.ToArray());

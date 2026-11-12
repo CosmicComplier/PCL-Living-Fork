@@ -21,6 +21,11 @@ internal static class MmcInstanceExportPreferences {
             ["OverrideCommands"]="false", ["OverrideEnv"]="false", ["OverrideJavaLocation"]="false"
         };
         var transformations = ImmutableArray.CreateBuilder<string>();
+        // An active OverrideEnv/Env mapping is a live launch requirement. Portable export has no verified
+        // encoding round-trip for it yet, so it is refused explicitly instead of being written as
+        // OverrideEnv=false and silently dropped from the exported instance.
+        if (!package.EnvironmentOverride.IsEmpty)
+            throw new InvalidDataException("An active OverrideEnv/Env mapping has no verified portable export encoding; the requirement is retained rather than silently omitted.");
         string Mode(string key) {
             string mode=ini.GetValueOrDefault(key,"InheritGlobal");
             if (mode is not ("InheritGlobal" or "UsePackage" or "Custom")) throw new InvalidDataException("Unknown managed preference mode: "+key);
